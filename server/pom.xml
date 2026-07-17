@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  jZen backend aggregator.
+
+  Multi-module by mandate. BugEater (bugeater-quarkus/pom.xml) is single-module with
+  <packaging>quarkus</packaging> at the root; that layout cannot express the internal
+  package boundaries jZen requires, so the runnable Quarkus application is pushed down
+  into zen-app and every other module is a plain jar consumed by it.
+
+  Versions are inherited from BugEater's verified baseline (pom.xml:22,27):
+  Quarkus 3.32.2 on Java 25.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>dev.zen</groupId>
+  <artifactId>zen-parent</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>jZen :: parent</name>
+
+  <modules>
+    <module>zen-proto</module>
+    <module>zen-core</module>
+    <module>zen-transport</module>
+    <module>zen-identity</module>
+    <module>zen-email</module>
+    <module>zen-app</module>
+  </modules>
+
+  <properties>
+    <maven.compiler.release>25</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+    <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
+    <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
+    <quarkus.platform.version>3.32.2</quarkus.platform.version>
+
+    <protobuf.version>4.29.3</protobuf.version>
+    <mapstruct.version>1.6.3</mapstruct.version>
+
+    <compiler-plugin.version>3.15.0</compiler-plugin.version>
+    <surefire-plugin.version>3.5.4</surefire-plugin.version>
+    <protobuf-maven-plugin.version>2.11.0</protobuf-maven-plugin.version>
+
+    <skipITs>true</skipITs>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>${quarkus.platform.group-id}</groupId>
+        <artifactId>${quarkus.platform.artifact-id}</artifactId>
+        <version>${quarkus.platform.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+
+      <!-- Contract-first: protobuf is the canonical model source. Not present in
+           BugEater at all (zero .proto files); introduced here. -->
+      <dependency>
+        <groupId>com.google.protobuf</groupId>
+        <artifactId>protobuf-java</artifactId>
+        <version>${protobuf.version}</version>
+      </dependency>
+      <!-- protobuf-java-util supplies JsonFormat, the canonical proto3 JSON mapping.
+           Required because stock Jackson serializes protobuf-generated classes into
+           builder internals. See docs/architecture/BLUEPRINT.md "Dual-mode transport". -->
+      <dependency>
+        <groupId>com.google.protobuf</groupId>
+        <artifactId>protobuf-java-util</artifactId>
+        <version>${protobuf.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>org.mapstruct</groupId>
+        <artifactId>mapstruct</artifactId>
+        <version>${mapstruct.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.mapstruct</groupId>
+        <artifactId>mapstruct-processor</artifactId>
+        <version>${mapstruct.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>dev.zen</groupId>
+        <artifactId>zen-proto</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>dev.zen</groupId>
+        <artifactId>zen-core</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>dev.zen</groupId>
+        <artifactId>zen-transport</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>dev.zen</groupId>
+        <artifactId>zen-identity</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>dev.zen</groupId>
+        <artifactId>zen-email</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>${quarkus.platform.group-id}</groupId>
+          <artifactId>quarkus-maven-plugin</artifactId>
+          <version>${quarkus.platform.version}</version>
+          <extensions>true</extensions>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>${compiler-plugin.version}</version>
+          <configuration>
+            <!-- BugEater sets this (pom.xml compiler config) so JAX-RS/Panache can
+                 read real parameter names rather than arg0/arg1. -->
+            <parameters>true</parameters>
+          </configuration>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>${surefire-plugin.version}</version>
+        </plugin>
+        <!-- Resolves the protoc binary from Maven Central; no system protoc needed
+             for the Java side. The Dart side still needs system protoc + protoc_plugin
+             (see `task doctor`). -->
+        <plugin>
+          <groupId>io.github.ascopes</groupId>
+          <artifactId>protobuf-maven-plugin</artifactId>
+          <version>${protobuf-maven-plugin.version}</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+  </build>
+
+  <profiles>
+    <profile>
+      <!-- Prod is a native build. BugEater scripts/build-prod.sh packages with
+           -Dnative -Dquarkus.native.container-build=true and ships
+           src/main/docker/Dockerfile.native-micro to Cloud Run. -->
+      <id>native</id>
+      <activation>
+        <property><name>native</name></property>
+      </activation>
+      <properties>
+        <skipITs>false</skipITs>
+        <quarkus.native.enabled>true</quarkus.native.enabled>
+      </properties>
+    </profile>
+  </profiles>
+</project>

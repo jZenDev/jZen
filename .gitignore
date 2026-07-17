@@ -1,0 +1,32 @@
+# General repo-wide ignores. Language/tool-specific ignores live in the relevant
+# subproject folder (server/, admin/, supabase/). Dart/Flutter patterns are here too
+# because .dart_tool/ and build/ can appear at any depth under client/.
+
+# ── OS / editor ──
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+*.iml
+.vscode/
+
+# ── Secrets / environment ──
+.env
+.env.*
+!.env.example
+
+# ── Logs / scratch ──
+*.log
+/logs/
+/tmp/
+
+# ── Dart / Flutter (workspace root) ──
+# .dart_tool/ and build/ match at any depth, covering every package under packages/ & apps/.
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+# pubspec.lock IS committed (app-style workspace, publish_to: none).
+# Generated *.pb.dart / *.pbjson.dart ARE committed (cross-language contract artifacts).

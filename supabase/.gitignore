@@ -1,0 +1,3 @@
+# Supabase CLI working state. config.toml, migrations/, and seed data ARE committed.
+.branches/
+.temp/

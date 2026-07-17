@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  zen-identity :: Supabase auth, harvested from BugEater.
+
+  Target for:
+    - bugeater-quarkus/src/main/java/jlogicsoftware/auth/SupabaseAuthClient.java
+      (@RegisterRestClient with @CircuitBreaker/@Retry/@Timeout per method)
+    - bugeater-quarkus/src/main/java/jlogicsoftware/auth/SessionService.java
+      (adopted WITHOUT the __session "access|refresh" packing – that hack exists only
+       because Firebase Hosting strips cookies at the edge, and jZen serves Cloud Run
+       direct. See docs/architecture/BLUEPRINT.md TA-4.)
+    - bugeater-quarkus/src/main/java/jlogicsoftware/application/security/{RoleAugmentor,UserRoleLoader,RequestUser}.java
+    - bugeater-quarkus/src/main/java/jlogicsoftware/user/User.java (adopted verbatim:
+      the users table carries zero learning-domain columns)
+
+  Deliberately NOT imported: AuthService's coupling to jlogicsoftware.user +
+  i18n.LocaleFilter, and every *PageResource (Qute HTML is discarded wholesale).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>dev.zen</groupId>
+    <artifactId>zen-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>zen-identity</artifactId>
+  <name>jZen :: identity</name>
+
+  <dependencies>
+    <dependency>
+      <groupId>dev.zen</groupId>
+      <artifactId>zen-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>dev.zen</groupId>
+      <artifactId>zen-transport</artifactId>
+    </dependency>
+
+    <!-- Supabase JWT verified against JWKS (ES256). BugEater application.properties:64-69. -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-smallrye-jwt</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-security</artifactId>
+    </dependency>
+    <!-- SupabaseAuthClient is a @RegisterRestClient interface. -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-rest-client-jackson</artifactId>
+    </dependency>
+    <!-- @CircuitBreaker/@Retry/@Timeout on each Supabase call. -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-smallrye-fault-tolerance</artifactId>
+    </dependency>
+
+    <!-- Active-record entities; BugEater has 19 PanacheEntityBase and zero
+         PanacheRepository implementors. Only `User` is portable. -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-hibernate-orm-panache</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-jdbc-postgresql</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.mapstruct</groupId>
+      <artifactId>mapstruct</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-test-security</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.mapstruct</groupId>
+              <artifactId>mapstruct-processor</artifactId>
+              <version>${mapstruct.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

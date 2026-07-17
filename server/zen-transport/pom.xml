@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  zen-transport :: the dual-mode negotiation seam.
+
+  Owns the port of DartZen's transport negotiation (its X-DZ-Transport header, renamed
+  X-Zen-Transport here)
+  (../DartZen/packages/dartzen_transport/lib/src/zen_transport_header.dart:4 defines the
+  header name verbatim; ../DartZen/packages/dartzen_server/lib/src/middleware/transport_middleware.dart:75-99
+  defines the negotiation order: header -> content-type sniff -> default JSON).
+
+  Consumes the generated protobuf DTOs from the zen-proto leaf module. protoc itself is
+  resolved from Maven Central (zen-proto's plugin), so no system protoc is required for
+  the Java build.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>dev.zen</groupId>
+    <artifactId>zen-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>zen-transport</artifactId>
+  <name>jZen :: transport</name>
+
+  <dependencies>
+    <dependency>
+      <groupId>dev.zen</groupId>
+      <artifactId>zen-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>dev.zen</groupId>
+      <artifactId>zen-proto</artifactId>
+    </dependency>
+
+    <!-- protobuf-java arrives transitively via zen-proto; declared here too because the
+         transport writers reference com.google.protobuf.Message directly. -->
+    <dependency>
+      <groupId>com.google.protobuf</groupId>
+      <artifactId>protobuf-java</artifactId>
+    </dependency>
+    <!-- JsonFormat, for canonical proto3 JSON (the JSON half of the seam). -->
+    <dependency>
+      <groupId>com.google.protobuf</groupId>
+      <artifactId>protobuf-java-util</artifactId>
+    </dependency>
+
+    <!-- MessageBodyWriter/Reader + ContainerRequestFilter live here. Note: NO
+         quarkus-rest-jackson. jZen is proto-first, so every response body is a proto
+         Message and its JSON is canonical proto3 JSON from JsonFormat (ProtoJsonMessageBodyWriter).
+         The server Jackson writer is not just unnecessary here, it is harmful: it greedily
+         claims application/json via a build-time-optimized path that bypasses normal
+         MessageBodyWriter priority, serializing the proto's builder internals and 500ing.
+         See BLUEPRINT.md TA-1. -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-rest</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Generates META-INF/jandex.idx so Quarkus discovers this module's JAX-RS
+           providers (the transport filters and MessageBodyWriter/Readers) when it is a
+           dependency of zen-app. Without an index, @Provider classes in a dependency jar
+           are invisible to Quarkus and the whole transport seam silently does nothing.
+           Every jZen library module that contributes beans or providers needs this. -->
+      <plugin>
+        <groupId>io.smallrye</groupId>
+        <artifactId>jandex-maven-plugin</artifactId>
+        <version>3.2.7</version>
+        <executions>
+          <execution>
+            <id>make-index</id>
+            <goals>
+              <goal>jandex</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

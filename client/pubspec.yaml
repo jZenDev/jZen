@@ -1,0 +1,28 @@
+name: jzen_client
+description: >-
+  jZen client workspace: Dart/Flutter packages and the reference app.
+# Lockstep with the product version (server pom 0.1.0-SNAPSHOT, admin 0.1.0). All
+# packages/modules share one version -- see docs/architecture/STANDARDS.md "Versioning".
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+
+# Pub workspace root for the client side. Packages live flat under client/ (e.g.
+# client/zen_core), mirroring how the Java modules sit flat under server/. There is no
+# packages/ or apps/ wrapper -- a package is a package whether it is a library or the
+# demo app, and a folder holding a single folder earns its keep only once it holds more.
+#
+# The workspace is the single source of truth for membership. Each member also declares
+# `resolution: workspace`. The field must be a list (an empty scalar fails
+# `dart analyze`), so it starts as [].
+#
+# Members land as steps complete:
+#   Step 2: zen_core, zen_localization, zen_transport
+#   Step 3: zen_identity, zen_ui_navigation, zen_ui_identity (+ their example apps)
+#   Step 4: zen_demo (the reference app; the deleted demo server is replaced by server/)
+workspace: []
+
+dev_dependencies:
+  flutter_lints: ^6.0.0

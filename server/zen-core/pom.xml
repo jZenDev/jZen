@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  zen-core :: the Java port of DartZen's dartzen_core.
+
+  Ports ZenResult / ZenError / logging contracts from
+  ../DartZen/packages/dartzen_core/lib/src/{result,logging}/.
+
+  Deliberately has no JAX-RS, no Panache, and no transport dependency: dartzen_core's
+  pubspec declares only `meta` and no inter-package deps, and that isolation is the
+  single most valuable property of the package. Do not add framework deps here.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>dev.zen</groupId>
+    <artifactId>zen-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>zen-core</artifactId>
+  <name>jZen :: core</name>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

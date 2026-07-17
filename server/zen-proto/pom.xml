@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  zen-proto :: generated protobuf DTOs.
+
+  A LEAF module: its only dependency is protobuf-java (Maven Central). That isolation is
+  deliberate. If proto codegen lived in zen-transport (which depends on zen-core), the
+  protobuf-maven-plugin would try to resolve zen-core's jar at generate-sources time,
+  before it is packaged, and fail. A dependency-free module for generated code is the
+  standard protobuf-in-Maven layout and sidesteps that bootstrap problem.
+
+  proto/zen/v1/*.proto is compiled here; every other module consumes the result.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>dev.zen</groupId>
+    <artifactId>zen-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>zen-proto</artifactId>
+  <name>jZen :: proto</name>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.google.protobuf</groupId>
+      <artifactId>protobuf-java</artifactId>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>io.github.ascopes</groupId>
+        <artifactId>protobuf-maven-plugin</artifactId>
+        <configuration>
+          <protocVersion>${protobuf.version}</protocVersion>
+          <sourceDirectories>
+            <sourceDirectory>${project.basedir}/../../proto</sourceDirectory>
+          </sourceDirectories>
+          <!-- The skeleton shipped with proto/ empty; tolerate that so a clean checkout
+               builds before the first .proto lands. -->
+          <failOnMissingSources>false</failOnMissingSources>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>generate</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

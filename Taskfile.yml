@@ -1,0 +1,355 @@
+# jZen global orchestrator.
+#
+# Taskfile triggers native tools; it never replaces them. `mvnw` owns Java resolution,
+# `dart pub` owns Dart, `pnpm` owns TypeScript. Every task below shells out to the tool
+# that already knows how to do the job.
+#
+# Folders use industry names: server/ (Java backend), client/ (Dart/Flutter), admin/
+# (ReactAdmin). Task groups follow: deps:server / build:client / test:admin, etc.
+#
+# Install: brew install go-task/tap/go-task   (see `task doctor`)
+version: "3"
+
+vars:
+  SERVER_DIR: server
+  CLIENT_DIR: client
+  ADMIN_DIR: admin
+  PROTO_DIR: proto
+  OPENAPI_JSON: server/zen-app/target/openapi/openapi.json
+
+  # Cloud Run coordinates, overridable via the environment.
+  GCP_PROJECT: '{{.GCP_PROJECT | default "CHANGEME-jzen"}}'
+  GCP_REGION: '{{.GCP_REGION | default "europe-central2"}}'
+  SERVICE_NAME: '{{.SERVICE_NAME | default "zen-app"}}'
+  AR_REPO: '{{.AR_REPO | default "jzen"}}'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  # ---------------------------------------------------------------------------
+  # Environment
+  # ---------------------------------------------------------------------------
+  doctor:
+    desc: Check that every required tool is present
+    silent: true
+    cmds:
+      - |
+        set -e
+        missing=0
+        check() {
+          if command -v "$1" >/dev/null 2>&1; then
+            printf '  \033[32mok\033[0m   %-12s %s\n' "$1" "$($2 2>&1 | head -1)"
+          else
+            printf '  \033[31mMISS\033[0m %-12s %s\n' "$1" "$3"
+            missing=1
+          fi
+        }
+        echo "jZen toolchain:"
+        check java    "java -version"        "install JDK 25"
+        check dart    "dart --version"       "https://dart.dev/get-dart"
+        check flutter "flutter --version"    "https://docs.flutter.dev/get-started/install"
+        check pnpm    "pnpm --version"       "npm i -g pnpm"
+        check supabase "supabase --version"  "brew install supabase/tap/supabase"
+        check docker  "docker --version"     "https://docs.docker.com/get-docker"
+        check gcloud  "gcloud --version"     "https://cloud.google.com/sdk/docs/install"
+        echo "Dart protobuf codegen (needed by generate:proto, not by the Java build):"
+        check protoc  "protoc --version"     "brew install protobuf"
+        if [ -x "$HOME/.pub-cache/bin/protoc-gen-dart" ]; then
+          printf '  \033[32mok\033[0m   %-12s %s\n' "protoc-gen-dart" "$HOME/.pub-cache/bin/protoc-gen-dart"
+        else
+          printf '  \033[31mMISS\033[0m %-12s %s\n' "protoc-gen-dart" "dart pub global activate protoc_plugin"
+          missing=1
+        fi
+        echo
+        # protoc is NOT required for the Java build: protobuf-maven-plugin resolves the
+        # protoc binary from Maven Central (see server/zen-proto/pom.xml).
+        if [ "$missing" -eq 0 ]; then echo "All tools present."; else
+          echo "Some tools are missing. Java builds still work; Dart proto codegen will not."; exit 1; fi
+
+  deps:
+    desc: Resolve dependencies for every sub-project (native tools do the work)
+    deps: [deps:server, deps:client, deps:admin]
+
+  deps:server:
+    desc: Resolve Maven dependencies
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      - ./mvnw -B -q dependency:go-offline
+
+  deps:client:
+    desc: Resolve the Dart pub workspace
+    dir: "{{.CLIENT_DIR}}"
+    cmds:
+      - dart pub get
+
+  deps:admin:
+    desc: Install admin dependencies
+    dir: "{{.ADMIN_DIR}}"
+    cmds:
+      - pnpm install
+
+  # ---------------------------------------------------------------------------
+  # Code generation -- proto is upstream, OpenAPI is derived
+  # ---------------------------------------------------------------------------
+  #
+  #   proto/zen/v1/*.proto            (canonical models)
+  #     |-- protoc --> Java DTOs      (protobuf-maven-plugin, in server/zen-proto)
+  #     |-- protoc --> Dart messages  (protoc_plugin, here)
+  #     v
+  #   Java resources + SmallRye --> openapi.json  (canonical REST surface)
+  #     v
+  #   openapi-typescript --> admin types
+  #
+  generate:proto:
+    desc: Generate Java and Dart code from proto/
+    cmds:
+      - task: generate:proto:java
+      - task: generate:proto:dart
+
+  generate:proto:java:
+    desc: Generate Java DTOs from proto/ (protoc resolved from Maven Central)
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      - ./mvnw -B -q -pl zen-proto generate-sources
+
+  generate:proto:dart:
+    desc: Generate Dart messages from proto/
+    silent: true
+    cmds:
+      - |
+        set -e
+        shopt -s nullglob
+        protos=({{.PROTO_DIR}}/zen/v1/*.proto)
+        if [ ${#protos[@]} -eq 0 ]; then
+          echo "No .proto files yet -- skipping Dart codegen."
+          exit 0
+        fi
+        command -v protoc >/dev/null 2>&1 || { echo "protoc not found. Run: task doctor"; exit 1; }
+        [ -x "$HOME/.pub-cache/bin/protoc-gen-dart" ] || { echo "protoc-gen-dart not found. Run: dart pub global activate protoc_plugin"; exit 1; }
+        out={{.CLIENT_DIR}}/zen_transport/lib/src/generated
+        mkdir -p "$out"
+        PATH="$HOME/.pub-cache/bin:$PATH" protoc -I {{.PROTO_DIR}} --dart_out="$out" "${protos[@]}"
+        echo "Generated Dart messages -> $out"
+
+  generate:api:
+    desc: Build the backend, emit openapi.json, and generate admin types
+    cmds:
+      - task: generate:api:schema
+      - task: generate:api:ts
+
+  generate:api:schema:
+    desc: Emit openapi.json from the annotated Quarkus resources (SmallRye)
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      # quarkus.smallrye-openapi.store-schema-directory=target/openapi writes the
+      # schema at build time.
+      - ./mvnw -B -q -pl zen-app -am package -DskipTests
+
+  generate:api:ts:
+    desc: Generate admin types from openapi.json
+    dir: "{{.ADMIN_DIR}}"
+    status:
+      - test ! -f ../{{.OPENAPI_JSON}}
+    cmds:
+      - pnpm run generate:types
+
+  sync:contracts:
+    desc: Regenerate every cross-language artifact and FAIL if anything drifted
+    summary: |
+      The atomic contract sync. Regenerates Java DTOs, Dart messages, openapi.json and
+      the admin TypeScript, then fails if any generated file changed.
+
+      A failure means a generated file was hand-edited, or someone changed a .proto
+      without regenerating. Fix by running `task generate:proto generate:api` and
+      committing the result -- never by editing generated output.
+
+      This is the gate that blocks out-of-sync bugs. Wire it into CI.
+    cmds:
+      - task: generate:proto
+      - task: generate:api
+      - task: sync:verify
+
+  sync:verify:
+    desc: Fail if regeneration produced a dirty working tree
+    internal: true
+    silent: true
+    cmds:
+      - |
+        set -e
+        if ! git rev-parse --git-dir >/dev/null 2>&1; then
+          echo "Not a git repository -- cannot verify contract sync."; exit 1
+        fi
+        dirty=$(git status --porcelain -- '*.generated.ts' '*.pb.dart' '*.pbjson.dart' '*.pbenum.dart' 'proto/**')
+        if [ -n "$dirty" ]; then
+          echo "Contracts are OUT OF SYNC. Regenerated output differs from what is committed:"
+          echo "$dirty"
+          echo
+          echo "Run 'task generate:proto generate:api' and commit the result."
+          exit 1
+        fi
+        echo "Contracts in sync."
+
+  # ---------------------------------------------------------------------------
+  # Build / test
+  # ---------------------------------------------------------------------------
+  build:
+    desc: Sync contracts, then build every sub-project
+    cmds:
+      - task: sync:contracts
+      - task: build:server
+      - task: build:client
+      - task: build:admin
+
+  build:server:
+    desc: Build the backend (JVM)
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      - ./mvnw -B package -DskipTests
+
+  build:server:native:
+    desc: Build the backend as a native executable (what prod ships)
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      # Container build, pinned to amd64 so the image matches Cloud Run regardless of the
+      # developer's architecture.
+      - >-
+        ./mvnw -B package -Dnative -DskipTests
+        -Dquarkus.native.container-build=true
+        -Dquarkus.native.container-runtime-options=--platform=linux/amd64
+        -pl zen-app -am
+
+  build:client:
+    desc: Analyze the Dart workspace
+    dir: "{{.CLIENT_DIR}}"
+    cmds:
+      - dart pub get
+      - dart analyze
+
+  build:admin:
+    desc: Build the admin panel
+    dir: "{{.ADMIN_DIR}}"
+    cmds:
+      - pnpm build
+
+  test:
+    desc: Run every test suite
+    cmds:
+      - task: test:server
+      - task: test:client
+      - task: test:admin
+
+  test:server:
+    desc: Run backend tests
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      - ./mvnw -B test
+
+  test:client:
+    desc: Run Dart and Flutter tests
+    dir: "{{.CLIENT_DIR}}"
+    silent: true
+    cmds:
+      # A failing test fails here -- jZen does not swallow test failures.
+      - |
+        set -e
+        # A "package" is a directory with a pubspec.yaml, not just any directory.
+        if [ -z "$(find . -name pubspec.yaml -not -path './pubspec.yaml' 2>/dev/null | head -1)" ]; then
+          echo "No Dart packages migrated yet -- nothing to test. (ROADMAP step 2.)"
+          exit 0
+        fi
+        dart test
+
+  test:admin:
+    desc: Typecheck the admin panel
+    dir: "{{.ADMIN_DIR}}"
+    cmds:
+      - pnpm exec tsc -b
+
+  # ---------------------------------------------------------------------------
+  # Run
+  # ---------------------------------------------------------------------------
+  run:all:
+    desc: Start Supabase, then the backend and the admin panel
+    deps: [run:supabase]
+    cmds:
+      - task: run:server
+
+  run:supabase:
+    desc: Start the local Supabase stack (API 54321, DB 54322, Studio 54323)
+    cmds:
+      - supabase start
+    status:
+      - supabase status >/dev/null 2>&1
+
+  run:server:
+    desc: Start Quarkus in dev mode (live reload) on :8080
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      - ./mvnw -pl zen-app -am quarkus:dev
+
+  run:admin:
+    desc: Start the admin panel dev server on :5173
+    dir: "{{.ADMIN_DIR}}"
+    cmds:
+      - pnpm dev
+
+  stop:supabase:
+    desc: Stop the local Supabase stack
+    cmds:
+      - supabase stop
+
+  # ---------------------------------------------------------------------------
+  # Deploy
+  # ---------------------------------------------------------------------------
+  deploy:cloudrun:
+    desc: Build native, push to Artifact Registry, deploy to Cloud Run
+    summary: |
+      Cloud Run deploy. Notable choices:
+        - No `firebase deploy`: jZen serves Cloud Run directly with no Firebase Hosting
+          edge, which is what lets it use normal cookie names and proactive auth.
+        - --max-instances=1, --min-instances=0: a deliberate cost floor. The native-image
+          server handles the target load (~2K MAU) on a single instance at concurrency
+          200, and min=0 means no warm instance to pay for (cold starts are accepted).
+          Because there is at most one instance, in-process state (rate limiting, caches)
+          is valid by construction. Raising max above 1 is the trigger to move such state
+          to Postgres/Redis -- not the other way around. See STANDARDS.md.
+
+      Requires: gcloud auth, and the secrets below present in Secret Manager.
+    cmds:
+      - task: build:server:native
+      - |
+        set -e
+        IMAGE="{{.GCP_REGION}}-docker.pkg.dev/{{.GCP_PROJECT}}/{{.AR_REPO}}/{{.SERVICE_NAME}}:$(git rev-parse --short HEAD)"
+        docker buildx build --platform linux/amd64 \
+          -f {{.SERVER_DIR}}/zen-app/src/main/docker/Dockerfile.native-micro \
+          -t "$IMAGE" {{.SERVER_DIR}}
+        docker push "$IMAGE"
+        gcloud run deploy {{.SERVICE_NAME}} \
+          --image="$IMAGE" \
+          --project={{.GCP_PROJECT}} \
+          --region={{.GCP_REGION}} \
+          --memory=256Mi --cpu=1 \
+          --min-instances=0 --max-instances=1 \
+          --timeout=300s --port=8080 --concurrency=200 \
+          --allow-unauthenticated \
+          --set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,DB_URL=DB_URL:latest,DB_USERNAME=DB_USERNAME:latest,DB_PASSWORD=DB_PASSWORD:latest,CORS_ORIGINS=CORS_ORIGINS:latest,AUTH_REDIRECT_URI=AUTH_REDIRECT_URI:latest,SITE_URL=SITE_URL:latest,SMTP_HOST=SMTP_HOST:latest,SMTP_PORT=SMTP_PORT:latest,SMTP_USERNAME=SMTP_USERNAME:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,SMTP_FROM=SMTP_FROM:latest
+
+  # ---------------------------------------------------------------------------
+  # Housekeeping
+  # ---------------------------------------------------------------------------
+  format:
+    desc: Format all sources
+    cmds:
+      - cd {{.CLIENT_DIR}} && dart format .
+      - cd {{.ADMIN_DIR}} && pnpm exec prettier --write "src/**/*.{ts,tsx}" || true
+
+  clean:
+    desc: Remove all build output
+    cmds:
+      - cd {{.SERVER_DIR}} && ./mvnw -B -q clean
+      - rm -rf {{.ADMIN_DIR}}/dist {{.ADMIN_DIR}}/node_modules/.vite
+      - find . -name .dart_tool -type d -prune -exec rm -rf {} +

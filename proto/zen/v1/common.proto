@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package zen.v1;
+
+// Shared model types used across jZen endpoints. Canonical source of truth; the Java,
+// Dart, and TypeScript equivalents are generated from here. Never hand-edit generated
+// output -- edit this and run `task sync:contracts`.
+
+option java_package = "dev.zen.proto.v1";
+option java_multiple_files = true;
+option java_outer_classname = "CommonProto";
+
+// Uniform error payload. Replaces DartZen's `{id, status, data, error}` envelope
+// (dropped): HTTP status carries the status, the X-Request-ID header carries the request
+// id, and this message carries the error detail. See docs/architecture/BLUEPRINT.md
+// (TA-2) for why every endpoint declares typed messages instead of an untyped envelope.
+message ZenError {
+  // Machine-readable error code, e.g. "validation", "unauthorized", "not_found".
+  string code = 1;
+  // Human-readable message. May be masked in production for 5xx errors.
+  string message = 2;
+  // Optional field-level violations, keyed by field path.
+  map<string, string> field_errors = 3;
+}
+
+// Standard pagination request parameters for list endpoints.
+message PageRequest {
+  int32 page = 1;
+  int32 size = 2;
+  // Sort spec, e.g. "createdAt desc".
+  string sort = 3;
+}

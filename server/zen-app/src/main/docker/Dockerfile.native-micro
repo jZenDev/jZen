@@ -1,0 +1,24 @@
+####
+# Runs the jZen Quarkus application as a native executable (no JVM) on a micro base image.
+#
+# Adopted from ../BugEater/bugeater-quarkus/src/main/docker/Dockerfile.native-micro,
+# which is the image its scripts/build-prod.sh actually ships to Cloud Run.
+#
+# Build:
+#   ./mvnw package -Dnative -Dquarkus.native.container-build=true -pl zen-app -am
+#   docker build -f zen-app/src/main/docker/Dockerfile.native-micro -t jzen/zen-app .
+#
+# Or just: task deploy:cloudrun
+###
+FROM quay.io/quarkus/ubi9-quarkus-micro-image@sha256:d4295e70be7c3df55523bcbcc0fd696d518484de2579d5d87546d422649a1296
+
+WORKDIR /work/
+RUN chown 1001 /work \
+    && chmod "g+rwX" /work \
+    && chown 1001:root /work
+COPY --chown=1001:root --chmod=0755 zen-app/target/*-runner /work/application
+
+EXPOSE 8080
+USER 1001
+
+ENTRYPOINT ["./application", "-Dquarkus.http.host=0.0.0.0"]

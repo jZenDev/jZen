@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  zen-email :: transactional email via Brevo.
+
+  IMPORTANT – what was actually found in BugEater, versus what the brief assumed:
+
+  There is NO EmailService abstraction in BugEater to port. Exactly one Java file sends
+  mail: bugeater-quarkus/src/main/java/jlogicsoftware/user/UserCleanupService.java:197,
+  which injects io.quarkus.mailer.Mailer directly and calls
+  mailer.send(Mail.withHtml(...)). The `EmailService` interface this module exists to
+  provide is therefore NEW CODE, not a port.
+
+  Brevo's REST API is NOT used anywhere. Brevo is a plain SMTP relay: the literal string
+  "smtp-relay.brevo.com" appears once, in bugeater-quarkus/scripts/build-prod.sh:33,
+  where it is written into a GCP secret. Nothing in the Java code is Brevo-specific –
+  it is stock quarkus-mailer SMTP (application.properties:161-169). Swapping providers
+  means changing SMTP_HOST, nothing more.
+
+  What is genuinely portable: the mailer config block and the two Qute templates at
+  src/main/resources/templates/mail/{warningEmail,finalWarningEmail}.html.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>dev.zen</groupId>
+    <artifactId>zen-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>zen-email</artifactId>
+  <name>jZen :: email</name>
+
+  <dependencies>
+    <dependency>
+      <groupId>dev.zen</groupId>
+      <artifactId>zen-core</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-mailer</artifactId>
+    </dependency>
+    <!-- Qute is retained ONLY as a mail templating engine. Every server-rendered HTML
+         endpoint in BugEater (136 *PageResource classes) is discarded; Qute survives
+         here and nowhere else. -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-qute</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>

@@ -1,0 +1,12 @@
+# Analysis options for the jZen client pub workspace. Applies to every package under
+# client/ unless a package overrides it.
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    # Generated protobuf Dart is committed but not hand-authored, do not lint it.
+    - "**/generated/**"
+    - "**/*.pb.dart"
+    - "**/*.pbenum.dart"
+    - "**/*.pbjson.dart"
+    - "**/*.pbserver.dart"

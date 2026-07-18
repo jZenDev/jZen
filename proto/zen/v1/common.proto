@@ -4,7 +4,7 @@ package zen.v1;
 
 // Shared model types used across jZen endpoints. Canonical source of truth; the Java,
 // Dart, and TypeScript equivalents are generated from here. Never hand-edit generated
-// output -- edit this and run `task sync:contracts`.
+// output - edit this and run `task sync:contracts`.
 
 option java_package = "dev.zen.proto.v1";
 option java_multiple_files = true;

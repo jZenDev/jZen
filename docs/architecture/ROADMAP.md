@@ -43,7 +43,7 @@ Delivered.
   proto3 JSON, both echoing the negotiated `X-Zen-Transport` header; no header defaults to
   JSON.
 
-## Step 2 — Core Dart packages ▶
+## Step 2 — Core Dart packages ✅
 
 Port the foundation, Firestore-free.
 
@@ -59,8 +59,21 @@ Port the foundation, Firestore-free.
   mandatory for the client. Rename `DZ_*` build defines → `ZEN_*`.
 - Land packages flat under `client/` and add each to `client/pubspec.yaml`'s `workspace:`
   list as it arrives.
+- **Verified:** all three landed flat under `client/` and registered in the workspace at
+  `0.1.0`. The `X-DZ-Transport` → `X-Zen-Transport` header, the `msgpack` → `protobuf`
+  binary codec (generated Dart messages committed under
+  `client/zen_transport/lib/src/generated/`, `writeToBuffer`/`toProto3Json`), and the
+  compile-time `selectDefaultCodec()` selector are all in place; the `ZenTransport` facade,
+  the Shelf middleware, the duplicate barrels, the envelope, and the `shelf` dep are gone.
+  Both **TA-6** bugs are fixed (default codec via `selectDefaultCodec`; a decode failure
+  surfaces a `ZenError` from `common.proto`, never `null`) and **TA-3** (localization is
+  Dart-pure, `flutter` dev-only). `task doctor` is green; `task build:client` analyzes
+  clean; `task test:client` passes 179 tests (`zen_core` 85, `zen_localization` 55,
+  `zen_transport` 39); `task test:client:matrix` proves the codec selector per
+  `ZEN_ENV`/platform (dev→json, prd-native→protobuf, web→json); `task sync:contracts`
+  reports "Contracts in sync" and its drift gate rejects a hand-edited generated file.
 
-## Step 3 — Identity on Supabase ☐
+## Step 3 — Identity on Supabase ▶
 
 - Backend: port `SupabaseAuthClient`, `SessionService` (un-hacked, **TA-4**),
   `RoleAugmentor`, and the `User` entity into `zen-identity`.

@@ -1,0 +1,32 @@
+name: zen_transport
+description: >-
+  Dual-mode transport for the jZen client: one header (X-Zen-Transport) negotiates between
+  canonical proto3 JSON and Protobuf binary over the same typed endpoints.
+# Lockstep with the product version - see docs/architecture/STANDARDS.md "Versioning".
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+
+resolution: workspace
+
+# Re-architected from ../DartZen/packages/dartzen_transport: the hand-written MessagePack
+# binary codec is replaced by Protobuf (protobuf runtime; protoc_plugin generates the
+# messages under lib/src/generated), and the {id,status,data,error} envelope is dropped in
+# favor of typed proto bodies. See docs/architecture/BLUEPRINT.md "The dual-mode transport
+# seam".
+dependencies:
+  # fixnum backs the Int64 fields the protobuf runtime generates (e.g. HealthStatus.timestampMs).
+  fixnum: ^1.1.0
+  http: ^1.2.2
+  meta: ^1.11.0
+  protobuf: ^6.0.0
+  web_socket_channel: ^3.0.1
+  zen_core:
+    path: ../zen_core
+
+dev_dependencies:
+  lints: ^6.0.0
+  stream_channel: ^2.1.0
+  test: ^1.25.0

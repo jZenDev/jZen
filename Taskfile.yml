@@ -93,7 +93,7 @@ tasks:
       - pnpm install
 
   # ---------------------------------------------------------------------------
-  # Code generation -- proto is upstream, OpenAPI is derived
+  # Code generation - proto is upstream, OpenAPI is derived
   # ---------------------------------------------------------------------------
   #
   #   proto/zen/v1/*.proto            (canonical models)
@@ -125,7 +125,7 @@ tasks:
         shopt -s nullglob
         protos=({{.PROTO_DIR}}/zen/v1/*.proto)
         if [ ${#protos[@]} -eq 0 ]; then
-          echo "No .proto files yet -- skipping Dart codegen."
+          echo "No .proto files yet, skipping Dart codegen."
           exit 0
         fi
         command -v protoc >/dev/null 2>&1 || { echo "protoc not found. Run: task doctor"; exit 1; }
@@ -165,7 +165,7 @@ tasks:
 
       A failure means a generated file was hand-edited, or someone changed a .proto
       without regenerating. Fix by running `task generate:proto generate:api` and
-      committing the result -- never by editing generated output.
+      committing the result, never by editing generated output.
 
       This is the gate that blocks out-of-sync bugs. Wire it into CI.
     cmds:
@@ -181,7 +181,7 @@ tasks:
       - |
         set -e
         if ! git rev-parse --git-dir >/dev/null 2>&1; then
-          echo "Not a git repository -- cannot verify contract sync."; exit 1
+          echo "Not a git repository, cannot verify contract sync."; exit 1
         fi
         dirty=$(git status --porcelain -- '*.generated.ts' '*.pb.dart' '*.pbjson.dart' '*.pbenum.dart' 'proto/**')
         if [ -n "$dirty" ]; then
@@ -223,10 +223,13 @@ tasks:
         -pl zen-app -am
 
   build:client:
-    desc: Analyze the Dart workspace
+    desc: Resolve and analyze the Dart/Flutter workspace
     dir: "{{.CLIENT_DIR}}"
     cmds:
-      - dart pub get
+      # The workspace holds Flutter packages (zen_localization keeps flutter as a dev
+      # dependency, TA-3), so it is resolved with `flutter pub get`. `dart analyze` then
+      # analyzes every member.
+      - flutter pub get
       - dart analyze
 
   build:admin:
@@ -253,15 +256,45 @@ tasks:
     dir: "{{.CLIENT_DIR}}"
     silent: true
     cmds:
-      # A failing test fails here -- jZen does not swallow test failures.
+      # A failing test fails here - jZen does not swallow test failures.
+      #
+      # Neither `dart test` nor `flutter test` aggregates a pub workspace, so we iterate the
+      # member packages ourselves. A package that depends on Flutter (dep or dev, e.g.
+      # zen_localization) is run with `flutter test`; a pure-Dart package with `dart test`.
       - |
         set -e
-        # A "package" is a directory with a pubspec.yaml, not just any directory.
-        if [ -z "$(find . -name pubspec.yaml -not -path './pubspec.yaml' 2>/dev/null | head -1)" ]; then
-          echo "No Dart packages migrated yet -- nothing to test. (ROADMAP step 2.)"
-          exit 0
+        found=0
+        for pubspec in $(find . -mindepth 2 -name pubspec.yaml -not -path '*/.dart_tool/*' | sort); do
+          pkgdir=$(dirname "$pubspec")
+          [ -d "$pkgdir/test" ] || continue
+          found=1
+          if grep -qE '^[[:space:]]*(flutter|flutter_test):' "$pubspec"; then
+            echo ">> flutter test ($pkgdir)"
+            (cd "$pkgdir" && flutter test)
+          else
+            echo ">> dart test ($pkgdir)"
+            (cd "$pkgdir" && dart test)
+          fi
+        done
+        if [ "$found" -eq 0 ]; then
+          echo "No Dart packages migrated yet - nothing to test. (ROADMAP step 2.)"
         fi
-        dart test
+
+  test:client:matrix:
+    desc: Recompile-per-env/platform matrix for the transport codec selector (TA-7)
+    dir: "{{.CLIENT_DIR}}/zen_transport"
+    silent: true
+    cmds:
+      # selectDefaultCodec() is compile-time: dev -> json (any platform), prd native ->
+      # protobuf, prd web -> json. Each row recompiles with a different ZEN_ENV / platform.
+      - |
+        set -e
+        echo ">> ZEN_ENV=dev  (VM)   -> json"
+        dart --define=ZEN_ENV=dev test test/zen_codec_selector_test.dart
+        echo ">> ZEN_ENV=prd  (VM)   -> protobuf"
+        dart --define=ZEN_ENV=prd test test/zen_codec_selector_test.dart
+        echo ">> ZEN_ENV=prd  (web)  -> json"
+        dart --define=ZEN_ENV=prd test test/zen_codec_selector_test.dart -p chrome
 
   test:admin:
     desc: Typecheck the admin panel
@@ -316,7 +349,7 @@ tasks:
           200, and min=0 means no warm instance to pay for (cold starts are accepted).
           Because there is at most one instance, in-process state (rate limiting, caches)
           is valid by construction. Raising max above 1 is the trigger to move such state
-          to Postgres/Redis -- not the other way around. See STANDARDS.md.
+          to Postgres/Redis, not the other way around. See STANDARDS.md.
 
       Requires: gcloud auth, and the secrets below present in Secret Manager.
     cmds:

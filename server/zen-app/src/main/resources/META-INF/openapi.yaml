@@ -1,7 +1,7 @@
 # Static OpenAPI base document.
 #
 # This is the resolution to TA-1 (BLUEPRINT.md): SmallRye cannot introspect a protobuf
-# class into a clean schema -- it emits 130+ builder-internal schemas -- so model
+# class into a clean schema, it emits 130+ builder-internal schemas, so model
 # component schemas are supplied here instead, and SmallRye merges its annotation-scanned
 # *paths* on top of this base.
 #

@@ -1,7 +1,7 @@
 # Java / Maven (Quarkus backend).
 
 # Build output. Generated protobuf Java DTOs live under target/generated-sources and are
-# regenerated from proto/ on every build, so they are intentionally NOT committed -- the
+# regenerated from proto/ on every build, so they are intentionally NOT committed, the
 # committed contract artifacts are the Dart/TS ones the sync:contracts gate tracks.
 target/
 
@@ -9,4 +9,4 @@ target/
 .quarkus/
 *.class
 
-# The Maven wrapper (mvnw, mvnw.cmd, .mvn/wrapper/) IS committed -- do not ignore it.
+# The Maven wrapper (mvnw, mvnw.cmd, .mvn/wrapper/) IS committed, do not ignore it.

@@ -9,7 +9,7 @@ Philosophy is in [`MANIFESTO.md`](./MANIFESTO.md); sequencing in
 ```
 jZen/
 ├── Taskfile.yml              # the single orchestrator (replaces DartZen's Melos)
-├── proto/zen/v1/             # CANONICAL models -- *.proto (health, common, ...)
+├── proto/zen/v1/             # CANONICAL models - *.proto (health, common, ...)
 ├── server/                   # multi-module Maven backend (Java)
 │   ├── pom.xml               # aggregator, <packaging>pom</packaging>
 │   ├── zen-proto/            # generated protobuf DTOs; leaf (only protobuf-java)

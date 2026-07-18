@@ -7,5 +7,5 @@ dist/
 *.local
 
 # Committed on purpose (do NOT ignore):
-#   pnpm-lock.yaml            -- reproducible installs
-#   src/api/schema.generated.ts -- generated from openapi.json, tracked per STANDARDS.md
+#   pnpm-lock.yaml            - reproducible installs
+#   src/api/schema.generated.ts - generated from openapi.json, tracked per STANDARDS.md

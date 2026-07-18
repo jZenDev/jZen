@@ -4,7 +4,7 @@ package zen.v1;
 
 // Canonical model. This file is the single source of truth for the HealthStatus shape;
 // the Java DTO, the Dart message, the OpenAPI schema, and the admin TypeScript type are
-// all generated from it. Never hand-edit the generated output -- edit this and run
+// all generated from it. Never hand-edit the generated output - edit this and run
 // `task sync:contracts`.
 
 option java_package = "dev.zen.proto.v1";

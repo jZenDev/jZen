@@ -136,23 +136,43 @@ committed generated file changed — the gate that blocks out-of-sync bugs.
 
 ## Authentication
 
-Ported from BugEater, which already runs Supabase JWT:
+Ported from BugEater, which already runs Supabase JWT. Landed in ROADMAP step 3.
 
 - `SupabaseAuthClient` — a `@RegisterRestClient` interface with `@CircuitBreaker`/
-  `@Retry`/`@Timeout` per call (`../BugEater/.../auth/SupabaseAuthClient.java`).
+  `@Retry`/`@Timeout` per call (`../BugEater/.../auth/SupabaseAuthClient.java`),
+  re-pointed at Supabase Auth (GoTrue) REST: `POST /token` (login and refresh, by
+  `grant_type`), `/signup`, `/recover`, `PUT /user`.
 - JWT verified against Supabase JWKS with ES256
   (`../BugEater/.../application.properties:64-69`).
 - Role loaded from the `users` table by a `SecurityIdentityAugmentor`, not from the JWT
   (`../BugEater/.../application/security/RoleAugmentor.java`).
-- The `User` entity is adopted verbatim — its `users` table has zero learning-domain
-  columns (`../BugEater/.../user/User.java`).
+- The `User` entity is adopted from `../BugEater/.../user/User.java` — its `users` table
+  has zero learning-domain columns (see **Persistence** for the compliance columns it does
+  keep).
+
+**REST surface.** `AuthResource` lives in `zen-app` (not `zen-identity`), because zen-app is
+the only `quarkus`-packaged module and owns the REST surface, SmallRye OpenAPI, and the
+static `META-INF/openapi.yaml` merge — the `HealthResource` precedent. zen-identity stays a
+pure library of auth beans, the `User` entity, and the MapStruct `User` → `Identity` mapper,
+discovered from its jar via a Jandex index. The endpoints back DartZen's `IdentityRepository`
+(TA-5): `POST /api/v1/auth/{login,register,restore-password,logout,refresh}` and
+`GET /api/v1/auth/identity`. Each returns a typed proto (`Response` + `@Schema(ref=...)`);
+errors return the shared `ZenError` proto via an exception mapper.
+
+**Session cookies and refresh.** Login/register/refresh set `zen_access_token` (httpOnly,
+1 h) and `zen_refresh_token` (httpOnly, 7 d), plus a JS-readable `XSRF-TOKEN`. SmallRye JWT
+reads the access cookie directly (`mp.jwt.token.cookie`, `proactive=true`), so an
+authenticated request is a plain cookie request; `POST /auth/refresh` exchanges the refresh
+cookie via Supabase (`grant_type=refresh_token`) and re-issues the cookies.
 
 **Simplified on the way in (TA-4):** BugEater packs `"access|refresh"` into a single
-`__session` cookie and sets `quarkus.http.auth.proactive=false`
-(`application.properties:70-77`). Both exist *only* because Firebase Hosting strips
-every cookie except `__session` at the CDN edge (its ADR-034). jZen serves Cloud Run
-directly with no Firebase Hosting, so it uses normally-named cookies
-(`zen_access_token`), `mp.jwt.token.cookie`, and `proactive=true` — the standard path.
+`__session` cookie, sets `quarkus.http.auth.proactive=false`, and carries a manual
+`SessionFilter` to unpack and refresh it (`application.properties:70-77`). All three exist
+*only* because Firebase Hosting strips every cookie except `__session` at the CDN edge (its
+ADR-034). jZen serves Cloud Run directly with no Firebase Hosting, so it uses normally-named
+cookies (`zen_access_token`), `mp.jwt.token.cookie`, and `proactive=true` — the standard
+SmallRye-JWT path. The `SessionFilter` is therefore **not ported**; SmallRye JWT authenticates
+from the cookie, and the `RoleAugmentor` loads the role straight from the `users` table.
 
 ## Email
 
@@ -180,10 +200,32 @@ bundles, no code change per template.
 
 PostgreSQL via Hibernate Panache (active-record; BugEater has 19 `PanacheEntityBase` and
 zero repository classes). Flyway migrates at start
-(`../BugEater/.../application.properties:44-45`). Only BugEater's infrastructure
-migrations are relevant — `V1__init.sql`, `V9__enable_rls.sql` — the rest (V14–V27) are
-~400 KB of course content. The local database is the Supabase stack on port 54322
-(`supabase/config.toml`).
+(`../BugEater/.../application.properties:44-45`) and is the single migration authority —
+`supabase/migrations/` stays empty so there is never a second migration system on one
+database. Only BugEater's infrastructure migrations are relevant — its `V1__init.sql`
+(the `users` table) and `V9__enable_rls.sql`. The other migrations (V2–V27) are a mix, not
+one block of content: most add or seed learning-domain schema (courses, lessons, quizzes,
+challenges, news, wishlist), but a few alter the `users` table itself — `V2` adds
+`analytics_consent`, `V18` adds `is_premium` and the deletion-warning timestamps. jZen
+carries none of them wholesale; it folds the users-table columns (including those later
+compliance additions, see below) into its own consolidated
+`zen-identity/db/migration/V1__init_identity.sql`, with RLS in `V2__row_level_security.sql`.
+The local database is the Supabase stack on port 54322 (`supabase/config.toml`).
+
+**Reconciling with Supabase `auth.users`.** Supabase owns authentication (`auth.users`);
+the jZen `users` table is the application profile, keyed by the same id (the JWT `sub`),
+upserted on first login. It carries **no** foreign key to `auth.users`: the `@QuarkusTest`
+Dev Services database is plain PostgreSQL with no `auth` schema, and Supabase owns that
+table's lifecycle. For the same reason the RLS migration (`auth.uid()` and the `auth` schema
+exist only on Supabase) is guarded on `to_regprocedure('auth.uid()')` — it enables RLS and
+the owner policy on Supabase, and is a no-op on plain PostgreSQL so tests still migrate.
+
+**Compliance columns are first-class.** The `users` table has zero learning-domain columns,
+but it deliberately keeps two cross-cutting product concerns from the donor entity: **payment**
+(`is_premium`) and **GDPR / data retention** (`analytics_consent`, `deletion_warning_sent_at`,
+`final_warning_sent_at`). These are defaulted/nullable now and their behavior is wired in
+later steps (email deletion warnings in step 6, payments in step 7); keeping the columns from
+the start avoids a schema migration when that behavior lands.
 
 ## Deployment
 

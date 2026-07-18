@@ -1,0 +1,42 @@
+name: zen_ui_identity
+description: UI identity flows and components for jZen, respecting domain purity and Zen architecture.
+# Lockstep with the product version - see docs/architecture/STANDARDS.md "Versioning".
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+
+resolution: workspace
+
+# Ported from ../DartZen/packages/dartzen_ui_identity, adopted as-is: it is provider-agnostic
+# (zero Firebase references), so the Supabase re-point is pure wiring in the consuming app -
+# override identityRepositoryProvider with a SupabaseIdentityRepository (see example/).
+dependencies:
+  zen_core:
+    path: ../zen_core
+  zen_identity:
+    path: ../zen_identity
+  zen_localization:
+    path: ../zen_localization
+  zen_ui_navigation:
+    path: ../zen_ui_navigation
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.0.3
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+  mocktail: ^1.0.4
+
+topics:
+  - identity
+  - ui
+  - flutter
+  - zen
+
+flutter:
+  assets:
+    - lib/src/l10n/

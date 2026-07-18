@@ -261,8 +261,17 @@ tasks:
       # Neither `dart test` nor `flutter test` aggregates a pub workspace, so we iterate the
       # member packages ourselves. A package that depends on Flutter (dep or dev, e.g.
       # zen_localization) is run with `flutter test`; a pure-Dart package with `dart test`.
+      #
+      # Client config is compile-time (TA-7): the UI packages read ZEN_PLATFORM via
+      # String.fromEnvironment, and ZenNavigation asserts it is set. Flutter widget tests are
+      # therefore compiled with the host platform define, mirroring how the real app builds.
       - |
         set -e
+        case "$(uname -s)" in
+          Darwin) host_platform=macos ;;
+          Linux)  host_platform=linux ;;
+          *)      host_platform=linux ;;
+        esac
         found=0
         for pubspec in $(find . -mindepth 2 -name pubspec.yaml -not -path '*/.dart_tool/*' | sort); do
           pkgdir=$(dirname "$pubspec")
@@ -270,7 +279,7 @@ tasks:
           found=1
           if grep -qE '^[[:space:]]*(flutter|flutter_test):' "$pubspec"; then
             echo ">> flutter test ($pkgdir)"
-            (cd "$pkgdir" && flutter test)
+            (cd "$pkgdir" && flutter test --dart-define=ZEN_ENV=dev --dart-define=ZEN_PLATFORM="$host_platform")
           else
             echo ">> dart test ($pkgdir)"
             (cd "$pkgdir" && dart test)

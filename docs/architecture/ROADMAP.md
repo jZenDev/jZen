@@ -73,15 +73,34 @@ Port the foundation, Firestore-free.
   `ZEN_ENV`/platform (dev→json, prd-native→protobuf, web→json); `task sync:contracts`
   reports "Contracts in sync" and its drift gate rejects a hand-edited generated file.
 
-## Step 3 — Identity on Supabase ▶
+## Step 3 — Identity on Supabase ✅
 
-- Backend: port `SupabaseAuthClient`, `SessionService` (un-hacked, **TA-4**),
-  `RoleAugmentor`, and the `User` entity into `zen-identity`.
+- Backend: port `SupabaseAuthClient` (re-pointed at Supabase Auth / GoTrue REST),
+  `SessionService` (un-hacked, **TA-4** — normal `zen_access_token` cookie, no `__session`
+  packing, no `SessionFilter`), `RoleAugmentor` (role loaded from the `users` table, not the
+  JWT), and the `User` entity into `zen-identity`. A `MapStruct` mapper maps `User` → the
+  `Identity` proto; the `AuthResource` (login, register, restore-password, logout, **refresh**,
+  get-current-identity) lives in `zen-app` and returns typed proto, with a `ZenError` error
+  path. Flyway `V1__init_identity.sql` + `V2__row_level_security.sql` (the RLS guarded on
+  `auth.uid()` so it is a no-op on the Dev Services database). The `users` table keeps the
+  payment (`is_premium`) and GDPR (`analytics_consent`, `deletion_warning_*`) compliance
+  columns as first-class scaffold concerns (see [`BLUEPRINT.md`](./BLUEPRINT.md) "Persistence").
 - Dart: `zen_identity` ← `dartzen_identity`, re-pointed from Identity Toolkit to
-  Supabase Auth, implementing the declared `IdentityRepository` interface (**TA-5**).
-- `zen_ui_navigation` ← `dartzen_ui_navigation` (adopted as-is) and `zen_ui_identity` ←
-  `dartzen_ui_identity` (re-pointed at the Supabase session store), plus their two
-  example apps.
+  Supabase Auth, with a `SupabaseIdentityRepository` that implements the declared
+  `IdentityRepository` interface exactly (**TA-5**) over `zen_transport`'s `ZenClient`,
+  discarding the Firestore repository/mapper/token-verifier.
+- `zen_ui_navigation` ← `dartzen_ui_navigation` (adopted as-is; `dz*` platform constants and
+  path deps renamed) and `zen_ui_identity` ← `dartzen_ui_identity` (provider-agnostic; the
+  Supabase re-point is a one-line `identityRepositoryProvider` override in the app), plus
+  their two example apps. New proto: `proto/zen/v1/identity.proto`
+  (`Identity`, `LoginRequest`, `RegisterRequest`, `RestorePasswordRequest`).
+- **Verified:** `task test:server` is green — `AuthResourceTest` round-trips
+  login/register/logout as typed proto in **both** transport modes, asserts the TA-4 cookie
+  (`zen_access_token` / `zen_refresh_token`, no `__session`, no `access|refresh` packing) and
+  a `ZenError` error path, and `RoleAugmentorTest` proves the role is loaded from the `users`
+  table (no JWT present). `task test:client` passes the ported identity/UI suites and the
+  `SupabaseIdentityRepository` tests. `task sync:contracts` regenerates and its drift gate is
+  green; `dart analyze` is clean.
 
 ## Step 4 — the reference app: showcase + living test stand ☐
 

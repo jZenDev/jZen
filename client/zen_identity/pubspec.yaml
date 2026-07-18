@@ -1,0 +1,33 @@
+name: zen_identity
+description: >-
+  Identity capability for the jZen client: the IdentityRepository contract and its
+  Supabase-backed implementation, called over zen_transport's dual-mode ZenClient.
+# Lockstep with the product version - see docs/architecture/STANDARDS.md "Versioning".
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+
+resolution: workspace
+
+# Ported from ../DartZen/packages/dartzen_identity: the provider-agnostic contracts and
+# domain models are kept; the Firestore repository/mapper and the GCP Identity Toolkit token
+# verifier are discarded (Firebase is out of jZen). The new SupabaseIdentityRepository
+# implements the declared IdentityRepository over the zen-identity Supabase endpoints (TA-5).
+dependencies:
+  meta: ^1.11.0
+  # Standard, inspectable email validation (a project value; used before hitting the network).
+  email_validator: ^3.0.0
+  # For the GeneratedMessage type shared by the request bodies (same runtime zen_transport uses).
+  protobuf: ^6.0.0
+  zen_core:
+    path: ../zen_core
+  zen_transport:
+    path: ../zen_transport
+
+dev_dependencies:
+  # http.MockClient backs the SupabaseIdentityRepository test (no live backend).
+  http: ^1.2.2
+  lints: ^6.0.0
+  test: ^1.25.0

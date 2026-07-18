@@ -1,0 +1,34 @@
+name: zen_ui_identity_example
+description: Example app for zen_ui_identity.
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.0.3
+  go_router: ^14.0.0
+
+  zen_core:
+    path: ../../zen_core
+  zen_identity:
+    path: ../../zen_identity
+  zen_localization:
+    path: ../../zen_localization
+  zen_ui_navigation:
+    path: ../../zen_ui_navigation
+  zen_ui_identity:
+    path: ../
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true

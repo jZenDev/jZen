@@ -4,6 +4,267 @@
  */
 
 export interface paths {
+    "/api/v1/auth/identity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Return the current identity, or 204 when anonymous */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The authenticated identity */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Identity"];
+                        "application/x-protobuf": components["schemas"]["Identity"];
+                    };
+                };
+                /** @description No active session */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Authenticate with email and password */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["LoginRequest"];
+                    "application/x-protobuf": components["schemas"]["LoginRequest"];
+                };
+            };
+            responses: {
+                /** @description Authenticated; session cookies set */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Identity"];
+                        "application/x-protobuf": components["schemas"]["Identity"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Terminate the current session */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session cookies cleared */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Exchange the refresh-token cookie for a fresh session */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: {
+                    zen_refresh_token?: string;
+                };
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Refreshed; new session cookies set */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Identity"];
+                        "application/x-protobuf": components["schemas"]["Identity"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register a new identity with email and password */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RegisterRequest"];
+                    "application/x-protobuf": components["schemas"]["RegisterRequest"];
+                };
+            };
+            responses: {
+                /** @description Registered; session cookies set when Supabase returns a session */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Identity"];
+                        "application/x-protobuf": components["schemas"]["Identity"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/restore-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Trigger the password-recovery email */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["RestorePasswordRequest"];
+                    "application/x-protobuf": components["schemas"]["RestorePasswordRequest"];
+                };
+            };
+            responses: {
+                /** @description Recovery email dispatched if the address exists */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -56,6 +317,38 @@ export interface components {
              * @description Server wall-clock time in ms since the Unix epoch.
              */
             timestampMs?: number;
+        };
+        /** @description The authenticated identity / session payload returned by the auth endpoints. An Identity with an empty id denotes "no session". */
+        Identity: {
+            /** @description Stable identity id (the Supabase auth.users id / JWT sub). */
+            id?: string;
+            /** @description One of "pending", "active", "revoked", "disabled". */
+            lifecycleState?: string;
+            /** @description Optional human-readable reason for the current lifecycle state. */
+            lifecycleReason?: string;
+            /** @description Authority roles loaded from the users table (never from the JWT). */
+            roles?: string[];
+            /** @description Fine-grained capabilities, if any. */
+            capabilities?: string[];
+            /**
+             * Format: int64
+             * @description Creation time in ms since the Unix epoch.
+             */
+            createdAtMs?: number;
+        };
+        /** @description Body for POST /api/v1/auth/login. */
+        LoginRequest: {
+            email?: string;
+            password?: string;
+        };
+        /** @description Body for POST /api/v1/auth/register. */
+        RegisterRequest: {
+            email?: string;
+            password?: string;
+        };
+        /** @description Body for POST /api/v1/auth/restore-password. */
+        RestorePasswordRequest: {
+            email?: string;
         };
     };
     responses: never;

@@ -30,3 +30,54 @@ components:
           type: integer
           format: int64
           description: Server wall-clock time in ms since the Unix epoch.
+    Identity:
+      type: object
+      description: >-
+        The authenticated identity / session payload returned by the auth endpoints. An
+        Identity with an empty id denotes "no session".
+      properties:
+        id:
+          type: string
+          description: Stable identity id (the Supabase auth.users id / JWT sub).
+        lifecycleState:
+          type: string
+          description: One of "pending", "active", "revoked", "disabled".
+        lifecycleReason:
+          type: string
+          description: Optional human-readable reason for the current lifecycle state.
+        roles:
+          type: array
+          items:
+            type: string
+          description: Authority roles loaded from the users table (never from the JWT).
+        capabilities:
+          type: array
+          items:
+            type: string
+          description: Fine-grained capabilities, if any.
+        createdAtMs:
+          type: integer
+          format: int64
+          description: Creation time in ms since the Unix epoch.
+    LoginRequest:
+      type: object
+      description: Body for POST /api/v1/auth/login.
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+    RegisterRequest:
+      type: object
+      description: Body for POST /api/v1/auth/register.
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+    RestorePasswordRequest:
+      type: object
+      description: Body for POST /api/v1/auth/restore-password.
+      properties:
+        email:
+          type: string

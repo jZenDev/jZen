@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package zen.v1;
+
+// Canonical identity models for the Supabase auth flows (ROADMAP step 3). The Java DTOs,
+// the Dart messages, the OpenAPI schemas, and the admin TypeScript types are all generated
+// from this file. Never hand-edit the generated output - edit this and run
+// `task sync:contracts`.
+//
+// The message set mirrors the identity contract declared in DartZen's
+// ../DartZen/packages/dartzen_identity/lib/src/identity_contracts.dart (IdentityRepository +
+// IdentityContract): one Identity message plus a request message per write flow. Errors use
+// the shared ZenError in common.proto; there is no {id,status,data,error} envelope (TA-2).
+
+option java_package = "dev.zen.proto.v1";
+option java_multiple_files = true;
+option java_outer_classname = "IdentityProto";
+
+// The authenticated identity / session payload. Returned by login, register, refresh, and
+// the get-current-identity probe. Maps to DartZen's IdentityContract: `id`, a lifecycle
+// (state + optional reason), an authority (roles + capabilities), and a creation timestamp.
+// An Identity with an empty `id` denotes "no session" (the anonymous probe result).
+message Identity {
+  // Stable identity id (the Supabase auth.users id / JWT `sub`).
+  string id = 1;
+  // Lifecycle state: one of "pending", "active", "revoked", "disabled".
+  string lifecycle_state = 2;
+  // Optional human-readable reason for the current lifecycle state.
+  string lifecycle_reason = 3;
+  // Authority roles loaded from the users table (never from the JWT). See RoleAugmentor.
+  repeated string roles = 4;
+  // Fine-grained capabilities, if any. Empty for the role-only model ported from BugEater.
+  repeated string capabilities = 5;
+  // Creation time in milliseconds since the Unix epoch.
+  int64 created_at_ms = 6;
+}
+
+// POST /api/v1/auth/login request body.
+message LoginRequest {
+  string email = 1;
+  string password = 2;
+}
+
+// POST /api/v1/auth/register request body.
+message RegisterRequest {
+  string email = 1;
+  string password = 2;
+}
+
+// POST /api/v1/auth/restore-password request body. Triggers the Supabase recovery email.
+message RestorePasswordRequest {
+  string email = 1;
+}
+
+// logout, refresh, and the get-current-identity probe take no request body: logout and
+// refresh act on the session cookies, and the probe reads the authenticated SecurityIdentity.

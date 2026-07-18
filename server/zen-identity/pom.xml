@@ -39,6 +39,12 @@
       <groupId>dev.zen</groupId>
       <artifactId>zen-transport</artifactId>
     </dependency>
+    <!-- Generated Identity proto message the MapStruct mapper targets. Arrives transitively
+         via zen-transport too, but declared directly because this module names it. -->
+    <dependency>
+      <groupId>dev.zen</groupId>
+      <artifactId>zen-proto</artifactId>
+    </dependency>
 
     <!-- Supabase JWT verified against JWKS (ES256). BugEater application.properties:64-69. -->
     <dependency>
@@ -86,6 +92,13 @@
       <artifactId>quarkus-test-security</artifactId>
       <scope>test</scope>
     </dependency>
+    <!-- Mocks the @RegisterRestClient SupabaseAuthClient in unit tests (real Supabase is
+         exercised end to end by zen_demo in ROADMAP step 4). -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-junit5-mockito</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -102,6 +115,23 @@
             </path>
           </annotationProcessorPaths>
         </configuration>
+      </plugin>
+      <!-- Generates META-INF/jandex.idx so Quarkus discovers this module's CDI beans and the
+           RoleAugmentor (a SecurityIdentityAugmentor) and the User @Entity from the jar when
+           it is a dependency of zen-app. Without an index they are silently ignored.
+           zen-transport is the reference for this. -->
+      <plugin>
+        <groupId>io.smallrye</groupId>
+        <artifactId>jandex-maven-plugin</artifactId>
+        <version>3.2.7</version>
+        <executions>
+          <execution>
+            <id>make-index</id>
+            <goals>
+              <goal>jandex</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>

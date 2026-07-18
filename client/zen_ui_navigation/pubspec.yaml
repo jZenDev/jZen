@@ -1,0 +1,33 @@
+name: zen_ui_navigation
+description: Adaptive navigation layer for jZen.
+# Lockstep with the product version - see docs/architecture/STANDARDS.md "Versioning".
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+
+resolution: workspace
+
+# Ported from ../DartZen/packages/dartzen_ui_navigation, adopted as-is: only the dartzen_*
+# path deps and the dz* platform constants were renamed to their zen_* equivalents.
+dependencies:
+  zen_core:
+    path: ../zen_core
+  zen_localization:
+    path: ../zen_localization
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  lints: ^6.0.0
+  mocktail: ^1.0.0
+  test: ^1.25.0
+
+topics:
+  - navigation
+  - adaptive
+  - zen
+  - flutter

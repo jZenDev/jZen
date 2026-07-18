@@ -1,0 +1,31 @@
+{
+  "login.title": "Log In",
+  "register.title": "Sign Up",
+  "restore.password.title": "Reset Password",
+  "email.label": "Email",
+  "password.label": "Password",
+  "confirm.password.label": "Confirm Password",
+  "login.button": "Log In",
+  "register.button": "Create Account",
+  "send.reset.link.button": "Send Link",
+  "profile.title": "Profile",
+  "logout.button": "Log Out",
+  "roles.title": "Your Roles",
+  "unknown.error": "An unknown error occurred.",
+  "validation.required": "Required",
+  "validation.email": "Invalid email",
+  "validation.password.mismatch": "Passwords do not match",
+  "error.unauthorized": "Invalid credentials or unauthorized access.",
+  "error.not_found": "Requested resource not found.",
+  "error.validation": "Validation failed. Please check your input.",
+  "error.conflict": "A conflict occurred (e.g., user already exists).",
+  "restore.password.info": "Enter your email address and we'll send you a link to reset your password.",
+
+  "reset.link.sent.success": "Reset link sent to your email",
+  "already.have.account": "Already have an account?",
+  "not.authenticated": "Not authenticated",
+  "roles.label": "Roles:",
+  "profile.avatar.label": "Profile avatar",
+  "back.button.tooltip": "Go back"
+}
+

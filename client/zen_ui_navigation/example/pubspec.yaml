@@ -1,0 +1,34 @@
+name: zen_ui_navigation_example
+description: "Example of using zen_ui_navigation"
+publish_to: 'none'
+
+version: 0.1.0
+
+environment:
+  sdk: '>=3.10.3 <4.0.0'
+
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Navigation package from workspace
+  zen_ui_navigation:
+    path: ../
+
+  zen_localization:
+    path: ../../zen_localization
+
+  flutter_riverpod: ^3.0.3   # State management
+  cupertino_icons: ^1.0.8 # Icons
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - lib/l10n/

@@ -265,6 +265,128 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/demo/ping": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Liveness probe returning a message localized from Accept-Language */
+        get: {
+            parameters: {
+                query?: never;
+                header?: {
+                    "Accept-Language"?: string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Server is alive; message localized to the request locale */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Ping"];
+                        "application/x-protobuf": components["schemas"]["Ping"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/demo/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The authenticated user's demo profile */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The current user's profile */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["DemoProfile"];
+                        "application/x-protobuf": components["schemas"]["DemoProfile"];
+                    };
+                };
+                /** @description No active session (ZenError) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/demo/terms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Localized Markdown terms of service */
+        get: {
+            parameters: {
+                query?: never;
+                header?: {
+                    "Accept-Language"?: string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Terms content for the request locale */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Terms"];
+                        "application/x-protobuf": components["schemas"]["Terms"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -349,6 +471,34 @@ export interface components {
         /** @description Body for POST /api/v1/auth/restore-password. */
         RestorePasswordRequest: {
             email?: string;
+        };
+        /** @description GET /api/v1/demo/ping response; message localized from Accept-Language. */
+        Ping: {
+            /** @description Localized "server is alive" message. */
+            message?: string;
+            /**
+             * Format: int64
+             * @description Server wall-clock time in ms since the Unix epoch.
+             */
+            timestampMs?: number;
+        };
+        /** @description GET /api/v1/demo/terms response; localized Markdown terms content. */
+        Terms: {
+            /** @description Markdown document body for the requested locale. */
+            content?: string;
+            /** @description MIME type of content; the demo serves "text/markdown". */
+            contentType?: string;
+        };
+        /** @description GET /api/v1/demo/profile response; the authenticated user's demo profile. */
+        DemoProfile: {
+            /** @description Stable user id (the Supabase auth.users id / JWT sub). */
+            userId?: string;
+            /** @description Display name for the profile view. */
+            displayName?: string;
+            /** @description Account email. */
+            email?: string;
+            /** @description Optional free-text biography. */
+            bio?: string;
         };
     };
     responses: never;

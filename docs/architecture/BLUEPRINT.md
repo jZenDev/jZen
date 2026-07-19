@@ -107,6 +107,18 @@ typed proto messages directly.
 4. The response echoes `X-Zen-Transport`, matching DartZen's server behavior
    (`transport_middleware.dart` sets it on the way out).
 
+### The WebSocket surface (a first-class product feature)
+
+Alongside the request/response HTTP surface, jZen serves a **WebSocket** endpoint as a
+first-class part of the product, not a test fixture. The client side is `zen_transport`'s
+`ZenWebSocket`, which sends and receives typed proto messages via `ZenProtoCodec`; the server
+side is a Quarkus `quarkus-websockets-next` endpoint (landed with `zen_demo` in ROADMAP step 4
+as `/api/v1/demo/ws`). Unlike the HTTP surface, the socket is **single-format**: frames are
+binary Protobuf on every platform (the demo constructs `ZenWebSocket` with
+`ZenTransportFormat.protobuf`), so the server handler stays simple. The dual JSON/Protobuf
+negotiation is an HTTP concern; the socket carries one wire format. `zen_demo` demonstrates it
+and `task test:e2e` asserts it end to end.
+
 ### Removed in the port (dead weight in DartZen)
 
 - The duplicated `transport_middleware.dart` — it exists twice, near-verbatim

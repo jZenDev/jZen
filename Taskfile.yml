@@ -239,11 +239,12 @@ tasks:
       - pnpm build
 
   test:
-    desc: Run every test suite
+    desc: Run every test suite (test:e2e is the release gate - it hits the live stack)
     cmds:
       - task: test:server
       - task: test:client
       - task: test:admin
+      - task: test:e2e
 
   test:server:
     desc: Run backend tests
@@ -311,6 +312,78 @@ tasks:
     cmds:
       - pnpm exec tsc -b
 
+  test:e2e:
+    desc: The release gate - drive zen_demo's suite against the LIVE Quarkus + Supabase stack
+    summary: |
+      The living end-to-end test stand (ROADMAP step 4). No mocks: it boots the local Supabase
+      stack and the Quarkus server (dev profile, pointed at that stack), then runs zen_demo's
+      pure-Dart integration suite on the VM - register/login/logout via real Supabase, a typed
+      round trip in both transport modes, a localized surface, the WebSocket echo, and a ZenError
+      path - tears the server down, and propagates the suite's exit code. Wired into `task test`
+      and the CI release gate.
+
+      A pure-Dart VM suite (not flutter integration_test) keeps CI headless and cheap, and because
+      the VM is a dart:io platform it exercises the native session cookie jar for real. Runs the
+      app on ZEN_APP_PORT (default 8085) to dodge a leftover Supabase stack that may shadow :8080.
+    cmds:
+      - |
+        set -uo pipefail
+        PORT="${ZEN_APP_PORT:-8085}"
+        API="http://localhost:${PORT}"
+
+        # Tear the server down by whatever is bound to the test port, and wait for the port to
+        # actually free (Quarkus shuts down gracefully over a few seconds) so a following step
+        # cannot collide on it; escalate to SIGKILL if it lingers. Port-scoped and reliable
+        # across shells (go-task's interpreter can reparent `&`, so $! is not dependable), so a
+        # dev server on another port is left alone.
+        stop_server() {
+          # pkill on the jar path is the dependable killer (the gate uniquely runs this jar; a dev
+          # `run:server` uses quarkus:dev, not it). The port-scoped lsof pass is a belt-and-braces
+          # fallback that also waits for the port to actually free, escalating to SIGKILL.
+          pkill -f 'zen-app/target/quarkus-app/quarkus-run.jar' 2>/dev/null || true
+          port_pid=$(lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t 2>/dev/null || true)
+          [ -n "${port_pid}" ] && kill "${port_pid}" 2>/dev/null || true
+          for _ in $(seq 1 15); do
+            lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t >/dev/null 2>&1 || return 0
+            sleep 1
+          done
+          port_pid=$(lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t 2>/dev/null || true)
+          [ -n "${port_pid}" ] && kill -9 "${port_pid}" 2>/dev/null || true
+        }
+
+        set -e
+        # Bring up the local Supabase stack if it is not already running.
+        supabase status >/dev/null 2>&1 || supabase start
+        # GoTrue requires the anon key as the apikey header; hand it and the API URL to Quarkus.
+        eval "$(supabase status -o env | sed 's/^/export SB_/')"
+        export SUPABASE_URL="${SB_API_URL}"
+        export SUPABASE_KEY="${SB_ANON_KEY}"
+
+        # Build the runnable server (fast when already built), then start it on the test port.
+        ( cd {{.SERVER_DIR}} && ./mvnw -B -q -pl zen-app -am package -DskipTests )
+        set +e
+        java -Dquarkus.profile=dev -Dquarkus.http.port="${PORT}" \
+          -jar {{.SERVER_DIR}}/zen-app/target/quarkus-app/quarkus-run.jar &
+
+        # Wait for the server to answer /health before driving it.
+        ready=0
+        for _ in $(seq 1 60); do
+          if curl -sf "${API}/api/v1/health" >/dev/null 2>&1; then ready=1; break; fi
+          sleep 1
+        done
+        if [ "${ready}" -ne 1 ]; then echo "server did not become healthy on ${API}"; stop_server; exit 1; fi
+
+        # The suite runs on the VM (native), exercising the real cookie jar. We capture its exit
+        # code, tear the server down, and propagate the code - so the gate's result is the suite's.
+        # ZEN_API_URL is read at runtime by the suite (dart test does not forward --define to the
+        # compiled test); ZEN_ENV=dev keeps the default codec JSON where it does apply.
+        ( cd {{.CLIENT_DIR}}/zen_demo \
+          && ZEN_API_URL="${API}" dart --define=ZEN_ENV=dev \
+               test integration_test/e2e_test.dart )
+        rc=$?
+        stop_server
+        exit "${rc}"
+
   # ---------------------------------------------------------------------------
   # Run
   # ---------------------------------------------------------------------------
@@ -332,6 +405,59 @@ tasks:
     dir: "{{.SERVER_DIR}}"
     cmds:
       - ./mvnw -pl zen-app -am quarkus:dev
+
+  run:demo:
+    desc: Boot Supabase + the backend + the reference app (zen_demo) for a manual walkthrough
+    summary: |
+      The product showcase (ROADMAP step 4). Brings up the local Supabase stack, starts the
+      Quarkus server (dev profile) on ZEN_APP_PORT (default 8085, to dodge a leftover stack that
+      may shadow :8080), waits for /health, then runs zen_demo in Chrome pointed at it. The web
+      build runs on a fixed port so the server's CORS allowlist can permit its credentialed
+      requests. Ctrl-C stops the app; the server is torn down on exit. For the headless gate that
+      asserts the same flow, see `task test:e2e`.
+    deps: [run:supabase]
+    cmds:
+      - |
+        set -euo pipefail
+        PORT="${ZEN_APP_PORT:-8085}"
+        WEB_PORT="${ZEN_WEB_PORT:-5200}"
+        API="http://localhost:${PORT}"
+
+        eval "$(supabase status -o env | sed 's/^/export SB_/')"
+        export SUPABASE_URL="${SB_API_URL}"
+        export SUPABASE_KEY="${SB_ANON_KEY}"
+        # Let the browser's credentialed calls through CORS from the demo's web origin.
+        export CORS_ORIGINS="http://localhost:${WEB_PORT},http://localhost:8080,http://localhost:5173"
+
+        # Tear the server down: pkill the quarkus:dev java by its port system-property (dependable
+        # across shells - go-task can reparent `&`, and quarkus:dev forks a child), then a
+        # port-scoped lsof fallback that waits for the port to free, escalating to SIGKILL.
+        stop_server() {
+          pkill -f "quarkus.http.port=${PORT}" 2>/dev/null || true
+          p=$(lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t 2>/dev/null || true)
+          [ -n "${p}" ] && kill "${p}" 2>/dev/null || true
+          for _ in $(seq 1 15); do
+            lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t >/dev/null 2>&1 || return 0
+            sleep 1
+          done
+          p=$(lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t 2>/dev/null || true)
+          [ -n "${p}" ] && kill -9 "${p}" 2>/dev/null || true
+        }
+        trap stop_server EXIT
+
+        ( cd {{.SERVER_DIR}} && ./mvnw -pl zen-app -am quarkus:dev -Dquarkus.http.port="${PORT}" ) &
+
+        ready=0
+        for _ in $(seq 1 90); do
+          if curl -sf "${API}/api/v1/health" >/dev/null 2>&1; then ready=1; break; fi
+          sleep 1
+        done
+        [ "${ready}" -eq 1 ] || { echo "server did not become healthy on ${API}"; stop_server; exit 1; }
+
+        cd {{.CLIENT_DIR}}/zen_demo
+        flutter run -d chrome --web-port="${WEB_PORT}" \
+          --dart-define=ZEN_ENV=dev --dart-define=ZEN_PLATFORM=web --dart-define=ZEN_API_URL="${API}"
+        stop_server
 
   run:admin:
     desc: Start the admin panel dev server on :5173

@@ -51,6 +51,12 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-rest</artifactId>
     </dependency>
+    <!-- Backs the demo /api/v1/demo/ws echo endpoint (DemoWebSocket), replacing DartZen's
+         deleted shelf_web_socket route. zen_demo drives it via zen_transport's ZenWebSocket. -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-websockets-next</artifactId>
+    </dependency>
     <!-- No quarkus-rest-jackson: see the note in zen-transport/pom.xml. Response bodies
          are proto messages serialized by the transport module's writers. -->
     <dependency>

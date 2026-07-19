@@ -122,9 +122,16 @@ Deliverables:
 - `../DartZen/apps/ZenDemo/dartzen_demo_contracts` → `proto/zen/v1/*.proto` (the 7 contract
   files become proto messages, consumed via generated Dart clients).
 - `dartzen_demo_server` is **deleted**, not ported — the Quarkus backend is the server now.
+  The demo endpoints it satisfies are `GET /api/v1/demo/{ping,terms,profile}` plus the
+  **WebSocket echo** at `/api/v1/demo/ws`.
+- **The WebSocket echo is a first-class product feature**, not a test fixture: jZen ships a
+  Quarkus `quarkus-websockets-next` endpoint and drives it from `zen_demo` through
+  `zen_transport`'s `ZenWebSocket` (binary Protobuf frames). It is part of what the reference
+  app demonstrates and what the e2e stand asserts.
 - **End-to-end coverage, asserted:** login/register/logout via Supabase, a round-trip in
-  **both** transport modes (`X-Zen-Transport: json` and `protobuf`), a localized surface,
-  and at least one error path returning a `ZenError`. No mocks — it hits the live stack.
+  **both** transport modes (`X-Zen-Transport: json` and `protobuf`), a localized surface, the
+  WebSocket echo, and at least one error path returning a `ZenError`. No mocks — it hits the
+  live stack.
 - **Taskfile targets:** `task run:demo` (boot Supabase + server + the demo for a manual
   walkthrough) and `task test:e2e` (headless: bring the stack up, run the demo's
   integration suite, tear down, propagate the exit code). `test:e2e` joins `task test` and

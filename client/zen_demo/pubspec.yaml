@@ -1,0 +1,47 @@
+name: zen_demo
+description: >-
+  The jZen reference app: the runnable showcase of jZen driving the real Quarkus + Supabase
+  backend, and the living end-to-end test stand (task test:e2e) wired into the CI release gate.
+# Re-architected from ../DartZen/apps/ZenDemo/dartzen_demo_client onto the jZen packages
+# (Riverpod + zen_ui_identity/navigation + zen_transport), calling the Quarkus server instead
+# of the deleted Shelf demo server.
+publish_to: "none"
+# Lockstep with the product version (STANDARDS.md "Versioning").
+version: 0.1.0
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.0.3
+  # http is used only to type the shared session client that createSessionClient() returns.
+  http: ^1.2.2
+  zen_core:
+    path: ../zen_core
+  zen_identity:
+    path: ../zen_identity
+  zen_localization:
+    path: ../zen_localization
+  zen_transport:
+    path: ../zen_transport
+  zen_ui_identity:
+    path: ../zen_ui_identity
+  zen_ui_navigation:
+    path: ../zen_ui_navigation
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  # The pure-Dart end-to-end suite (integration_test/) runs on the VM via `dart test`, hitting
+  # the live stack. It uses package:test (not flutter_test) so it stays headless - see test:e2e.
+  test: ^1.25.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/l10n/

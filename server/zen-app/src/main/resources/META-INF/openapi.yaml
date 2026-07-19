@@ -81,3 +81,40 @@ components:
       properties:
         email:
           type: string
+    Ping:
+      type: object
+      description: GET /api/v1/demo/ping response; message localized from Accept-Language.
+      properties:
+        message:
+          type: string
+          description: Localized "server is alive" message.
+        timestampMs:
+          type: integer
+          format: int64
+          description: Server wall-clock time in ms since the Unix epoch.
+    Terms:
+      type: object
+      description: GET /api/v1/demo/terms response; localized Markdown terms content.
+      properties:
+        content:
+          type: string
+          description: Markdown document body for the requested locale.
+        contentType:
+          type: string
+          description: MIME type of content; the demo serves "text/markdown".
+    DemoProfile:
+      type: object
+      description: GET /api/v1/demo/profile response; the authenticated user's demo profile.
+      properties:
+        userId:
+          type: string
+          description: Stable user id (the Supabase auth.users id / JWT sub).
+        displayName:
+          type: string
+          description: Display name for the profile view.
+        email:
+          type: string
+          description: Account email.
+        bio:
+          type: string
+          description: Optional free-text biography.

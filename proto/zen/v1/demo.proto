@@ -1,0 +1,63 @@
+syntax = "proto3";
+
+package zen.v1;
+
+// Canonical models for the reference app (ROADMAP step 4). zen_demo is both the runnable
+// showcase of jZen and the living end-to-end test stand; these messages back its demo
+// endpoints (GET /api/v1/demo/ping, /terms, /profile and the /ws echo). The Java DTOs, the
+// Dart messages, the OpenAPI schemas, and the admin TypeScript types are all generated from
+// this file. Never hand-edit the generated output - edit this and run `task sync:contracts`.
+//
+// The message set is derived from DartZen's demo contracts in
+// ../DartZen/apps/ZenDemo/dartzen_demo_contracts (PingContract, TermsContract,
+// ProfileContract, WebSocketMessageContract). The auth flow reuses identity.proto (the
+// donor's Firebase LoginRequest/LoginResponseContract are superseded by the Supabase
+// AuthResource), and errors use the shared ZenError in common.proto (TA-2, no envelope).
+
+option java_package = "dev.zen.proto.v1";
+option java_multiple_files = true;
+option java_outer_classname = "DemoProto";
+
+// GET /api/v1/demo/ping response. A liveness probe that returns a message localized from the
+// request's Accept-Language (supported {en, uk}), demonstrating server-side localization and
+// both transport modes. Maps to DartZen's PingContract (message + timestamp).
+message Ping {
+  // Localized "server is alive" message, rendered from DemoMessages for the request locale.
+  string message = 1;
+  // Server wall-clock time in milliseconds since the Unix epoch.
+  int64 timestamp_ms = 2;
+}
+
+// GET /api/v1/demo/terms response. Localized Markdown terms content, selected by the
+// request's Accept-Language. Maps to DartZen's TermsContract (content + content_type).
+message Terms {
+  // Markdown document body for the requested locale.
+  string content = 1;
+  // MIME type of `content`; the demo serves "text/markdown".
+  string content_type = 2;
+}
+
+// GET /api/v1/demo/profile response. The authenticated user's demo profile, resolved from the
+// session cookie (SmallRye JWT reads zen_access_token); returns a ZenError 401 when anonymous.
+// Maps to DartZen's ProfileContract (user_id, display_name, email, bio).
+message DemoProfile {
+  // Stable user id (the Supabase auth.users id / JWT `sub`).
+  string user_id = 1;
+  // Display name for the profile view.
+  string display_name = 2;
+  // Account email.
+  string email = 3;
+  // Optional free-text biography.
+  string bio = 4;
+}
+
+// Bidirectional frame for the /api/v1/demo/ws echo endpoint. Maps to DartZen's
+// WebSocketMessageContract. The client sends type "message"; the server echoes it back as
+// type "echo", or replies type "error" on a decode failure. zen_demo forces the protobuf
+// binary format for the socket, so both platforms send binary frames.
+message WebSocketMessage {
+  // Frame kind: "message" (client -> server), "echo" / "error" (server -> client).
+  string type = 1;
+  // Opaque payload string carried by the frame.
+  string payload = 2;
+}

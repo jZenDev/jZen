@@ -102,7 +102,15 @@ Port the foundation, Firestore-free.
   `SupabaseIdentityRepository` tests. `task sync:contracts` regenerates and its drift gate is
   green; `dart analyze` is clean.
 
-## Step 4 — the reference app: showcase + living test stand ☐
+## Step 4 — the reference app: showcase + living test stand ✅
+
+> **Reframed during delivery (see [`DECISIONS.md`](./DECISIONS.md) ADR-001).** jZen is a
+> **framework**: `server/` + `client/` are libraries, and the reference app is a full-stack
+> example under `apps/zen_demo/{zen_demo_client, zen_demo_server}` that *assembles* them — not a
+> Flutter package driving "the one backend." `zen_demo_server` is the relocated `zen-app`; auth
+> moved into the `zen-identity` framework library so every app inherits it. Because both sides
+> assemble the framework, `task test:e2e` is a **framework** end-to-end gate (each product app,
+> e.g. `workspaces`, gets its own).
 
 `zen_demo` is not throwaway sample code. It has two first-class jobs, both inherited from
 DartZen's ZenDemo ("the breathing minimum... a real end-to-end system. No mocks. No stubs.
@@ -153,15 +161,31 @@ Deliverables:
   `users.language`. `SUPPORTED = {en, uk}` initially. BugEater's English-only hardcoded
   mail strings are not carried forward.
 
-## Step 7 — Deferred packages ☐
+## Step 7 — Deferred packages and framework improvements ☐
 
-Port only when a consumer needs them, each in isolation:
+Done in isolation, when a consumer needs them (packages) or when the framework earns the change
+(improvements).
+
+**Deferred package ports** — port only when a consumer needs them:
 
 - `dartzen_jobs` → Quarkus `@Scheduled` (reference: `../BugEater/.../user/DataRetentionJob.java`).
 - `dartzen_telemetry` → a Panache-backed store (its `TelemetryStore` is the one clean
   store abstraction in DartZen — `../DartZen/packages/dartzen_telemetry/lib/src/store/telemetry_store.dart:4`).
 - `dartzen_executor`, `dartzen_payments`, `dartzen_ai`, `dartzen_cache`,
   `dartzen_storage` (→ Supabase Storage / S3) — no committed target until demanded.
+
+**Framework improvements** — deferred but committed to a plan:
+
+- **Typed, generated client i18n** (mirrors the server's Qute `@MessageBundle`; see
+  [`DECISIONS.md`](./DECISIONS.md) ADR-004). Today `zen_localization` is a hand-rolled service over
+  per-locale JSON with runtime **string keys** — the `easy_localization` camp, not idiomatic Flutter.
+  Evaluate and migrate to a **typed, generated** approach: Flutter's official `intl` + **ARB** +
+  `flutter gen-l10n` (generates a compile-checked `AppLocalizations`), or `slang` (typed accessors
+  from JSON/YAML). *Effective Dart*'s "typed over stringly-typed" and consistency with the server
+  (`@MessageBundle`) both point here. Scope: decide `zen_localization`'s fate (replace, wrap, or
+  retire it), migrate the app clients (`apps/*/*_client`) and the `zen_ui_*` package l10n, keep
+  `{en, uk}`, and update the localization docs. A framework-wide change, so it is its own effort,
+  not folded into app work.
 
 ## Step 8 — Standalone: sever the umbilical ☐
 

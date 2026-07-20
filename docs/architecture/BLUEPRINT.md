@@ -2,44 +2,60 @@
 
 The concrete architecture. Every decision below cites the legacy file it derives from.
 Philosophy is in [`MANIFESTO.md`](./MANIFESTO.md); sequencing in
-[`ROADMAP.md`](./ROADMAP.md).
+[`ROADMAP.md`](./ROADMAP.md). Decisions that change earlier docs are logged, with
+justification, in [`DECISIONS.md`](./DECISIONS.md).
 
 ## Repository layout
+
+jZen is a **framework**: `server/` and `client/` are the Java and Dart framework
+**libraries**; `apps/` holds full-stack **applications** that assemble them (see
+[`DECISIONS.md`](./DECISIONS.md) ADR-001).
 
 ```
 jZen/
 ├── Taskfile.yml              # the single orchestrator (replaces DartZen's Melos)
 ├── proto/zen/v1/             # CANONICAL models - *.proto (health, common, ...)
-├── server/                   # multi-module Maven backend (Java)
-│   ├── pom.xml               # aggregator, <packaging>pom</packaging>
+├── server/                   # Java FRAMEWORK libraries (multi-module Maven)
+│   ├── pom.xml               # zen-parent: parent (BOM/plugin mgmt) AND aggregator, packaging pom
 │   ├── zen-proto/            # generated protobuf DTOs; leaf (only protobuf-java)
-│   ├── zen-core/             # ZenResult/ZenError port; no framework deps
+│   ├── zen-core/             # ZenResult/ZenError, ZenStatus, AcceptLanguage; no Quarkus deps
 │   ├── zen-transport/        # dual-mode seam (consumes zen-proto)
-│   ├── zen-identity/         # Supabase auth, User, RoleAugmentor
-│   ├── zen-email/            # EmailService (new) over quarkus-mailer/Brevo
-│   └── zen-app/              # runnable app: REST, filters, openapi.json
-├── client/                   # Dart/Flutter pub workspace
+│   ├── zen-identity/         # Supabase auth beans, User, RoleAugmentor, + the AuthResource surface
+│   └── zen-email/            # EmailService (new) over quarkus-mailer/Brevo
+├── client/                   # Dart/Flutter FRAMEWORK libraries (pub workspace)
 │   ├── pubspec.yaml          # workspace root
-│   ├── zen_core/  ...        # packages, flat (mirrors server/ modules)
-│   └── zen_demo/             # reference app: product showcase + living e2e test stand
+│   └── zen_core/  zen_transport/  zen_identity/  zen_localization/  zen_ui_*/
+├── apps/                     # APPLICATIONS built on the framework
+│   ├── pubspec.yaml          # pub workspace root for the app clients
+│   └── zen_demo/             # the reference app (showcase + living e2e test stand)
+│       ├── zen_demo_client/  # Flutter client (pub workspace member; deps ../../client/zen_*)
+│       └── zen_demo_server/  # Quarkus reference backend (inherits zen-parent via relativePath)
 ├── admin/                    # ReactAdmin + Vite + openapi-typescript
 ├── supabase/                 # config.toml, migrations
-└── docs/architecture/        # these four documents
+└── docs/architecture/        # these documents (+ DECISIONS.md)
 ```
 
-Folder names are industry-standard by role — `server` / `client` / `admin` — never by
-framework. Within `server/` and `client/`, modules sit flat; there is no `packages/` or
-`apps/` wrapper, because a folder that holds a single folder earns its keep only once it
-holds more than one. `proto/zen/v1/` mirrors the proto package `zen.v1` (the same reason
-Java lives under `dev/zen/…`); `v1` is the API version.
+Folder names are industry-standard by role. Framework libraries sit flat within `server/`
+and `client/`; applications live under `apps/<app>/{<app>_client, <app>_server}`. The
+repository **root stays language-neutral** — only `Taskfile.yml` lives there; there is no
+root `pom.xml` or root `pubspec.yaml` (each stack roots its build inside its own folder).
+The backend is a single Maven reactor of libraries whose app modules inherit `zen-parent`
+across directories; the two pub workspaces (`client/` libs, `apps/` clients) resolve
+independently, app clients path-depending into `client/`. `proto/zen/v1/` mirrors the proto
+package `zen.v1` (the same reason Java lives under `dev/zen/…`); `v1` is the API version.
 
 ## Backend: why multi-module
 
 BugEater is a **single** Maven module — one `pom.xml` with `<packaging>quarkus</packaging>`
 at the root (`../BugEater/bugeater-quarkus/pom.xml`). That layout cannot express jZen's
 package boundaries, so jZen inverts it: the aggregator is `<packaging>pom</packaging>`,
-the runnable Quarkus app is pushed down into `zen-app` (the only `quarkus`-packaged
-module), and every other module is a plain jar it consumes.
+every module is a plain-jar **framework library**, and the runnable Quarkus app is a
+*separate* module under `apps/` that assembles them. `server/pom.xml` (`zen-parent`) is both
+the parent (BOM, Java version, plugin/dependency management) and the aggregator that builds
+and `install`s the libraries; an app server (e.g. `apps/zen_demo/zen_demo_server`, the only
+`quarkus`-packaged module) inherits `zen-parent` across directories via `<relativePath>` and
+resolves the libraries from the local repository. See [`DECISIONS.md`](./DECISIONS.md)
+ADR-001 for the framework/apps split and its Maven mechanics.
 
 The baseline versions are inherited from BugEater's verified setup: **Quarkus 3.32.2 on
 Java 25** (`../BugEater/bugeater-quarkus/pom.xml`, properties `quarkus.platform.version`
@@ -162,11 +178,14 @@ Ported from BugEater, which already runs Supabase JWT. Landed in ROADMAP step 3.
   has zero learning-domain columns (see **Persistence** for the compliance columns it does
   keep).
 
-**REST surface.** `AuthResource` lives in `zen-app` (not `zen-identity`), because zen-app is
-the only `quarkus`-packaged module and owns the REST surface, SmallRye OpenAPI, and the
-static `META-INF/openapi.yaml` merge — the `HealthResource` precedent. zen-identity stays a
-pure library of auth beans, the `User` entity, and the MapStruct `User` → `Identity` mapper,
-discovered from its jar via a Jandex index. The endpoints back DartZen's `IdentityRepository`
+**REST surface.** `AuthResource` lives in `zen-identity` — a reusable **framework** resource, so
+every jZen app inherits the auth surface just by depending on the module (see
+[`DECISIONS.md`](./DECISIONS.md) ADR-001; this reverses the earlier "auth lives in the app"
+decision). zen-identity is a Jandex-indexed library of the auth beans, the `User` entity, the
+MapStruct `User` → `Identity` mapper, **and** the `AuthResource`/`AuthExceptionMapper`; Quarkus
+discovers the JAX-RS resource from the jar via the Jandex index. The app module still runs SmallRye
+OpenAPI and supplies the referenced component schemas through its static `META-INF/openapi.yaml`
+(paths from the library, schemas from the app). The endpoints back DartZen's `IdentityRepository`
 (TA-5): `POST /api/v1/auth/{login,register,restore-password,logout,refresh}` and
 `GET /api/v1/auth/identity`. Each returns a typed proto (`Response` + `@Schema(ref=...)`);
 errors return the shared `ZenError` proto via an exception mapper.

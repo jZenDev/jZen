@@ -5,9 +5,15 @@ packages, its transport seam, its example applications — and transplants a new
 runtime harvested from BugEater (`../BugEater/bugeater-quarkus`): Quarkus, PostgreSQL,
 and Supabase in place of the Shelf-and-Firestore server that DartZen shipped with.
 
+jZen is a **framework**: `server/` and `client/` are reusable Java and Dart libraries, and
+applications — the `zen_demo` reference app today, real products like `workspaces` next — are
+built on them under `apps/<app>/{<app>_client, <app>_server}`. The reference app proves the
+framework composes end to end.
+
 This document states what jZen believes. The concrete structure is in
 [`BLUEPRINT.md`](./BLUEPRINT.md); the order of work is in [`ROADMAP.md`](./ROADMAP.md);
-the rules that keep it honest are in [`STANDARDS.md`](./STANDARDS.md).
+the rules that keep it honest are in [`STANDARDS.md`](./STANDARDS.md); decisions that change
+earlier docs, with justification, are logged in [`DECISIONS.md`](./DECISIONS.md).
 
 > **Provenance, and its expiry.** While the migration is in progress these docs cite
 > DartZen and BugEater source files as evidence for each decision — that is deliberate

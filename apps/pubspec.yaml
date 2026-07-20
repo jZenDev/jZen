@@ -1,0 +1,23 @@
+name: jzen_apps
+description: >-
+  jZen application workspace: full-stack application examples built on the jZen framework. Each
+  app is a folder holding its client and server (e.g. apps/zen_demo/{zen_demo_client,
+  zen_demo_server}); this pub workspace resolves the Dart/Flutter client packages, while the
+  Java server modules are built by Maven (see server/ and the Taskfile).
+# Lockstep with the product version (docs/architecture/STANDARDS.md "Versioning").
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+
+# Pub workspace root for the applications tier. client/ holds the reusable client libraries;
+# apps/ holds the applications that assemble them. Apps depend on the libraries by relative path
+# (../../client/zen_*); the two workspaces resolve independently and the repository root stays
+# language-neutral (only the Taskfile lives there), mirroring how server/ (Java framework) and
+# apps/*/…_server (Java apps) relate. Members land here as apps arrive.
+workspace:
+  - zen_demo/zen_demo_client
+
+dev_dependencies:
+  flutter_lints: ^6.0.0

@@ -11,11 +11,17 @@
 version: "3"
 
 vars:
+  # server/ + client/ are the Java + Dart FRAMEWORK libraries; apps/ holds the full-stack
+  # application examples that assemble them (apps/<app>/{<app>_client, <app>_server}).
   SERVER_DIR: server
   CLIENT_DIR: client
+  APPS_DIR: apps
   ADMIN_DIR: admin
   PROTO_DIR: proto
-  OPENAPI_JSON: server/zen-app/target/openapi/openapi.json
+  # The runnable reference backend (the only Quarkus app) is apps/zen_demo/zen_demo_server.
+  DEMO_SERVER_DIR: apps/zen_demo/zen_demo_server
+  DEMO_CLIENT_DIR: apps/zen_demo/zen_demo_client
+  OPENAPI_JSON: apps/zen_demo/zen_demo_server/target/openapi/openapi.json
 
   # Cloud Run coordinates, overridable via the environment.
   GCP_PROJECT: '{{.GCP_PROJECT | default "CHANGEME-jzen"}}'
@@ -142,12 +148,13 @@ tasks:
       - task: generate:api:ts
 
   generate:api:schema:
-    desc: Emit openapi.json from the annotated Quarkus resources (SmallRye)
+    desc: Emit openapi.json from the reference backend's annotated resources (SmallRye)
     dir: "{{.SERVER_DIR}}"
     cmds:
-      # quarkus.smallrye-openapi.store-schema-directory=target/openapi writes the
-      # schema at build time.
-      - ./mvnw -B -q -pl zen-app -am package -DskipTests
+      # Install the framework libs so the app can resolve them, then package the app (the only
+      # Quarkus module) via the shared wrapper with -f. store-schema-directory writes the schema.
+      - ./mvnw -B -q install -DskipTests
+      - ./mvnw -B -q -f ../{{.DEMO_SERVER_DIR}}/pom.xml package -DskipTests
 
   generate:api:ts:
     desc: Generate admin types from openapi.json
@@ -202,28 +209,31 @@ tasks:
       - task: sync:contracts
       - task: build:server
       - task: build:client
+      - task: build:apps
       - task: build:admin
 
   build:server:
-    desc: Build the backend (JVM)
+    desc: Build + install the Java FRAMEWORK libraries (so apps can resolve them)
     dir: "{{.SERVER_DIR}}"
     cmds:
-      - ./mvnw -B package -DskipTests
+      # install (not package): the app modules under apps/ resolve these from the local repo.
+      - ./mvnw -B install -DskipTests
 
   build:server:native:
-    desc: Build the backend as a native executable (what prod ships)
+    desc: Build the reference backend as a native executable (what prod ships)
     dir: "{{.SERVER_DIR}}"
     cmds:
-      # Container build, pinned to amd64 so the image matches Cloud Run regardless of the
-      # developer's architecture.
+      # Install the framework libs, then build the app natively via the shared wrapper.
+      # Container build, pinned to amd64 so the image matches Cloud Run regardless of arch.
+      - ./mvnw -B install -DskipTests
       - >-
         ./mvnw -B package -Dnative -DskipTests
         -Dquarkus.native.container-build=true
         -Dquarkus.native.container-runtime-options=--platform=linux/amd64
-        -pl zen-app -am
+        -f ../{{.DEMO_SERVER_DIR}}/pom.xml
 
   build:client:
-    desc: Resolve and analyze the Dart/Flutter workspace
+    desc: Resolve and analyze the Dart/Flutter FRAMEWORK library workspace
     dir: "{{.CLIENT_DIR}}"
     cmds:
       # The workspace holds Flutter packages (zen_localization keeps flutter as a dev
@@ -231,6 +241,28 @@ tasks:
       # analyzes every member.
       - flutter pub get
       - dart analyze
+
+  build:apps:
+    desc: Build the application examples (their Dart clients + Java servers)
+    cmds:
+      - task: build:apps:client
+      - task: build:apps:server
+
+  build:apps:client:
+    desc: Resolve and analyze the apps/ Dart workspace (the app clients)
+    dir: "{{.APPS_DIR}}"
+    cmds:
+      - flutter pub get
+      - dart analyze
+
+  build:apps:server:
+    desc: Build the reference backend (resolves framework libs from the local repo)
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      # Framework libs must be installed first; build:apps:server depends on build:server in
+      # the top-level `build` ordering, but install here too so it stands alone.
+      - ./mvnw -B -q install -DskipTests
+      - ./mvnw -B -f ../{{.DEMO_SERVER_DIR}}/pom.xml package -DskipTests
 
   build:admin:
     desc: Build the admin panel
@@ -243,13 +275,16 @@ tasks:
     cmds:
       - task: test:server
       - task: test:client
+      - task: test:apps
       - task: test:admin
       - task: test:e2e
 
   test:server:
-    desc: Run backend tests
+    desc: Run Java FRAMEWORK library tests
     dir: "{{.SERVER_DIR}}"
     cmds:
+      # The framework libs are exercised through the reference backend (test:apps:server) - a
+      # @QuarkusTest needs an assembled app. Lib-level unit tests, when added, run here.
       - ./mvnw -B test
 
   test:client:
@@ -289,6 +324,48 @@ tasks:
         if [ "$found" -eq 0 ]; then
           echo "No Dart packages migrated yet - nothing to test. (ROADMAP step 2.)"
         fi
+
+  test:apps:
+    desc: Run the application examples' tests (Dart clients + Java servers)
+    cmds:
+      - task: test:apps:client
+      - task: test:apps:server
+
+  test:apps:client:
+    desc: Run the app clients' Dart/Flutter unit tests (not the live e2e - see test:e2e)
+    dir: "{{.APPS_DIR}}"
+    silent: true
+    cmds:
+      # Same per-package iteration as test:client. Only test/ dirs run here; integration_test/
+      # (the live e2e) is driven separately by test:e2e against the real stack.
+      - |
+        set -e
+        case "$(uname -s)" in
+          Darwin) host_platform=macos ;;
+          Linux)  host_platform=linux ;;
+          *)      host_platform=linux ;;
+        esac
+        found=0
+        for pubspec in $(find . -mindepth 2 -name pubspec.yaml -not -path '*/.dart_tool/*' | sort); do
+          pkgdir=$(dirname "$pubspec")
+          [ -d "$pkgdir/test" ] || continue
+          found=1
+          if grep -qE '^[[:space:]]*(flutter|flutter_test):' "$pubspec"; then
+            echo ">> flutter test ($pkgdir)"
+            (cd "$pkgdir" && flutter test --dart-define=ZEN_ENV=dev --dart-define=ZEN_PLATFORM="$host_platform")
+          else
+            echo ">> dart test ($pkgdir)"
+            (cd "$pkgdir" && dart test)
+          fi
+        done
+        [ "$found" -eq 1 ] || echo "No app packages with tests yet."
+
+  test:apps:server:
+    desc: Run the reference backend's tests (Dev Services Postgres; framework libs installed first)
+    dir: "{{.SERVER_DIR}}"
+    cmds:
+      - ./mvnw -B -q install -DskipTests
+      - ./mvnw -B -f ../{{.DEMO_SERVER_DIR}}/pom.xml test
 
   test:client:matrix:
     desc: Recompile-per-env/platform matrix for the transport codec selector (TA-7)
@@ -340,7 +417,7 @@ tasks:
           # pkill on the jar path is the dependable killer (the gate uniquely runs this jar; a dev
           # `run:server` uses quarkus:dev, not it). The port-scoped lsof pass is a belt-and-braces
           # fallback that also waits for the port to actually free, escalating to SIGKILL.
-          pkill -f 'zen-app/target/quarkus-app/quarkus-run.jar' 2>/dev/null || true
+          pkill -f 'zen_demo_server/target/quarkus-app/quarkus-run.jar' 2>/dev/null || true
           port_pid=$(lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t 2>/dev/null || true)
           [ -n "${port_pid}" ] && kill "${port_pid}" 2>/dev/null || true
           for _ in $(seq 1 15); do
@@ -359,11 +436,13 @@ tasks:
         export SUPABASE_URL="${SB_API_URL}"
         export SUPABASE_KEY="${SB_ANON_KEY}"
 
-        # Build the runnable server (fast when already built), then start it on the test port.
-        ( cd {{.SERVER_DIR}} && ./mvnw -B -q -pl zen-app -am package -DskipTests )
+        # Install the framework libs, then build the reference backend (fast when already built)
+        # via the shared wrapper, and start it on the test port.
+        ( cd {{.SERVER_DIR}} && ./mvnw -B -q install -DskipTests \
+          && ./mvnw -B -q -f ../{{.DEMO_SERVER_DIR}}/pom.xml package -DskipTests )
         set +e
         java -Dquarkus.profile=dev -Dquarkus.http.port="${PORT}" \
-          -jar {{.SERVER_DIR}}/zen-app/target/quarkus-app/quarkus-run.jar &
+          -jar {{.DEMO_SERVER_DIR}}/target/quarkus-app/quarkus-run.jar &
 
         # Wait for the server to answer /health before driving it.
         ready=0
@@ -377,7 +456,7 @@ tasks:
         # code, tear the server down, and propagate the code - so the gate's result is the suite's.
         # ZEN_API_URL is read at runtime by the suite (dart test does not forward --define to the
         # compiled test); ZEN_ENV=dev keeps the default codec JSON where it does apply.
-        ( cd {{.CLIENT_DIR}}/zen_demo \
+        ( cd {{.DEMO_CLIENT_DIR}} \
           && ZEN_API_URL="${API}" dart --define=ZEN_ENV=dev \
                test integration_test/e2e_test.dart )
         rc=$?
@@ -401,10 +480,13 @@ tasks:
       - supabase status >/dev/null 2>&1
 
   run:server:
-    desc: Start Quarkus in dev mode (live reload) on :8080
+    desc: Start the reference backend in Quarkus dev mode (live reload) on :8080
     dir: "{{.SERVER_DIR}}"
     cmds:
-      - ./mvnw -pl zen-app -am quarkus:dev
+      # Install the framework libs, then run the app (apps/zen_demo/zen_demo_server) in dev mode
+      # via the shared wrapper.
+      - ./mvnw -B -q install -DskipTests
+      - ./mvnw -f ../{{.DEMO_SERVER_DIR}}/pom.xml quarkus:dev
 
   run:demo:
     desc: Boot Supabase + the backend + the reference app (zen_demo) for a manual walkthrough
@@ -445,7 +527,8 @@ tasks:
         }
         trap stop_server EXIT
 
-        ( cd {{.SERVER_DIR}} && ./mvnw -pl zen-app -am quarkus:dev -Dquarkus.http.port="${PORT}" ) &
+        ( cd {{.SERVER_DIR}} && ./mvnw -B -q install -DskipTests \
+          && ./mvnw -f ../{{.DEMO_SERVER_DIR}}/pom.xml quarkus:dev -Dquarkus.http.port="${PORT}" ) &
 
         ready=0
         for _ in $(seq 1 90); do
@@ -454,7 +537,7 @@ tasks:
         done
         [ "${ready}" -eq 1 ] || { echo "server did not become healthy on ${API}"; stop_server; exit 1; }
 
-        cd {{.CLIENT_DIR}}/zen_demo
+        cd {{.DEMO_CLIENT_DIR}}
         flutter run -d chrome --web-port="${WEB_PORT}" \
           --dart-define=ZEN_ENV=dev --dart-define=ZEN_PLATFORM=web --dart-define=ZEN_API_URL="${API}"
         stop_server
@@ -493,8 +576,8 @@ tasks:
         set -e
         IMAGE="{{.GCP_REGION}}-docker.pkg.dev/{{.GCP_PROJECT}}/{{.AR_REPO}}/{{.SERVICE_NAME}}:$(git rev-parse --short HEAD)"
         docker buildx build --platform linux/amd64 \
-          -f {{.SERVER_DIR}}/zen-app/src/main/docker/Dockerfile.native-micro \
-          -t "$IMAGE" {{.SERVER_DIR}}
+          -f {{.DEMO_SERVER_DIR}}/src/main/docker/Dockerfile.native-micro \
+          -t "$IMAGE" {{.DEMO_SERVER_DIR}}
         docker push "$IMAGE"
         gcloud run deploy {{.SERVICE_NAME}} \
           --image="$IMAGE" \

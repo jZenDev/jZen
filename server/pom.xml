@@ -21,13 +21,20 @@
   <packaging>pom</packaging>
   <name>jZen :: parent</name>
 
+  <!--
+    server/ is the Java FRAMEWORK: reusable library modules only (plain jars). The runnable
+    applications that assemble them live under apps/*/…_server (e.g.
+    apps/zen_demo/zen_demo_server), inheriting this same zen-parent across directories. This POM
+    is both the parent (BOM, Java version, plugin/dependency management below) and the aggregator
+    that builds and installs the libraries; `task build:server` installs them so the app modules
+    can resolve them from the local repository.
+  -->
   <modules>
     <module>zen-proto</module>
     <module>zen-core</module>
     <module>zen-transport</module>
     <module>zen-identity</module>
     <module>zen-email</module>
-    <module>zen-app</module>
   </modules>
 
   <properties>

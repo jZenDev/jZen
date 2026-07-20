@@ -98,4 +98,5 @@ else; the framework picks the wire format.
 - **Server-rendered HTML.** BugEater's 136 Qute `*PageResource` classes are dropped in
   favor of a unified REST API. Qute survives solely as a mail-templating engine.
 - **The legacy Flutter admin.** `dartzen_ui_admin` is replaced by a clean `react-admin`
-  panel in `admin/`.
+  stack: a reusable framework scaffold (`@jzen/admin-core` in `admin/`) that each app
+  assembles into its own panel under `apps/<app>/<app>_admin` (ADR-005).

@@ -118,3 +118,51 @@ components:
         bio:
           type: string
           description: Optional free-text biography.
+    AdminUser:
+      type: object
+      description: >-
+        A users-table row projected for the admin panel (GET/PUT /api/v1/admin/users). The id is
+        the react-admin record id. Field names are proto3 canonical JSON (lowerCamelCase).
+      properties:
+        id:
+          type: string
+          description: Stable user id (the Supabase auth.users id / JWT sub); the record id.
+        email:
+          type: string
+          description: Account email.
+        displayName:
+          type: string
+          description: Display name, if set.
+        nickname:
+          type: string
+          description: Handle / nickname, if set.
+        role:
+          type: string
+          description: Authority role; one of "user", "admin", "reviewer", "b2b_admin".
+        language:
+          type: string
+          description: Preferred language code, e.g. "en".
+        isPremium:
+          type: boolean
+          description: Whether the account is premium (payment).
+        isPrivate:
+          type: boolean
+          description: Whether the profile is private.
+        emailVerified:
+          type: boolean
+          description: Whether the account email is verified.
+        createdAtMs:
+          type: integer
+          format: int64
+          description: Account creation time in ms since the Unix epoch.
+        lastLoginAtMs:
+          type: integer
+          format: int64
+          description: Last login time in ms since the Unix epoch; 0 when never logged in.
+    AdminUserList:
+      type: array
+      description: >-
+        GET /api/v1/admin/users response; a page of AdminUser records as a bare JSON array. The
+        total row count travels in the Content-Range header (the ra-data-simple-rest convention).
+      items:
+        $ref: '#/components/schemas/AdminUser'

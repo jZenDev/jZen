@@ -145,11 +145,17 @@ Deliverables:
   integration suite, tear down, propagate the exit code). `test:e2e` joins `task test` and
   the CI gate.
 
-## Step 5 — Admin panel ☐
+## Step 5 — Admin panel ✅
 
-- Flesh out `admin`: real resources driven by generated `openapi-typescript`
-  types; wire `ra-data-simple-rest` pagination to the backend's `Content-Range`
-  convention; add Supabase session auth.
+- Split the admin into a reusable framework scaffold (`@jzen/admin-core` in `admin/`:
+  data provider, auth provider, login page) and a per-app panel
+  (`apps/zen_demo/zen_demo_admin`) that registers domain resources typed off the generated
+  `openapi-typescript` schema (ADR-005).
+- Real `users` resource (list / show / edit) driven by a framework `AdminUserResource` in
+  `zen-identity`; `ra-data-simple-rest` pagination wired to the backend's `Content-Range`
+  convention (a bare JSON array body + a declared `AdminUser` proto per element).
+- Supabase session auth via the framework endpoints (`POST /auth/login`, `GET /auth/identity`,
+  `POST /auth/logout`), httpOnly cookie, admin-role gated.
 - The Flutter `dartzen_ui_admin` is confirmed dropped (not migrated).
 
 ## Step 6 — Email ☐

@@ -29,8 +29,9 @@ jZen/
 │   ├── pubspec.yaml          # pub workspace root for the app clients
 │   └── zen_demo/             # the reference app (showcase + living e2e test stand)
 │       ├── zen_demo_client/  # Flutter client (pub workspace member; deps ../../client/zen_*)
-│       └── zen_demo_server/  # Quarkus reference backend (inherits zen-parent via relativePath)
-├── admin/                    # ReactAdmin + Vite + openapi-typescript
+│       ├── zen_demo_server/  # Quarkus reference backend (inherits zen-parent via relativePath)
+│       └── zen_demo_admin/   # react-admin panel (assembles @jzen/admin-core)
+├── admin/                    # @jzen/admin-core: reusable react-admin scaffold (framework)
 ├── supabase/                 # config.toml, migrations
 └── docs/architecture/        # these documents (+ DECISIONS.md)
 ```

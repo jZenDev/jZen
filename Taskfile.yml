@@ -16,11 +16,15 @@ vars:
   SERVER_DIR: server
   CLIENT_DIR: client
   APPS_DIR: apps
+  # admin/ is the framework's reusable react-admin scaffold (@jzen/admin-core, ADR-005); each
+  # app assembles it into its own panel under apps/<app>/<app>_admin.
   ADMIN_DIR: admin
   PROTO_DIR: proto
   # The runnable reference backend (the only Quarkus app) is apps/zen_demo/zen_demo_server.
   DEMO_SERVER_DIR: apps/zen_demo/zen_demo_server
   DEMO_CLIENT_DIR: apps/zen_demo/zen_demo_client
+  # The zen_demo app's admin panel: assembles @jzen/admin-core, owns the generated schema.
+  DEMO_ADMIN_DIR: apps/zen_demo/zen_demo_admin
   OPENAPI_JSON: apps/zen_demo/zen_demo_server/target/openapi/openapi.json
 
   # Cloud Run coordinates, overridable via the environment.
@@ -93,10 +97,10 @@ tasks:
       - dart pub get
 
   deps:admin:
-    desc: Install admin dependencies
-    dir: "{{.ADMIN_DIR}}"
+    desc: Install admin dependencies (framework scaffold + zen_demo panel)
     cmds:
-      - pnpm install
+      - cd {{.ADMIN_DIR}} && pnpm install
+      - cd {{.DEMO_ADMIN_DIR}} && pnpm install
 
   # ---------------------------------------------------------------------------
   # Code generation - proto is upstream, OpenAPI is derived
@@ -158,9 +162,10 @@ tasks:
 
   generate:api:ts:
     desc: Generate admin types from openapi.json
-    dir: "{{.ADMIN_DIR}}"
+    dir: "{{.DEMO_ADMIN_DIR}}"
     status:
-      - test ! -f ../{{.OPENAPI_JSON}}
+      # openapi.json is a sibling of the panel (apps/zen_demo/{zen_demo_server,zen_demo_admin}).
+      - test ! -f ../zen_demo_server/target/openapi/openapi.json
     cmds:
       - pnpm run generate:types
 
@@ -266,7 +271,7 @@ tasks:
 
   build:admin:
     desc: Build the admin panel
-    dir: "{{.ADMIN_DIR}}"
+    dir: "{{.DEMO_ADMIN_DIR}}"
     cmds:
       - pnpm build
 
@@ -384,8 +389,8 @@ tasks:
         dart --define=ZEN_ENV=prd test test/zen_codec_selector_test.dart -p chrome
 
   test:admin:
-    desc: Typecheck the admin panel
-    dir: "{{.ADMIN_DIR}}"
+    desc: Typecheck the admin panel (also typechecks the @jzen/admin-core scaffold it imports)
+    dir: "{{.DEMO_ADMIN_DIR}}"
     cmds:
       - pnpm exec tsc -b
 
@@ -467,7 +472,7 @@ tasks:
   # Run
   # ---------------------------------------------------------------------------
   run:all:
-    desc: Start Supabase, then the backend and the admin panel
+    desc: Start Supabase and the backend (run the admin panel separately with task run:admin)
     deps: [run:supabase]
     cmds:
       - task: run:server
@@ -543,8 +548,8 @@ tasks:
         stop_server
 
   run:admin:
-    desc: Start the admin panel dev server on :5173
-    dir: "{{.ADMIN_DIR}}"
+    desc: Start the admin panel dev server on :5173 (proxies /api to the backend)
+    dir: "{{.DEMO_ADMIN_DIR}}"
     cmds:
       - pnpm dev
 
@@ -597,10 +602,12 @@ tasks:
     cmds:
       - cd {{.CLIENT_DIR}} && dart format .
       - cd {{.ADMIN_DIR}} && pnpm exec prettier --write "src/**/*.{ts,tsx}" || true
+      - cd {{.DEMO_ADMIN_DIR}} && pnpm exec prettier --write "src/**/*.{ts,tsx}" || true
 
   clean:
     desc: Remove all build output
     cmds:
       - cd {{.SERVER_DIR}} && ./mvnw -B -q clean
       - rm -rf {{.ADMIN_DIR}}/dist {{.ADMIN_DIR}}/node_modules/.vite
+      - rm -rf {{.DEMO_ADMIN_DIR}}/dist {{.DEMO_ADMIN_DIR}}/node_modules/.vite
       - find . -name .dart_tool -type d -prune -exec rm -rf {} +

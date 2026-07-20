@@ -15,7 +15,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>dev.zen</groupId>
+  <groupId>zen</groupId>
   <artifactId>zen-parent</artifactId>
   <version>0.1.0-SNAPSHOT</version>
   <packaging>pom</packaging>
@@ -94,27 +94,27 @@
       </dependency>
 
       <dependency>
-        <groupId>dev.zen</groupId>
+        <groupId>zen</groupId>
         <artifactId>zen-proto</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>dev.zen</groupId>
+        <groupId>zen</groupId>
         <artifactId>zen-core</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>dev.zen</groupId>
+        <groupId>zen</groupId>
         <artifactId>zen-transport</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>dev.zen</groupId>
+        <groupId>zen</groupId>
         <artifactId>zen-identity</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
-        <groupId>dev.zen</groupId>
+        <groupId>zen</groupId>
         <artifactId>zen-email</artifactId>
         <version>${project.version}</version>
       </dependency>

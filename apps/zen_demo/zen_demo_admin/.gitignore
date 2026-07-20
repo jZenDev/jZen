@@ -1,0 +1,11 @@
+# Node / TypeScript / Vite (zen_demo react-admin panel).
+
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+*.local
+
+# Committed on purpose (do NOT ignore):
+#   pnpm-lock.yaml            - reproducible installs
+#   src/api/schema.generated.ts - generated from openapi.json, tracked per STANDARDS.md

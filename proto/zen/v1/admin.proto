@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package zen.v1;
+
+// Canonical models for the admin panel's management surface (ROADMAP step 5). The Java DTOs,
+// the OpenAPI schemas, and the admin TypeScript types are all generated from this file. Never
+// hand-edit the generated output - edit this and run `task sync:contracts`.
+//
+// This is the framework's reusable admin contract: AdminUserResource (in zen-identity) projects
+// the users table into AdminUser for the react-admin panel. The list endpoint returns a bare
+// JSON array of AdminUser plus a Content-Range header (the ra-data-simple-rest convention); each
+// element is this declared message, rendered via proto3 canonical JSON. Errors use the shared
+// ZenError in common.proto (TA-2).
+
+option java_package = "zen.proto.v1";
+option java_multiple_files = true;
+option java_outer_classname = "AdminProto";
+
+// A user row projected for administration. Unlike Identity (the session payload), this exposes
+// the management-relevant columns of the users table: contact, role, and the product/GDPR flags
+// an admin edits. `id` is the Supabase auth.users id (the react-admin record id). Timestamps are
+// epoch milliseconds, matching the `*_ms` convention in identity.proto.
+message AdminUser {
+  // Stable user id (the Supabase auth.users id / JWT `sub`); the react-admin record id.
+  string id = 1;
+  // Account email (users.email, NOT NULL).
+  string email = 2;
+  // Display name, if set.
+  string display_name = 3;
+  // Handle / nickname, if set.
+  string nickname = 4;
+  // Authority role: one of "user", "admin", "reviewer", "b2b_admin".
+  string role = 5;
+  // Preferred language code (feeds i18n and localized email), e.g. "en".
+  string language = 6;
+  // Payment flag: whether the account is premium.
+  bool is_premium = 7;
+  // Privacy flag: whether the profile is private.
+  bool is_private = 8;
+  // Whether the account email is verified.
+  bool email_verified = 9;
+  // Account creation time in milliseconds since the Unix epoch.
+  int64 created_at_ms = 10;
+  // Last login time in milliseconds since the Unix epoch; 0 when the user never logged in.
+  int64 last_login_at_ms = 11;
+}

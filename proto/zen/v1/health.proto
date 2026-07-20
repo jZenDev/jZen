@@ -7,7 +7,7 @@ package zen.v1;
 // all generated from it. Never hand-edit the generated output - edit this and run
 // `task sync:contracts`.
 
-option java_package = "dev.zen.proto.v1";
+option java_package = "zen.proto.v1";
 option java_multiple_files = true;
 option java_outer_classname = "HealthProto";
 

@@ -14,7 +14,7 @@ package zen.v1;
 // donor's Firebase LoginRequest/LoginResponseContract are superseded by the Supabase
 // AuthResource), and errors use the shared ZenError in common.proto (TA-2, no envelope).
 
-option java_package = "dev.zen.proto.v1";
+option java_package = "zen.proto.v1";
 option java_multiple_files = true;
 option java_outer_classname = "DemoProto";
 

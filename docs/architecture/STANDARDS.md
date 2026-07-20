@@ -76,7 +76,7 @@ ADR-001). The repository root is language-neutral (only `Taskfile.yml`).
 jZen is a **product**, not a loose bag of libraries, so it uses **unified (lockstep)
 versioning**: every package and module — Java, Dart, TypeScript — carries the same version,
 which *is* the product version. jZen 2.3.1 means `zen_core`, `zen_transport`, `zen-app`,
-`@jzen/admin` are all 2.3.1. This is the industry norm for a coherent product (Angular, Nx,
+`@jzen/admin-core` are all 2.3.1. This is the industry norm for a coherent product (Angular, Nx,
 Spring Boot's BOM) and the reason is exactly the confusion to avoid: users and external
 developers must never have to reconcile "jZen v2" with "zen_core 1.2.1, zen_transport 2.0.0".
 
@@ -150,8 +150,10 @@ developers must never have to reconcile "jZen v2" with "zen_core 1.2.1, zen_tran
 ## Frontend split
 
 - **Product UI:** the DartZen Flutter packages, for mobile / desktop / web.
-- **Admin UI:** `react-admin` in `admin/`, consuming the same OpenAPI-documented
-  REST API via generated `openapi-typescript` types. Scaffolded clean — nothing in
-  BugEater's three React apps used react-admin or had an admin screen, and their
-  conventions conflict three ways across React 18/19.
+- **Admin UI:** a `react-admin` framework scaffold (`@jzen/admin-core` in `admin/`:
+  data provider, auth provider, login page) that each app assembles into its own panel
+  under `apps/<app>/<app>_admin` (ADR-005), consuming the same OpenAPI-documented REST
+  API via generated `openapi-typescript` types. Scaffolded clean — nothing in BugEater's
+  three React apps used react-admin or had an admin screen, and their conventions conflict
+  three ways across React 18/19.
 - Admin always speaks `X-Zen-Transport: json`; Protobuf binary is for native apps only.

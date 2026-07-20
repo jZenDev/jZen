@@ -12,7 +12,7 @@ package zen.v1;
 // IdentityContract): one Identity message plus a request message per write flow. Errors use
 // the shared ZenError in common.proto; there is no {id,status,data,error} envelope (TA-2).
 
-option java_package = "dev.zen.proto.v1";
+option java_package = "zen.proto.v1";
 option java_multiple_files = true;
 option java_outer_classname = "IdentityProto";
 

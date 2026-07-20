@@ -18,10 +18,13 @@ environment:
 # `resolution: workspace`. The field must be a list (an empty scalar fails
 # `dart analyze`), so it starts as [].
 #
+# client/ is client LIBRARIES only. Full application examples live under apps/ (their own pub
+# workspace, apps/pubspec.yaml), depending on these libraries by relative path. A package's own
+# example/ (a single-library demo) stays with its package, per the Dart convention.
+#
 # Members land as steps complete:
 #   Step 2: zen_core, zen_localization, zen_transport
 #   Step 3: zen_identity, zen_ui_navigation, zen_ui_identity (+ their example apps)
-#   Step 4: zen_demo (the reference app; the deleted demo server is replaced by server/)
 workspace:
   - zen_core
   - zen_localization
@@ -31,7 +34,6 @@ workspace:
   - zen_ui_navigation/example
   - zen_ui_identity
   - zen_ui_identity/example
-  - zen_demo
 
 dev_dependencies:
   flutter_lints: ^6.0.0

@@ -55,16 +55,21 @@ Two rules the walking skeleton established, both mandatory for every backend mod
 
 ## Package modularity (hybrid, not monolith)
 
-jZen is a monorepo of **first-class versioned packages**, not one deployable blob.
+jZen is a monorepo of **first-class versioned packages**, not one deployable blob. It is a
+**framework**: `server/` + `client/` are the reusable libraries; `apps/<app>/{<app>_client,
+<app>_server}` are applications that assemble them (see [`DECISIONS.md`](./DECISIONS.md)
+ADR-001). The repository root is language-neutral (only `Taskfile.yml`).
 
-- **Dart:** relative-path deps in `pubspec.yaml` with `resolution: workspace`. Each
-  package keeps its own `CHANGELOG.md` (recording what changed *in it*) but shares the
-  product version — see Versioning.
-- **Java:** multi-module Maven; internal modules depend on each other by GAV managed in
-  the aggregator `dependencyManagement` (`server/pom.xml`), never by relative source
-  paths.
+- **Dart:** relative-path deps in `pubspec.yaml` with `resolution: workspace`. `client/` and
+  `apps/` are two workspaces; app clients path-depend into `client/` libraries. Each package
+  shares the product version — see Versioning.
+- **Java:** multi-module Maven. `server/pom.xml` (`zen-parent`) is the parent (GAV managed in
+  its `dependencyManagement`) and the aggregator that `install`s the framework libraries; an
+  app server inherits `zen-parent` across directories via `<relativePath>` and resolves the
+  libraries from the local repository — never by relative source paths.
 - A new project or external consumer must be able to depend on a package by local path or
-  private registry without pulling the whole monorepo.
+  private registry without pulling the whole monorepo — which is exactly how `apps/*` consume
+  the framework.
 
 ## Versioning — fixed/lockstep, one product version
 

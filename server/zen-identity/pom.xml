@@ -55,6 +55,13 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-security</artifactId>
     </dependency>
+    <!-- The reusable AuthResource is a JAX-RS resource (quarkus-rest arrives transitively via
+         zen-transport) annotated with MicroProfile OpenAPI (@APIResponse/@Schema). This supplies
+         those annotation classes; the app module runs the SmallRye scan and merges the schemas. -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-smallrye-openapi</artifactId>
+    </dependency>
     <!-- SupabaseAuthClient is a @RegisterRestClient interface. -->
     <dependency>
       <groupId>io.quarkus</groupId>

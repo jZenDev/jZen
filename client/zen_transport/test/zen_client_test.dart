@@ -151,6 +151,88 @@ void main() {
     });
   });
 
+  group('ZenClient Accept-Language', () {
+    /// Builds a client whose [language] callback returns whatever [locale] currently holds,
+    /// and captures the headers the request went out with.
+    ZenClient clientReading(
+      String Function() locale,
+      void Function(http.Request) capture,
+    ) {
+      final mock = MockClient((request) async {
+        capture(request);
+        return _encodedResponse(
+          HealthStatus(status: 'ok', service: 'zen-app'),
+          ZenTransportFormat.json,
+          200,
+        );
+      });
+      return ZenClient(
+        baseUrl: 'http://host',
+        format: ZenTransportFormat.json,
+        httpClient: mock,
+        language: locale,
+      );
+    }
+
+    test('the supplied locale rides on every request', () async {
+      http.Request? seen;
+      final client = clientReading(() => 'uk', (r) => seen = r);
+
+      await client.get(HealthStatus.new, '/api/v1/health');
+
+      expect(seen!.headers[acceptLanguageHeaderName], 'uk');
+    });
+
+    test('the header is omitted when no locale is supplied', () async {
+      http.Request? seen;
+      final mock = MockClient((request) async {
+        seen = request;
+        return _encodedResponse(
+          HealthStatus(status: 'ok', service: 'zen-app'),
+          ZenTransportFormat.json,
+          200,
+        );
+      });
+      final client = ZenClient(
+        baseUrl: 'http://host',
+        format: ZenTransportFormat.json,
+        httpClient: mock,
+      );
+
+      await client.get(HealthStatus.new, '/api/v1/health');
+
+      expect(seen!.headers.containsKey(acceptLanguageHeaderName), isFalse);
+    });
+
+    test('the locale is re-read per request, so a mid-session switch applies', () async {
+      var current = 'en';
+      final seen = <String?>[];
+      final client = clientReading(
+        () => current,
+        (r) => seen.add(r.headers[acceptLanguageHeaderName]),
+      );
+
+      await client.get(HealthStatus.new, '/api/v1/health');
+      current = 'uk';
+      await client.get(HealthStatus.new, '/api/v1/health');
+
+      expect(seen, ['en', 'uk']);
+    });
+
+    test('an explicit per-call header wins over the ambient locale', () async {
+      http.Request? seen;
+      final client = clientReading(() => 'en', (r) => seen = r);
+
+      await client.get(
+        HealthStatus.new,
+        '/api/v1/health',
+        headers: {acceptLanguageHeaderName: 'uk'},
+      );
+
+      expect(seen!.headers[acceptLanguageHeaderName], 'uk');
+    });
+  });
+
   group('ZenClient error handling', () {
     test('non-2xx decodes the body into a ZenError (common.proto)', () async {
       final mock = MockClient((request) async {

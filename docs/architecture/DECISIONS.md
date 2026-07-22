@@ -8,6 +8,134 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-007 — Email: the framework sends, the application speaks; identity publishes events
+
+**Date:** 2026-07-21. **Status:** accepted.
+
+### Decision
+
+Four coupled choices for the Step-6 email capability, all following the framework/apps axis
+(ADR-001):
+
+1. **`zen-email` is a mechanism, not content.** `EmailService.send(LocalizedEmail)` owns locale
+   resolution, per-locale template lookup, rendering, and sending; it owns no wording, no branding,
+   and no template. The application supplies the subject (from its own typed Qute
+   `@MessageBundle`) and the per-locale bodies under `templates/mail/`. This is the same split as
+   TA-1's OpenAPI merge, where a framework resource declares a schema by `$ref` and the app's
+   static `META-INF/openapi.yaml` supplies it. The alternative - shipping default templates inside
+   the library jar for apps to override - was rejected: a jar-resident Qute template has no clean
+   override mechanism, and generic framework branding in a product's mailbox is a defect, not a
+   default.
+
+2. **`zen-identity` publishes CDI events; it never sends mail.** `IdentityService.register(...)`
+   fires `UserRegistered` and the retention cycle fires `AccountDeletionWarning`; applications
+   observe them with `@ObservesAsync`. So `zen-identity` gains **no** dependency on `zen-email`.
+   The framework knows *that* a user registered; only the application knows what to say. Both
+   events are fired **after** the triggering transaction has committed and are observed
+   asynchronously, so mail is never sent for a change that rolled back and registration neither
+   waits for SMTP nor can be failed by it. `EmailService.send` compounds that by never throwing: a
+   missing template, a render error, or an unreachable relay returns `false` and logs.
+
+3. **`ZenLocales` (in `zen-core`) is the single declaration of the supported set.** `SUPPORTED =
+   {en, uk}`, `FALLBACK = en`, with `resolve(tag)` for stored preferences (`users.language`, which
+   email reads because it has no request) and `fromAcceptLanguage(header)` delegating to the pure
+   `AcceptLanguage` parser. `Accept-Language` on `POST /auth/register` seeds `users.language`; it
+   stays a header rather than a `RegisterRequest` field because the locale is a property of the
+   request, not of the identity, which leaves the proto contract untouched.
+
+   **On the client the locale is likewise ambient**, supplied once to `ZenClient` as a
+   `String Function()?` and emitted on every request beside `X-Request-ID` and `X-Zen-Transport`,
+   rather than added as an argument to `registerWithEmail`. A callback, not a value, because the
+   locale is live app state and a mid-session language switch must reach the next request; a
+   per-call `headers:` entry still overrides it, so `DemoRepository`'s explicit locale is
+   unaffected. Making it a repository argument was rejected: it would have changed the
+   `IdentityRepository` interface (TA-5 requires the implementation to match it exactly) and every
+   fake in the `zen_ui_identity` suite, to express something that is request context rather than
+   an endpoint parameter - and it would have fixed only the one endpoint that happens to need it
+   today.
+
+4. **Data retention ships now, opt-in, and is never scheduled in prod.** `UserRetentionService` +
+   `UserRetentionJob` in `zen-identity` use the `users` GDPR columns the scaffold already carried:
+   warn, warn finally, then anonymise. The cron defaults to `off` in the library's own
+   `META-INF/microprofile-config.properties` - a framework must never start erasing user data
+   because an app depends on it - and `zen_demo_server` enables it in dev only.
+
+   **`%prod` pins it off**, because an in-process cron is incompatible with the deployment model:
+   Cloud Run runs `--min-instances=0`, so at 03:00 there is normally no instance alive to fire the
+   trigger, and a run that does happen is an accident of traffic rather than a schedule. This is
+   the mirror image of the documented "one instance makes in-process state valid" invariant, and
+   is now recorded beside it in STANDARDS "Deployment model": in-process *state* is sound under
+   this model, in-process *time* is not. The hazard is not merely a missed run - because
+   `EmailService` is deliberately non-fatal, an unconfigured SMTP relay would skip the warnings
+   while the timestamps advanced, anonymising accounts whose owners were never warned. A product
+   that needs retention on Cloud Run drives `runCycle()` from an external trigger (which also wakes
+   the instance); that is its own scheduling design and not part of this step, which is why
+   `runCycle()` is a plain public method and the cron binding is a thin wrapper over it.
+
+   **This leaves the GDPR obligation undischarged in production, deliberately and on the record.**
+   The trigger is specified as **ROADMAP step 7a** (`zen-jobs`), modelled on the donor's
+   `../DartZen/packages/dartzen_jobs`: an external scheduler calling one endpoint, job state in
+   Postgres, and due-ness computed from `last_run_at` rather than from a timer having fired, so a
+   tick missed while scaled to zero is caught up instead of lost. Step 7a also owns the related
+   hole this ADR knowingly accepts: because `EmailService` is non-fatal, a warning that failed to
+   send still advances the clock toward anonymisation, and gating that needs the durable
+   delivery state 7a introduces.
+
+   Windows (330 / 23 / 7 days) are config, and the countdown quoted in a message is derived from
+   them, so wording and schedule cannot drift apart.
+
+### What this supersedes, and why
+
+- **"These are defaulted/nullable now and wired in later steps (email deletion warnings in ROADMAP
+  step 6 ...)"** (`User` javadoc; BLUEPRINT "Persistence") → **delivered.**
+  `deletion_warning_sent_at` / `final_warning_sent_at` are now written by `UserRetentionService`.
+  *Why:* the warning emails are the reason the columns exist, and a warning flow with no terminal
+  action would promise a deletion that never happens - so the anonymisation step ships with them.
+- **"`dartzen_jobs` → Quarkus `@Scheduled`" listed under "port only when a consumer needs them"**
+  (ROADMAP Step 7, deferred packages) → **promoted and reframed.** A Quarkus `@Scheduled` bean is
+  not a port of `dartzen_jobs` at all: the donor package exists precisely because in-process timers
+  do not survive a serverless runtime, and its answer is an external trigger plus persisted job
+  state. That work is now **step 7a, required before production rather than deferred**, since the
+  GDPR cycle Step 6 delivered cannot legally rely on a timer that may never fire.
+- **"`AppMessages` + `AppMessagesUk`"** (BLUEPRINT "Email", localized templates) → **renamed.** The
+  reference app's mail subjects are `MailMessages` + `MailMessagesUk`, bundle name `mail`. *Why:* a
+  Qute bundle name must be unique per application and `DemoMessages` already holds the default; the
+  name now says what the bundle is for.
+- **"the two Qute templates at `templates/mail/{warningEmail,finalWarningEmail}.html`" is "what is
+  genuinely portable"** (`zen-email/pom.xml` header comment) → **not ported.** The donor templates
+  are English-only hardcoded strings; jZen writes six templates instead
+  (`{welcome,deletion_warning,final_warning}_{en,uk}.html`). *Why:* STANDARDS forbids carrying the
+  donor's limitations forward, and localized-from-the-start is the whole point of the step.
+- **The donor's fourth retention phase, deleting unconfirmed identities through the Supabase admin
+  API** (`UserCleanupService.deleteUnconfirmedAccounts`) → **not ported.** *Why:* it needs a
+  service-role key on the server and reaches into `auth.users`, which jZen deliberately does not
+  own (BLUEPRINT "Persistence"). Anonymising the local profile is the part jZen's own schema models.
+- **The donor's re-activation bug** (`UserCleanupService.java:143`: a user who signs back in keeps
+  their warning stamps and is deleted anyway) → **fixed on port.** `UserStore.upsertOnLogin` clears
+  both stamps on every sign-in. *Why:* STANDARDS "Do not carry over donor bugs".
+
+### Consequence
+
+`zen-email` now carries a Jandex index (it contributes a CDI bean, so without one `EmailService`
+would be invisible from the jar - the rule that made `zen-transport` the reference).
+`UserStore.upsertOnLogin` returns `Upsert(user, created)` so a welcome message is sent once per
+profile, never again on a repeat signup. Adding a locale stays a three-file change with no code
+edit: a `@Localized` bundle variant, the matching templates, and the tag in `ZenLocales.SUPPORTED`.
+Lockstep versioning is unchanged at `0.1.0`.
+
+Verified: `task build:server` and the app build green; the backend suite is **34 tests, 0 failures**
+(11 new) - `WelcomeEmailTest` asserts a Ukrainian subject *and* Ukrainian body for
+`Accept-Language: uk-UA` and English for none or an unsupported tag, that the header seeds
+`users.language`, and that a repeat signup sends nothing; `UserRetentionTest` walks first warning →
+final warning → anonymisation with localized subjects, proves premium accounts are exempt, and
+proves `anonymous@example.com` is still warned (the `anon!_%` escape - an unescaped `_` is an HQL
+wildcard); `EmailFailureTest` injects an unreachable mailer as a CDI alternative and shows
+registration still returns 200. No test touches SMTP. Manually verified against live Supabase +
+Quarkus dev: registering with `Accept-Language: uk-UA` produced `users.language = uk` and a mock
+mailer capture of "Ласкаво просимо до jZen", `en-US` produced `en` and "Welcome to jZen".
+
+---
+
 ## ADR-001 — jZen is a framework; libraries (`server/`, `client/`) vs applications (`apps/`)
 
 **Date:** 2026-07-19. **Status:** accepted.

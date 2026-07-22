@@ -14,9 +14,11 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.CookieParam;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.NewCookie;
 import jakarta.ws.rs.core.Response;
@@ -91,9 +93,17 @@ public class AuthResource {
         @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(ref = "Identity")),
         @Content(mediaType = PROTOBUF, schema = @Schema(ref = "Identity"))
       })
-  public Response register(RegisterRequest request) {
+  public Response register(
+      RegisterRequest request, @HeaderParam(HttpHeaders.ACCEPT_LANGUAGE) String acceptLanguage) {
+    /*
+     * Registration is the one moment the framework can learn a new user's language, so the header
+     * seeds users.language - the column every later localized message (email above all) reads,
+     * having no request of its own. It stays a header rather than a RegisterRequest field: the
+     * locale is a property of the request, not of the identity being created, and keeping it out
+     * of the proto leaves the wire contract untouched.
+     */
     IdentityService.Session session =
-        identityService.register(request.getEmail(), request.getPassword());
+        identityService.register(request.getEmail(), request.getPassword(), acceptLanguage);
     return sessionResponse(session);
   }
 

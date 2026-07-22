@@ -356,7 +356,9 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    "Accept-Language"?: string;
+                };
                 path?: never;
                 cookie?: never;
             };

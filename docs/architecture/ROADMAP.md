@@ -158,29 +158,127 @@ Deliverables:
   `POST /auth/logout`), httpOnly cookie, admin-role gated.
 - The Flutter `dartzen_ui_admin` is confirmed dropped (not migrated).
 
-## Step 6 — Email ☐
+## Step 6 — Email ✅
 
-- `zen-email` `EmailService` (new) over `quarkus-mailer`, wiring Brevo via `SMTP_HOST`.
+> **Shaped during delivery (see [`DECISIONS.md`](./DECISIONS.md) ADR-007).** The framework sends,
+> the application speaks: `zen-email` owns the mechanism, each app owns every word a user reads.
+> `zen-identity` publishes CDI events instead of sending mail, so it gains no dependency on
+> `zen-email` and an app opts in by observing.
+
+- `zen-email` `EmailService` (new) over `quarkus-mailer`, wiring Brevo via `SMTP_HOST` — Brevo is
+  only an SMTP host, so nothing in the Java is provider-specific. `send(LocalizedEmail)` resolves
+  the locale, renders, sends, and **never throws**: mail is a side effect of a business action and
+  must never fail it.
 - **Localized from the start (TA / BLUEPRINT "Email"):** per-locale Qute templates
-  (`@Localized` variants, e.g. `mail/welcome_en.html` / `welcome_uk.html`) with subjects
-  from a Qute `@MessageBundle`; `EmailService` resolves the recipient's locale from
-  `users.language`. `SUPPORTED = {en, uk}` initially. BugEater's English-only hardcoded
-  mail strings are not carried forward.
+  (`mail/welcome_{en,uk}.html`, `mail/deletion_warning_{en,uk}.html`,
+  `mail/final_warning_{en,uk}.html`) with subjects from a Qute `@MessageBundle`
+  (`MailMessages` + the `@Localized("uk")` variant); `EmailService` resolves the recipient's locale
+  from `users.language`, seeded at registration from `Accept-Language`. The supported set lives once,
+  in `zen.core.i18n.ZenLocales` (`{en, uk}`, fallback `en`), which `DemoResource` now also uses.
+  BugEater's English-only hardcoded mail strings are not carried forward.
+- **On the client, the locale is ambient too:** `ZenClient` takes a `language` callback and emits
+  `Accept-Language` on every request beside `X-Request-ID` and `X-Zen-Transport`, so the language
+  the user picked in `zen_demo` reaches `POST /auth/register` without any repository growing a
+  locale argument (and a per-call `headers:` entry still overrides it). Without this the reference
+  app could not actually demonstrate the feature: every registration from the UI would have landed
+  as `en`.
+- **GDPR data retention**, using the `users` columns the scaffold already carried: `UserRetentionJob`
+  + `UserRetentionService` in `zen-identity` warn a dormant account, warn it finally, then anonymise
+  it, publishing `AccountDeletionWarning` for the app to localize. **Off by default** (the library's
+  own `META-INF/microprofile-config.properties`); `zen_demo_server` enables it in dev, and pins it
+  off in `%prod` because an in-process cron cannot work under `--min-instances=0` — see ADR-007 and
+  the new STANDARDS "Deployment model" rule. Signing back in clears the warning stamps — the donor
+  deleted returning users anyway, which is a bug, not a behaviour.
+- **Left open on purpose, and tracked as step 7a below:**
+  retention therefore does not yet *run* in production, so the GDPR obligation is not discharged
+  there. Step 6 delivers the cycle and proves it; step 7a delivers the guaranteed trigger that
+  makes it fire, and closes the related hole where a warning that failed to send still advances the
+  clock toward anonymisation.
+- **Verified:** `task build:server`, `build:client` (`dart analyze` clean) and `build:apps` green;
+  the backend suite is **34 tests, 0 failures** (11 new), and `task test:client` is green with 5 new
+  Dart tests pinning the ambient `Accept-Language` (emitted, omitted when unset, re-read per request
+  so a mid-session switch applies, overridable per call, and carried by `registerWithEmail`). `WelcomeEmailTest` asserts the Ukrainian subject *and* body for
+  `Accept-Language: uk-UA`, English for none or an unsupported tag, that the header seeds
+  `users.language`, and that a repeat signup greets nobody twice; `UserRetentionTest` walks the
+  whole cycle including the premium exemption and the `anon!_%` escape; `EmailFailureTest` proves
+  registration returns 200 with the mail server unreachable. No test touches SMTP — the mailer is
+  mocked and `MockMailbox` is what the assertions read. Manually confirmed against live Supabase +
+  Quarkus dev: `uk-UA` → `users.language = uk` + "Ласкаво просимо до jZen", `en-US` → `en` +
+  "Welcome to jZen".
 
-## Step 7 — Deferred packages and framework improvements ☐
+## Step 7 — Guaranteed scheduled work, deferred packages, framework improvements ☐
 
-Done in isolation, when a consumer needs them (packages) or when the framework earns the change
-(improvements).
+The first item is **required before any production deployment that stores personal data**; the
+rest are done in isolation, when a consumer needs them (packages) or when the framework earns the
+change (improvements).
 
-**Deferred package ports** — port only when a consumer needs them:
+### 7a — Guaranteed scheduled work (`zen-jobs`) — REQUIRED, not deferred
 
-- `dartzen_jobs` → Quarkus `@Scheduled` (reference: `../BugEater/.../user/DataRetentionJob.java`).
+**Why this is a blocker, not a nice-to-have.** Step 6 shipped the GDPR retention cycle but had to
+pin it `off` in `%prod` (ADR-007): Cloud Run runs `--min-instances=0`, so an in-process
+`@Scheduled` has no thread alive at the hour it names — see STANDARDS "Deployment model". The
+obligation to erase dormant personal data is therefore **not discharged in production today**.
+This step is what discharges it. Retention is only the first caller; the mechanism is general.
+
+**The shape is already proven in the donor** — `../DartZen/packages/dartzen_jobs`, where an
+external service watches the schedule and calls the application's endpoints:
+
+- Three job types (`.../lib/src/models/job_type.dart`): `endpoint` (event-driven, Cloud Tasks),
+  `scheduled` (cron, Cloud Scheduler), `periodic` (interval).
+- **The Master Job** (`.../lib/src/master_job.dart`): *one* Cloud Scheduler entry hits
+  `/jobs/trigger` every minute; the master reads the enabled periodic jobs, computes which are due
+  from `interval` + `lastRun`, and runs them sequentially. One trigger, one container start, N jobs.
+- **Job state is persisted, not compiled in** (`.../lib/src/models/job_config.dart`: `enabled`,
+  `cron`, `interval`, `lastRun`, `nextRun`, `lastStatus`, `maxRetries`, `startAt`/`endAt`,
+  `skipDates`, `dependencies`, `priority`), so a schedule changes or a job is disabled without a
+  redeploy.
+- The trigger call carries a Google identity token
+  (`.../lib/src/cloud_tasks_adapter.dart:48`).
+
+**What jZen keeps, and what it must change:**
+
+- **Due-ness is computed from `last_run_at`, never from "the timer fired."** This single property
+  is what turns best-effort into a guarantee: a tick missed while scaled to zero, mid-deploy, or
+  during an outage is simply caught up on the next one. Without it there is no compliance story,
+  only a hope.
+- Persist job state in **Postgres (Flyway + Panache)**, not Firestore — jZen has no Firestore and
+  Flyway is the single migration authority.
+- **The job body stays a plain callable** so the trigger is a deployment choice rather than a code
+  one. `UserRetentionJob.runCycle()` is already written this way and becomes the first registered
+  job.
+- **One trigger endpoint with master-style batching.** N Cloud Scheduler entries would mean N cold
+  starts, which fights the single-instance cost model in STANDARDS.
+- **At-least-once, therefore idempotent.** Cloud Scheduler retries; every job must be safe to run
+  twice. Retention already is (the stamps guard re-sending), but it becomes a stated contract.
+- **Overlap guard.** At `--max-instances=1` an in-process lock is sufficient, by the same reasoning
+  that makes in-process state valid; raising `--max-instances` is the trigger to move to a Postgres
+  advisory lock.
+- **Open design question to settle in an ADR: authenticating the trigger.** Cloud Scheduler sends a
+  Google OIDC token, but `mp.jwt.*` is already bound to Supabase's issuer and JWKS. Either add a
+  second verification path or use a shared secret from Secret Manager. Decide before building.
+- **Dev keeps the in-process cron** (already the case — `%dev` on, `%prod` off), so local work needs
+  no GCP. This mirrors the donor's development/production executor split.
+- **Observability.** A run records start, outcome, and duration (the donor emits
+  `job.started`/`succeeded`/`failed`); jZen has Micrometer and structured logs, and `last_run_at` /
+  `last_status` are queryable — and worth surfacing in the admin panel.
+- **Close the GDPR correctness hole this step exposed.** The retention cycle currently advances
+  `deletion_warning_sent_at` / `final_warning_sent_at` whether or not the message was delivered,
+  because `EmailService` is deliberately non-fatal — so a broken relay would anonymise people who
+  were never warned. Durable job state gives that fix somewhere to live: record the delivery
+  outcome and gate anonymisation on a warning that actually went out.
+
+**Done when:** retention runs in production on a schedule that is provably not best-effort — a tick
+missed while scaled to zero is caught up, a run is visible after the fact, and no account is ever
+anonymised without a delivered warning.
+
+### Deferred package ports — port only when a consumer needs them
 - `dartzen_telemetry` → a Panache-backed store (its `TelemetryStore` is the one clean
   store abstraction in DartZen — `../DartZen/packages/dartzen_telemetry/lib/src/store/telemetry_store.dart:4`).
+  Pairs naturally with 7a, which needs somewhere to record job runs.
 - `dartzen_executor`, `dartzen_payments`, `dartzen_ai`, `dartzen_cache`,
   `dartzen_storage` (→ Supabase Storage / S3) — no committed target until demanded.
 
-**Framework improvements** — deferred but committed to a plan:
+### Framework improvements — deferred but committed to a plan
 
 - **Typed, generated client i18n** (mirrors the server's Qute `@MessageBundle`; see
   [`DECISIONS.md`](./DECISIONS.md) ADR-004). Today `zen_localization` is a hand-rolled service over

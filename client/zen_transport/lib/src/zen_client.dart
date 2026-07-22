@@ -26,6 +26,9 @@ import 'zen_transport_header.dart';
 /// Standard HTTP header for request IDs.
 const String requestIdHeaderName = 'X-Request-ID';
 
+/// Standard HTTP header carrying the caller's preferred locale.
+const String acceptLanguageHeaderName = 'Accept-Language';
+
 /// HTTP client for jZen dual-mode transport.
 ///
 /// A caller sends a typed protobuf request and receives a typed protobuf response; the wire
@@ -47,11 +50,13 @@ class ZenClient {
   ///
   /// [baseUrl] is the base URL for all requests. [format] defaults to
   /// [selectDefaultCodec], the compile-time platform selector (TA-6 #1). [httpClient]
-  /// allows injecting a custom HTTP client for testing.
+  /// allows injecting a custom HTTP client for testing. [language] supplies the caller's
+  /// current locale for [acceptLanguageHeaderName]; see the field.
   ZenClient({
     required this.baseUrl,
     ZenTransportFormat? format,
     http.Client? httpClient,
+    this.language,
   }) : format = format ?? selectDefaultCodec(),
        _httpClient = httpClient ?? http.Client();
 
@@ -61,6 +66,20 @@ class ZenClient {
   /// Transport format used for outbound requests and as the fallback for decoding
   /// responses that do not echo an `X-Zen-Transport` header.
   final ZenTransportFormat format;
+
+  /// Supplies the caller's current locale, sent as `Accept-Language` on every request.
+  ///
+  /// A callback rather than a value because the locale is live app state: the user switches
+  /// language mid-session and the next request must reflect it. Leave it null and the header is
+  /// simply omitted, so the server falls back on its own default.
+  ///
+  /// This is ambient request context, exactly like the request id and the transport format:
+  /// the locale belongs to the *request*, not to any one endpoint's arguments. That is why it
+  /// lives here instead of on each repository method - it reaches every endpoint at once,
+  /// including the ones whose server side reads it without the client ever knowing (the
+  /// registration that seeds `users.language`, which in turn localizes email). A per-call
+  /// `headers:` entry still wins, so a caller that needs a specific locale can override it.
+  final String Function()? language;
 
   final http.Client _httpClient;
   int _requestCounter = 0;
@@ -181,13 +200,19 @@ class ZenClient {
   Map<String, String> _buildHeaders(
     Map<String, String>? customHeaders,
     String requestId,
-  ) => {
-    'Content-Type': format.contentType,
-    'Accept': format.contentType,
-    zenTransportHeaderName: format.value,
-    requestIdHeaderName: requestId,
-    ...?customHeaders,
-  };
+  ) {
+    // Resolved per request, not cached: the user can switch language mid-session.
+    final locale = language?.call();
+    return {
+      'Content-Type': format.contentType,
+      'Accept': format.contentType,
+      zenTransportHeaderName: format.value,
+      requestIdHeaderName: requestId,
+      if (locale != null && locale.isNotEmpty) acceptLanguageHeaderName: locale,
+      // Spread last, so an explicit per-call header overrides the ambient ones.
+      ...?customHeaders,
+    };
+  }
 
   /// Builds a typed [ZenResult] from an HTTP [response].
   ///

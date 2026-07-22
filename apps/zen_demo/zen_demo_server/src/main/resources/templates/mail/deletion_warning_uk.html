@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<!--
+  Ukrainian first data-retention notice (GDPR Art. 5(1)(e)), sent by UserRetentionJob's FIRST
+  stage. English counterpart: deletion_warning_en.html; subject in
+  MailMessagesUk.deletionWarningSubject(days).
+
+  Inline styles only, and no <style> block: Qute would read a CSS rule's braces as an
+  expression. Available data: email, siteUrl, days.
+-->
+<html lang="uk">
+  <body style="margin: 0; padding: 24px; background: #f5f6f8; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: #1c2024;">
+    <div style="max-width: 560px; margin: 0 auto; background: #ffffff; border-radius: 12px; padding: 32px;">
+      <h1 style="margin: 0 0 16px; font-size: 22px;">Ваш обліковий запис давно неактивний</h1>
+      <p style="margin: 0 0 16px; line-height: 1.6;">
+        Ми давно не бачили входу з адреси <strong>{email}</strong>. Щоб зберігати лише потрібні
+        дані, jZen знеособлює неактивні облікові записи.
+      </p>
+      <p style="margin: 0 0 24px; line-height: 1.6;">
+        Ваш заплановано знеособити через <strong>{days} днів</strong>. Достатньо один раз увійти,
+        щоб цього не сталося.
+      </p>
+      <p style="margin: 0 0 24px;">
+        <a href="{siteUrl}" style="display: inline-block; background: #1c2024; color: #ffffff; text-decoration: none; padding: 12px 20px; border-radius: 8px;">Увійти та зберегти запис</a>
+      </p>
+      <p style="margin: 0; font-size: 13px; color: #6b7280;">
+        Якщо він вам більше не потрібен, просто нічого не робіть.
+      </p>
+    </div>
+  </body>
+</html>

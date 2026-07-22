@@ -1,10 +1,9 @@
 /**
- * jZen email (Java): the EmailService module (ROADMAP step 6).
+ * jZen email (Java): localized transactional mail over {@code quarkus-mailer} (ROADMAP step 6).
  *
- * <p>Placeholder so this module always compiles to a {@code target/classes} directory.
- * Quarkus's workspace bootstrap resolves every reactor dependency of {@code zen-app} by its
- * {@code target/classes}; an empty module (no sources) produces none, which breaks
- * {@code quarkus:generate-code} from a clean tree. The localized {@code EmailService} over
- * {@code quarkus-mailer} lands here in step 6.
+ * <p>{@link zen.email.EmailService} is the whole public surface: hand it a
+ * {@link zen.email.LocalizedEmail} and it resolves the recipient's locale, renders the matching
+ * per-locale Qute template, and sends - without ever throwing at the caller. The module is
+ * deliberately content-free; wording and branding belong to the application (DECISIONS ADR-007).
  */
 package zen.email;

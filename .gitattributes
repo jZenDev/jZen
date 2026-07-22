@@ -1,0 +1,18 @@
+# Generated output that is deliberately tracked - see docs/architecture/STANDARDS.md
+# "Code generation". These files cross a toolchain boundary: a Flutter developer must not
+# need protoc + protoc-gen-dart, and a frontend developer must not need a JDK and a full
+# Quarkus build, merely to make the package compile. Everything generated *within* one
+# toolchain (the Java DTOs, the merged openapi.json) stays untracked under target/.
+#
+# linguist-generated keeps them out of the repository's language statistics and collapses
+# them by default in review. Deliberately NOT marked -diff: that would make git treat them
+# as binary, and their diff is the one place a wire-contract change shows up as a reviewable
+# change. `task sync:contracts` is unaffected either way - it reads `git status`, which
+# these attributes do not touch.
+
+client/zen_transport/lib/src/generated/** linguist-generated=true
+
+*.pb.dart      linguist-generated=true
+*.pbenum.dart  linguist-generated=true
+*.pbjson.dart  linguist-generated=true
+*.generated.ts linguist-generated=true

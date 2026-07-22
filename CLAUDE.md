@@ -61,7 +61,12 @@ Quarkus resources + SmallRye ──▶ REST paths/verbs/status ──▶ merged 
 - `.proto` under `proto/zen/v1/` is canonical for **models**; SmallRye-annotated Quarkus resources
   are canonical for the **REST surface** (paths, verbs, status codes). Everything else — Java DTOs,
   Dart messages, `openapi.json`, TS types — is **derived**.
-- **Every generated file is committed and never hand-edited.** Fix the `.proto` or annotation and
+- **Generated output is committed across a toolchain boundary, regenerated within one.** Tracked:
+  the Dart messages and the admin `schema.generated.ts` (a Flutter/frontend dev must not need
+  `protoc` or a JDK to compile). Not tracked: the Java DTOs and `openapi.json`, which live under
+  `target/` because Maven resolves `protoc` itself. Do not "fix" that by checking `target/` in.
+  See STANDARDS "Code generation".
+- **A tracked generated file is never hand-edited.** Fix the `.proto` or annotation and
   regenerate; `task sync:contracts` will fail the build if a generated file drifts. Editing a
   derived artifact is a defect.
 

@@ -19,18 +19,29 @@ import 'src/providers.dart';
 void main() {
   final http.Client session = createSessionClient();
 
+  // The container is built below, but ZenClient only calls this closure when it sends a
+  // request - by which time it is assigned. Reading the notifier per request (rather than
+  // capturing a value) is what makes a mid-session language switch take effect, and it is
+  // what carries the chosen locale into POST /auth/register, where the server seeds
+  // users.language and every later localized email follows from it.
+  late final ProviderContainer container;
   final identityRepository = SupabaseIdentityRepository(
-    client: ZenClient(baseUrl: zenApiUrl, httpClient: session),
+    client: ZenClient(
+      baseUrl: zenApiUrl,
+      httpClient: session,
+      language: () => container.read(languageProvider),
+    ),
   );
   final demoRepository = DemoRepository(baseUrl: zenApiUrl, session: session);
 
+  container = ProviderContainer(
+    overrides: [
+      identityRepositoryProvider.overrideWithValue(identityRepository),
+      demoRepositoryProvider.overrideWithValue(demoRepository),
+    ],
+  );
+
   runApp(
-    ProviderScope(
-      overrides: [
-        identityRepositoryProvider.overrideWithValue(identityRepository),
-        demoRepositoryProvider.overrideWithValue(demoRepository),
-      ],
-      child: const DemoApp(),
-    ),
+    UncontrolledProviderScope(container: container, child: const DemoApp()),
   );
 }

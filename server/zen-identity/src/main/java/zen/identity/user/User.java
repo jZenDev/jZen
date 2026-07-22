@@ -23,8 +23,10 @@ import java.util.UUID;
  *       {@code deletion_warning_sent_at}, {@code final_warning_sent_at}.
  * </ul>
  *
- * These are defaulted/nullable now and wired in later steps (email deletion warnings in
- * ROADMAP step 6, payments in step 7). {@code language} feeds i18n and localized email.
+ * The deletion-warning timestamps are written by {@link UserRetentionService} (ROADMAP step 6);
+ * {@code is_premium} both exempts an account from that cycle and awaits payments in step 7.
+ * {@code language} feeds i18n and is the sole locale source for email, which has no request to
+ * read {@code Accept-Language} from.
  */
 @Entity
 @Table(name = "users")

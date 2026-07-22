@@ -16,8 +16,11 @@
   it is stock quarkus-mailer SMTP (application.properties:161-169). Swapping providers
   means changing SMTP_HOST, nothing more.
 
-  What is genuinely portable: the mailer config block and the two Qute templates at
-  src/main/resources/templates/mail/{warningEmail,finalWarningEmail}.html.
+  What is genuinely portable: the mailer config block. The two donor Qute templates at
+  src/main/resources/templates/mail/{warningEmail,finalWarningEmail}.html are NOT ported - they
+  are English-only hardcoded strings, and this module exists to make that impossible. jZen writes
+  per-locale templates instead, and they live in the application, not here: this module is the
+  sending mechanism and owns no wording (DECISIONS ADR-007).
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -57,4 +60,26 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Generates META-INF/jandex.idx so Quarkus discovers EmailService (a CDI bean) from
+           this jar when it is a dependency of an app server. Without an index the bean is
+           invisible and injection fails at build time. zen-transport is the reference; every
+           jZen library module contributing beans or providers needs this. -->
+      <plugin>
+        <groupId>io.smallrye</groupId>
+        <artifactId>jandex-maven-plugin</artifactId>
+        <version>3.2.7</version>
+        <executions>
+          <execution>
+            <id>make-index</id>
+            <goals>
+              <goal>jandex</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>

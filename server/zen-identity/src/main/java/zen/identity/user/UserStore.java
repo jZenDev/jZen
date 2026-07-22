@@ -1,5 +1,6 @@
 package zen.identity.user;
 
+import zen.core.i18n.ZenLocales;
 import zen.identity.auth.SupabaseSessionResponse.UserPayload;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
@@ -19,17 +20,41 @@ import java.util.UUID;
 @ApplicationScoped
 public class UserStore {
 
-  /** Creates the local profile row if absent, then stamps the login time. Returns the row. */
+  /**
+   * The reconciled row plus whether this call is what created it. {@code created} is what makes
+   * "greet a user once" enforceable: a Supabase signup for an address that already has a local
+   * profile must not fire {@code UserRegistered} a second time.
+   */
+  public record Upsert(User user, boolean created) {}
+
+  /**
+   * Creates the local profile row if absent, then stamps the login time. Returns the row together
+   * with whether this call created it.
+   *
+   * <p>{@code preferredLanguage} seeds {@code users.language} on creation only - the column is the
+   * user's own setting afterwards, so a later request in another language never overwrites it. It
+   * is the raw tag from the registering request ({@code Accept-Language}); {@link ZenLocales}
+   * narrows it to a supported locale, so a null or unknown tag yields the fallback rather than an
+   * unrenderable value. That column is the sole locale source for email, which has no request to
+   * read a header from.
+   *
+   * <p>Signing in also clears any pending data-retention warnings: the account is demonstrably
+   * active again, so it must fall out of the deletion pipeline. The donor left the timestamps set
+   * and went on to delete accounts whose owners had come back
+   * (../BugEater/bugeater-quarkus/src/main/java/jlogicsoftware/user/UserCleanupService.java:143);
+   * that is a bug, and STANDARDS forbids carrying donor bugs across.
+   */
   @Transactional
-  public User upsertOnLogin(UserPayload payload) {
+  public Upsert upsertOnLogin(UserPayload payload, String preferredLanguage) {
     UUID id = UUID.fromString(payload.id());
     User user = User.findById(id);
-    if (user == null) {
+    boolean created = user == null;
+    if (created) {
       user = new User();
       user.id = id;
       user.email = payload.email();
       user.role = UserRole.USER;
-      user.language = "en";
+      user.language = ZenLocales.resolve(preferredLanguage);
       user.emailVerified = false;
       user.isPrivate = false;
       user.acceptedTerms = false;
@@ -38,7 +63,9 @@ public class UserStore {
       user.persist();
     }
     user.lastLoginAt = OffsetDateTime.now();
-    return user;
+    user.deletionWarningSentAt = null;
+    user.finalWarningSentAt = null;
+    return new Upsert(user, created);
   }
 
   @Transactional

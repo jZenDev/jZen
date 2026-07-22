@@ -158,14 +158,38 @@ Deliverables:
   `POST /auth/logout`), httpOnly cookie, admin-role gated.
 - The Flutter `dartzen_ui_admin` is confirmed dropped (not migrated).
 
-## Step 6 — Email ☐
+## Step 6 — Email ✅
 
-- `zen-email` `EmailService` (new) over `quarkus-mailer`, wiring Brevo via `SMTP_HOST`.
+> **Shaped during delivery (see [`DECISIONS.md`](./DECISIONS.md) ADR-007).** The framework sends,
+> the application speaks: `zen-email` owns the mechanism, each app owns every word a user reads.
+> `zen-identity` publishes CDI events instead of sending mail, so it gains no dependency on
+> `zen-email` and an app opts in by observing.
+
+- `zen-email` `EmailService` (new) over `quarkus-mailer`, wiring Brevo via `SMTP_HOST` — Brevo is
+  only an SMTP host, so nothing in the Java is provider-specific. `send(LocalizedEmail)` resolves
+  the locale, renders, sends, and **never throws**: mail is a side effect of a business action and
+  must never fail it.
 - **Localized from the start (TA / BLUEPRINT "Email"):** per-locale Qute templates
-  (`@Localized` variants, e.g. `mail/welcome_en.html` / `welcome_uk.html`) with subjects
-  from a Qute `@MessageBundle`; `EmailService` resolves the recipient's locale from
-  `users.language`. `SUPPORTED = {en, uk}` initially. BugEater's English-only hardcoded
-  mail strings are not carried forward.
+  (`mail/welcome_{en,uk}.html`, `mail/deletion_warning_{en,uk}.html`,
+  `mail/final_warning_{en,uk}.html`) with subjects from a Qute `@MessageBundle`
+  (`MailMessages` + the `@Localized("uk")` variant); `EmailService` resolves the recipient's locale
+  from `users.language`, seeded at registration from `Accept-Language`. The supported set lives once,
+  in `zen.core.i18n.ZenLocales` (`{en, uk}`, fallback `en`), which `DemoResource` now also uses.
+  BugEater's English-only hardcoded mail strings are not carried forward.
+- **GDPR data retention**, using the `users` columns the scaffold already carried: `UserRetentionJob`
+  + `UserRetentionService` in `zen-identity` warn a dormant account, warn it finally, then anonymise
+  it, publishing `AccountDeletionWarning` for the app to localize. **Off by default** (the library's
+  own `META-INF/microprofile-config.properties`); `zen_demo_server` opts in. Signing back in clears
+  the warning stamps — the donor deleted returning users anyway, which is a bug, not a behaviour.
+- **Verified:** `task build:server` + the app build green; the backend suite is **34 tests, 0
+  failures** (11 new). `WelcomeEmailTest` asserts the Ukrainian subject *and* body for
+  `Accept-Language: uk-UA`, English for none or an unsupported tag, that the header seeds
+  `users.language`, and that a repeat signup greets nobody twice; `UserRetentionTest` walks the
+  whole cycle including the premium exemption and the `anon!_%` escape; `EmailFailureTest` proves
+  registration returns 200 with the mail server unreachable. No test touches SMTP — the mailer is
+  mocked and `MockMailbox` is what the assertions read. Manually confirmed against live Supabase +
+  Quarkus dev: `uk-UA` → `users.language = uk` + "Ласкаво просимо до jZen", `en-US` → `en` +
+  "Welcome to jZen".
 
 ## Step 7 — Deferred packages and framework improvements ☐
 
@@ -174,7 +198,9 @@ Done in isolation, when a consumer needs them (packages) or when the framework e
 
 **Deferred package ports** — port only when a consumer needs them:
 
-- `dartzen_jobs` → Quarkus `@Scheduled` (reference: `../BugEater/.../user/DataRetentionJob.java`).
+- `dartzen_jobs` → Quarkus `@Scheduled`. The retention job it was the reference for
+  (`../BugEater/.../user/DataRetentionJob.java`) already landed in step 6 as `UserRetentionJob`
+  (ADR-007); what remains here is the general job abstraction, if a consumer ever needs one.
 - `dartzen_telemetry` → a Panache-backed store (its `TelemetryStore` is the one clean
   store abstraction in DartZen — `../DartZen/packages/dartzen_telemetry/lib/src/store/telemetry_store.dart:4`).
 - `dartzen_executor`, `dartzen_payments`, `dartzen_ai`, `dartzen_cache`,

@@ -83,6 +83,12 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-jdbc-postgresql</artifactId>
     </dependency>
+    <!-- Drives UserRetentionJob's GDPR data-retention cycle. The job is off unless an app sets
+         zen.identity.retention.cron; see META-INF/microprofile-config.properties. -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-scheduler</artifactId>
+    </dependency>
 
     <dependency>
       <groupId>org.mapstruct</groupId>

@@ -8,6 +8,98 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-007 — Email: the framework sends, the application speaks; identity publishes events
+
+**Date:** 2026-07-21. **Status:** accepted.
+
+### Decision
+
+Four coupled choices for the Step-6 email capability, all following the framework/apps axis
+(ADR-001):
+
+1. **`zen-email` is a mechanism, not content.** `EmailService.send(LocalizedEmail)` owns locale
+   resolution, per-locale template lookup, rendering, and sending; it owns no wording, no branding,
+   and no template. The application supplies the subject (from its own typed Qute
+   `@MessageBundle`) and the per-locale bodies under `templates/mail/`. This is the same split as
+   TA-1's OpenAPI merge, where a framework resource declares a schema by `$ref` and the app's
+   static `META-INF/openapi.yaml` supplies it. The alternative - shipping default templates inside
+   the library jar for apps to override - was rejected: a jar-resident Qute template has no clean
+   override mechanism, and generic framework branding in a product's mailbox is a defect, not a
+   default.
+
+2. **`zen-identity` publishes CDI events; it never sends mail.** `IdentityService.register(...)`
+   fires `UserRegistered` and the retention cycle fires `AccountDeletionWarning`; applications
+   observe them with `@ObservesAsync`. So `zen-identity` gains **no** dependency on `zen-email`.
+   The framework knows *that* a user registered; only the application knows what to say. Both
+   events are fired **after** the triggering transaction has committed and are observed
+   asynchronously, so mail is never sent for a change that rolled back and registration neither
+   waits for SMTP nor can be failed by it. `EmailService.send` compounds that by never throwing: a
+   missing template, a render error, or an unreachable relay returns `false` and logs.
+
+3. **`ZenLocales` (in `zen-core`) is the single declaration of the supported set.** `SUPPORTED =
+   {en, uk}`, `FALLBACK = en`, with `resolve(tag)` for stored preferences (`users.language`, which
+   email reads because it has no request) and `fromAcceptLanguage(header)` delegating to the pure
+   `AcceptLanguage` parser. `Accept-Language` on `POST /auth/register` seeds `users.language`; it
+   stays a header rather than a `RegisterRequest` field because the locale is a property of the
+   request, not of the identity, which leaves the proto contract untouched.
+
+4. **Data retention ships now, opt-in.** `UserRetentionService` + `UserRetentionJob` in
+   `zen-identity` use the `users` GDPR columns the scaffold already carried: warn, warn finally,
+   then anonymise. The cron defaults to `off` in the library's own
+   `META-INF/microprofile-config.properties` - a framework must never start erasing user data
+   because an app depends on it - and `zen_demo_server` opts in to demonstrate the flow. Windows
+   (330 / 23 / 7 days) are config, and the countdown quoted in a message is derived from them, so
+   wording and schedule cannot drift apart.
+
+### What this supersedes, and why
+
+- **"These are defaulted/nullable now and wired in later steps (email deletion warnings in ROADMAP
+  step 6 ...)"** (`User` javadoc; BLUEPRINT "Persistence") → **delivered.**
+  `deletion_warning_sent_at` / `final_warning_sent_at` are now written by `UserRetentionService`.
+  *Why:* the warning emails are the reason the columns exist, and a warning flow with no terminal
+  action would promise a deletion that never happens - so the anonymisation step ships with them.
+- **"`dartzen_jobs` → Quarkus `@Scheduled` (reference: `DataRetentionJob.java`)"** (ROADMAP Step 7,
+  deferred packages) → **partially consumed.** The retention job is a framework `@Scheduled` bean
+  now, because Step 6 needed it. Step 7's remaining scope is the general job abstraction, not this.
+- **"`AppMessages` + `AppMessagesUk`"** (BLUEPRINT "Email", localized templates) → **renamed.** The
+  reference app's mail subjects are `MailMessages` + `MailMessagesUk`, bundle name `mail`. *Why:* a
+  Qute bundle name must be unique per application and `DemoMessages` already holds the default; the
+  name now says what the bundle is for.
+- **"the two Qute templates at `templates/mail/{warningEmail,finalWarningEmail}.html`" is "what is
+  genuinely portable"** (`zen-email/pom.xml` header comment) → **not ported.** The donor templates
+  are English-only hardcoded strings; jZen writes six templates instead
+  (`{welcome,deletion_warning,final_warning}_{en,uk}.html`). *Why:* STANDARDS forbids carrying the
+  donor's limitations forward, and localized-from-the-start is the whole point of the step.
+- **The donor's fourth retention phase, deleting unconfirmed identities through the Supabase admin
+  API** (`UserCleanupService.deleteUnconfirmedAccounts`) → **not ported.** *Why:* it needs a
+  service-role key on the server and reaches into `auth.users`, which jZen deliberately does not
+  own (BLUEPRINT "Persistence"). Anonymising the local profile is the part jZen's own schema models.
+- **The donor's re-activation bug** (`UserCleanupService.java:143`: a user who signs back in keeps
+  their warning stamps and is deleted anyway) → **fixed on port.** `UserStore.upsertOnLogin` clears
+  both stamps on every sign-in. *Why:* STANDARDS "Do not carry over donor bugs".
+
+### Consequence
+
+`zen-email` now carries a Jandex index (it contributes a CDI bean, so without one `EmailService`
+would be invisible from the jar - the rule that made `zen-transport` the reference).
+`UserStore.upsertOnLogin` returns `Upsert(user, created)` so a welcome message is sent once per
+profile, never again on a repeat signup. Adding a locale stays a three-file change with no code
+edit: a `@Localized` bundle variant, the matching templates, and the tag in `ZenLocales.SUPPORTED`.
+Lockstep versioning is unchanged at `0.1.0`.
+
+Verified: `task build:server` and the app build green; the backend suite is **34 tests, 0 failures**
+(11 new) - `WelcomeEmailTest` asserts a Ukrainian subject *and* Ukrainian body for
+`Accept-Language: uk-UA` and English for none or an unsupported tag, that the header seeds
+`users.language`, and that a repeat signup sends nothing; `UserRetentionTest` walks first warning →
+final warning → anonymisation with localized subjects, proves premium accounts are exempt, and
+proves `anonymous@example.com` is still warned (the `anon!_%` escape - an unescaped `_` is an HQL
+wildcard); `EmailFailureTest` injects an unreachable mailer as a CDI alternative and shows
+registration still returns 200. No test touches SMTP. Manually verified against live Supabase +
+Quarkus dev: registering with `Accept-Language: uk-UA` produced `users.language = uk` and a mock
+mailer capture of "Ласкаво просимо до jZen", `en-US` produced `en` and "Welcome to jZen".
+
+---
+
 ## ADR-001 — jZen is a framework; libraries (`server/`, `client/`) vs applications (`apps/`)
 
 **Date:** 2026-07-19. **Status:** accepted.

@@ -1,7 +1,7 @@
 package zen.demo;
 
 import zen.core.http.ZenStatus;
-import zen.core.i18n.AcceptLanguage;
+import zen.core.i18n.ZenLocales;
 import zen.identity.AuthException;
 import zen.identity.IdentityService;
 import zen.identity.user.User;
@@ -23,7 +23,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
 import java.util.UUID;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
@@ -48,8 +47,6 @@ public class DemoResource {
 
   private static final String PROTOBUF = "application/x-protobuf";
   private static final String MARKDOWN = "text/markdown";
-  /** Locales the demo surface ships; the first is the fallback. */
-  private static final List<String> SUPPORTED = List.of("en", "uk");
 
   @Inject DemoMessages messages; // default (en) bundle
   @Inject @Localized("uk") DemoMessages messagesUk; // Ukrainian variant
@@ -69,7 +66,7 @@ public class DemoResource {
         @Content(mediaType = PROTOBUF, schema = @Schema(ref = "Ping"))
       })
   public Response ping(@HeaderParam(HttpHeaders.ACCEPT_LANGUAGE) String acceptLanguage) {
-    String locale = AcceptLanguage.resolve(acceptLanguage, SUPPORTED, "en");
+    String locale = ZenLocales.fromAcceptLanguage(acceptLanguage);
     Ping ping =
         Ping.newBuilder()
             .setMessage(bundle(locale).pingMessage())
@@ -80,7 +77,7 @@ public class DemoResource {
 
   /** Selects the localized message bundle for the resolved locale (English is the fallback). */
   private DemoMessages bundle(String locale) {
-    return "uk".equals(locale) ? messagesUk : messages;
+    return ZenLocales.UK.equals(locale) ? messagesUk : messages;
   }
 
   @GET
@@ -96,7 +93,7 @@ public class DemoResource {
         @Content(mediaType = PROTOBUF, schema = @Schema(ref = "Terms"))
       })
   public Response terms(@HeaderParam(HttpHeaders.ACCEPT_LANGUAGE) String acceptLanguage) {
-    String locale = AcceptLanguage.resolve(acceptLanguage, SUPPORTED, "en");
+    String locale = ZenLocales.fromAcceptLanguage(acceptLanguage);
     Terms terms =
         Terms.newBuilder()
             .setContent(readTerms(locale))

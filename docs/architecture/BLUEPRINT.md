@@ -222,8 +222,9 @@ the start — Quarkus supports this natively, and Brevo (being just SMTP) impose
 `EmailService.send(...)` resolves the recipient's locale from the `users.language` column
 (the same source `../BugEater/.../i18n/LocaleFilter.java` uses), then renders a per-locale
 Qute template — `@Localized` template variants (e.g. `templates/mail/welcome_en.html`,
-`welcome_uk.html`) with subject lines from a Qute `@MessageBundle` (`AppMessages` +
-`AppMessagesUk`), the same mechanism BugEater already uses for its HTML i18n. BugEater's
+`welcome_uk.html`) with subject lines from a Qute `@MessageBundle` (as built: `MailMessages` +
+`MailMessagesUk`, owned by the application — see [`DECISIONS.md`](./DECISIONS.md) ADR-007), the
+same mechanism BugEater already uses for its HTML i18n. BugEater's
 own two mail templates are English-only hardcoded strings — jZen does not carry that
 limitation forward. `SUPPORTED` locales start at `{en, uk}` and grow with the message
 bundles, no code change per template.

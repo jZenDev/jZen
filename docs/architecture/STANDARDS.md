@@ -21,13 +21,34 @@ The rules that keep the monorepo honest. Philosophy is in
 - **No custom magic.** Only industry-standard, inspectable generators:
   protoc / MapStruct / Panache (Java); Freezed / json_serializable / protoc_plugin
   (Dart); openapi-typescript / react-admin (TS). No bespoke DSLs or frameworks.
-- **Every generated file is committed.** Generated output is diffable and reviewed like
-  any other code. It is never hand-edited — fix the source (`.proto` or an annotation)
-  and regenerate.
+- **Generated output is committed across a toolchain boundary, regenerated within one.**
+  An artifact is tracked in git exactly when the toolchain that consumes it cannot produce
+  it, so no consumer needs a tool it would not otherwise install:
+  - **Tracked** — the Dart messages (`client/zen_transport/lib/src/generated/**`) and the
+    admin TypeScript (`apps/*/*_admin/src/api/schema.generated.ts`). Regenerating the first
+    needs a *system* `protoc` plus `protoc-gen-dart` (which is why `task doctor` lists them
+    apart, as tools the Java build does not need); the second needs a full Quarkus build.
+    Neither is something a Flutter or frontend developer should have to install before the
+    package will compile.
+  - **Not tracked** — the Java DTOs (`server/zen-proto/target/generated-sources/`) and the
+    merged `openapi.json` (`target/openapi/`). `protobuf-maven-plugin` resolves the `protoc`
+    binary from Maven Central, so `./mvnw` alone regenerates the DTOs hermetically, and
+    `openapi.json` is an intermediate whose only consumer is the TypeScript generator.
+
+  The exit condition is publishing: once a package ships to pub.dev or npm, its archive
+  carries its own generated code and the repository can stop tracking it. Until then the
+  path dependency *is* the distribution mechanism.
+- **A tracked generated file is never hand-edited.** Fix the source (`.proto` or an
+  annotation) and regenerate. Its diff is reviewed like any other code — and is the one
+  place a wire change surfaces *as* a change: a new header parameter on a resource is three
+  lines in `schema.generated.ts` and easy to miss in the Java diff that caused it. They are
+  marked `linguist-generated` in `.gitattributes`, which collapses them by default in review
+  without hiding them from `git diff` or from the gate below.
 - **`task sync:contracts` is the gate.** It regenerates every cross-language artifact and
   fails if a committed generated file changed. Wire it into CI as a required check. A red
   `sync:contracts` means the contract and its generated clients have drifted — the exact
-  bug class the gate exists to stop.
+  bug class the gate exists to stop. Note this is *why* the boundary artifacts are tracked:
+  the gate is `git status` over those paths, and git cannot report a file it is not tracking.
 
 ## Backend (Quarkus) multi-module rules
 

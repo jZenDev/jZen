@@ -5,9 +5,11 @@ import zen.identity.auth.SupabaseAuthClient;
 import zen.identity.auth.SupabaseSessionResponse;
 import zen.identity.auth.SupabaseSignupRequest;
 import zen.identity.auth.SupabaseTokenRequest;
+import zen.identity.event.UserRegistered;
 import zen.identity.user.User;
 import zen.identity.user.UserStore;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
 import java.util.UUID;
@@ -28,15 +30,18 @@ public class IdentityService {
 
   private final SupabaseAuthClient authClient;
   private final UserStore userStore;
+  private final Event<UserRegistered> registrations;
   private final String redirectUri;
 
   @Inject
   public IdentityService(
       @RestClient SupabaseAuthClient authClient,
       UserStore userStore,
+      Event<UserRegistered> registrations,
       @ConfigProperty(name = "auth.redirect-uri") String redirectUri) {
     this.authClient = authClient;
     this.userStore = userStore;
+    this.registrations = registrations;
     this.redirectUri = redirectUri;
   }
 
@@ -53,14 +58,27 @@ public class IdentityService {
   /**
    * Registration. Depending on Supabase email-confirmation settings the response may carry no
    * session; the local user row is still created so the profile exists once confirmed.
+   *
+   * <p>{@code preferredLanguage} is the raw tag of the registering request; it seeds
+   * {@code users.language}, which is from then on the only locale source the framework has for
+   * this user outside a request (localized email).
+   *
+   * <p>A {@link UserRegistered} event is fired asynchronously once the profile row is committed -
+   * {@link UserStore#upsertOnLogin} is a transactional bean, so its transaction has already closed
+   * when it returns. Applications observe the event to greet the user; nothing they do there can
+   * fail or delay this method.
    */
-  public Session register(String email, String password) {
+  public Session register(String email, String password, String preferredLanguage) {
     SupabaseSessionResponse response =
         call(() -> authClient.signup(new SupabaseSignupRequest(email, password, null), redirectUri));
     if (response.user() == null || response.user().id() == null) {
       throw new AuthException(400, "registration_failed", "Registration did not return a user.");
     }
-    User user = userStore.upsertOnLogin(response.user());
+    UserStore.Upsert upsert = userStore.upsertOnLogin(response.user(), preferredLanguage);
+    User user = upsert.user();
+    if (upsert.created()) {
+      registrations.fireAsync(new UserRegistered(user.id, user.email, user.language));
+    }
     return new Session(response.accessToken(), response.refreshToken(), user);
   }
 
@@ -93,7 +111,13 @@ public class IdentityService {
       String detail = response.errorDescription() != null ? response.errorDescription() : "Invalid credentials.";
       throw AuthException.unauthorized(detail);
     }
-    User user = userStore.upsertOnLogin(response.user());
+    /*
+     * No language preference is passed: login and refresh must never overwrite a profile's own
+     * setting. The argument only seeds a row this call creates, which on these paths means an
+     * identity that exists in Supabase but had no local profile yet - it gets the fallback locale
+     * and can change it later.
+     */
+    User user = userStore.upsertOnLogin(response.user(), null).user();
     return new Session(response.accessToken(), response.refreshToken(), user);
   }
 

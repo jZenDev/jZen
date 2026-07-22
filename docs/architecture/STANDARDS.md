@@ -159,6 +159,16 @@ developers must never have to reconcile "jZen v2" with "zen_core 1.2.1, zen_tran
   to externalize state (Postgres/Redis) is the decision to raise `--max-instances` above
   1**, e.g. a login counter shared across instances. Until then, keep it simple and
   in-process.
+- **Scale-to-zero makes in-process *scheduling* invalid — the mirror image of the rule
+  above.** `--min-instances=0` means the container exists only while it is serving a
+  request, so an in-process `@Scheduled` cron has no thread alive at the hour it names: it
+  usually does not fire, and when it does, that is an accident of traffic, not a schedule.
+  In-process state is sound here; in-process *time* is not. Anything that must happen on a
+  clock is driven from outside — Cloud Scheduler calling an authenticated endpoint, which
+  also wakes the instance — and the job itself stays a plain callable method so the trigger
+  is a deployment choice rather than a code one (`UserRetentionJob.runCycle()` is the
+  reference). A framework `@Scheduled` binding therefore defaults to `off` and an
+  application opts in only where it will genuinely run.
 - **No Firebase Hosting.** jZen serves Cloud Run directly. This is load-bearing: it is
   why normal cookie names and proactive auth work (**TA-4**). Do not reintroduce a
   cookie-stripping edge without also reintroducing the `__session` hack.

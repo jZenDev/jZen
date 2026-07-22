@@ -99,6 +99,29 @@ void main() {
       expect(result.isSuccess, isTrue);
       expect(result.dataOrNull!.id, 'u2');
     });
+
+    /// The server seeds users.language from this header at registration, and every later
+    /// localized email for that user follows from the column. The repository takes no locale
+    /// argument: it rides along as ambient client context, so the app cannot forget it.
+    test('carries the app locale as Accept-Language', () async {
+      String? seen;
+      final client = pb.ZenClient(
+        baseUrl: 'http://test.local',
+        format: pb.ZenTransportFormat.json,
+        httpClient: MockClient((request) async {
+          seen = request.headers[pb.acceptLanguageHeaderName];
+          return jsonResponse(identityJson(id: 'u3'));
+        }),
+        language: () => 'uk',
+      );
+
+      final result = await SupabaseIdentityRepository(
+        client: client,
+      ).registerWithEmail(email: 'uk@b.com', password: 'secret1');
+
+      expect(result.isSuccess, isTrue);
+      expect(seen, 'uk');
+    });
   });
 
   group('getCurrentIdentity', () {

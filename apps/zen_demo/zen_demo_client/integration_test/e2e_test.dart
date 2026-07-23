@@ -27,7 +27,7 @@ import 'package:zen_demo_client/src/demo_repository.dart';
 void main() {
   // The base URL comes from the ZEN_API_URL environment variable (the Taskfile sets it to the
   // live server). This is a VM test harness, not the shipped client bundle, so reading it at
-  // runtime is fine - TA-7's compile-time-config rule is about tree-shaking the app bundle, and
+  // runtime is fine - the compile-time-config rule is about tree-shaking the app bundle, and
   // `dart test` does not forward compile-time defines to the compiled test anyway (so a define
   // for ZEN_API_URL would not reach here). Falls back to zenApiUrl.
   final baseUrl = Platform.environment['ZEN_API_URL'] ?? zenApiUrl;

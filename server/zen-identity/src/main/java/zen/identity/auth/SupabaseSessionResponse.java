@@ -6,8 +6,6 @@ import java.util.Map;
 /**
  * Supabase GoTrue session payload. Outbound Supabase calls are plain JSON, not proto, so
  * these DTOs are Jackson-mapped (client-side {@code quarkus-rest-client-jackson} only).
- *
- * <p>Ported verbatim from ../BugEater/.../auth/SupabaseSessionResponse.java.
  */
 public record SupabaseSessionResponse(
     @JsonProperty("access_token") String accessToken,

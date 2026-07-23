@@ -1,5 +1,3 @@
-// Ported verbatim from
-// ../DartZen/packages/dartzen_core/lib/src/response/base_response.dart.
 import 'package:meta/meta.dart';
 
 import '../result/zen_error.dart';

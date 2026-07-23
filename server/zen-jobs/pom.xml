@@ -2,17 +2,16 @@
 <!--
   zen-jobs :: guaranteed scheduled work (ROADMAP step 7a, DECISIONS ADR-008).
 
-  Re-engineered from ../DartZen/packages/dartzen_jobs, which exists for exactly the reason an
-  in-process cron cannot work here: on a scale-to-zero runtime there is no thread alive at the
-  hour a schedule names. Its answer, kept: an external scheduler calls one endpoint, job state is
-  persisted, and due-ness is computed from the recorded last run rather than from a timer having
-  fired (../DartZen/packages/dartzen_jobs/lib/src/master_job.dart:70-74).
+  Exists because an in-process cron cannot work here: on a scale-to-zero runtime there is no
+  thread alive at the hour a schedule names. So an external scheduler calls one endpoint, job
+  state is persisted, and due-ness is computed from the recorded last run rather than from a
+  timer having fired - which is what makes a missed tick caught up instead of lost.
 
-  Its Firestore store becomes Postgres (Flyway + Panache), because Flyway is jZen's single
-  migration authority and there is no Firestore. Deliberately NOT ported from
-  .../lib/src/models/job_config.dart: dependencies, priority, skipDates, startAt/endAt, and
-  maxRetries. Retries come from the external scheduler's at-least-once delivery plus the next
-  tick, and the rest is unused weight until a caller demands it.
+  Job state lives in Postgres (Flyway + Panache), because Flyway is jZen's single migration
+  authority. A job carries an interval, an enabled flag, and its run outcome, and nothing more:
+  retries come from the external scheduler's at-least-once delivery plus the next tick, so
+  per-job retry counts, priorities, dependencies, and date windows would be weight with no
+  caller.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -47,7 +46,7 @@
     <!-- The reusable JobTriggerResource is a JAX-RS resource (quarkus-rest arrives transitively
          via zen-transport) annotated with MicroProfile OpenAPI (@APIResponse/@Schema). This
          supplies those annotation classes; the app module runs the SmallRye scan and merges the
-         schemas from its static META-INF/openapi.yaml (TA-1). -->
+         schemas from its static META-INF/openapi.yaml. -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-smallrye-openapi</artifactId>

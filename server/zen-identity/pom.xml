@@ -1,20 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  zen-identity :: Supabase auth, harvested from BugEater.
+  zen-identity :: Supabase auth as a framework library.
 
-  Target for:
-    - bugeater-quarkus/src/main/java/jlogicsoftware/auth/SupabaseAuthClient.java
-      (@RegisterRestClient with @CircuitBreaker/@Retry/@Timeout per method)
-    - bugeater-quarkus/src/main/java/jlogicsoftware/auth/SessionService.java
-      (adopted WITHOUT the __session "access|refresh" packing – that hack exists only
-       because Firebase Hosting strips cookies at the edge, and jZen serves Cloud Run
-       direct. See docs/architecture/BLUEPRINT.md TA-4.)
-    - bugeater-quarkus/src/main/java/jlogicsoftware/application/security/{RoleAugmentor,UserRoleLoader,RequestUser}.java
-    - bugeater-quarkus/src/main/java/jlogicsoftware/user/User.java (adopted verbatim:
-      the users table carries zero learning-domain columns)
+  Holds SupabaseAuthClient (@RegisterRestClient with @CircuitBreaker/@Retry/@Timeout per
+  method), SessionService, the RoleAugmentor/UserRoleLoader pair that loads the role from the
+  users table rather than the JWT, the User entity, and the reusable AuthResource +
+  AdminUserResource. Auth is framework-side so every jZen application inherits the surface by
+  depending on this module (DECISIONS ADR-001).
 
-  Deliberately NOT imported: AuthService's coupling to jlogicsoftware.user +
-  i18n.LocaleFilter, and every *PageResource (Qute HTML is discarded wholesale).
+  The session is a normally-named httpOnly cookie (zen_access_token) read via
+  mp.jwt.token.cookie with proactive auth, not a packed multi-value cookie. See
+  docs/architecture/STANDARDS.md "Deployment model" for what that depends on.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -46,7 +42,7 @@
       <artifactId>zen-proto</artifactId>
     </dependency>
 
-    <!-- Supabase JWT verified against JWKS (ES256). BugEater application.properties:64-69. -->
+    <!-- Supabase JWT verified against JWKS (ES256). -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-smallrye-jwt</artifactId>
@@ -73,8 +69,8 @@
       <artifactId>quarkus-smallrye-fault-tolerance</artifactId>
     </dependency>
 
-    <!-- Active-record entities; BugEater has 19 PanacheEntityBase and zero
-         PanacheRepository implementors. Only `User` is portable. -->
+    <!-- Active-record entities. jZen uses PanacheEntityBase directly and declares no
+         repository classes. -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-hibernate-orm-panache</artifactId>

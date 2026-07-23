@@ -1,15 +1,12 @@
-// Ported from ../DartZen/packages/dartzen_core/lib/src/dartzen_constants.dart.
-// Renamed dz* -> zen* and the DZ_* build defines -> ZEN_*. The donor's GCP/Firestore
-// emulator constants (donor lines 20-62: dzGcloudProject, dzFirestoreEmulatorHost,
-// dzStorageEmulatorHost, dzIdentityToolkitEmulatorHost) are STRIPPED - Firebase and GCP
-// are discarded from jZen (docs/architecture/MANIFESTO.md "What jZen explicitly discards").
+// jZen declares no GCP or Firebase emulator constants: neither is part of the stack
+// (docs/architecture/MANIFESTO.md "What jZen explicitly discards").
 
 /// Environment constants
 ///
 /// These constants are used to determine the current environment (DEV or PRD).
 /// They are set via the environment variable ZEN_ENV.
 ///
-/// Client config is compile-time (docs/architecture/STANDARDS.md, TA-7): these
+/// Client config is compile-time (docs/architecture/STANDARDS.md): these
 /// `String.fromEnvironment` constants combine with conditional imports to tree-shake
 /// the wrong platform's code out of each bundle. Do not make them runtime.
 ///

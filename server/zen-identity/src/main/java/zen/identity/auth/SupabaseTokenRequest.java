@@ -4,8 +4,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * Request body for {@code POST /token}, used for both password login and silent refresh.
- * Ported from ../BugEater/.../auth/SupabaseTokenRequest.java. The donor's bean-validation
- * annotations are dropped: this is an outbound record whose values jZen controls, and inbound
+ * It carries no bean-validation annotations: this is an outbound record whose values jZen
+ * controls, and inbound
  * validation lives in the resource/service layer, not here.
  */
 public record SupabaseTokenRequest(

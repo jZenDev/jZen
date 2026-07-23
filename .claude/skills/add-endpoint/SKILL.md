@@ -1,13 +1,14 @@
 ---
 name: add-endpoint
-description: Add a REST endpoint to a jZen Quarkus backend the contract-first way. Use when creating or modifying a resource/route, adding a proto message for a payload, or wiring the dual-mode (JSON/Protobuf) transport. Encodes TA-1, the Jandex rule, and the no-jackson rule.
+description: Add a REST endpoint to a jZen Quarkus backend the contract-first way. Use when creating or modifying a resource/route, adding a proto message for a payload, or wiring the dual-mode (JSON/Protobuf) transport. Encodes the OpenAPI merge rule, the Jandex rule, and the no-jackson rule.
 ---
 
 # Adding a jZen backend endpoint
 
 jZen is **proto-first and contract-first**. A resource method names only domain/proto types; the
 framework negotiates the wire format via `X-Zen-Transport` (json/protobuf). Follow these steps in
-order. Read `docs/architecture/BLUEPRINT.md` (transport seam, TA-1) and `STANDARDS.md` first if
+order. Read `docs/architecture/BLUEPRINT.md` (transport seam) and `STANDARDS.md` ("OpenAPI and
+the REST surface") first if
 unsure.
 
 ## 1. Declare the payload proto
@@ -17,7 +18,7 @@ Add request/response messages to `proto/zen/v1/<domain>.proto` (one message per 
 `common.proto` — reuse them. Set `option java_package = "zen.proto.v1";` (bare `zen`, ADR-006).
 Timestamps are epoch-ms `int64` with `_ms` suffix by convention.
 
-## 2. Write the resource — return `Response`, not the bare proto (TA-1)
+## 2. Write the resource — return `Response`, not the bare proto
 
 SmallRye cannot introspect protobuf classes (a bare-proto return type emits 130+ garbage builder
 schemas). So the resource returns `jakarta.ws.rs.core.Response` and points at a schema by ref:

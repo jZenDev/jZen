@@ -3,9 +3,8 @@ import 'package:zen_core/zen_core.dart';
 import 'package:zen_transport/zen_transport.dart';
 
 /// Calls the Quarkus demo endpoints (GET /api/v1/demo/{ping,terms,profile} and the /ws echo)
-/// through zen_transport, replacing DartZen's
-/// ../DartZen/apps/ZenDemo/dartzen_demo_client/lib/src/api_client.dart (which hand-rolled
-/// package:http). Auth is handled separately by SupabaseIdentityRepository.
+/// through zen_transport rather than a hand-rolled package:http client. Auth is handled
+/// separately by SupabaseIdentityRepository.
 ///
 /// It holds two [ZenClient]s that share one session [http.Client]: one pinned to JSON and one
 /// to Protobuf. Pinning the format at construction is how the demo forces each transport mode

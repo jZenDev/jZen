@@ -355,7 +355,7 @@ tasks:
       # member packages ourselves. A package that depends on Flutter (dep or dev) is run with
       # `flutter test`; a pure-Dart package with `dart test`.
       #
-      # Client config is compile-time (TA-7): the UI packages read ZEN_PLATFORM via
+      # Client config is compile-time: the UI packages read ZEN_PLATFORM via
       # String.fromEnvironment, and ZenNavigation asserts it is set. Flutter widget tests are
       # therefore compiled with the host platform define, mirroring how the real app builds.
       - |
@@ -426,7 +426,7 @@ tasks:
       - ./mvnw -B -f ../{{.DEMO_SERVER_DIR}}/pom.xml test
 
   test:client:matrix:
-    desc: Recompile-per-env/platform matrix for the transport codec selector (TA-7)
+    desc: Recompile-per-env/platform matrix for the transport codec selector
     dir: "{{.CLIENT_DIR}}/zen_transport"
     silent: true
     cmds:

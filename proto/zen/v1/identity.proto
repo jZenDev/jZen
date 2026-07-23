@@ -7,19 +7,18 @@ package zen.v1;
 // from this file. Never hand-edit the generated output - edit this and run
 // `task sync:contracts`.
 //
-// The message set mirrors the identity contract declared in DartZen's
-// ../DartZen/packages/dartzen_identity/lib/src/identity_contracts.dart (IdentityRepository +
-// IdentityContract): one Identity message plus a request message per write flow. Errors use
-// the shared ZenError in common.proto; there is no {id,status,data,error} envelope (TA-2).
+// The message set is one Identity plus a request message per write flow, matching the
+// IdentityRepository contract the client implements. Errors use the shared ZenError in
+// common.proto; there is no envelope.
 
 option java_package = "zen.proto.v1";
 option java_multiple_files = true;
 option java_outer_classname = "IdentityProto";
 
 // The authenticated identity / session payload. Returned by login, register, refresh, and
-// the get-current-identity probe. Maps to DartZen's IdentityContract: `id`, a lifecycle
-// (state + optional reason), an authority (roles + capabilities), and a creation timestamp.
-// An Identity with an empty `id` denotes "no session" (the anonymous probe result).
+// the get-current-identity probe: an id, a lifecycle (state + optional reason), an authority
+// (roles + capabilities), and a creation timestamp. An Identity with an empty `id` denotes
+// "no session" (the anonymous probe result).
 message Identity {
   // Stable identity id (the Supabase auth.users id / JWT `sub`).
   string id = 1;
@@ -29,7 +28,7 @@ message Identity {
   string lifecycle_reason = 3;
   // Authority roles loaded from the users table (never from the JWT). See RoleAugmentor.
   repeated string roles = 4;
-  // Fine-grained capabilities, if any. Empty for the role-only model ported from BugEater.
+  // Fine-grained capabilities, if any. Empty: jZen's authorization model is role-only.
   repeated string capabilities = 5;
   // Creation time in milliseconds since the Unix epoch.
   int64 created_at_ms = 6;

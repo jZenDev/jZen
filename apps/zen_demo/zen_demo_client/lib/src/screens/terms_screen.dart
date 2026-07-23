@@ -6,10 +6,9 @@ import '../l10n/generated/demo_localizations.dart';
 import '../providers.dart';
 
 /// Loads and displays the localized Markdown terms of service, re-fetching when the language
-/// changes. Ported from ../DartZen/apps/ZenDemo/dartzen_demo_client/lib/src/screens/terms_screen.dart
-/// (which used flutter_markdown); jZen renders the Markdown source as selectable text to keep the
-/// demo free of a discontinued dependency - the point being that localized content is fetched
-/// from the real server, which this shows plainly.
+/// changes. The Markdown source is rendered as selectable text rather than through a Markdown
+/// widget, to keep the demo free of a discontinued dependency - the point being that localized
+/// content is fetched from the real server, which this shows plainly.
 class DemoTermsScreen extends ConsumerStatefulWidget {
   const DemoTermsScreen({super.key});
 

@@ -9,7 +9,7 @@ package zen.v1;
 // One external scheduler entry calls POST /api/v1/jobs/trigger; the framework decides which jobs
 // are due from their persisted last_run_at and runs them. These messages are what that call
 // reports back, so an operator (or a test) can see what ran without reading the database. Errors
-// use the shared ZenError in common.proto (TA-2).
+// use the shared ZenError in common.proto; there is no envelope.
 
 option java_package = "zen.proto.v1";
 option java_multiple_files = true;

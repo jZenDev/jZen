@@ -18,8 +18,7 @@ import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
 /**
  * Typed client for the Supabase Auth (GoTrue) REST API.
  *
- * <p>Ported from ../BugEater/bugeater-quarkus/src/main/java/jlogicsoftware/auth/SupabaseAuthClient.java.
- * Two changes from the donor:
+ * <p>Two conventions this interface relies on:
  *
  * <ul>
  *   <li>The base {@code /auth/v1} path segment is dropped from the interface because

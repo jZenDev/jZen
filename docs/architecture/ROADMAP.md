@@ -1,6 +1,6 @@
 # jZen Roadmap
 
-Migration sequence from the current skeleton to a fully re-engineered DartZen. Each step
+The build order, from the first skeleton to the finished framework. Each step
 is independently shippable and independently testable — a change to one package must be
 provable in isolation (the atomic-upgrade rule in [`STANDARDS.md`](./STANDARDS.md)).
 
@@ -30,12 +30,13 @@ Delivered.
   `MessageBodyWriter`/`Reader` for `com.google.protobuf.Message`.
 - `zen-app` `HealthResource` returning `Response` with an `@APIResponse` ref; static
   `META-INF/openapi.yaml` supplies the clean schema.
-- **TA-1 spiked and resolved.** A bare-proto return type produced 130+ garbage schemas;
+- **The OpenAPI/protobuf problem spiked and resolved.** A bare-proto return type produced 130+
+  garbage schemas;
   the `Response` + static-merge approach yields exactly 1 clean `HealthStatus` schema,
   which `openapi-typescript` turns into a usable TS type. Two findings folded into
   BLUEPRINT.md / STANDARDS.md: drop server-side `quarkus-rest-jackson`, and every library
   module needs a Jandex index.
-- The negotiation header is `X-Zen-Transport` (renamed from DartZen's `X-DZ-Transport`).
+- The negotiation header is `X-Zen-Transport`.
 - **Verified:** a `@QuarkusTest` (`HealthResourceTest`, Dev Services Postgres) asserts
   both modes green; a live server confirmed the exit test —
   `curl -H "X-Zen-Transport: protobuf"` returns 20 bytes of parseable protobuf,
@@ -47,28 +48,25 @@ Delivered.
 
 Port the foundation, Firestore-free.
 
-- `zen_core` ← `dartzen_core`, stripping GCP env constants
-  (`../DartZen/packages/dartzen_core/lib/src/dartzen_constants.dart:20-62`).
-- `zen_localization` ← `dartzen_localization`, made Dart-pure (**TA-3**). *(Retired in step 7b —
+- `zen_core`: the result types, logging, value objects, guards, and the compile-time
+  `ZEN_*` env/platform constants. No GCP or Firebase constants.
+- `zen_localization`, a runtime string-key localization service. *(Retired in step 7b —
   see below and [`DECISIONS.md`](./DECISIONS.md) ADR-009.)*
-- `zen_transport` ← `dartzen_transport`: keep the negotiation (header renamed
-  `X-Zen-Transport`); replace the msgpack codec with generated protobuf; delete the dead
-  `ZenTransport` facade, the duplicate middleware, and the duplicate export barrel (all
-  listed in [`BLUEPRINT.md`](./BLUEPRINT.md)); fix the `ZenClient` bugs (**TA-6**).
-- **Keep the compile-time config (`String.fromEnvironment`) and conditional-import
-  selectors (**TA-7**)** — they tree-shake native/web code out of the wrong bundle and are
-  mandatory for the client. Rename `DZ_*` build defines → `ZEN_*`.
+- `zen_transport`: the `X-Zen-Transport` negotiation, a generated-protobuf binary codec, and
+  no envelope. `ZenClient` takes its default format from `selectDefaultCodec()` and surfaces a
+  `ZenError` on a decode failure rather than a silent null.
+- **Compile-time config (`String.fromEnvironment`) and conditional-import selectors** —
+  they tree-shake native/web code out of the wrong bundle and are mandatory for the client.
 - Land packages flat under `client/` and add each to `client/pubspec.yaml`'s `workspace:`
   list as it arrives.
 - **Verified:** all three landed flat under `client/` and registered in the workspace at
-  `0.1.0`. The `X-DZ-Transport` → `X-Zen-Transport` header, the `msgpack` → `protobuf`
+  `0.1.0`. The `X-Zen-Transport` header, the Protobuf
   binary codec (generated Dart messages committed under
   `client/zen_transport/lib/src/generated/`, `writeToBuffer`/`toProto3Json`), and the
   compile-time `selectDefaultCodec()` selector are all in place; the `ZenTransport` facade,
-  the Shelf middleware, the duplicate barrels, the envelope, and the `shelf` dep are gone.
-  Both **TA-6** bugs are fixed (default codec via `selectDefaultCodec`; a decode failure
-  surfaces a `ZenError` from `common.proto`, never `null`) and **TA-3** (localization is
-  Dart-pure, `flutter` dev-only). `task doctor` is green; `task build:client` analyzes
+  the envelope are gone. Both client invariants hold (default codec via `selectDefaultCodec`;
+  a decode failure surfaces a `ZenError` from `common.proto`, never `null`).
+  `task doctor` is green; `task build:client` analyzes
   clean; `task test:client` passes 179 tests (`zen_core` 85, `zen_localization` 55,
   `zen_transport` 39); `task test:client:matrix` proves the codec selector per
   `ZEN_ENV`/platform (dev→json, prd-native→protobuf, web→json); `task sync:contracts`
@@ -77,8 +75,8 @@ Port the foundation, Firestore-free.
 ## Step 3 — Identity on Supabase ✅
 
 - Backend: port `SupabaseAuthClient` (re-pointed at Supabase Auth / GoTrue REST),
-  `SessionService` (un-hacked, **TA-4** — normal `zen_access_token` cookie, no `__session`
-  packing, no `SessionFilter`), `RoleAugmentor` (role loaded from the `users` table, not the
+  `SessionService` (one normally-named `zen_access_token` cookie per token, no packing and no
+  session filter), `RoleAugmentor` (role loaded from the `users` table, not the
   JWT), and the `User` entity into `zen-identity`. A `MapStruct` mapper maps `User` → the
   `Identity` proto; the `AuthResource` (login, register, restore-password, logout, **refresh**,
   get-current-identity) lives in `zen-app` and returns typed proto, with a `ZenError` error
@@ -86,18 +84,15 @@ Port the foundation, Firestore-free.
   `auth.uid()` so it is a no-op on the Dev Services database). The `users` table keeps the
   payment (`is_premium`) and GDPR (`analytics_consent`, `deletion_warning_*`) compliance
   columns as first-class scaffold concerns (see [`BLUEPRINT.md`](./BLUEPRINT.md) "Persistence").
-- Dart: `zen_identity` ← `dartzen_identity`, re-pointed from Identity Toolkit to
-  Supabase Auth, with a `SupabaseIdentityRepository` that implements the declared
-  `IdentityRepository` interface exactly (**TA-5**) over `zen_transport`'s `ZenClient`,
-  discarding the Firestore repository/mapper/token-verifier.
-- `zen_ui_navigation` ← `dartzen_ui_navigation` (adopted as-is; `dz*` platform constants and
-  path deps renamed) and `zen_ui_identity` ← `dartzen_ui_identity` (provider-agnostic; the
-  Supabase re-point is a one-line `identityRepositoryProvider` override in the app), plus
-  their two example apps. New proto: `proto/zen/v1/identity.proto`
+- Dart: `zen_identity`, with a `SupabaseIdentityRepository` that implements the declared
+  `IdentityRepository` interface exactly over `zen_transport`'s `ZenClient`.
+- `zen_ui_navigation` (the adaptive navigation shell) and `zen_ui_identity`
+  (provider-agnostic; choosing Supabase is a one-line `identityRepositoryProvider` override in
+  the app), plus their two example apps. New proto: `proto/zen/v1/identity.proto`
   (`Identity`, `LoginRequest`, `RegisterRequest`, `RestorePasswordRequest`).
 - **Verified:** `task test:server` is green — `AuthResourceTest` round-trips
-  login/register/logout as typed proto in **both** transport modes, asserts the TA-4 cookie
-  (`zen_access_token` / `zen_refresh_token`, no `__session`, no `access|refresh` packing) and
+  login/register/logout as typed proto in **both** transport modes, asserts the cookies
+  (`zen_access_token` / `zen_refresh_token`, one token each, nothing packed) and
   a `ZenError` error path, and `RoleAugmentorTest` proves the role is loaded from the `users`
   table (no JWT present). `task test:client` passes the ported identity/UI suites and the
   `SupabaseIdentityRepository` tests. `task sync:contracts` regenerates and its drift gate is
@@ -113,9 +108,8 @@ Port the foundation, Firestore-free.
 > assemble the framework, `task test:e2e` is a **framework** end-to-end gate (each product app,
 > e.g. `workspaces`, gets its own).
 
-`zen_demo` is not throwaway sample code. It has two first-class jobs, both inherited from
-DartZen's ZenDemo ("the breathing minimum... a real end-to-end system. No mocks. No stubs.
-No TODOs." — `../DartZen/apps/ZenDemo/README.md`) and kept as hard requirements:
+`zen_demo` is not throwaway sample code. It is the breathing minimum: a real end-to-end
+system, no mocks, no stubs, no TODOs. It has two first-class jobs, both hard requirements:
 
 1. **Product showcase** — the canonical, runnable demonstration of jZen: the Flutter UI
    packages, Supabase auth, localization, and both transport modes, driving the real
@@ -126,13 +120,12 @@ No TODOs." — `../DartZen/apps/ZenDemo/README.md`) and kept as hard requirement
 
 Deliverables:
 
-- `client/zen_demo` ← `../DartZen/apps/ZenDemo/dartzen_demo_client`, calling the Quarkus
-  server instead of the deleted Shelf server.
-- `../DartZen/apps/ZenDemo/dartzen_demo_contracts` → `proto/zen/v1/*.proto` (the 7 contract
-  files become proto messages, consumed via generated Dart clients).
-- `dartzen_demo_server` is **deleted**, not ported — the Quarkus backend is the server now.
-  The demo endpoints it satisfies are `GET /api/v1/demo/{ping,terms,profile}` plus the
-  **WebSocket echo** at `/api/v1/demo/ws`.
+- `zen_demo_client`, a Flutter app assembling the framework packages against the Quarkus
+  server.
+- The demo's wire contracts as proto messages in `proto/zen/v1/*.proto`, consumed through
+  generated Dart clients.
+- The demo endpoints `GET /api/v1/demo/{ping,terms,profile}` plus the **WebSocket echo** at
+  `/api/v1/demo/ws`.
 - **The WebSocket echo is a first-class product feature**, not a test fixture: jZen ships a
   Quarkus `quarkus-websockets-next` endpoint and drives it from `zen_demo` through
   `zen_transport`'s `ZenWebSocket` (binary Protobuf frames). It is part of what the reference
@@ -157,7 +150,7 @@ Deliverables:
   convention (a bare JSON array body + a declared `AdminUser` proto per element).
 - Supabase session auth via the framework endpoints (`POST /auth/login`, `GET /auth/identity`,
   `POST /auth/logout`), httpOnly cookie, admin-role gated.
-- The Flutter `dartzen_ui_admin` is confirmed dropped (not migrated).
+- Administration is react-admin only; there is no Flutter admin panel.
 
 ## Step 6 — Email ✅
 
@@ -176,7 +169,7 @@ Deliverables:
   (`MailMessages` + the `@Localized("uk")` variant); `EmailService` resolves the recipient's locale
   from `users.language`, seeded at registration from `Accept-Language`. The supported set lives once,
   in `zen.core.i18n.ZenLocales` (`{en, uk}`, fallback `en`), which `DemoResource` now also uses.
-  BugEater's English-only hardcoded mail strings are not carried forward.
+  No mail string is hardcoded English.
 - **On the client, the locale is ambient too:** `ZenClient` takes a `language` callback and emits
   `Accept-Language` on every request beside `X-Request-ID` and `X-Zen-Transport`, so the language
   the user picked in `zen_demo` reaches `POST /auth/register` without any repository growing a
@@ -188,8 +181,8 @@ Deliverables:
   it, publishing `AccountDeletionWarning` for the app to localize. **Off by default** (the library's
   own `META-INF/microprofile-config.properties`); `zen_demo_server` enables it in dev, and pins it
   off in `%prod` because an in-process cron cannot work under `--min-instances=0` — see ADR-007 and
-  the new STANDARDS "Deployment model" rule. Signing back in clears the warning stamps — the donor
-  deleted returning users anyway, which is a bug, not a behaviour.
+  the new STANDARDS "Deployment model" rule. Signing back in clears the warning stamps, so an
+  account whose owner has demonstrably returned falls out of the deletion pipeline.
 - **Left open on purpose, and tracked as step 7a below:**
   retention therefore does not yet *run* in production, so the GDPR obligation is not discharged
   there. Step 6 delivers the cycle and proves it; step 7a delivers the guaranteed trigger that
@@ -211,8 +204,8 @@ Deliverables:
 
 The first item was **required before any production deployment that stores personal data** and is
 **done** (7a below), as is the one committed framework improvement (7b, typed client i18n). The
-deferred-package list is now **settled rather than open** (7c): every donor package has a
-disposition, the verdict on all six remaining ones is "never port", and nothing was ported. See
+candidate-capability list is now **settled rather than open** (7c): every candidate has a
+disposition, the verdict on all six remaining ones is "no", and nothing was added. See
 [`DECISIONS.md`](./DECISIONS.md) ADR-010. **The step is complete and Step 8 is unblocked.**
 
 ### 7a — Guaranteed scheduled work (`zen-jobs`) — REQUIRED, not deferred ✅
@@ -259,7 +252,7 @@ admin session are each rejected with a `ZenError`. `RetentionDeliveryGateTest` (
 whose warning could not be sent is never stamped and never anonymised however many cycles run, while
 one warned before the outage still is. `UserRetentionTest` adds the idempotency the contract
 requires. `task test:client` green (309), `task test:admin` green, `task sync:contracts` regenerates
-`jobs.proto` into stable Dart + TS with no TA-1 garbage. `task test:e2e` is **10/10** against live
+`jobs.proto` into stable Dart + TS with no schema garbage. `task test:e2e` is **10/10** against live
 Supabase + Quarkus (was 8/8), the two new cases asserting the trigger is refused without the secret
 and runs a real tick with it. Manually against live dev: an unauthenticated and a wrong-secret
 `POST /jobs/trigger` return `401` + `ZenError`; the authenticated call returns the `JobTickResult`
@@ -269,70 +262,6 @@ and moves `last_run_at`/`last_status`/`run_count`; a 9-day-stale row is caught u
 **The GDPR obligation is now discharged in production:** retention runs on a schedule that is
 provably not best-effort — a tick missed while scaled to zero is caught up, every run is visible
 after the fact in `zen_jobs`, and no account is ever anonymised without a delivered warning.
-
-<details>
-<summary>Original design brief (kept for provenance)</summary>
-
-### 7a — Guaranteed scheduled work (`zen-jobs`) — REQUIRED, not deferred
-
-**Why this is a blocker, not a nice-to-have.** Step 6 shipped the GDPR retention cycle but had to
-pin it `off` in `%prod` (ADR-007): Cloud Run runs `--min-instances=0`, so an in-process
-`@Scheduled` has no thread alive at the hour it names — see STANDARDS "Deployment model". The
-obligation to erase dormant personal data is therefore **not discharged in production today**.
-This step is what discharges it. Retention is only the first caller; the mechanism is general.
-
-**The shape is already proven in the donor** — `../DartZen/packages/dartzen_jobs`, where an
-external service watches the schedule and calls the application's endpoints:
-
-- Three job types (`.../lib/src/models/job_type.dart`): `endpoint` (event-driven, Cloud Tasks),
-  `scheduled` (cron, Cloud Scheduler), `periodic` (interval).
-- **The Master Job** (`.../lib/src/master_job.dart`): *one* Cloud Scheduler entry hits
-  `/jobs/trigger` every minute; the master reads the enabled periodic jobs, computes which are due
-  from `interval` + `lastRun`, and runs them sequentially. One trigger, one container start, N jobs.
-- **Job state is persisted, not compiled in** (`.../lib/src/models/job_config.dart`: `enabled`,
-  `cron`, `interval`, `lastRun`, `nextRun`, `lastStatus`, `maxRetries`, `startAt`/`endAt`,
-  `skipDates`, `dependencies`, `priority`), so a schedule changes or a job is disabled without a
-  redeploy.
-- The trigger call carries a Google identity token
-  (`.../lib/src/cloud_tasks_adapter.dart:48`).
-
-**What jZen keeps, and what it must change:**
-
-- **Due-ness is computed from `last_run_at`, never from "the timer fired."** This single property
-  is what turns best-effort into a guarantee: a tick missed while scaled to zero, mid-deploy, or
-  during an outage is simply caught up on the next one. Without it there is no compliance story,
-  only a hope.
-- Persist job state in **Postgres (Flyway + Panache)**, not Firestore — jZen has no Firestore and
-  Flyway is the single migration authority.
-- **The job body stays a plain callable** so the trigger is a deployment choice rather than a code
-  one. `UserRetentionJob.runCycle()` is already written this way and becomes the first registered
-  job.
-- **One trigger endpoint with master-style batching.** N Cloud Scheduler entries would mean N cold
-  starts, which fights the single-instance cost model in STANDARDS.
-- **At-least-once, therefore idempotent.** Cloud Scheduler retries; every job must be safe to run
-  twice. Retention already is (the stamps guard re-sending), but it becomes a stated contract.
-- **Overlap guard.** At `--max-instances=1` an in-process lock is sufficient, by the same reasoning
-  that makes in-process state valid; raising `--max-instances` is the trigger to move to a Postgres
-  advisory lock.
-- **Open design question to settle in an ADR: authenticating the trigger.** Cloud Scheduler sends a
-  Google OIDC token, but `mp.jwt.*` is already bound to Supabase's issuer and JWKS. Either add a
-  second verification path or use a shared secret from Secret Manager. Decide before building.
-- **Dev keeps the in-process cron** (already the case — `%dev` on, `%prod` off), so local work needs
-  no GCP. This mirrors the donor's development/production executor split.
-- **Observability.** A run records start, outcome, and duration (the donor emits
-  `job.started`/`succeeded`/`failed`); jZen has Micrometer and structured logs, and `last_run_at` /
-  `last_status` are queryable — and worth surfacing in the admin panel.
-- **Close the GDPR correctness hole this step exposed.** The retention cycle currently advances
-  `deletion_warning_sent_at` / `final_warning_sent_at` whether or not the message was delivered,
-  because `EmailService` is deliberately non-fatal — so a broken relay would anonymise people who
-  were never warned. Durable job state gives that fix somewhere to live: record the delivery
-  outcome and gate anonymisation on a warning that actually went out.
-
-**Done when:** retention runs in production on a schedule that is provably not best-effort — a tick
-missed while scaled to zero is caught up, a run is visible after the fact, and no account is ever
-anonymised without a delivered warning.
-
-</details>
 
 ### 7b — Typed, generated client i18n ✅
 
@@ -349,8 +278,8 @@ anonymised without a delivered warning.
 - **`zen_localization` is retired** — out of `client/pubspec.yaml`'s workspace, out of all four
   consuming pubspecs, deleted with its 12 test files (they asserted a string key reached a lookup
   table; there is no lookup table). The runtime JSON load, the dev/prod merged-bundle split, the
-  cache, and the conditional-import loader are gone. **TA-3 is closed with it**: that assessment
-  existed so a Dart-only *server* package could load translations, and jZen's server is Java.
+  cache, and the conditional-import loader are gone. The loader existed so a Dart-only *server*
+  package could load translations, and jZen's server is Java, so it never had a consumer.
 - **Per-package generation.** `zen_ui_identity` → `IdentityLocalizations`, `zen_ui_navigation` →
   `NavigationLocalizations`, `zen_demo_client` → `DemoLocalizations`, the navigation example →
   `ExampleLocalizations`; the app composes delegates in `MaterialApp` and supplies **no wording**.
@@ -371,7 +300,7 @@ anonymised without a delivered warning.
 - **The ambient locale (ADR-007) is preserved and simplified.** One `Locale` provider is both
   `MaterialApp.locale` and the value `ZenClient` reads per request for `Accept-Language`, so a
   mid-session language switch re-renders the UI *and* reaches `POST /auth/register`. This
-  **reinforces TA-7**: strings are now compile-time constants that tree-shake, the runtime asset
+  **reinforces the compile-time-config rule**: strings are now constants that tree-shake, the runtime asset
   path is gone, and `zen_demo` lost its localization boot spinner because there is nothing to fetch.
 
 **Verified.** `task doctor` clean. `task build:client` / `build:apps:client` analyze clean;
@@ -408,37 +337,31 @@ never do.
 **Client and server i18n are now consistent: typed and generated on both stacks**, which is the
 point of the step. Adding a locale is symmetric and needs no code edit on either side.
 
-### 7c — Deferred package ports: settled, and nothing ported ✅
+### 7c — Candidate capabilities: settled, and nothing added ✅
 
-> **Decided in full (see [`DECISIONS.md`](./DECISIONS.md) ADR-010).** The open-ended "port only when
-> a consumer needs them" list is closed. Every package in the donor now has a disposition; the
-> verdict on all six remaining ones is **never port**, and each surviving capability has a trigger
-> written in jZen's own terms. **Nothing was ported.**
+> **Decided in full (see [`DECISIONS.md`](./DECISIONS.md) ADR-010).** The open-ended "build it when
+> a consumer needs it" list is closed. Every candidate capability has a disposition, the verdict on
+> all six remaining ones is **no**, and each surviving capability has a trigger written as a testable
+> condition. **Nothing was added.**
 
 **Delivered.**
 
-- **The census is complete**, which the old list was not: it named six packages and omitted
-  `dartzen_firestore`, `dartzen_server`, and `dartzen_ui_admin` (already discarded in the MANIFESTO
-  and in "Explicitly out of scope" below, but named in no list Step 8 can check against). All
-  sixteen donor packages are now dispositioned in ADR-010's table, ported ones included.
-- **The decisive measurement:** the six deferred packages form a closed dependency island rooted at
-  `dartzen_ai`, which has **zero consumers** anywhere in the donor, ZenDemo included. `executor` and
-  `cache` are consumed only by `ai`; `payments` by nothing; `storage` only by `dartzen_server` and
-  `dartzen_demo_server`, both already deleted. `telemetry`'s one surviving consumer path was
-  `dartzen_jobs`, which jZen ported as `zen-jobs` **without** it (ADR-008).
-- **Dispositions**, each argued on ADR-001's framework/application axis:
+- **The list is complete and closed**, which the old one was not: it was open-ended, and an
+  open-ended list is indistinguishable from an undecided one. ADR-010 holds the full census and the
+  argument for each verdict; it is the permanent record.
+- **The verdicts**, each argued on ADR-001's framework/application axis, and each replaced by a
+  trigger rather than a deferral:
 
-  | Package | LOC | Verdict | Reason, and what jZen does instead |
-  |---|---|---|---|
-  | `dartzen_telemetry` | 425 | **never** | Two methods over Firestore. Job runs already live in the `zen_jobs` row (ADR-008); *which* events matter is application content, and per-user rows would land on the `users.analytics_consent` GDPR obligation. |
-  | `dartzen_executor` | 1337 | **never** | Its light/medium/heavy routing is a Dart event-loop constraint; the JVM has a thread pool and `zen-jobs` owns deferred work. Also depends on the retired `zen_localization`. TA-3's shape. |
-  | `dartzen_cache` | 750 | **never** | In-process state is *valid by construction* at `--max-instances=1` (STANDARDS "Deployment model"); the rest is a hand-written RESP client. `quarkus-cache` covers the in-memory half. |
-  | `dartzen_storage` | 703 | **never** | GCS-only by its own declaration, read-only, and both its consumers are deleted. BugEater's whole storage story is a 34-line `@RegisterRestClient`, so a library would be a passthrough. |
-  | `dartzen_payments` | 1708 | **never** | Zero consumers, no Java implementation to harvest. A provider, its currencies and its webhook contract are product policy. |
-  | `dartzen_ai` | 2322 | **never** | Zero consumers, zero Java precedent, hard-wired to one vendor, and the sole reason the other three exist. |
+  | Capability | Verdict | Reason, and what jZen does instead |
+  |---|---|---|
+  | telemetry library | **no** | Job runs already live in the `zen_jobs` row (ADR-008); *which* events matter is application content, and per-user event rows would land on the `users.analytics_consent` GDPR obligation. A framework-owned table no framework code writes to is not a mechanism. |
+  | work-routing library | **no** | Routing light/medium/heavy work is a single-threaded-runtime concern. A JAX-RS resource already runs on a worker pool, `@Blocking`/`@NonBlocking`/`ManagedExecutor` are platform primitives, and `zen-jobs` owns deferred work. |
+  | cache library | **no** | In-process state is *valid by construction* at `--max-instances=1` (STANDARDS "Deployment model"), so the distributed half solves a problem jZen does not have; `quarkus-cache` is the in-memory half, one annotation. |
+  | object-storage library | **no** | jZen runs Supabase Storage, reachable with a short `@RegisterRestClient`. A library fronting one implementation would be a passthrough - MANIFESTO: real dependencies are first-class, "not smuggled behind a portability layer that no second implementation will ever justify". |
+  | payments library | **no** | A provider, its currencies, its tax treatment, and its webhook contract are product policy, not mechanism. The framework share would be `quarkus-rest-client` plus a table. |
+  | AI/model library | **no** | Vendor-specific model clients are the fastest-ageing code there is, and maintained Quarkus extensions already exist. jZen does not write its own. |
 
-- **Triggers, in jZen's own terms** (no donor path, so Step 8 strips citations without reopening
-  anything): an application defines its own event table in the application migration band and
+- **Every trigger is a testable condition, not a sentiment**: an application defines its own event table in the application migration band and
   promotes it to `server/zen-telemetry` only when a **second** application needs it; an application
   declares its own Supabase Storage / S3 client and promotes to `server/zen-storage` on the same
   second-consumer bar; an application that sells something implements checkout in its own server; an
@@ -464,39 +387,78 @@ example 2); `task test:apps:client` **11**; `task test:e2e` **10/10** against li
 Quarkus. `task sync:contracts` reports contracts in sync, including the ADR-009 check that generated
 localizations stay untracked. Every figure matches what 7b recorded, which is the point.
 
-**Step 8 is unblocked**, and its scope is measured: **111 files** carry a `dartzen` or `bugeater`
-reference (excluding `.git`, `target`, `node_modules`, `.dart_tool`, `build`), and none of them is
-now a deferral pointing at a donor path that Step 8 must delete.
+**Step 8 is unblocked**: no open item points at anything Step 8 would have to delete.
 
 ### Framework improvements — remaining, deferred but committed to a plan
 
 None outstanding. Typed, generated client i18n was the item recorded here; it shipped as 7b above.
 
-## Step 8 — Standalone: sever the umbilical ☐
+## Step 8 — Standalone: jZen on its own terms ✅
 
-The migration is done; jZen becomes its own product with no trace of its donors.
+> **Shaped during delivery (see [`DECISIONS.md`](./DECISIONS.md) ADR-011).** The strip runs over
+> everything a reader or a future contributor sees, and stops at the decision log, which is sealed
+> as a historical archive rather than rewritten. The gate is scoped to match, and the wording below
+> states what is actually enforced.
 
-- **Strip every DartZen and BugEater reference** from source comments, `pom.xml` /
-  `pubspec.yaml` prose, `application.properties` comments, and these four docs. No
-  `../DartZen/…` or `../BugEater/…` paths, no "ported from", no "donor", no ADR-034
-  archaeology — anything a reader needs must be explained on jZen's own terms.
-- **Rewrite the docs to stand alone.** `MANIFESTO` states jZen's philosophy without
-  "DartZen re-engineered"; `BLUEPRINT` describes the architecture as-built; the TA section
-  (which only ever documented migration gaps) is deleted or folded into `STANDARDS` as
-  plain rules. Delete the MANIFESTO "Provenance, and its expiry" note — it will have
-  expired.
-- **Rename any lingering `DZ_*` / `dartzen_*` / `zen-*`-vs-`DartZen` residue** so the
-  vocabulary is uniformly jZen.
-- **Verification:** `grep -ri "dartzen\|bugeater\|X-DZ" .` (outside git history) returns
-  nothing.
+**Delivered.**
 
-This step is the reason STANDARDS mandates source citations *now*: they are removable
-scaffolding, and this is where the scaffolding comes down.
+- **Every source-level citation is gone**, across `client/`, `server/`, `apps/`, `proto/`, and
+  `supabase/`, and each one's *reason* was rewritten rather than deleted with it: why
+  `quarkus-rest-jackson` must be absent, why each auth token gets its own cookie, why the Flyway
+  bands exist, why the compliance columns are on `users`, why the codec selector is a conditional
+  import. A comment whose only content was provenance was removed; a comment that explained a
+  constraint now explains it on jZen's own terms.
+- **The three generated `.pb.dart` files were fixed at the source, not by hand.** `protoc` copies
+  `.proto` comments verbatim into generated doc comments, so seven references sat inside tracked
+  generated files that STANDARDS forbids editing. The fix was to edit `common.proto`, `demo.proto`,
+  and `identity.proto` and regenerate. Editing the `.pb.dart` would have been a defect, and
+  `sync:contracts` is the gate that catches exactly that.
+- **The four docs stand alone.** `MANIFESTO` states jZen's philosophy directly and its
+  "Provenance, and its expiry" note is gone, having expired as designed; `BLUEPRINT` describes the
+  architecture as built; `ROADMAP` records what each step delivered rather than what it came from.
+- **The Technical Assessments section is deleted, and no rule went with it.** It only ever
+  documented migration gaps, but three of its seven carried live rules that `STANDARDS` did not yet
+  state. Those were folded in as plain rules: the `Response` + `@Schema(ref=…)` + static
+  `META-INF/openapi.yaml` merge (now STANDARDS "OpenAPI and the REST surface"); per-endpoint typed
+  messages with no generic payload and no envelope (now under "Source of truth"); and the client's
+  no-swallowed-failure contract (now "Failures surface; nothing is swallowed"). The rest were
+  already carried, already closed, or were migration gaps with nothing to preserve. **The ~45 files
+  that referenced a `TA-N` by number were repointed to the rule that now carries it**, so deleting
+  the section left no dangling pointer.
+- **STANDARDS "Fidelity to the source" is retired**, which is what this step was always for. Its
+  one surviving rule generalizes without naming anything external: all work happens inside this
+  repository.
+- **`CLAUDE.md` was brought into scope**, though it is not one of the four docs. It is the first
+  file every future contributor and agent reads, and its "cite the source" rule would have
+  instructed them to reintroduce the citations this step removes.
+- **`DECISIONS.md` is sealed, not rewritten** (ADR-011). An accepted ADR is not edited after the
+  fact; that is the property the log exists to have. The names it carries are historical
+  justification, and ADR-011 is the index that keeps its `TA-1`..`TA-7` references resolvable now
+  that the section is gone.
+- **Vocabulary residue cleared.** The spent build-define and transport-header rename notes are
+  deleted: a rename note that has outlived its rename is exactly what this step removes. The
+  `zen_localization` retirement prose is gone from `client/pubspec.yaml` too, ADR-009 being its
+  permanent record. And the navigation example no longer greets the user, in two languages, with a
+  product name that is not jZen's.
+- **No behaviour changed.** The diff is comments, prose, and regenerated generated-comments.
+
+**Verification.** A case-insensitive search of every tracked file for the names of the two systems
+jZen was built from, and for the superseded transport-header prefix, returns nothing outside
+`docs/architecture/DECISIONS.md`. That one exclusion is the subject of ADR-011: the decision log is
+a sealed archive whose entries are never retroactively edited, because in several of them the
+system named *is* the justification being recorded. Searching tracked files rather than the working
+tree is deliberate, so an untracked local file cannot report a failure that no clone would see.
+
+This was run as a check, not installed as a standing gate. Step 8 is terminal: nothing in the
+project now produces such references, so a permanent target would guard a failure mode that has
+stopped occurring, and it would have to exempt its own definition to avoid matching the pattern it
+searches for. The rule it enforced lives in STANDARDS and `CLAUDE.md` instead, where it belongs -
+anything a reader needs is explained on jZen's own terms.
 
 ## Step 9 — Documentation: READMEs ☐ (final step)
 
-Written last, so they describe jZen as-built and in its own voice — no donor references
-(Step 8 has already removed them). The `docs/architecture/` set stays the deep reference;
+Written last, so they describe jZen as built and in its own voice. Step 8 made this writable:
+there is now one vocabulary to write in. The `docs/architecture/` set stays the deep reference;
 these READMEs are the front door.
 
 - **Root `README.md`** — the entry point for both audiences:
@@ -535,19 +497,14 @@ these READMEs are the front door.
   only the root README; each sub-project README stands on its own; every command shown
   actually runs.
 
-## Hard constraint — the donor repos are read-only
-
-`../DartZen` and `../BugEater` are **reference sources only**. Nothing in this migration
-ever modifies, moves, or deletes a single file in either — no edits, no "quick fixes", no
-cleanup, not even formatting. All work happens inside `jZen/`. They are studied and copied
-from, never touched. (This is also why the citations above are safe: the paths they point
-at will not move under us.)
-
 ## Explicitly out of scope
 
-Never migrated: `dartzen_server`, `dartzen_firestore` (deleted at step 2), `dartzen_ui_admin`
-(replaced by react-admin, ADR-005), and the six packages step 7c settled as "never" -
-`dartzen_telemetry`, `dartzen_executor`, `dartzen_cache`, `dartzen_storage`, `dartzen_payments`,
-`dartzen_ai` (ADR-010, which holds the complete census and the trigger for each surviving
-capability); all BugEater business domain (courses, gamification, quiz, lesson, practice, news,
-leaderboard); all 136 BugEater Qute `*PageResource` HTML endpoints; `firebase.json` / `.firebaserc`.
+Not part of jZen, and not becoming part of it without a decision that supersedes this line:
+
+- **Firebase and Firestore.** PostgreSQL is the database; Supabase owns authentication.
+- **A Flutter admin panel.** Administration is `react-admin` (ADR-005).
+- **Server-rendered HTML.** jZen serves a REST API; Qute is a mail-templating engine only.
+- **The six candidate framework capabilities settled in 7c** - telemetry, work routing, caching,
+  object storage, payments, and model clients. Each has a trigger in
+  [`DECISIONS.md`](./DECISIONS.md) ADR-010 stating the condition under which it would be
+  reconsidered; none of those conditions is met today, and "we might want it" is not one of them.

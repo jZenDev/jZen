@@ -2,13 +2,13 @@
 <!--
   jZen backend aggregator.
 
-  Multi-module by mandate. BugEater (bugeater-quarkus/pom.xml) is single-module with
-  <packaging>quarkus</packaging> at the root; that layout cannot express the internal
-  package boundaries jZen requires, so the runnable Quarkus application is pushed down
-  into zen-app and every other module is a plain jar consumed by it.
+  This module is BOTH the parent (BOM, Java version, plugin/dependency management) AND the
+  aggregator that builds and installs the framework libraries. Every module here is a plain
+  jar; the runnable Quarkus application is a separate module under apps/ that assembles them
+  and inherits this parent across directories via <relativePath>. That split is what lets the
+  layout express jZen's package boundaries (DECISIONS ADR-001).
 
-  Versions are inherited from BugEater's verified baseline (pom.xml:22,27):
-  Quarkus 3.32.2 on Java 25.
+  Baseline: Quarkus 3.32.2 on Java 25.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -67,8 +67,7 @@
         <scope>import</scope>
       </dependency>
 
-      <!-- Contract-first: protobuf is the canonical model source. Not present in
-           BugEater at all (zero .proto files); introduced here. -->
+      <!-- Contract-first: protobuf is the canonical model source. -->
       <dependency>
         <groupId>com.google.protobuf</groupId>
         <artifactId>protobuf-java</artifactId>
@@ -141,8 +140,7 @@
           <artifactId>maven-compiler-plugin</artifactId>
           <version>${compiler-plugin.version}</version>
           <configuration>
-            <!-- BugEater sets this (pom.xml compiler config) so JAX-RS/Panache can
-                 read real parameter names rather than arg0/arg1. -->
+            <!-- So JAX-RS and Panache read real parameter names rather than arg0/arg1. -->
             <parameters>true</parameters>
           </configuration>
         </plugin>
@@ -165,9 +163,9 @@
 
   <profiles>
     <profile>
-      <!-- Prod is a native build. BugEater scripts/build-prod.sh packages with
-           -Dnative -Dquarkus.native.container-build=true and ships
-           src/main/docker/Dockerfile.native-micro to Cloud Run. -->
+      <!-- Prod is a native build: packaged with -Dnative
+           -Dquarkus.native.container-build=true and shipped to Cloud Run as
+           src/main/docker/Dockerfile.native-micro. -->
       <id>native</id>
       <activation>
         <property><name>native</name></property>

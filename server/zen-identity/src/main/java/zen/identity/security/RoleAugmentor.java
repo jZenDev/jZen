@@ -13,17 +13,14 @@ import org.jboss.logging.Logger;
 
 /**
  * Enriches the {@link SecurityIdentity} with the role stored in the {@code users} table.
- * Ported from ../BugEater/.../application/security/RoleAugmentor.java.
  *
  * <p>After SmallRye JWT validates the Supabase token and sets the principal name to the JWT
  * {@code sub}, this augmentor loads the {@code role} column from the database and adds it to
  * the identity. Roles are managed by the application database, not carried in the token.
  *
- * <p><strong>Simplified from the donor:</strong> BugEater preloaded the role into a
- * {@code @RequestScoped RequestUser} from its manual {@code SessionFilter} and read it here
- * to avoid a second query. jZen drops {@code SessionFilter} (TA-4), so there is nothing to
- * preload; this augmentor loads the role straight from {@link UserRoleLoader}. The DB read
- * runs on {@code context.runBlocking} because the augmentor may be invoked on the I/O thread.
+ * <p>There is no request-scoped preload to read from: the role is loaded straight from
+ * {@link UserRoleLoader} on each augmentation. The DB read runs on
+ * {@code context.runBlocking} because the augmentor may be invoked on the I/O thread.
  *
  * <p>Requires a Jandex index (see pom.xml) so Quarkus discovers it from the jar.
  */

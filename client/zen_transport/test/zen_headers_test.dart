@@ -1,5 +1,4 @@
-// Ported from ../DartZen/packages/dartzen_transport/test/zen_headers_test.dart, with the
-// header renamed X-Zen-Transport and the binary format renamed msgpack -> protobuf.
+// Pins the X-Zen-Transport header name and its two format values against the server's.
 import 'package:test/test.dart';
 import 'package:zen_transport/zen_transport.dart';
 

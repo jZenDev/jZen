@@ -1,7 +1,6 @@
-// Ported from ../DartZen/packages/dartzen_transport/lib/src/zen_codec_selector.dart.
-// The native binary format is Protobuf instead of MessagePack. The conditional import is
-// the compile-time platform axis that lets the toolchain tree-shake the wrong platform's
-// code out of each bundle (TA-7, docs/architecture/STANDARDS.md).
+// The conditional import below is the compile-time platform axis that lets the toolchain
+// tree-shake the wrong platform's code out of each bundle (docs/architecture/STANDARDS.md
+// "Client config is compile-time").
 import 'package:zen_core/zen_core.dart';
 
 import 'zen_codec_selector_stub.dart'

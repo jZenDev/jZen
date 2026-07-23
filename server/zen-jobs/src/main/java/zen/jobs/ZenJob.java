@@ -18,9 +18,7 @@ import java.time.Duration;
  *
  * <p>Only the <em>defaults</em> live in code. {@link #defaultInterval()} seeds the row the first
  * time a job is seen; after that the database owns the schedule and the enabled flag, so an
- * operator changes a cadence or stops a job with an UPDATE rather than a redeploy - the one
- * property of the donor's persisted job config worth keeping
- * (../DartZen/packages/dartzen_jobs/lib/src/models/job_config.dart:12-17).
+ * operator changes a cadence or stops a job with an UPDATE rather than a redeploy.
  */
 public interface ZenJob {
 

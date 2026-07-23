@@ -18,8 +18,6 @@
  *   <li>{@link zen.jobs.ZenJob} is all an application implements.
  * </ul>
  *
- * <p>Re-engineered from ../DartZen/packages/dartzen_jobs, keeping its master-tick batching and its
- * persisted job config, and dropping its Firestore store, its Cloud Tasks adapter, and the job
- * features nothing calls yet. See DECISIONS ADR-008.
+ * <p>See DECISIONS ADR-008 for the decisions behind this design.
  */
 package zen.jobs;

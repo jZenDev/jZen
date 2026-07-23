@@ -9,12 +9,11 @@ jZen is a **framework/platform**, not a single deployable app. `server/` (Java) 
 that assemble them (`apps/<app>/{<app>_client, <app>_server, <app>_admin}`). Today the only app
 is the reference app `zen_demo`, which doubles as a showcase and the living end-to-end test stand.
 
-The project is a migration: it re-engineers two read-only donor repos (`../DartZen`, a Dart
-framework, and `../BugEater`, a Quarkus backend) into one coherent product. See
-`docs/architecture/` — **read these before non-trivial work**; they are the source of truth:
-`MANIFESTO.md` (philosophy), `BLUEPRINT.md` (concrete architecture + Technical Assessments TA-1..7),
-`STANDARDS.md` (the rules), `ROADMAP.md` (step-by-step status), `DECISIONS.md` (ADRs — newest
-decisions supersede earlier docs, so ADRs win on conflict).
+See `docs/architecture/` — **read these before non-trivial work**; they are the source of truth:
+`MANIFESTO.md` (philosophy), `BLUEPRINT.md` (the architecture as built), `STANDARDS.md` (the rules),
+`ROADMAP.md` (step-by-step status), `DECISIONS.md` (ADRs — newest decisions supersede earlier docs,
+so ADRs win on conflict). `DECISIONS.md` is an append-only archive: add an entry, never edit an
+accepted one.
 
 ## Orchestration: `task` is the only entry point
 
@@ -46,7 +45,7 @@ Common commands (`task --list` for all):
 - **Dart/Flutter libs**: `task test:client` (iterates workspace members; Flutter packages get
   `flutter test --dart-define=ZEN_ENV=dev --dart-define=ZEN_PLATFORM=<host>`, pure-Dart get `dart test`).
   Single package: `cd client/<pkg> && dart test test/<file>_test.dart`.
-- **Transport codec matrix** (TA-7): `task test:client:matrix` recompiles per `ZEN_ENV`/platform.
+- **Transport codec matrix**: `task test:client:matrix` recompiles per `ZEN_ENV`/platform.
 - **Admin**: `task test:admin` (`tsc -b` typecheck of the panel + the `@jzen/admin-core` scaffold).
 - **E2E**: `task test:e2e` — boots real Supabase + Quarkus, runs zen_demo's pure-Dart integration
   suite (no mocks) on `ZEN_APP_PORT` (default 8085), propagates exit code.
@@ -94,8 +93,8 @@ Two non-negotiable backend rules this seam depends on (see STANDARDS "Backend mu
   builder internals (500s), so it must be *absent*, not out-prioritized. (Client-side
   `quarkus-rest-client-jackson` in `zen-identity` is fine — outbound Supabase calls aren't proto.)
 
-Because SmallRye can't cleanly introspect protobuf classes (TA-1: a bare-proto return produced 130+
-garbage schemas), resources return `jakarta.ws.rs.core.Response` annotated with
+Because SmallRye can't cleanly introspect protobuf classes (a bare-proto return produces 130+
+garbage schemas, and 500s at runtime), resources return `jakarta.ws.rs.core.Response` annotated with
 `@APIResponse(... @Schema(ref = "..."))`, and the clean component schema is supplied by the app's
 static `META-INF/openapi.yaml` (paths scanned from annotations merge over it).
 
@@ -129,14 +128,13 @@ accessors with `flutter gen-l10n` (`task generate:l10n`); an app composes the de
 output is **built, not committed** (`**/l10n/generated/` is gitignored) because gen-l10n ships
 in the Flutter SDK; `sync:contracts` fails if any of it is ever tracked. The supported set is
 `ZenLocales` in `zen_core` (`{en, uk}`, fallback `en`), mirroring server `zen.core.i18n.ZenLocales`.
-The chosen `Locale` is also what `ZenClient` sends as `Accept-Language` (ADR-007). The old
-`zen_localization` package (runtime string-key lookups) is retired, and TA-3 with it.
+The chosen `Locale` is also what `ZenClient` sends as `Accept-Language` (ADR-007).
 
 **The Dart/Flutter client keeps compile-time config** (`String.fromEnvironment`) and
 `if (dart.library.io)` / `if (dart.library.html)` conditional imports — this is load-bearing, not a
 limitation. It lets the toolchain tree-shake native-only code (the Protobuf binary path) out of the
 JS/Wasm web bundle and web-only code out of the AOT-native binary. **Runtime config on the client is
-forbidden** (TA-7). Build defines are `ZEN_ENV` / `ZEN_PLATFORM` (renamed from `DZ_*`). The
+forbidden**. Build defines are `ZEN_ENV` / `ZEN_PLATFORM`. The
 **server** is the deliberate opposite — runtime MicroProfile config, because one binary serves all
 clients and has no bundle to shrink.
 
@@ -162,9 +160,10 @@ two migration systems on one DB. Local DB is the Supabase stack on port 54322. S
 
 Auth: Supabase JWT verified against JWKS (ES256), read from a normal httpOnly cookie
 `zen_access_token` (`mp.jwt.token.cookie`, `quarkus.http.auth.proactive=true`). Role is loaded from
-the `users` table by a `SecurityIdentityAugmentor`, **not** from the JWT. The BugEater `__session`
-cookie-packing / `SessionFilter` hacks are deliberately **not ported** (TA-4) — they only existed
-for Firebase Hosting's CDN cookie stripping, and jZen serves Cloud Run directly.
+the `users` table by a `SecurityIdentityAugmentor`, **not** from the JWT. Each token gets its own
+normally-named cookie and there is no session filter — which works because jZen serves Cloud Run
+directly, with nothing in front that strips or renames cookies. Do not put such an edge in front
+without reading STANDARDS "Deployment model" first; it would break the whole auth path.
 
 ## Deployment & operational invariants
 
@@ -174,14 +173,18 @@ instance runs, **in-process state (rate limiting, in-memory caches, login counte
 construction**; the trigger to externalize state (Postgres/Redis) is raising `--max-instances` above
 1. Container builds pin `linux/amd64`.
 
-## Migration discipline (temporary scaffolding)
+## Working discipline
 
-- **Donor repos `../DartZen` and `../BugEater` are strictly read-only** — never modify, move, or
-  even reformat a file in either; all work happens inside `jZen/`.
-- **Cite the source** for ported logic (name the legacy file) — for now. Unsourced logic is suspect.
-  ROADMAP step 8 strips every donor reference; these citations are removable scaffolding.
-- **Do not carry over donor bugs** (e.g. DartZen's `|| true` that swallows test failures, `ZenClient`
-  swallowing decode errors — TA-6). jZen's tasks do not swallow failures.
+- **All work happens inside this repository.** Nothing reaches outside the repo root to modify a
+  file; anything jZen depends on arrives as a declared dependency.
+- **Nothing swallows a failure.** No task hides a red suite behind `|| true` or a discarded exit
+  code, and `ZenClient` surfaces a `ZenError` on a decode failure rather than a null payload. If you
+  are about to make a failure quieter, you are about to introduce a bug. See STANDARDS "Failures
+  surface; nothing is swallowed".
+- **Explain things on jZen's own terms.** A comment earns its place by saying *why* a constraint
+  exists, in language a reader with no history here can follow. jZen is a standalone product: it
+  does not name other codebases, and nothing here is described as ported, derived, or inherited
+  from one. The sole exception is `docs/architecture/DECISIONS.md`, a sealed archive (ADR-011).
 
 ## Project-specific working agreement
 

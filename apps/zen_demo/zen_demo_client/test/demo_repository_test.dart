@@ -6,7 +6,7 @@ import 'package:zen_transport/zen_transport.dart';
 import 'package:zen_demo_client/src/demo_repository.dart';
 
 /// Unit tests for DemoRepository with a stubbed http.Client (the injectable session client),
-/// mirroring DartZen's api_client_test.dart. The live stack is exercised by the e2e suite;
+/// The live stack is exercised by the e2e suite;
 /// here we assert the wiring: correct path, method, Accept-Language, forced transport format,
 /// and typed parse/error handling. No live server.
 void main() {

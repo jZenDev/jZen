@@ -9,13 +9,12 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * The {@code users} table (active-record Panache entity). Ported from
- * ../BugEater/bugeater-quarkus/src/main/java/jlogicsoftware/user/User.java.
+ * The {@code users} table (active-record Panache entity).
  *
  * <p>The primary key {@code id} is the Supabase {@code auth.users.id} (the JWT {@code sub});
- * it is assigned from the token, never generated here. This table carries no learning-domain
- * columns; the columns it does carry are identity plus two first-class product concerns of
- * the scaffold:
+ * it is assigned from the token, never generated here. This is the application profile only,
+ * so it carries no domain columns: what it does carry is identity plus two first-class
+ * cross-cutting concerns of the framework:
  *
  * <ul>
  *   <li><strong>Payment:</strong> {@code is_premium}.

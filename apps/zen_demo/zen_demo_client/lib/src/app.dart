@@ -9,9 +9,9 @@ import 'screens/auth_flow.dart';
 import 'screens/home_shell.dart';
 
 /// The root of zen_demo. Routes on the identity session: anonymous -> the auth flow,
-/// authenticated -> the home shell. This is the state-based routing DartZen's ZenDemoApp used,
-/// rebuilt on Riverpod so the reused zen_ui_identity/navigation packages drive the same session
-/// the SupabaseIdentityRepository holds.
+/// authenticated -> the home shell. Routing is state-based on Riverpod, so the reused
+/// zen_ui_identity and zen_ui_navigation packages drive the same session the
+/// SupabaseIdentityRepository holds.
 ///
 /// There is no localization boot phase any more (ADR-009): the strings are generated Dart
 /// compiled into the binary, so there is nothing to fetch before the first frame - only a

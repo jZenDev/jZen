@@ -1,11 +1,8 @@
-// Replaces the donor's ZenEncoder/ZenDecoder static dispatchers
-// (../DartZen/packages/dartzen_transport/lib/src/zen_encoder.dart and zen_decoder.dart) and
-// the hand-written MessagePack codec (codecs/msgpack_*.dart). Instead of an untyped
-// `Object?`, this seam operates on typed protobuf messages: binary via the protobuf runtime
-// (writeToBuffer / mergeFromBuffer), JSON via canonical proto3 JSON (toProto3Json /
-// mergeFromProto3Json). Canonical proto3 JSON is what the Quarkus server's JsonFormat and
-// openapi-typescript also emit, so all three languages agree on the JSON shape
-// (docs/architecture/BLUEPRINT.md).
+// The codec seam operates on typed protobuf messages, never an untyped `Object?`: binary via
+// the protobuf runtime (writeToBuffer / mergeFromBuffer), JSON via canonical proto3 JSON
+// (toProto3Json / mergeFromProto3Json). Canonical proto3 JSON is what the Quarkus server's
+// JsonFormat and openapi-typescript also emit, so all three languages agree on the JSON
+// shape (docs/architecture/BLUEPRINT.md).
 import 'dart:convert';
 import 'dart:typed_data';
 

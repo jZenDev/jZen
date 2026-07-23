@@ -31,7 +31,7 @@ the WebSocket echo, a `ZenError` path), use **`task test:e2e`** — it brings th
 zen_demo's pure-Dart integration suite on `ZEN_APP_PORT`, tears down, and propagates the exit code.
 No mocks; it hits real Supabase + Quarkus.
 
-## Client build defines (compile-time config, TA-7)
+## Client build defines (compile-time config)
 
 The Flutter client reads config at **compile time**. When running/building it manually, pass
 `--dart-define=ZEN_ENV=<dev|prd>`, `--dart-define=ZEN_PLATFORM=<web|macos|linux|...>`, and

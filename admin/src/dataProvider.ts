@@ -23,7 +23,7 @@ export function createDataProvider(apiBase: string): DataProvider {
     headers.set(Transport.header, Transport.json);
     headers.set(HttpHeader.Accept, MediaType.Json);
 
-    // Echo the JS-readable XSRF-TOKEN on mutating requests. The backend issues it (TA-4) and does
+    // Echo the JS-readable XSRF-TOKEN on mutating requests. The backend issues it and does
     // not yet enforce it; sending it now is forward-looking hygiene. GET/HEAD carry no CSRF risk.
     const method = (options.method ?? HttpMethod.Get).toUpperCase();
     if (method !== HttpMethod.Get && method !== HttpMethod.Head) {

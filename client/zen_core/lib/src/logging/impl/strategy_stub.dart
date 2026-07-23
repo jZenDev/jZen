@@ -1,5 +1,3 @@
-// Ported verbatim from
-// ../DartZen/packages/dartzen_core/lib/src/logging/impl/strategy_stub.dart.
 import 'strategy.dart';
 
 /// Fallback strategy for basic logging.

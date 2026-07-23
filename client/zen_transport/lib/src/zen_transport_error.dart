@@ -1,4 +1,4 @@
-// The client's failure type. TA-6 (docs/architecture/BLUEPRINT.md) requires that a decode
+// The client's failure type. STANDARDS "Failures surface; nothing is swallowed" requires that a decode
 // failure - and any error response - surface a ZenError from common.proto rather than a
 // silent null. ZenTransportError is a zen_core ZenError (so it fits ZenResult<T>) that also
 // carries the wire proto ZenError, reachable via [zenError].

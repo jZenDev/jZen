@@ -1,9 +1,6 @@
 ####
 # Runs the jZen Quarkus application as a native executable (no JVM) on a micro base image.
 #
-# Adopted from ../BugEater/bugeater-quarkus/src/main/docker/Dockerfile.native-micro,
-# which is the image its scripts/build-prod.sh actually ships to Cloud Run.
-#
 # Build:
 #   ./mvnw package -Dnative -Dquarkus.native.container-build=true -pl zen-app -am
 #   docker build -f zen-app/src/main/docker/Dockerfile.native-micro -t jzen/zen-app .

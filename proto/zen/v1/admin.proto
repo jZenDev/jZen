@@ -10,7 +10,7 @@ package zen.v1;
 // the users table into AdminUser for the react-admin panel. The list endpoint returns a bare
 // JSON array of AdminUser plus a Content-Range header (the ra-data-simple-rest convention); each
 // element is this declared message, rendered via proto3 canonical JSON. Errors use the shared
-// ZenError in common.proto (TA-2).
+// ZenError in common.proto; there is no envelope.
 
 option java_package = "zen.proto.v1";
 option java_multiple_files = true;

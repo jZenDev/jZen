@@ -1,4 +1,3 @@
-// Ported verbatim from ../DartZen/packages/dartzen_core/lib/src/utils/zen_try.dart.
 import 'dart:async';
 
 import '../result/zen_error.dart';

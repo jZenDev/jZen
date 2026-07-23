@@ -2,25 +2,14 @@
 <!--
   zen-email :: transactional email via Brevo.
 
-  IMPORTANT – what was actually found in BugEater, versus what the brief assumed:
+  Brevo's REST API is deliberately not used. Brevo is a plain SMTP relay, so nothing in this
+  module is provider-specific: it is stock quarkus-mailer SMTP, and swapping providers means
+  changing SMTP_HOST, nothing more.
 
-  There is NO EmailService abstraction in BugEater to port. Exactly one Java file sends
-  mail: bugeater-quarkus/src/main/java/jlogicsoftware/user/UserCleanupService.java:197,
-  which injects io.quarkus.mailer.Mailer directly and calls
-  mailer.send(Mail.withHtml(...)). The `EmailService` interface this module exists to
-  provide is therefore NEW CODE, not a port.
-
-  Brevo's REST API is NOT used anywhere. Brevo is a plain SMTP relay: the literal string
-  "smtp-relay.brevo.com" appears once, in bugeater-quarkus/scripts/build-prod.sh:33,
-  where it is written into a GCP secret. Nothing in the Java code is Brevo-specific –
-  it is stock quarkus-mailer SMTP (application.properties:161-169). Swapping providers
-  means changing SMTP_HOST, nothing more.
-
-  What is genuinely portable: the mailer config block. The two donor Qute templates at
-  src/main/resources/templates/mail/{warningEmail,finalWarningEmail}.html are NOT ported - they
-  are English-only hardcoded strings, and this module exists to make that impossible. jZen writes
-  per-locale templates instead, and they live in the application, not here: this module is the
-  sending mechanism and owns no wording (DECISIONS ADR-007).
+  This module is the sending MECHANISM and owns no wording. Templates are per-locale and live
+  in the application, never here: a framework must not put generic branding in a product's
+  mailbox, and an English-only template is exactly the limitation this module exists to make
+  impossible (DECISIONS ADR-007).
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -46,9 +35,8 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-mailer</artifactId>
     </dependency>
-    <!-- Qute is retained ONLY as a mail templating engine. Every server-rendered HTML
-         endpoint in BugEater (136 *PageResource classes) is discarded; Qute survives
-         here and nowhere else. -->
+    <!-- Qute is used ONLY as a mail templating engine. jZen serves a REST API and renders
+         no server-side HTML, so Qute appears here and nowhere else. -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-qute</artifactId>

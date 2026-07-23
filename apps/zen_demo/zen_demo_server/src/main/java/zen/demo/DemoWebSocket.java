@@ -6,11 +6,8 @@ import io.quarkus.websockets.next.OnBinaryMessage;
 import io.quarkus.websockets.next.WebSocket;
 
 /**
- * The demo WebSocket echo endpoint, replacing the deleted
- * ../DartZen/apps/ZenDemo/dartzen_demo_server GET /ws Shelf handler
- * (../dartzen_demo_server/lib/src/dartzen_demo_server.dart): it receives a
- * {@link WebSocketMessage} and echoes it back with {@code type="echo"}, or replies
- * {@code type="error"} on a decode failure - matching the donor's contract exactly.
+ * The demo WebSocket echo endpoint: it receives a {@link WebSocketMessage} and echoes it back
+ * with {@code type="echo"}, or replies {@code type="error"} on a decode failure.
  *
  * <p>Unlike the HTTP surface (which negotiates JSON vs Protobuf per request), the socket is
  * single-format: frames are binary Protobuf. zen_demo's {@code ZenWebSocket} is constructed with

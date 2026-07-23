@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  zen-core :: the Java port of DartZen's dartzen_core.
+  zen-core :: the framework-free Java core.
 
-  Ports ZenResult / ZenError / logging contracts from
-  ../DartZen/packages/dartzen_core/lib/src/{result,logging}/.
+  Holds the ZenResult / ZenError result types, ZenStatus, the AcceptLanguage parser, and
+  ZenLocales - the pieces every other module may depend on.
 
-  Deliberately has no JAX-RS, no Panache, and no transport dependency: dartzen_core's
-  pubspec declares only `meta` and no inter-package deps, and that isolation is the
-  single most valuable property of the package. Do not add framework deps here.
+  Deliberately has no JAX-RS, no Panache, and no transport dependency. That isolation is the
+  single most valuable property of the module: it is what lets any module use these types
+  without inheriting a framework. Do not add framework deps here.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"

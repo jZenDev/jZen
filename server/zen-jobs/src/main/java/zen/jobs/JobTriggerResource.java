@@ -23,7 +23,7 @@ import zen.proto.v1.ZenError;
  * Jandex-indexed library so every jZen application inherits the trigger by depending on the module
  * (ADR-001 pt.3). The application supplies the referenced component schemas through its static
  * {@code META-INF/openapi.yaml}, and returns {@link Response} wrapping the proto rather than the
- * proto itself, per TA-1.
+ * proto itself, per STANDARDS "OpenAPI and the REST surface".
  *
  * <p><strong>One endpoint, N jobs.</strong> There is deliberately no per-job route: one scheduler
  * entry means one container start per tick, which is what keeps the single-instance cost model in

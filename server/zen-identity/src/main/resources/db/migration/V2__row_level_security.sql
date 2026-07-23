@@ -1,9 +1,6 @@
 /*
- * Row-level security for the users table. Adapts
- * ../BugEater/bugeater-quarkus/src/main/resources/db/migration/V9__enable_rls.sql, which
- * guarded learning-domain tables (user_xp / user_badges / favorites) with Supabase auth.uid().
- * jZen has only the users table, so the owner policy is applied there: a row is visible only
- * to the Supabase user it belongs to (id = auth.uid()).
+ * Row-level security for the users table: the owner policy, so a row is visible only to the
+ * Supabase user it belongs to (id = auth.uid()).
  *
  * auth.uid() and the auth schema exist only on the Supabase-managed database, not on the
  * plain PostgreSQL that Quarkus Dev Services provisions for @QuarkusTest. The whole body is

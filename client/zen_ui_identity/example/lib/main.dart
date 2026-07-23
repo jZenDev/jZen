@@ -25,7 +25,7 @@ void main() async {
   runApp(
     ProviderScope(
       overrides: [
-        // The Supabase re-point (TA-5): the UI depends only on the IdentityRepository
+        // Choosing the provider is pure wiring: the UI depends only on the IdentityRepository
         // interface, so wiring the real repository is a one-line provider override. It
         // targets the compile-time ZEN_API_URL and talks to the zen-identity endpoints.
         identityRepositoryProvider.overrideWith(

@@ -16,8 +16,7 @@ import jakarta.ws.rs.ext.Provider;
  * endpoint author never mentions JSON or Protobuf.
  *
  * <p>Scoped to {@code api/} paths so it never rewrites {@code Accept} on framework
- * endpoints ({@code /openapi}, {@code /q/health}, static assets). BugEater's
- * {@code ContentTypeFilter} is likewise scoped to {@code api/v1/*}.
+ * endpoints ({@code /openapi}, {@code /q/health}, static assets).
  */
 @Provider
 @PreMatching

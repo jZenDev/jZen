@@ -9,9 +9,7 @@ import jakarta.inject.Inject;
  *
  * <p>It exists so that working on jZen needs no Google Cloud account: with the cron on, a developer
  * sees jobs run exactly as they will in production, because this fires <em>the same</em> tick the
- * external trigger fires. Dev and prod differ in who pulls the trigger, not in what happens next -
- * the same split the donor drew between its development and production executors
- * (../DartZen/packages/dartzen_jobs/README.md, "Local Simulation").
+ * external trigger fires. Dev and prod differ in who pulls the trigger, not in what happens next.
  *
  * <p><strong>Off by default, and pinned off in {@code %prod}.</strong> Under
  * {@code --min-instances=0} the container exists only while it is serving a request, so a cron here

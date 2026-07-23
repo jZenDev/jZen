@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 /**
  * Proves {@code RoleAugmentor} loads the role from the {@code users} table, not from the token.
  * There is no JWT in this test at all, so a role appearing on the augmented identity can only
- * have come from the database (ADR-029 in the donor; TA carried into jZen).
+ * have come from the database.
  */
 @QuarkusTest
 class RoleAugmentorTest {

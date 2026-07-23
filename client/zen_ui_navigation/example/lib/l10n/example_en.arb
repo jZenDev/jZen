@@ -2,7 +2,7 @@
   "@@locale": "en",
 
   "homeTitle": "Home",
-  "homeWelcome": "Welcome to DartZen Navigation Demo",
+  "homeWelcome": "Welcome to the jZen Navigation Demo",
   "homeDescription": "This app demonstrates the adaptive navigation capabilities of the zen_ui_navigation package.",
   "homeFeaturesTitle": "Features:",
   "homeFeaturesAdaptive": "✓ Adaptive navigation (mobile, tablet, desktop)",

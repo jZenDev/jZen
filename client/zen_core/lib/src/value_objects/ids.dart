@@ -1,6 +1,6 @@
-// Ported from ../DartZen/packages/dartzen_core/lib/src/value_objects/ids.dart. The donor's
-// hand-rolled email regex is replaced by the standard `email_validator` library (MANIFESTO:
-// "no custom magic"; a standard, inspectable validator beats a maintained-by-hand regex).
+// Email validation delegates to the standard `email_validator` library rather than a
+// hand-rolled regex (MANIFESTO: "no custom magic"; a standard, inspectable validator beats
+// a maintained-by-hand regex).
 import 'package:email_validator/email_validator.dart';
 import 'package:meta/meta.dart';
 

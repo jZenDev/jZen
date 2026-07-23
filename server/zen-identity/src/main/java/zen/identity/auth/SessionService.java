@@ -9,18 +9,18 @@ import java.util.UUID;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
- * Issues and clears the session cookies. Ported from
- * ../BugEater/bugeater-quarkus/src/main/java/jlogicsoftware/auth/SessionService.java,
- * <strong>un-hacked per TA-4</strong> (docs/architecture/BLUEPRINT.md).
+ * Issues and clears the session cookies.
  *
- * <p>The donor packed {@code "access|refresh"} into a single {@code __session} cookie and
- * carried {@code extractAccessToken}/{@code extractRefreshToken} split helpers, purely
- * because Firebase Hosting strips every cookie except {@code __session} at the CDN edge
- * (its ADR-034). jZen serves Cloud Run directly, so those are gone: the access token lives
- * in a normally-named {@code zen_access_token} cookie that SmallRye JWT parses on its own
- * (via {@code mp.jwt.token.cookie}, with {@code quarkus.http.auth.proactive=true}), and the
- * refresh token lives in its own {@code zen_refresh_token} cookie. The donor's manual
- * {@code SessionFilter} existed only to unpack {@code __session} and is not ported.
+ * <p>Each token gets its own normally-named cookie: the access token in
+ * {@code zen_access_token}, which SmallRye JWT parses on its own (via
+ * {@code mp.jwt.token.cookie}, with {@code quarkus.http.auth.proactive=true}), and the
+ * refresh token in {@code zen_refresh_token}. There is no session filter and nothing to
+ * unpack, because nothing packs several tokens into one cookie.
+ *
+ * <p><strong>This depends on jZen serving Cloud Run directly.</strong> An edge that strips
+ * cookies by name would break the whole path, and recovering from it would mean packing the
+ * tokens into whatever single cookie survives plus a filter to unpack them. See
+ * docs/architecture/STANDARDS.md "Deployment model" before putting a CDN in front.
  *
  * <p>Cookie names match application.properties ({@code session.cookie.name} /
  * {@code session.cookie.refresh-name} / {@code mp.jwt.token.cookie}); keep them in sync.

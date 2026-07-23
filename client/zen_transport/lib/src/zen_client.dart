@@ -1,7 +1,5 @@
-// Re-architected from
-// ../DartZen/packages/dartzen_transport/lib/src/internal/client/zen_client.dart.
-//
-// Two donor bugs are fixed here (TA-6, docs/architecture/BLUEPRINT.md):
+// Two invariants of the client, both required by docs/architecture/STANDARDS.md
+// "The client never swallows a failure" and covered by tests:
 //   1. The default format comes from selectDefaultCodec() (the compile-time platform
 //      selector), NOT a hardcoded ZenTransportFormat.json.
 //   2. A decode failure surfaces a ZenError (from common.proto) via ZenResult.err - it is
@@ -49,7 +47,7 @@ class ZenClient {
   /// Creates a new [ZenClient].
   ///
   /// [baseUrl] is the base URL for all requests. [format] defaults to
-  /// [selectDefaultCodec], the compile-time platform selector (TA-6 #1). [httpClient]
+  /// [selectDefaultCodec], the compile-time platform selector. [httpClient]
   /// allows injecting a custom HTTP client for testing. [language] supplies the caller's
   /// current locale for [acceptLanguageHeaderName]; see the field.
   ZenClient({
@@ -131,7 +129,7 @@ class ZenClient {
         ),
       };
     } catch (e) {
-      // Network / I/O failure never yields a null payload (TA-6 #2).
+      // Network / I/O failure never yields a null payload.
       return ZenResult.err(
         ZenTransportError(
           pb.ZenError(
@@ -234,7 +232,7 @@ class ZenClient {
         responseFormat = ZenTransportFormat.parse(headerValue);
       } catch (e) {
         // An unrecognized negotiation header is a protocol error, surfaced as a ZenError
-        // rather than guessed at (TA-6 #2).
+        // rather than guessed at.
         return ZenResult.err(
           ZenTransportError(
             pb.ZenError(
@@ -284,7 +282,7 @@ class ZenClient {
       final message = ZenProtoCodec.decode(bytes, responseFormat, createEmpty);
       return ZenResult.ok(message);
     } catch (e) {
-      // TA-6 #2: a decode failure surfaces a ZenError, never a silent null.
+      // A decode failure surfaces a ZenError, never a silent null.
       return ZenResult.err(
         ZenTransportError(
           pb.ZenError(

@@ -39,7 +39,7 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
  *
  * <p>Gated to the {@code admin} role, which {@code RoleAugmentor} loads from the {@code users}
  * table into the {@code SecurityIdentity} (never from the JWT). The panel speaks JSON only
- * ({@code X-Zen-Transport: json}); the single-object endpoints still follow the TA-1 rule
+ * ({@code X-Zen-Transport: json}); the single-object endpoints still follow the rule
  * ({@link Response} wrapping a proto + a {@code $ref} schema) so the transport seam serializes
  * them, while the list endpoint emits the {@code ra-data-simple-rest} convention: a bare JSON
  * array of {@link AdminUser} plus a {@code Content-Range} header carrying the total (ADR-005

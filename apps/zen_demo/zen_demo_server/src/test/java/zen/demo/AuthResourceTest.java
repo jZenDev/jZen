@@ -29,7 +29,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * End-to-end proof of the identity surface: the same proto endpoints answer in both transport
- * modes, cookies follow the un-hacked TA-4 shape, and the error path returns a {@code ZenError}.
+ * modes, each token gets its own normally-named cookie, and the error path returns a
+ * {@code ZenError}.
  * The {@code @RegisterRestClient SupabaseAuthClient} is mocked (real Supabase is exercised by
  * {@code zen_demo}, ROADMAP step 4); Dev Services provisions Postgres and Flyway migrates.
  */
@@ -76,7 +77,7 @@ class AuthResourceTest {
     assertFalse(parsed.getId().isEmpty(), "identity id should be the Supabase user id");
     assertEquals(List.of("user"), parsed.getRolesList(), "first login upserts a USER row");
 
-    // TA-4: normal cookie names, no __session, no access|refresh packing.
+    // One normally-named cookie per token; nothing packs several tokens into one.
     List<String> setCookies = resp.getHeaders().getValues("Set-Cookie");
     assertTrue(setCookies.stream().anyMatch(c -> c.startsWith(SessionService.ACCESS_COOKIE + "=")));
     assertTrue(setCookies.stream().anyMatch(c -> c.startsWith(SessionService.REFRESH_COOKIE + "=")));

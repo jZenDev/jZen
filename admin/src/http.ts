@@ -40,7 +40,7 @@ export const Transport = {
   json: "json",
 } as const;
 
-/** The JS-readable CSRF cookie the backend issues (TA-4). */
+/** The JS-readable CSRF cookie the backend issues. */
 export const CSRF_COOKIE = "XSRF-TOKEN";
 
 /** Authority roles; mirrors zen.identity.user.UserRole.Names. */

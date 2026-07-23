@@ -11,10 +11,9 @@ environment:
 
 resolution: workspace
 
-# Ported from ../DartZen/packages/dartzen_core. Framework-free (no JAX-RS, no Panache, no
-# Flutter). Dependencies are limited to small, standard, inspectable libraries, per the
-# MANIFESTO's "no *custom* magic": a standard validation library beats a hand-rolled regex,
-# the same reasoning that replaced the hand-written MessagePack codec with protobuf.
+# Framework-free (no JAX-RS, no Panache, no Flutter). Dependencies are limited to small,
+# standard, inspectable libraries, per the MANIFESTO's "no *custom* magic": a standard
+# validation library beats a hand-rolled regex.
 dependencies:
   # Standard email validation instead of a hand-maintained regex.
   email_validator: ^3.0.0

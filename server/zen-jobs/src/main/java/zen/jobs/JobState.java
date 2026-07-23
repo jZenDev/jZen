@@ -15,9 +15,8 @@ import java.util.List;
  * The persisted state of one job: its schedule, whether it is enabled, and what happened last
  * time. Active-record Panache, like every other jZen entity (BLUEPRINT "Persistence").
  *
- * <p>State is persisted rather than compiled in for the reason the donor gives
- * (../DartZen/packages/dartzen_jobs/lib/src/models/job_config.dart:12-17): a schedule change or an
- * emergency stop must not need a redeploy. The row is seeded from the {@link ZenJob}'s defaults
+ * <p>State is persisted rather than compiled in so that a schedule change or an emergency stop
+ * does not need a redeploy. The row is seeded from the {@link ZenJob}'s defaults
  * the first time the job is seen and is owned by the database from then on.
  *
  * <p>{@code lastRunAt} is the field the whole design rests on - see {@link JobSchedule}. It records

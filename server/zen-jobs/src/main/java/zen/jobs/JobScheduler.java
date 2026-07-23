@@ -21,8 +21,7 @@ import zen.proto.v1.JobTickResult;
 /**
  * The master tick: one call runs every job that is due.
  *
- * <p>Modelled on the donor's batching coordinator
- * (../DartZen/packages/dartzen_jobs/lib/src/master_job.dart), and for its cost reason: N scheduler
+ * <p>Batched deliberately, for a cost reason: N scheduler
  * entries would mean N container starts, which fights the single-instance, scale-to-zero model in
  * STANDARDS "Deployment model". One external entry hits {@link JobTriggerResource}, this class
  * reads the enabled jobs, decides which are due from their persisted {@code last_run_at}, and runs

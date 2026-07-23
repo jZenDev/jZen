@@ -2,9 +2,8 @@ name: zen_demo_client
 description: >-
   The jZen reference app: the runnable showcase of jZen driving the real Quarkus + Supabase
   backend, and the living end-to-end test stand (task test:e2e) wired into the CI release gate.
-# Re-architected from ../DartZen/apps/ZenDemo/dartzen_demo_client onto the jZen packages
-# (Riverpod + zen_ui_identity/navigation + zen_transport), calling the Quarkus server instead
-# of the deleted Shelf demo server.
+# Assembled from the jZen framework packages (Riverpod + zen_ui_identity + zen_ui_navigation
+# + zen_transport) against the Quarkus server.
 publish_to: "none"
 # Lockstep with the product version (STANDARDS.md "Versioning").
 version: 0.1.0

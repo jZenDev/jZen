@@ -1,13 +1,10 @@
 # jZen local Supabase stack.
 #
-# Ports and Postgres major version are inherited from the verified BugEater setup
-# (../BugEater/bugeater-quarkus/supabase/config.toml) so that the JDBC default in
-# quarkus/zen-app/src/main/resources/application.properties
-# (jdbc:postgresql://127.0.0.1:54322/postgres) works with no local overrides.
+# The ports here match the JDBC default in the app server's application.properties
+# (jdbc:postgresql://127.0.0.1:54322/postgres), so the local stack works with no overrides.
 #
-# BugEater's supabase/seed/storage/ tree is deliberately NOT carried over: it is the
-# BugEater course/lesson/quiz content library, i.e. business domain. jZen imports the
-# server technology only.
+# There is no seed data and no supabase/migrations/: Flyway is jZen's single migration
+# authority (STANDARDS "Database migrations").
 #
 # Full reference: https://supabase.com/docs/guides/local-development/cli/config
 project_id = "jzen"

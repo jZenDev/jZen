@@ -20,7 +20,7 @@ import java.nio.charset.StandardCharsets;
  * {@code application/json}.
  *
  * <p>This exists because stock Jackson serializes protobuf-generated classes into their
- * builder internals (see BLUEPRINT.md, TA-1). {@link JsonFormat} emits the proto3 JSON
+ * builder internals (see STANDARDS.md, "OpenAPI and the REST surface"). {@link JsonFormat} emits the proto3 JSON
  * mapping that Dart's protoc_plugin and openapi-typescript also produce, so all three
  * languages agree on the JSON shape.
  */
@@ -28,7 +28,7 @@ import java.nio.charset.StandardCharsets;
 @Produces(MediaType.APPLICATION_JSON)
 // Priority 1 (highest) so this wins over the quarkus-rest-jackson writer, which also
 // claims application/json and would otherwise serialize the proto's builder internals
-// (the runtime half of BLUEPRINT.md TA-1). Safe to be greedy: isWriteable matches only
+// (the runtime half of the no-Jackson rule). Safe to be greedy: isWriteable matches only
 // protobuf Message types.
 @Priority(1)
 public class ProtoJsonMessageBodyWriter implements MessageBodyWriter<Message> {

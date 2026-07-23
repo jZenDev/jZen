@@ -6,8 +6,6 @@
 /// - Value objects (ZenTimestamp, ZenLocale, EmailAddress, UserId)
 /// - Base response contract (BaseResponse)
 /// - The supported locale set (ZenLocales), mirroring the server's zen.core.i18n.ZenLocales
-///
-/// Ported from ../DartZen/packages/dartzen_core/lib/dartzen_core.dart.
 library;
 
 export 'src/i18n/zen_locales.dart';

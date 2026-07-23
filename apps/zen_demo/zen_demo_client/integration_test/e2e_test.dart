@@ -12,7 +12,9 @@ library;
 // What it asserts end to end: register + login via Supabase, the session cookie surviving across
 // requests (getCurrentIdentity and the auth-gated /demo/profile on a different client sharing the
 // jar), a typed round trip in BOTH transport modes, a localized surface (en vs uk), the WebSocket
-// echo, an error path returning a ZenError, and logout clearing the session.
+// echo, an error path returning a ZenError, the authenticated job trigger, and logout clearing
+// the session.
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
@@ -118,6 +120,43 @@ void main() {
     final result = await anon.profile();
     expect(result.isFailure, isTrue);
     expect(result.errorOrNull!.message, isNotEmpty);
+  });
+
+  // Guaranteed scheduled work (ROADMAP step 7a). Both halves of the trigger's contract are
+  // asserted against the live server, and both stay hermetic: the credential is the local
+  // %dev secret, so nothing here needs Cloud Scheduler, GCP, or any real clock to pass.
+  group('the job trigger', () {
+    final triggerUrl = Uri.parse('$baseUrl/api/v1/jobs/trigger');
+
+    test('refuses a call with no credential', () async {
+      final anonymous = http.Client();
+      addTearDown(anonymous.close);
+
+      final response = await anonymous.post(triggerUrl);
+
+      // The endpoint is internet-reachable in production (Cloud Run serves the service
+      // allow-unauthenticated), and it drives the job that erases personal data.
+      expect(response.statusCode, 401);
+      expect(response.body, contains('unauthorized'));
+    });
+
+    test('runs due jobs when the shared secret is presented', () async {
+      final scheduler = http.Client();
+      addTearDown(scheduler.close);
+
+      final response = await scheduler.post(
+        triggerUrl,
+        // Matches %dev.zen.jobs.trigger.token in application.properties.
+        headers: {'X-Zen-Job-Token': 'dev-job-trigger-token'},
+      );
+
+      expect(response.statusCode, 200);
+      final tick = jsonDecode(response.body) as Map<String, dynamic>;
+      // A tick always reports itself, whether or not anything happened to be due: this is
+      // what makes a run visible after the fact.
+      expect(tick['startedAtMs'], isNotNull);
+      expect(tick['skippedOverlap'] ?? false, isFalse);
+    });
   });
 
   test('logout clears the session', () async {

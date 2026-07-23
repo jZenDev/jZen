@@ -1,0 +1,46 @@
+syntax = "proto3";
+
+package zen.v1;
+
+// Canonical models for guaranteed scheduled work (ROADMAP step 7a). The Java DTOs, the Dart
+// messages, and the admin TypeScript types are all generated from this file. Never hand-edit the
+// generated output - edit this and run `task sync:contracts`.
+//
+// One external scheduler entry calls POST /api/v1/jobs/trigger; the framework decides which jobs
+// are due from their persisted last_run_at and runs them. These messages are what that call
+// reports back, so an operator (or a test) can see what ran without reading the database. Errors
+// use the shared ZenError in common.proto (TA-2).
+
+option java_package = "zen.proto.v1";
+option java_multiple_files = true;
+option java_outer_classname = "JobsProto";
+
+// The outcome of a single job executed during one tick.
+message JobRun {
+  // Stable job id, matching the registered ZenJob and the zen_jobs primary key.
+  string job_id = 1;
+  // Terminal status of this run: "success" or "failure".
+  string status = 2;
+  // When this run started, in milliseconds since the Unix epoch.
+  int64 started_at_ms = 3;
+  // How long the run took, in milliseconds.
+  int64 duration_ms = 4;
+  // Failure detail; empty on success.
+  string error = 5;
+}
+
+// The result of one master tick: what was due and what happened to it.
+message JobTickResult {
+  // When the tick started, in milliseconds since the Unix epoch.
+  int64 started_at_ms = 1;
+  // How many enabled, registered jobs were due at that moment.
+  int32 due = 2;
+  // How many due jobs completed without throwing.
+  int32 succeeded = 3;
+  // How many due jobs threw.
+  int32 failed = 4;
+  // True when a tick was already running and this one did nothing (the overlap guard).
+  bool skipped_overlap = 5;
+  // One entry per job actually executed, in execution order.
+  repeated JobRun runs = 6;
+}

@@ -5,10 +5,12 @@ import jakarta.transaction.Transactional;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import zen.identity.event.AccountDeletionWarning;
 import zen.identity.event.AccountDeletionWarning.Stage;
+import zen.identity.event.DeliveryReceipt;
 
 /**
  * GDPR Art. 5(1)(e) data retention: warn the owners of long-dormant accounts twice, then anonymise
@@ -17,13 +19,19 @@ import zen.identity.event.AccountDeletionWarning.Stage;
  * .../DataRetentionJob.java), reduced to the part the {@code users} table actually models: the two
  * warning timestamps and the terminal anonymisation. The donor's fourth phase - deleting
  * unconfirmed identities through the Supabase admin API - needs a service-role key and is not part
- * of this step (DECISIONS ADR-007).
+ * of this work (DECISIONS ADR-007).
  *
- * <p>Each phase is its own short transaction that commits the timestamps and <em>returns</em> the
- * recipients rather than mailing them, exactly as {@code IdentityService} keeps the outbound
- * Supabase call outside {@link UserStore}'s transaction: a database transaction must not stay open
- * across an SMTP conversation, and a warning must never be mailed for a row whose stamp then rolls
- * back. {@link UserRetentionJob} fires the returned events once the stamp is committed.
+ * <p><strong>Finding and stamping are separate operations, and the warning happens in between</strong>
+ * (ADR-008). {@code findAccountsDue*} only reads; {@link UserRetentionJob} fires the warning and
+ * calls {@code stamp*} only for accounts whose warning was confirmed delivered. That ordering is
+ * what guarantees no account is ever anonymised without having been warned: an undelivered warning
+ * leaves the timestamp null, so the account is found again next cycle instead of ageing toward
+ * erasure. Previously the stamp was written first and the mail was fired afterwards, which meant a
+ * broken relay erased people silently.
+ *
+ * <p>Each stamp is its own short transaction, taken <em>after</em> the send has returned, so a
+ * database transaction never stays open across an SMTP conversation - the same rule that keeps
+ * {@code IdentityService}'s outbound Supabase call outside {@link UserStore}'s transaction.
  *
  * <p>Premium accounts are never touched, and an already-anonymised row is never reprocessed.
  */
@@ -61,11 +69,11 @@ public class UserRetentionService {
   int anonymiseOffsetDays;
 
   /**
-   * Stamps {@code deletion_warning_sent_at} on every account dormant longer than the configured
-   * window and returns one event per stamped account.
+   * Finds every account dormant longer than the configured window that has not been warned yet.
+   * Read-only: nothing is stamped until the warning is confirmed delivered.
    */
   @Transactional
-  public List<AccountDeletionWarning> stampFirstWarnings() {
+  public List<AccountDeletionWarning> findAccountsDueFirstWarning() {
     OffsetDateTime cutoff = OffsetDateTime.now().minusDays(warningDays);
     List<User> due =
         User.list(
@@ -74,7 +82,6 @@ public class UserRetentionService {
 
     List<AccountDeletionWarning> warnings = new ArrayList<>(due.size());
     for (User user : due) {
-      user.deletionWarningSentAt = OffsetDateTime.now();
       warnings.add(warning(user, Stage.FIRST, finalWarningOffsetDays + anonymiseOffsetDays));
     }
     if (!warnings.isEmpty()) {
@@ -84,11 +91,11 @@ public class UserRetentionService {
   }
 
   /**
-   * Stamps {@code final_warning_sent_at} on every already-warned account that stayed dormant and
-   * returns one event per stamped account.
+   * Finds every already-warned account that stayed dormant past the grace period and has not had
+   * its final warning yet. Read-only, for the same reason as above.
    */
   @Transactional
-  public List<AccountDeletionWarning> stampFinalWarnings() {
+  public List<AccountDeletionWarning> findAccountsDueFinalWarning() {
     OffsetDateTime cutoff = OffsetDateTime.now().minusDays(finalWarningOffsetDays);
     List<User> due =
         User.list(
@@ -97,13 +104,37 @@ public class UserRetentionService {
 
     List<AccountDeletionWarning> warnings = new ArrayList<>(due.size());
     for (User user : due) {
-      user.finalWarningSentAt = OffsetDateTime.now();
       warnings.add(warning(user, Stage.FINAL, anonymiseOffsetDays));
     }
     if (!warnings.isEmpty()) {
       LOG.infof("Data retention: final warning due for %d dormant accounts", warnings.size());
     }
     return warnings;
+  }
+
+  /**
+   * Records that the first warning reached its recipient. Only this stamp starts the countdown
+   * toward the final warning, so it is written for delivered messages and nothing else.
+   */
+  @Transactional
+  public void stampFirstWarningDelivered(UUID userId) {
+    User user = User.findById(userId);
+    if (user != null) {
+      user.deletionWarningSentAt = OffsetDateTime.now();
+    }
+  }
+
+  /**
+   * Records that the final warning reached its recipient. This is the stamp
+   * {@link #anonymiseExpiredAccounts()} counts from, so an account can only ever be anonymised on
+   * the strength of a warning that was actually delivered.
+   */
+  @Transactional
+  public void stampFinalWarningDelivered(UUID userId) {
+    User user = User.findById(userId);
+    if (user != null) {
+      user.finalWarningSentAt = OffsetDateTime.now();
+    }
   }
 
   /**
@@ -134,6 +165,6 @@ public class UserRetentionService {
 
   private AccountDeletionWarning warning(User user, Stage stage, int daysUntilAnonymisation) {
     return new AccountDeletionWarning(
-        user.id, user.email, user.language, stage, daysUntilAnonymisation);
+        user.id, user.email, user.language, stage, daysUntilAnonymisation, new DeliveryReceipt());
   }
 }

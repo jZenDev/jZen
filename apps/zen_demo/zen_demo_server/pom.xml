@@ -51,6 +51,12 @@
       <groupId>zen</groupId>
       <artifactId>zen-email</artifactId>
     </dependency>
+    <!-- Guaranteed scheduled work: supplies the trigger endpoint, the zen_jobs table, and the
+         ZenJob this app implements in zen.demo.jobs.UserRetentionZenJob. -->
+    <dependency>
+      <groupId>zen</groupId>
+      <artifactId>zen-jobs</artifactId>
+    </dependency>
 
     <dependency>
       <groupId>io.quarkus</groupId>
@@ -102,8 +108,8 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-logging-json</artifactId>
     </dependency>
-    <!-- Backs the port of dartzen_jobs. BugEater's only @Scheduled is
-         user/DataRetentionJob.java (cron 0 0 3 * * ?). -->
+    <!-- The %dev in-process tick that drives zen-jobs locally. In %prod the trigger is external
+         (Cloud Scheduler), because a cron cannot fire on a scale-to-zero runtime. -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-scheduler</artifactId>

@@ -21,7 +21,8 @@ jZen/
 │   ├── zen-core/             # ZenResult/ZenError, ZenStatus, AcceptLanguage; no Quarkus deps
 │   ├── zen-transport/        # dual-mode seam (consumes zen-proto)
 │   ├── zen-identity/         # Supabase auth beans, User, RoleAugmentor, + the AuthResource surface
-│   └── zen-email/            # EmailService (new) over quarkus-mailer/Brevo
+│   ├── zen-email/            # EmailService (new) over quarkus-mailer/Brevo
+│   └── zen-jobs/             # guaranteed scheduled work: external trigger + persisted job state
 ├── client/                   # Dart/Flutter FRAMEWORK libraries (pub workspace)
 │   ├── pubspec.yaml          # workspace root
 │   └── zen_core/  zen_transport/  zen_identity/  zen_localization/  zen_ui_*/
@@ -70,6 +71,7 @@ is reproducible without a system Maven.
 | `zen-transport` | `../DartZen/packages/dartzen_transport` | The negotiation seam (below); consumes `zen-proto`. Carries a Jandex index so its providers are discovered. |
 | `zen-identity` | `../BugEater/.../auth/`, `.../application/security/`, `.../user/User.java` | Supabase JWT, `User` entity, role augmentor. |
 | `zen-email` | `../BugEater/.../user/UserCleanupService.java` + mail templates | The service interface is **new**; see below. |
+| `zen-jobs` | `../DartZen/packages/dartzen_jobs` | The master tick and persisted job state, re-engineered onto Postgres. Firestore, Cloud Tasks, and the unused job features are dropped. See "Scheduled work" below. |
 | `zen-app` | `../BugEater/.../application/**` | Filters, exception mappers, health, REST resources, SmallRye OpenAPI. |
 
 ## The dual-mode transport seam
@@ -259,6 +261,40 @@ but it deliberately keeps two cross-cutting product concerns from the donor enti
 `final_warning_sent_at`). These are defaulted/nullable now and their behavior is wired in
 later steps (email deletion warnings in step 6, payments in step 7); keeping the columns from
 the start avoids a schema migration when that behavior lands.
+
+## Scheduled work
+
+Ported from `../DartZen/packages/dartzen_jobs`, which exists for precisely the constraint jZen
+also has: on a scale-to-zero runtime there is no thread alive at the hour a schedule names.
+Landed in ROADMAP step 7a; see [`DECISIONS.md`](./DECISIONS.md) ADR-008 for the decisions.
+
+```
+Cloud Scheduler ──POST /api/v1/jobs/trigger (X-Zen-Job-Token)──▶ JobTriggerResource
+                                                                      │
+                        overlap guard ──▶ enabled rows in zen_jobs ───┤
+                                                                      ▼
+                       due? = last_run_at + interval <= now   ──▶ run sequentially
+                                                                      │
+                                          record last_run_at / last_status / duration / error
+```
+
+- **Due-ness comes from `last_run_at`, not from a timer having fired**, so a tick missed while
+  scaled to zero is caught up rather than lost. A job overdue by N intervals runs **once**.
+- **Job state is persisted** (`zen_jobs`, Flyway `V100` + Panache), so a schedule change or an
+  emergency stop is an `UPDATE`, not a redeploy. Firestore is replaced by Postgres; the donor's
+  `dependencies`, `priority`, `skipDates`, `startAt`/`endAt`, and `maxRetries` are not ported.
+- **One trigger, one container start, N jobs** — the donor's Master Job pattern
+  (`../DartZen/packages/dartzen_jobs/lib/src/master_job.dart`), kept for its cost reason.
+- **An application implements `ZenJob` and registers nothing else.** `zen-identity` does *not*
+  depend on `zen-jobs`: it offers `UserRetentionJob.runCycle()` as a plain callable, and the app
+  joins the two (`zen.demo.jobs.UserRetentionZenJob`), the same split ADR-007 drew for email.
+- **The trigger's credential is a shared-secret header**, not the Supabase session and not Google
+  OIDC, and it **fails closed** when unconfigured. The service is served
+  `--allow-unauthenticated`, so this endpoint is internet-reachable.
+- **GDPR retention is gated on delivery.** The cycle finds due accounts, fires
+  `AccountDeletionWarning` synchronously, and stamps the timestamp only when an observer confirms
+  the message went out — so no account is anonymised on the strength of a warning that failed to
+  send, and `zen-identity` still names nothing in `zen-email`.
 
 ## Deployment
 

@@ -2,6 +2,7 @@ package zen.demo.mail;
 
 import io.quarkus.qute.i18n.Localized;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.event.ObservesAsync;
 import jakarta.inject.Inject;
 import java.util.Map;
@@ -22,9 +23,13 @@ import zen.identity.event.UserRegistered;
  * neither knows what jZen says or how it looks. A second application observing the same events
  * with its own wording needs no framework change.
  *
- * <p>Both observers are {@code @ObservesAsync}, so they run on a worker thread after the
- * triggering transaction has committed. Registration therefore neither waits for SMTP nor can be
- * failed by it, and {@link EmailService#send} never throws in the first place.
+ * <p>The two observers differ deliberately. {@link UserRegistered} is {@code @ObservesAsync}: it
+ * runs on a worker thread after the triggering transaction has committed, so registration neither
+ * waits for SMTP nor can be failed by it. {@link AccountDeletionWarning} is <em>synchronous</em>,
+ * because the retention cycle needs the answer: it stamps the account only if this observer
+ * confirms the warning was delivered, and an account that was not warned is not moved closer to
+ * erasure (ADR-008). There is no user waiting on a retention cycle, so nothing is paid for that.
+ * {@link EmailService#send} never throws either way.
  */
 @ApplicationScoped
 public class DemoMailer {
@@ -63,18 +68,27 @@ public class DemoMailer {
             Map.of("email", event.email(), "siteUrl", siteUrl)));
   }
 
-  /** Tells a dormant account's owner how long they have left, in their own language. */
-  void onAccountDeletionWarning(@ObservesAsync AccountDeletionWarning event) {
+  /**
+   * Tells a dormant account's owner how long they have left, in their own language, and confirms
+   * the receipt when the message actually went out. Withholding that confirmation is what stops an
+   * unwarned account from being anonymised, so the confirmation is bound to the send's own return
+   * value and nothing else.
+   */
+  void onAccountDeletionWarning(@Observes AccountDeletionWarning event) {
     int days = event.daysUntilAnonymisation();
     MailMessages bundle = bundle(event.language());
     boolean isFinal = event.stage() == AccountDeletionWarning.Stage.FINAL;
-    emailService.send(
-        new LocalizedEmail(
-            event.email(),
-            event.language(),
-            isFinal ? FINAL_WARNING_TEMPLATE : DELETION_WARNING_TEMPLATE,
-            isFinal ? bundle.finalWarningSubject(days) : bundle.deletionWarningSubject(days),
-            Map.of("email", event.email(), "siteUrl", siteUrl, "days", days)));
+    boolean sent =
+        emailService.send(
+            new LocalizedEmail(
+                event.email(),
+                event.language(),
+                isFinal ? FINAL_WARNING_TEMPLATE : DELETION_WARNING_TEMPLATE,
+                isFinal ? bundle.finalWarningSubject(days) : bundle.deletionWarningSubject(days),
+                Map.of("email", event.email(), "siteUrl", siteUrl, "days", days)));
+    if (sent) {
+      event.receipt().confirm();
+    }
   }
 
   /**

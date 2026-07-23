@@ -206,11 +206,69 @@ Deliverables:
   Quarkus dev: `uk-UA` → `users.language = uk` + "Ласкаво просимо до jZen", `en-US` → `en` +
   "Welcome to jZen".
 
-## Step 7 — Guaranteed scheduled work, deferred packages, framework improvements ☐
+## Step 7 — Guaranteed scheduled work, deferred packages, framework improvements ▶
 
-The first item is **required before any production deployment that stores personal data**; the
-rest are done in isolation, when a consumer needs them (packages) or when the framework earns the
-change (improvements).
+The first item is **required before any production deployment that stores personal data** and is
+now **done** (7a below); the rest are done in isolation, when a consumer needs them (packages) or
+when the framework earns the change (improvements).
+
+### 7a — Guaranteed scheduled work (`zen-jobs`) — REQUIRED, not deferred ✅
+
+> **Shaped during delivery (see [`DECISIONS.md`](./DECISIONS.md) ADR-008).** An external scheduler
+> calls one authenticated endpoint; the framework runs whatever is due, deciding due-ness from each
+> job's persisted `last_run_at` rather than from a timer having fired. Retention is the first job;
+> the mechanism is general.
+
+**Delivered.**
+
+- `server/zen-jobs` framework library: `ZenJob` (all an app implements), `JobState` (Panache over
+  the `zen_jobs` table, Flyway `V100`), `JobSchedule` (the pure due-ness rule), `JobScheduler` (the
+  master tick — sequential execution, per-run outcome recording, in-process overlap guard), and
+  `JobClock` (an injected `Clock` so scheduling is tested against a driven clock, never a sleep).
+- One authenticated trigger, `POST /api/v1/jobs/trigger` (`JobTriggerResource`, a framework
+  resource discovered from the Jandex-indexed jar like `AuthResource`). Its credential is a
+  shared-secret header (`X-Zen-Job-Token`), compared in constant time and **failing closed** when
+  unconfigured; the service is served `--allow-unauthenticated`, and a Supabase session — admin
+  included — is deliberately not sufficient.
+- `UserRetentionJob.runCycle()` is registered as the first job by the application
+  (`zen.demo.jobs.UserRetentionZenJob`). `zen-identity` gained **no** dependency on `zen-jobs`; its
+  `@Scheduled` binding and `quarkus-scheduler` dependency were **removed**, and the
+  `zen.identity.retention.cron` property deleted.
+- **The GDPR correctness hole ADR-007 accepted is closed:** the retention cycle now finds due
+  accounts, fires `AccountDeletionWarning` **synchronously**, and stamps the timestamp only when an
+  observer confirms the warning's `DeliveryReceipt` — so no account is anonymised on the strength of
+  a warning that failed to send, and the modules stay decoupled.
+- `%dev` keeps an in-process cron that drives **the same** `JobScheduler.tick()`; `%prod` relies on
+  Cloud Scheduler. `deploy:cloudrun` documents the one-time secret + scheduler-entry setup and wires
+  `ZEN_JOBS_TRIGGER_TOKEN` into the deploy.
+- **Migration ownership settled** (STANDARDS "Database migrations"): each framework library owns a
+  reserved Flyway version band (`zen-identity` 1-99, `zen-jobs` 100-199, apps 1000+).
+
+**Verified.** `task build:server` / `build:client` (`dart analyze` clean) / `build:apps` green.
+Backend suite **50 tests, 0 failures** (was 34) plus **10 new `zen-jobs` framework unit tests** —
+the first tests `task test:server` has ever run. Over a driven clock: `JobScheduleTest` (6) and
+`JobSchedulerTest` (7) prove due-ness, that nine ticks missed while scaled to zero are caught up by
+**exactly one** run, that a disabled job never runs however overdue, that a failure is recorded
+without aborting the tick and does not spin, and that an overlapping tick is refused (by re-entering
+the scheduler from inside a job — no threads, no sleeps). `JobTriggerResourceTest` (5) proves a
+valid secret runs retention end to end while an absent secret, a wrong secret, and an authenticated
+admin session are each rejected with a `ZenError`. `RetentionDeliveryGateTest` (3) proves an account
+whose warning could not be sent is never stamped and never anonymised however many cycles run, while
+one warned before the outage still is. `UserRetentionTest` adds the idempotency the contract
+requires. `task test:client` green (309), `task test:admin` green, `task sync:contracts` regenerates
+`jobs.proto` into stable Dart + TS with no TA-1 garbage. `task test:e2e` is **10/10** against live
+Supabase + Quarkus (was 8/8), the two new cases asserting the trigger is refused without the secret
+and runs a real tick with it. Manually against live dev: an unauthenticated and a wrong-secret
+`POST /jobs/trigger` return `401` + `ZenError`; the authenticated call returns the `JobTickResult`
+and moves `last_run_at`/`last_status`/`run_count`; a 9-day-stale row is caught up by a single run
+(`run_count` 1 → 2, not 1 → 10); a second immediate call finds nothing due.
+
+**The GDPR obligation is now discharged in production:** retention runs on a schedule that is
+provably not best-effort — a tick missed while scaled to zero is caught up, every run is visible
+after the fact in `zen_jobs`, and no account is ever anonymised without a delivered warning.
+
+<details>
+<summary>Original design brief (kept for provenance)</summary>
 
 ### 7a — Guaranteed scheduled work (`zen-jobs`) — REQUIRED, not deferred
 
@@ -270,6 +328,8 @@ external service watches the schedule and calls the application's endpoints:
 **Done when:** retention runs in production on a schedule that is provably not best-effort — a tick
 missed while scaled to zero is caught up, a run is visible after the fact, and no account is ever
 anonymised without a delivered warning.
+
+</details>
 
 ### Deferred package ports — port only when a consumer needs them
 - `dartzen_telemetry` → a Panache-backed store (its `TelemetryStore` is the one clean

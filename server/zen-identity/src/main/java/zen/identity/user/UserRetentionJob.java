@@ -1,27 +1,37 @@
 package zen.identity.user;
 
-import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
+import java.util.List;
+import java.util.function.Consumer;
+import java.util.UUID;
+import org.jboss.logging.Logger;
 import zen.identity.event.AccountDeletionWarning;
 
 /**
- * Drives the data-retention cycle on a schedule and publishes what it stamped.
+ * Drives the data-retention cycle and gates each account's progress on a warning that was actually
+ * delivered.
  *
  * <p>Deliberately thin: {@link UserRetentionService} owns the transactions and the policy, this
- * class owns only the trigger and the fan-out. Events are fired <em>after</em> each phase's
- * transaction has committed, so no warning is mailed for a stamp that did not survive.
+ * class owns the sequencing and the fan-out. One cycle is: find the accounts due a first warning,
+ * warn each, stamp the ones that were warned; the same for the final warning; then anonymise
+ * whatever is still dormant past its delivered final warning.
  *
- * <p><strong>Opt-in.</strong> The cron expression defaults to {@code off} in this library's
- * {@code META-INF/microprofile-config.properties}, so a framework consumer never starts deleting
- * user data by accident; an application turns retention on by setting
- * {@code zen.identity.retention.cron}. Because prod runs a single instance by design (STANDARDS
- * "Deployment model"), no distributed lock is needed - the trigger to add one is raising
- * {@code --max-instances} above 1.
+ * <p><strong>No trigger of its own.</strong> There is no {@code @Scheduled} here any more (ADR-008).
+ * A cron in this process could not fire under {@code --min-instances=0}, so the trigger moved
+ * outside: an application registers {@link #runCycle()} as a {@code ZenJob}, and {@code zen-jobs}
+ * runs it when it is due. {@code runCycle()} stays a plain public method, which is what lets the
+ * trigger be a deployment choice - and lets a test drive the cycle directly.
+ *
+ * <p><strong>Idempotent</strong>, as every job must be: each phase's query excludes the accounts
+ * the previous run already stamped, so running the cycle twice in a row warns nobody twice and
+ * anonymises nobody twice.
  */
 @ApplicationScoped
 public class UserRetentionJob {
+
+  private static final Logger LOG = Logger.getLogger(UserRetentionJob.class);
 
   private final UserRetentionService retention;
   private final Event<AccountDeletionWarning> warnings;
@@ -32,20 +42,43 @@ public class UserRetentionJob {
     this.warnings = warnings;
   }
 
-  @Scheduled(cron = "{zen.identity.retention.cron}", identity = "zen-user-retention")
-  void scheduled() {
-    runCycle();
-  }
-
   /**
    * Runs one full cycle: first warnings, then final warnings, then anonymisation. Public so an
-   * application (or a test) can drive it deterministically instead of waiting for the cron.
+   * application (or a test) can drive it deterministically instead of waiting for a trigger.
    *
    * @return how many accounts were anonymised by this cycle
    */
   public int runCycle() {
-    retention.stampFirstWarnings().forEach(warnings::fireAsync);
-    retention.stampFinalWarnings().forEach(warnings::fireAsync);
+    warn(retention.findAccountsDueFirstWarning(), retention::stampFirstWarningDelivered);
+    warn(retention.findAccountsDueFinalWarning(), retention::stampFinalWarningDelivered);
     return retention.anonymiseExpiredAccounts();
+  }
+
+  /**
+   * Warns each account and stamps only those whose warning came back confirmed.
+   *
+   * <p>The fire is synchronous so the receipt is readable before the next line - an asynchronous
+   * fire could only be followed by hope. An observer that throws costs that one account its warning
+   * this cycle and nothing more: the loop continues, and the unstamped account is found again next
+   * time.
+   */
+  private void warn(List<AccountDeletionWarning> due, Consumer<UUID> stamp) {
+    for (AccountDeletionWarning warning : due) {
+      try {
+        warnings.fire(warning);
+      } catch (RuntimeException e) {
+        LOG.errorf(e, "Retention warning for account %s failed to dispatch", warning.userId());
+      }
+      if (warning.receipt().isConfirmed()) {
+        stamp.accept(warning.userId());
+      } else {
+        /* The account deliberately does not advance. Anonymising someone who was never reachable
+         * is the failure this whole ordering exists to prevent (ADR-008). */
+        LOG.warnf(
+            "Retention %s warning for account %s was not confirmed delivered; not advancing it"
+                + " toward anonymisation",
+            warning.stage(), warning.userId());
+      }
+    }
   }
 }

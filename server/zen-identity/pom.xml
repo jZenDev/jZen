@@ -83,12 +83,11 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-jdbc-postgresql</artifactId>
     </dependency>
-    <!-- Drives UserRetentionJob's GDPR data-retention cycle. The job is off unless an app sets
-         zen.identity.retention.cron; see META-INF/microprofile-config.properties. -->
-    <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-scheduler</artifactId>
-    </dependency>
+    <!-- No quarkus-scheduler: UserRetentionJob no longer schedules itself (ADR-008). An
+         in-process cron cannot fire on a scale-to-zero runtime, so runCycle() is a plain callable
+         that an application registers with zen-jobs, and this module keeps no scheduling
+         machinery of its own. Note the dependency direction: zen-identity does NOT depend on
+         zen-jobs. -->
 
     <dependency>
       <groupId>org.mapstruct</groupId>

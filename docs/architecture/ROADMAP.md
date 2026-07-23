@@ -455,47 +455,67 @@ stopped occurring, and it would have to exempt its own definition to avoid match
 searches for. The rule it enforced lives in STANDARDS and `CLAUDE.md` instead, where it belongs -
 anything a reader needs is explained on jZen's own terms.
 
-## Step 9 — Documentation: READMEs ☐ (final step)
+## Step 9 — Documentation: READMEs ✅ (final step — closes the ROADMAP)
 
-Written last, so they describe jZen as built and in its own voice. Step 8 made this writable:
-there is now one vocabulary to write in. The `docs/architecture/` set stays the deep reference;
-these READMEs are the front door.
+> **Shaped during delivery (see [`DECISIONS.md`](./DECISIONS.md) ADR-012).** This step's own brief
+> was written at Step 0, and three later ADRs (001, 008) moved the tree underneath it — it asked for
+> `client/zen_demo/README.md`, listed a `server/` module map naming a deleted `zen-app` and omitting
+> `zen-jobs`, and left `apps/` out of the repository map. Those were corrected against the built
+> tree, the same way Step 8 fixed its own stale verification line. The wording below states what was
+> delivered.
 
-- **Root `README.md`** — the entry point for both audiences:
-  - *What jZen is* — one-paragraph product description and the philosophy in brief (link
-    to `docs/architecture/MANIFESTO.md`).
-  - *See it run* — lead with `zen_demo`: `task run:demo` as the fastest way to watch the
-    whole product work end to end, framed as both the showcase and the living test stand.
-  - *Repository map* — `server/` / `client/` / `admin/` / `proto/` / `supabase/`, one line
-    each, linking to their own READMEs.
-  - *Quick start (users)* — prerequisites, `task doctor`, `task run:all`, where each
-    surface comes up (API, admin panel, demo app) and how to reach them.
-  - *Quick start (developers)* — clone → `task deps` → `task build` → `task test`; the
-    contract-first workflow (edit `.proto` → `task sync:contracts`); how to add an
-    endpoint or a package; the golden rules (generated files are committed, never
-    hand-edited; client config is compile-time); `task test:e2e` runs `zen_demo` against
-    the real stack as the integration gate.
-  - *Deploy* — `task deploy:cloudrun`, the single-instance cost model, required secrets.
-  - Badges/licence, contribution pointer, link to `docs/architecture/`.
-- **Per-project READMEs**, each self-contained:
-  - `server/README.md` — module map (`zen-proto/core/transport/identity/email/app`), the
-    dual-mode transport seam, running/testing (Dev Services), the "no rest-jackson" and
-    "Jandex on every library module" rules, config reference.
-  - `client/README.md` — the pub workspace, package list and responsibilities, the
-    compile-time-config / bundle tree-shaking rule and `ZEN_*` build defines, per-platform
-    run/build.
-  - `client/zen_demo/README.md` — its dual role (product showcase + living e2e test
-    stand), what it exercises end to end (auth, both transport modes, localization, an
-    error path), `task run:demo` vs `task test:e2e`, and the "no mocks — hits the real
-    stack" rule.
-  - `admin/README.md` — ReactAdmin app, generated `openapi-typescript` types, dev server
-    and proxy, adding a resource.
-  - `proto/README.md` — proto is the source of truth, `zen.v1` layout and versioning,
-    `task sync:contracts` and the drift gate, how each language consumes the output.
-  - `supabase/README.md` — local stack, ports, migrations, auth/JWKS wiring.
-- **Verification:** a new contributor can go from clone to a running `task run:all` using
-  only the root README; each sub-project README stands on its own; every command shown
-  actually runs.
+**Delivered.** Written last, in jZen's own voice, so they describe the framework as built. The
+`docs/architecture/` set stays the deep reference; these READMEs are the front door.
+
+- **Fifteen tracked READMEs, by a stated rule.** A directory gets a README when it is a *front door*
+  — the repo root; each top-level surface a contributor treats as a unit (`server/`, `client/`,
+  `admin/`, `proto/`, `supabase/`, `scripts/`); the reference app as a unit (`apps/zen_demo/`) and
+  its client (`zen_demo_client`); and **every publishable library**, since each is bound for a
+  registry and needs a landing page of its own (all five `client/zen_*` packages, plus
+  `@jzen/admin-core`). A directory reached only *through* a front door gets none, so
+  `zen_demo_server` and `zen_demo_admin` do not — their story lives in the surface README above
+  them. Each publishable package carries a **"part of the jZen monorepo"** note; the Java tier
+  carries the same statement as inherited Maven metadata, because Maven reads metadata, not
+  READMEs. The rule, not the list, is what answers the next package.
+- **The root `README.md`** leads with the thing that demonstrates the product (`task run:demo`),
+  then a repository map naming all eight top-level directories (the `apps/` framework-vs-application
+  split included), a users' quick start (`task doctor` → `task run:all`, and where each surface
+  comes up — noting `run:all` brings up Supabase and the backend only, the panel separately), a
+  developers' quick start (clone → `task deps` → `task build` → `task test`, the contract-first loop,
+  the golden rules), deploy, and the Apache-2.0 licence.
+- **Five pre-existing READMEs, dispositioned individually.** The `zen_demo_client` **stock Flutter
+  template stub** was rewritten wholesale; the two `zen_ui_*` READMEs and the navigation `example/`
+  README were already accurate and kept; `scripts/README.md`, which this step never named, was kept
+  because `scripts/` is a front door.
+- **The licence is propagated.** The root Apache-2.0 `LICENSE` was copied byte-identically (proven by
+  `diff`) into every Dart package and Java module directory — sixteen copies in all — and, because
+  Maven and npm read metadata rather than the file, a `<licenses>` block was added to `server/pom.xml`
+  (inherited by every module) and a `"license"` field to both `package.json` files.
+- **A documentation drift gate ships: `task verify:docs`.** It asserts that every `task <name>` a
+  README mentions resolves in `task --list`, and that every module `LICENSE` is byte-identical to
+  root. Unlike Step 8's terminal one-shot check (reverted once its failure mode stopped occurring),
+  README and LICENSE drift begin the moment those files exist and recur, so a standing gate is
+  justified; wire it into CI beside `sync:contracts`. Both arms were shown to fail on injected drift.
+- **Review corrections, folded in before commit** (ADR-012 pt.7). A read-through corrected five
+  things the first draft got wrong: every publishable library now carries its own README and a
+  monorepo provenance note; the deploy section no longer claims web/admin are excluded "by design"
+  (they are simply not built yet); "build your app by copying the shape" became **depend on the
+  libraries and upgrade by version**, which is the architecture's actual claim; the server tier is
+  labelled **Java/Quarkus** so it cannot be misread as hand-rolled; and the reference app now tells a
+  first-time user **on screen** that it has no seeded account. That last one is **the step's single
+  behaviour change** — `LoginScreen` gained an optional, wording-free `banner` slot (null by default)
+  that `zen_demo` fills with a localized hint. Test counts are unchanged.
+
+- **Verification (as enforced):** a new contributor can go from clone to a running stack using only
+  the root README; each sub-project README stands on its own; every command shown was **run on the
+  delivery machine**; `task verify:docs` mechanically holds the task-reference and licence-copy
+  invariants; and `task build` / `task test` / `task sync:contracts` stay green with every test count
+  identical to the pre-Step-9 baseline (ADR-012).
+
+**This closes the ROADMAP.** There is no Step 10. The next horizon is not a numbered step but the
+triggers already recorded: a second application under `apps/` (which is what actually exercises the
+framework claim of ADR-001), and the capability triggers in [`DECISIONS.md`](./DECISIONS.md) ADR-010
+— none of whose conditions is met today.
 
 ## Explicitly out of scope
 

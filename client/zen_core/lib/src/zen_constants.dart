@@ -1,5 +1,5 @@
 // jZen declares no GCP or Firebase emulator constants: neither is part of the stack
-// (docs/architecture/MANIFESTO.md "What jZen explicitly discards").
+// (docs/architecture/MANIFESTO.md "Boundaries - what jZen is not").
 
 /// Environment constants
 ///

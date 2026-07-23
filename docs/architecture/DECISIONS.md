@@ -15,6 +15,181 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-012 — READMEs are the front door; a documentation drift gate, and the licence propagated to every module
+
+**Date:** 2026-07-23. **Status:** accepted. **Discharges:** ROADMAP Step 9, and closes the ROADMAP.
+
+### Decision
+
+Step 9 writes the READMEs — the front door to a codebase whose deep reference is
+`docs/architecture/`. Five coupled choices, plus one correction forced by a required deliverable.
+
+**1. Step 9's own specification was stale, and is corrected as part of discharging it.** It was
+written at Step 0, and three later ADRs moved things underneath it. Each was verified against the
+built tree and fixed in place (the same class of problem, and the same resolution, as Step 8's
+verification line):
+
+- It asked for **`client/zen_demo/README.md`**. There is no `client/zen_demo` — ADR-001 relocated
+  the reference app to `apps/zen_demo/zen_demo_client/`. The reference-app README lives there, plus
+  an app-level `apps/zen_demo/README.md` for the assembly as a whole.
+- Its `server/README.md` brief listed the modules as **"zen-proto/core/transport/identity/email/app"**.
+  `zen-app` no longer exists (ADR-001 relocated it to `apps/zen_demo/zen_demo_server`) and `zen-jobs`
+  was missing (it did not exist until ADR-008). The built module map is
+  `zen-proto/core/transport/identity/email/jobs`.
+- Its *Repository map* bullet listed `server/ client/ admin/ proto/ supabase/` and **omitted
+  `apps/`** — the framework-versus-applications split, the single most important structural fact
+  about the repository (ADR-001) — as well as `scripts/` and `docs/`. The root README's map names all
+  eight top-level directories.
+
+**2. The rule for where a README goes is stated, so the answer for the next package is derivable.**
+A directory gets its own README when it is a **front door** — a place a reader arrives at
+independently and needs oriented from: the repo root; each top-level surface a contributor treats as
+a unit (`server/`, `client/`, `admin/`, `proto/`, `supabase/`, `scripts/`); the reference app as a
+unit (`apps/zen_demo/`) and its client (`zen_demo_client`, the surface `run:demo`/`test:e2e` drive);
+and a **publication-shaped** package, whose pub.dev audience the monorepo view does not serve. A
+directory reached only *through* a front door, whose story is fully told there, gets none — that is
+where the drift cost buys nothing. Under the rule: **`zen_demo_server` and `zen_demo_admin` do not
+get their own READMEs** (their reusable story is in `server/` and `admin/`; their assembly story is
+`apps/zen_demo/README.md`), and **`zen_core`/`zen_transport`/`zen_identity` do not** (documented
+collectively in `client/README.md`; the trigger to add one is the same signal the two `zen_ui_*`
+packages already carry — a `LICENSE` and shaping for publication).
+
+**3. The five pre-existing READMEs are dispositioned individually, not uniformly.** They were not a
+set: `apps/zen_demo/zen_demo_client/README.md` was the **stock Flutter template stub** ("A new
+Flutter project"), which described a different project and was **rewritten wholesale**; the two
+`zen_ui_*` READMEs and the navigation `example/` README were **already accurate and in jZen's voice**
+and were **kept**, the two publication-shaped ones gaining only a one-line "part of the jZen
+monorepo" provenance note for their pub.dev audience; `scripts/README.md` — which Step 9 never names
+— was **kept**, because `scripts/` is a front door under the rule above.
+
+**4. A documentation drift gate ships: `task verify:docs`.** Prose has no compiler and no
+`sync:contracts`, so a README that names a task or a test count rots silently — the exact failure
+mode STANDARDS spends its length preventing everywhere else. The two mechanically-checkable things
+are gated: (a) every `task <name>` a README mentions must exist in `task --list` (which would have
+caught a README over-promising what `task run:all` does), and (b) every module `LICENSE` must be
+byte-identical to the root (a diff, over sixteen copies of a 190-line file). The READMEs themselves
+are written to **prefer prose that cannot go stale** — pointing at `task --list` and
+`docs/architecture/` rather than transcribing 41 task descriptions or restating a rule that will
+diverge from its source.
+
+**5. The licence is Apache-2.0 and is propagated to every module.** The root `LICENSE` is
+authoritative and was **copied byte-identically** (proven by `diff`) into every directory that roots
+a build unit — every Dart package and every Java module, including the two `example/` apps,
+`zen_demo_client`, and the `server/` parent aggregator: sixteen copies in all (two already existed).
+Because **Maven and npm read metadata, not the file**, the file alone declares the licence to no
+automatic reader on those tiers, so the same gap the file closes for Dart (pub.dev reads the file) is
+closed for them in metadata: a `<licenses>` block in `server/pom.xml` (inherited by every module,
+libraries and app servers alike) and a `"license": "Apache-2.0"` field in both `package.json` files.
+
+**6. The contract-drift gate's proto watch is narrowed, because a required deliverable exposed it as
+too broad.** `sync:verify` watched `proto/**` for drift; adding the required `proto/README.md` — a
+documentation file, not a contract — turned `sync:contracts` red. The glob is scoped to the contract
+sources it was always meant to watch, `proto/**/*.proto`. Verified: it still flags a real `.proto`
+edit and no longer misreads a doc beside the contract as drift.
+
+**7. Review corrections, made before this step was committed.** A read-through of the delivered
+READMEs found five things wrong or missing, and they are part of this decision rather than a
+follow-up, because each changes what the step claims:
+
+- **Every publishable library gets its own README, not only the "publication-shaped" ones.** Point 2
+  restricted per-package READMEs to packages already shaped for pub.dev. That premise was wrong:
+  **all** the framework packages are publication-bound (STANDARDS "Code generation" names publishing
+  as the exit condition), so `zen_core`, `zen_transport`, and `zen_identity` gained their own
+  READMEs. Each carries a **"part of the jZen monorepo"** provenance note, as do the two `zen_ui_*`
+  packages and `@jzen/admin-core`; the Java tier carries the same statement as Maven metadata
+  inherited from `zen-parent`, because Maven reads metadata, not READMEs. It rides in
+  `<description>` rather than `<url>`: Maven appends each module's artifactId to an inherited
+  `<url>`, so every module would have advertised a path that does not exist, and the documented
+  `child.project.url.inherit.append.path="false"` opt-out did not suppress it (checked with
+  `help:effective-pom`). A description inherits verbatim.
+  Packages that are never published — the two `example/` apps, `zen_demo_client`, the app's private
+  admin panel — carry no note.
+- **The deploy section said web and admin were excluded "by design". They are not; they are not yet
+  built.** The backend has a Cloud Run path; the Flutter web bundle and the admin bundle have no
+  deploy task, the backend container serves the API only, and in dev they run on their own origins
+  behind CORS. That is unfinished work, and the README now says so. Only native mobile/desktop
+  pipelines are genuinely left to each application.
+- **"You copy the shape" was the wrong description of building an app on jZen**, and would have
+  taught the opposite of the architecture. An application **depends on the libraries as versioned
+  packages** and upgrades by bumping a version; a copied framework cannot be upgraded at all. Path
+  dependencies are the distribution mechanism *until* the packages are published, not a licence to
+  vendor source.
+- **The server tier is labelled "Java/Quarkus", not "Java".** Naming only the language invited the
+  reading that the backend is framework-free or hand-rolled. The two leaf modules `zen-proto` and
+  `zen-core` remain deliberately Quarkus-free, and the module table still says so.
+- **The reference app tells a first-time user how to sign in, on screen.** Documentation alone was
+  insufficient for something every user meets before reading anything: `zen_demo` has no seeded
+  account, and the login page now says so. `LoginScreen` (in `zen_ui_identity`) gained an optional
+  **`banner`** slot — a framework mechanism carrying no wording, null by default, so the default
+  screen is unchanged — and `zen_demo_client`'s `AuthFlow` fills it with a localized
+  `DemoLocalizations` string. The framework supplies the slot, the application supplies the words:
+  the same split ADR-007 drew for email and ADR-008 for jobs.
+
+### What this supersedes, and why
+
+- **ROADMAP Step 9's "`client/zen_demo/README.md`", the module map
+  "`zen-proto/core/transport/identity/email/app`", and the repository-map bullet that omits `apps/`**
+  (ROADMAP Step 9) → **corrected in place.** *Why:* three later ADRs (001, 008) moved the tree
+  underneath a spec written at Step 0; following it literally would have produced files at paths that
+  do not exist and a module map naming a module that was deleted and omitting one that was added.
+- **ROADMAP Step 9's verification, "a new contributor can go from clone to a running `task run:all`
+  … every command shown actually runs"** → **restated in the terms actually enforced.** *Why:* the
+  human clone-to-run claim is real and was exercised, but the standing, mechanical guarantee is
+  `task verify:docs`; the ROADMAP now states what the gate checks rather than only what a one-time
+  walkthrough proved.
+- **`sync:verify`'s `proto/**` watch** (STANDARDS "Code generation" describes the gate;
+  `Taskfile.yml` `sync:verify` implements it) → **narrowed to `proto/**/*.proto`.** *Why:* the gate
+  detects contract drift, and a README beside the contract is not a contract; the narrower glob
+  watches exactly the source files and nothing else.
+- **This entry's own point 2, "a publication-shaped package gets a README"** → **widened to every
+  publishable library** (point 7). *Why:* the distinction it drew does not exist — every framework
+  package is destined for a registry, so the ones without a README were simply the ones nobody had
+  written yet.
+- **MANIFESTO "What jZen explicitly discards"** → **retitled "Boundaries — what jZen is not", and
+  its prose restated.** *Why:* "discards", "there is no … anywhere", and "Qute survives solely as"
+  describe the *removal* of things from somewhere else, which is a frame a standalone product cannot
+  use (ADR-011). The choices are unchanged; they now read as boundaries jZen holds rather than as a
+  diff against a predecessor. **Earlier entries in this log cite the old title** (ADR-010's census
+  row for a document store, and ADR-009's prose); because this log is sealed, those citations stand
+  and **resolve to the retitled section** — this line is the mapping, exactly as ADR-011's table is
+  the mapping for `TA-N`.
+
+### Consequence
+
+Fifteen tracked READMEs, and the rule that fixes the sixteenth. The diff is prose, licence files,
+pom/`package.json` metadata, and two Taskfile edits (a new `verify:docs`, a narrowed `sync:verify`
+glob).
+
+**One behaviour change, deliberately.** Step 9 was scoped to prose and licence files, and everything
+above holds to that except point 7's last item: `LoginScreen` gained an optional `banner` slot and
+`zen_demo`'s login page now renders a localized sign-in hint. It is called out rather than smuggled
+in, because a step that claims to change no behaviour must not quietly change some. The slot defaults
+to null, so every existing caller renders exactly as before, and **every test count is unchanged** —
+backend **50**, `zen-jobs` framework **10**, `test:client` **262** (`zen_ui_identity` still 39),
+`test:apps:client` **11** (`zen_demo_client` still 11), `test:e2e` **10/10**.
+
+`task build` and `task test` stay green after the licence propagation: adding files to sixteen module
+directories disturbed neither the Maven reactor nor the two pub workspaces. `task sync:contracts` is
+green ("Contracts in sync.", "Generated localizations correctly untracked."), `task verify:docs` is
+green (all task references resolve; all sixteen `LICENSE` copies byte-identical to root), and both
+`verify:docs` arms were shown to fail on injected drift — the task-reference arm caught a phantom
+`stop:demo` in this step's own prose. **No structural change beyond the two Taskfile targets above:**
+no framework module, no Flyway band claimed (200-299 remains free), no new dependency. Lockstep
+versioning is unchanged at `0.1.0`.
+
+**The ROADMAP's planned steps are complete** — there is no Step 10. Its remaining horizon is the
+trigger conditions already written down: the second application under `apps/` (which exercises the
+framework claim ADR-001 makes), and the capability triggers ADR-010 records for the six deferred
+concerns, none of whose conditions is met today.
+
+**That is not the same as production-ready, and this entry deliberately stops short of claiming it.**
+Writing the READMEs surfaced work that no roadmap step ever covered: the framework packages are
+unpublished (all `0.1.0`, `publish_to: none`, consumed by path), the web and admin surfaces have no
+deploy path, and the Cloud Run deploy has never been executed end to end. Those are tracked as open
+work rather than folded into this step's completion claim.
+
+---
+
 ## ADR-011 — jZen is standalone; the decision log is sealed rather than rewritten
 
 **Date:** 2026-07-23. **Status:** accepted. **Discharges:** ROADMAP Step 8.

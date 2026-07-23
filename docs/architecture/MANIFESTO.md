@@ -78,14 +78,20 @@ header.
 This is the mechanism the rest of the architecture is arranged around, which is why it is the
 one thing here stated as an absolute.
 
-## What jZen explicitly discards
+## Boundaries — what jZen is not
 
-- **Firebase and Firestore.** PostgreSQL is the database and Supabase owns authentication.
-  There is no GCP-emulator config on the client and no Firestore client anywhere.
-- **Server-rendered HTML.** jZen serves a REST API. Qute survives solely as a mail-templating
-  engine.
-- **A Flutter admin panel.** Administration is a `react-admin` stack: a reusable framework
+Settled choices, not open questions. Each names a road jZen does not take, and why the one it
+does take is sufficient. Reopening any of them takes a decision that supersedes this line.
+
+- **Not a Firebase/Firestore stack.** The database is PostgreSQL and authentication is
+  Supabase's — both named, first-class dependencies rather than abstractions. A document store
+  would mean a second data model that no product here has asked for.
+- **Not server-rendered.** jZen serves a REST API and clients render. Qute is present for one
+  job only: templating mail.
+- **Not a Flutter admin panel.** Administration is a `react-admin` stack — a reusable framework
   scaffold (`@jzen/admin-core` in `admin/`) that each app assembles into its own panel under
-  `apps/<app>/<app>_admin` (ADR-005).
-- **Runtime config on the client**, which would defeat the tree-shaking the compile-time
-  selectors buy (STANDARDS "Client config is compile-time").
+  `apps/<app>/<app>_admin` (ADR-005). One toolkit for the product surface, another for the back
+  office, each chosen for its audience.
+- **Not runtime-configured on the client.** Compile-time selectors are what let the toolchain
+  tree-shake per platform; runtime config would defeat that (STANDARDS "Client config is
+  compile-time"). This is the one client/server asymmetry the architecture mandates on purpose.

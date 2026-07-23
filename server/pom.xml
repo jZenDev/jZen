@@ -20,6 +20,35 @@
   <version>0.1.0-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>jZen :: parent</name>
+  <description>
+    jZen framework libraries for the JVM: the dual-mode (JSON/Protobuf) transport seam, identity,
+    email, and guaranteed scheduled work, built on Quarkus and assembled by applications.
+    Part of the jZen monorepo: https://github.com/jZenDev/jZen
+  </description>
+
+  <!--
+    Provenance and licence are declared once here and inherited by every module (the framework
+    libraries and, across directories via <relativePath>, the app servers). Maven reads this
+    metadata rather than the files beside each pom, so these blocks are what actually declare the
+    project and its licence to tooling and to a registry; the byte-identical LICENSE files are for
+    humans. This is the Maven-tier equivalent of the "part of the jZen monorepo" note the Dart and
+    npm packages carry in their READMEs. See docs/architecture/DECISIONS.md ADR-012.
+  -->
+  <!--
+    The repository pointer lives in <description>, not <url>, on purpose. Maven appends each
+    module's artifactId to an inherited <url> (…/jZen/zen-core, a path that does not exist), and
+    the child.project.url.inherit.append.path="false" opt-out did not suppress it here - verified
+    with help:effective-pom. A description inherits verbatim, so every module states the one
+    repository it actually lives in rather than advertising a 404.
+  -->
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
 
   <!--
     server/ is the Java FRAMEWORK: reusable library modules only (plain jars). The runnable

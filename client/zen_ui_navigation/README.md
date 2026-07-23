@@ -3,6 +3,10 @@
 Unified, adaptive navigation layer for jZen Flutter applications, with platform-specific
 optimizations.
 
+> Part of the [jZen](https://github.com/jZenDev/jZen) monorepo. Inside the repo it is a path
+> dependency in the `client/` pub workspace (versioned in lockstep with the product); this
+> README also stands on its own for a reader who meets the package by itself.
+
 ## Features
 
 - **Platform adaptive** — adapts to mobile, web, and desktop layouts.

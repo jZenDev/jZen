@@ -159,6 +159,58 @@ components:
           type: integer
           format: int64
           description: Last login time in ms since the Unix epoch; 0 when never logged in.
+    JobRun:
+      type: object
+      description: >-
+        The outcome of one job executed during a tick of POST /api/v1/jobs/trigger. Field names
+        are proto3 canonical JSON (lowerCamelCase).
+      properties:
+        jobId:
+          type: string
+          description: Stable job id; the zen_jobs primary key.
+        status:
+          type: string
+          description: Terminal status of the run; "success" or "failure".
+        startedAtMs:
+          type: integer
+          format: int64
+          description: When the run started, in ms since the Unix epoch.
+        durationMs:
+          type: integer
+          format: int64
+          description: How long the run took, in milliseconds.
+        error:
+          type: string
+          description: Failure detail; empty on success.
+    JobTickResult:
+      type: object
+      description: >-
+        POST /api/v1/jobs/trigger response; what was due at that moment and what happened to it.
+      properties:
+        startedAtMs:
+          type: integer
+          format: int64
+          description: When the tick started, in ms since the Unix epoch.
+        due:
+          type: integer
+          format: int32
+          description: How many enabled, registered jobs were due.
+        succeeded:
+          type: integer
+          format: int32
+          description: How many due jobs completed without throwing.
+        failed:
+          type: integer
+          format: int32
+          description: How many due jobs threw.
+        skippedOverlap:
+          type: boolean
+          description: True when a tick was already running and this one did nothing.
+        runs:
+          type: array
+          description: One entry per job actually executed, in execution order.
+          items:
+            $ref: '#/components/schemas/JobRun'
     AdminUserList:
       type: array
       description: >-

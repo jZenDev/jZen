@@ -66,6 +66,42 @@ Two rules the walking skeleton established, both mandatory for every backend mod
   be absent, not merely out-prioritized. (Client-side `quarkus-rest-client-jackson` in
   `zen-identity` is fine — it serializes outbound Supabase calls, which are not proto.)
 
+## Database migrations — one authority, one location, a version band per module
+
+- **Flyway is the single migration authority.** `supabase/migrations/` stays empty; there is never
+  a second migration system on one database.
+- **Every module ships its migrations to the same classpath location** (`db/migration`, the value
+  of `quarkus.flyway.locations`), so an application inherits a library's schema simply by depending
+  on it. Splitting locations per module does **not** avoid collisions and is not the answer: Flyway
+  versions must be unique across every location that shares a schema-history table, so a per-module
+  location would still need the rule below, plus per-application configuration.
+- **Each framework library owns a reserved version band**, and never numbers outside it:
+
+  | Owner | Band | Today |
+  |---|---|---|
+  | `zen-identity` | 1-99 | `V1__init_identity.sql`, `V2__row_level_security.sql` |
+  | `zen-jobs` | 100-199 | `V100__init_jobs.sql` |
+  | the next framework library | 200-299, 300-399, … | — |
+  | applications (`apps/*/*_server`) | 1000+ | — |
+
+  A new library claims the next free hundred *in this table* as part of its first migration, so two
+  libraries developed in parallel cannot both land a `V3`. Applications start at 1000 so no library
+  can ever grow into an application's numbering. See [`DECISIONS.md`](./DECISIONS.md) ADR-008.
+
+## Scheduled work
+
+Anything that must happen on a clock goes through `zen-jobs`, for the reason in "Deployment model"
+below: in-process *time* is invalid under scale-to-zero. Three rules, all enforced by tests:
+
+- **Due-ness is computed from the persisted `last_run_at`, never from a timer having fired.** This
+  is what makes a schedule a guarantee: a tick missed while scaled to zero is caught up, not lost.
+- **Missed ticks coalesce.** A job overdue by N intervals runs **once**, and `last_run_at` is
+  stamped with that run's start. jZen jobs reconcile current state; they do not replay periods.
+- **Every job is idempotent, because delivery is at-least-once.** An external scheduler retries and
+  jZen never suppresses a retry, so running twice must be harmless — and that must be *asserted by a
+  test*, not assumed. A job body stays a plain callable with no scheduling annotation on it, so the
+  trigger remains a deployment choice.
+
 ## Source of truth
 
 - `.proto` files under `proto/zen/v1/` are canonical for **models**.
@@ -167,8 +203,12 @@ developers must never have to reconcile "jZen v2" with "zen_core 1.2.1, zen_tran
   clock is driven from outside — Cloud Scheduler calling an authenticated endpoint, which
   also wakes the instance — and the job itself stays a plain callable method so the trigger
   is a deployment choice rather than a code one (`UserRetentionJob.runCycle()` is the
-  reference). A framework `@Scheduled` binding therefore defaults to `off` and an
-  application opts in only where it will genuinely run.
+  reference). **This is now implemented, not merely stated:** `zen-jobs` provides the
+  external trigger (`POST /api/v1/jobs/trigger`, one Cloud Scheduler entry, one container
+  start, N jobs) and the persisted job state it decides from — see "Scheduled work" above and
+  [`DECISIONS.md`](./DECISIONS.md) ADR-008. A framework `@Scheduled` binding survives only as
+  the `%dev` convenience that drives the same tick locally; it defaults to `off` and is pinned
+  off in `%prod`, where it provably cannot fire.
 - **No Firebase Hosting.** jZen serves Cloud Run directly. This is load-bearing: it is
   why normal cookie names and proactive auth work (**TA-4**). Do not reintroduce a
   cookie-stripping edge without also reintroducing the `__session` hack.

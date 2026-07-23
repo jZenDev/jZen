@@ -8,6 +8,151 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-008 — Guaranteed scheduled work: an external trigger, due-ness from `last_run_at`, and no erasure without a delivered warning
+
+**Date:** 2026-07-22. **Status:** accepted.
+
+### Decision
+
+Seven coupled choices for the Step-7a scheduling capability (`zen-jobs`), all following from one
+fact already recorded in STANDARDS "Deployment model": under `--min-instances=0` the container
+exists only while it is serving a request, so **in-process state is sound but in-process time is
+not**.
+
+1. **`zen-jobs` is a framework library; the application registers what to run.** The mechanism
+   (`ZenJob`, `JobScheduler`, `JobState`, `JobTriggerResource`) lives in `server/zen-jobs`, and the
+   trigger is a framework-owned JAX-RS resource served from the Jandex-indexed jar, exactly like
+   `AuthResource` and `AdminUserResource` (ADR-001 pt.3). **`zen-identity` does not depend on
+   `zen-jobs`**: it offers `UserRetentionJob.runCycle()` as a plain callable and knows nothing about
+   scheduling, while `zen-jobs` knows how to run due work and nothing about users. The application
+   joins them, in one 20-line class (`zen.demo.jobs.UserRetentionZenJob`). This is the same axis
+   ADR-007 drew for email — the framework decides *that* something is due, the application decides
+   *what* it is — and it keeps identity usable without the jobs table, the migration, and the
+   trigger endpoint coming along.
+
+2. **Due-ness is computed from `last_run_at`, never from "the timer fired."** `JobSchedule.isDue` is
+   a pure function of the recorded last run, the interval, and an injected `now`. Nothing in the
+   system observes ticks, so a tick missed while scaled to zero, mid-deploy, or during a scheduler
+   outage costs nothing: the next tick sees a stale timestamp and the job is still due. This single
+   property is what turns best-effort into a guarantee, and it is the reason a legal obligation can
+   rest on it.
+
+3. **Missed ticks coalesce: a due job runs once, not once per missed interval.** A job last run nine
+   hours ago on an hourly interval runs exactly once, and `last_run_at` is stamped with that run's
+   start rather than advanced interval by interval. jZen's jobs are reconciliations over current
+   state ("anonymise every account whose final warning has expired"), not per-period batches, so
+   replaying a backlog would repeat identical work. Stated once in `JobSchedule` as the framework
+   contract for every job.
+
+4. **The trigger authenticates with a shared secret header, not Google OIDC.** Cloud Scheduler sends
+   `X-Zen-Job-Token`, compared in constant time against `zen.jobs.trigger.token`. Cloud Run serves
+   jZen `--allow-unauthenticated` (Taskfile `deploy:cloudrun`), so this endpoint is internet
+   reachable and platform IAM cannot guard it. Verifying Cloud Scheduler's OIDC token was rejected:
+   `mp.jwt.token.header=Cookie` points SmallRye JWT at the Supabase session cookie, so a bearer
+   token in `Authorization` is never parsed at all, and a second issuer would mean hand-wiring a
+   second parser plus a live JWKS fetch that no hermetic test could satisfy. **The endpoint fails
+   closed** — the framework declares no default token, so an unconfigured deployment rejects every
+   call rather than accepting every call — and **a Supabase session is never sufficient**, admin
+   included, which `JobTriggerResourceTest` asserts.
+
+5. **One trigger endpoint with master-style batching**, ported from the donor's coordinator
+   (`../DartZen/packages/dartzen_jobs/lib/src/master_job.dart`). N scheduler entries would mean N
+   cold starts, fighting the single-instance cost model. Jobs run **sequentially**, each recording
+   `last_run_at` / `last_status` / duration / error, and the tick returns a `JobTickResult` proto so
+   a run is visible without reading the database. The **overlap guard is an in-process flag**, valid
+   for the same reason in-process rate limiting is valid — at most one instance ever runs — and
+   raising `--max-instances` above 1 is the documented trigger to move it to a Postgres advisory
+   lock. `last_run_at` records that a job *ran*, not that it succeeded, so a failing job waits out
+   its interval instead of retrying on every tick and hammering whatever broke it.
+
+6. **No account is anonymised without a warning that was actually delivered**, and the modules stay
+   decoupled. The retention cycle is inverted from *stamp, then fire asynchronously* to **find,
+   notify, then stamp**: `UserRetentionService.findAccountsDue*Warning()` only reads,
+   `UserRetentionJob` fires `AccountDeletionWarning` **synchronously**, and `stamp*Delivered()` is
+   called only when the observer confirmed the event's `DeliveryReceipt`. `zen-identity` still names
+   nothing in `zen-email`; it learns only that *something* confirmed delivery, so an application may
+   warn users by any channel. The fire is synchronous because a retention cycle has no user waiting
+   on it — the latency argument that made registration mail asynchronous does not apply — and only a
+   synchronous fire can carry an answer back within the cycle that asked. **The failure mode is now
+   safe by construction:** an undelivered warning leaves the timestamp null, so the account is found
+   again next cycle instead of ageing toward erasure, and an application that observes nothing can
+   never have its users erased.
+
+7. **The clock is injectable, but scoped to `zen-jobs`.** `JobClock` produces a `Clock` (UTC) that
+   `JobScheduler` injects, so due-ness, catch-up, and the recorded `last_run_at` are asserted at
+   chosen instants rather than waited for. It was **not** promoted into `zen-core`: that module is
+   deliberately zero-dependency pure Java ("Do not add framework deps here") and would have had to
+   become a CDI bean archive to host a producer. `zen-jobs` is the only module that needs a
+   controllable clock today — `UserRetentionService` keeps `OffsetDateTime.now()` because its tests
+   are already deterministic by backdating rows — and a second consumer is the trigger to promote
+   it, on evidence.
+
+**Also settled, and written into STANDARDS:** each framework library owns a **reserved Flyway
+version band** (`zen-identity` 1-99, `zen-jobs` 100-199, next library 200+, applications 1000+), so
+two libraries can ship migrations to the same classpath `db/migration` without ever colliding on a
+version. A location per module was rejected because it does not actually solve the problem: Flyway
+versions must be unique across every location sharing one schema history, so it would need the band
+convention anyway, plus per-application configuration.
+
+### What this supersedes, and why
+
+- **"`%prod` pins it off ... This leaves the GDPR obligation undischarged in production,
+  deliberately and on the record"** (ADR-007 pt.4; ROADMAP Step 6; `application.properties`) →
+  **discharged.** Retention now runs in production, driven from outside the container. The
+  `zen.identity.retention.cron` property is **deleted** rather than re-pointed.
+- **`UserRetentionJob`'s `@Scheduled` binding and `zen-identity`'s `quarkus-scheduler` dependency**
+  (ROADMAP Step 6) → **removed.** *Why:* keeping a second, unsafe scheduling path beside the working
+  one would invite an app to choose the path ADR-007 proved cannot fire, and two triggers on one
+  data-destroying job is worse than none. Retention is now scheduled exactly one way. `runCycle()`
+  stays a plain public method, which is what made this a configuration change rather than a rewrite.
+- **"`AccountDeletionWarning` ... Applications observe them with `@ObservesAsync`"** and **"The stamp
+  is committed before the event is fired"** (ADR-007 pt.2; the event's javadoc) → **reversed for this
+  one event.** It is now observed synchronously and stamped afterwards, for the reason in pt.6 above.
+  `UserRegistered` is unchanged and stays `@ObservesAsync`: registration is a user-facing request
+  that must not wait for SMTP, and nothing depends on its outcome.
+- **"a warning that failed to send still advances the clock toward anonymisation, and gating that
+  needs the durable delivery state 7a introduces"** (ADR-007 pt.4) → **fixed, and more cheaply than
+  predicted.** No durable per-warning delivery table was needed: the existing timestamp columns
+  became the record, because writing them *after* confirmed delivery makes their presence mean
+  "warned" rather than "attempted".
+- **"`dartzen_telemetry` ... Pairs naturally with 7a, which needs somewhere to record job runs"**
+  (ROADMAP Step 7, deferred packages) → **not needed.** Job runs are recorded in the `zen_jobs` row
+  they belong to and returned in the tick's response. A telemetry store remains deferred on its own
+  merits, not as a prerequisite of this step.
+- **The donor's `JobType` triad and most of its `JobConfig`**
+  (`../DartZen/packages/dartzen_jobs/lib/src/models/{job_type,job_config}.dart`) → **not ported.**
+  jZen ships only the `periodic` shape. `endpoint` needs Cloud Tasks, which jZen does not use, and
+  `scheduled` (per-job cron) is what the master tick exists to avoid. Likewise dropped:
+  `dependencies`, `priority`, `skipDates`, `startAt`/`endAt`, and `maxRetries` — unused weight, and
+  the donor's five `skipped*` statuses only describe those absent features. *Why:* STANDARDS forbids
+  carrying donor limitations forward, and a status that can never be written is not a status.
+
+### Consequence
+
+`zen-jobs` carries a Jandex index (it contributes CDI beans, an `@Entity`, and a JAX-RS resource, so
+without one the whole module would silently do nothing — the rule `zen-transport` established). The
+`%dev` in-process cron survives and drives **the same** `JobScheduler.tick()` the external trigger
+drives, so local work needs no GCP and dev and prod differ only in who pulls the trigger. Deployment
+gains one secret (`ZEN_JOBS_TRIGGER_TOKEN`) and one Cloud Scheduler entry, both documented in
+`deploy:cloudrun`. Surfacing job runs in the admin panel is **deferred**: the columns and the tick
+response already make a run visible, and the panel is not needed to discharge the obligation.
+Lockstep versioning is unchanged at `0.1.0`.
+
+Verified: `task build:server`, `build:client`, `build:apps` green; the backend suite is **50 tests,
+0 failures** (16 new), plus **10 new framework unit tests** in `zen-jobs` — the first tests
+`task test:server` has ever had to run. `JobScheduleTest` and `JobSchedulerTest` drive an injected
+clock to prove due-ness, that nine missed ticks are caught up by exactly one run, that a disabled
+job never runs however overdue, that a failure is recorded without aborting the tick, and that an
+overlapping tick is refused (proven by re-entering the scheduler from inside a job, so no threads
+and no sleeps). `JobTriggerResourceTest` proves a valid secret runs retention end to end while an
+absent one, a wrong one, and an authenticated **admin session** are each rejected with a `ZenError`.
+`RetentionDeliveryGateTest` proves an account whose warning could not be sent is never stamped and
+never anonymised however many cycles run, while one warned before the outage still is.
+`UserRetentionTest` adds the idempotency the contract requires. No test touches GCP, SMTP, or a real
+scheduler.
+
+---
+
 ## ADR-007 — Email: the framework sends, the application speaks; identity publishes events
 
 **Date:** 2026-07-21. **Status:** accepted.

@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  zen-jobs :: guaranteed scheduled work (ROADMAP step 7a, DECISIONS ADR-008).
+
+  Re-engineered from ../DartZen/packages/dartzen_jobs, which exists for exactly the reason an
+  in-process cron cannot work here: on a scale-to-zero runtime there is no thread alive at the
+  hour a schedule names. Its answer, kept: an external scheduler calls one endpoint, job state is
+  persisted, and due-ness is computed from the recorded last run rather than from a timer having
+  fired (../DartZen/packages/dartzen_jobs/lib/src/master_job.dart:70-74).
+
+  Its Firestore store becomes Postgres (Flyway + Panache), because Flyway is jZen's single
+  migration authority and there is no Firestore. Deliberately NOT ported from
+  .../lib/src/models/job_config.dart: dependencies, priority, skipDates, startAt/endAt, and
+  maxRetries. Retries come from the external scheduler's at-least-once delivery plus the next
+  tick, and the rest is unused weight until a caller demands it.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>zen</groupId>
+    <artifactId>zen-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>zen-jobs</artifactId>
+  <name>jZen :: jobs</name>
+
+  <dependencies>
+    <dependency>
+      <groupId>zen</groupId>
+      <artifactId>zen-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>zen</groupId>
+      <artifactId>zen-transport</artifactId>
+    </dependency>
+    <!-- Generated JobTickResult/JobRun messages the trigger resource returns. Arrives
+         transitively via zen-transport too, but declared directly because this module names it. -->
+    <dependency>
+      <groupId>zen</groupId>
+      <artifactId>zen-proto</artifactId>
+    </dependency>
+
+    <!-- The reusable JobTriggerResource is a JAX-RS resource (quarkus-rest arrives transitively
+         via zen-transport) annotated with MicroProfile OpenAPI (@APIResponse/@Schema). This
+         supplies those annotation classes; the app module runs the SmallRye scan and merges the
+         schemas from its static META-INF/openapi.yaml (TA-1). -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-smallrye-openapi</artifactId>
+    </dependency>
+    <!-- @PermitAll on the trigger: the endpoint carries its own shared-secret credential and must
+         not be reachable through the Supabase session path (ADR-008). -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-security</artifactId>
+    </dependency>
+
+    <!-- Job state is a Panache active-record entity over the zen_jobs table, migrated by Flyway
+         from this module's own db/migration (version band 100-199, STANDARDS "Database
+         migrations"). -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-hibernate-orm-panache</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-jdbc-postgresql</artifactId>
+    </dependency>
+    <!-- Backs the %dev in-process tick only. In %prod the trigger is external, by design. -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-scheduler</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Generates META-INF/jandex.idx so Quarkus discovers this module's beans (JobScheduler,
+           the JobTriggerResource, the JobState @Entity) from the jar when it is a dependency of
+           an app server. Without an index they are silently ignored - no error, no endpoint.
+           zen-transport is the reference for this. -->
+      <plugin>
+        <groupId>io.smallrye</groupId>
+        <artifactId>jandex-maven-plugin</artifactId>
+        <version>3.2.7</version>
+        <executions>
+          <execution>
+            <id>make-index</id>
+            <goals>
+              <goal>jandex</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

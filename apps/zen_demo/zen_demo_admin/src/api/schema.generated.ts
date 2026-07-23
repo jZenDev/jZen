@@ -599,6 +599,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/jobs/trigger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run every scheduled job that is currently due */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Shared secret identifying the external scheduler */
+                    "X-Zen-Job-Token"?: string;
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The tick result: what was due and what happened to it */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["JobTickResult"];
+                        "application/x-protobuf": components["schemas"]["JobTickResult"];
+                    };
+                };
+                /** @description Missing or invalid trigger credential (ZenError) */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -705,6 +752,52 @@ export interface components {
              * @description Last login time in ms since the Unix epoch; 0 when never logged in.
              */
             lastLoginAtMs?: number;
+        };
+        /** @description The outcome of one job executed during a tick of POST /api/v1/jobs/trigger. Field names are proto3 canonical JSON (lowerCamelCase). */
+        JobRun: {
+            /** @description Stable job id; the zen_jobs primary key. */
+            jobId?: string;
+            /** @description Terminal status of the run; "success" or "failure". */
+            status?: string;
+            /**
+             * Format: int64
+             * @description When the run started, in ms since the Unix epoch.
+             */
+            startedAtMs?: number;
+            /**
+             * Format: int64
+             * @description How long the run took, in milliseconds.
+             */
+            durationMs?: number;
+            /** @description Failure detail; empty on success. */
+            error?: string;
+        };
+        /** @description POST /api/v1/jobs/trigger response; what was due at that moment and what happened to it. */
+        JobTickResult: {
+            /**
+             * Format: int64
+             * @description When the tick started, in ms since the Unix epoch.
+             */
+            startedAtMs?: number;
+            /**
+             * Format: int32
+             * @description How many enabled, registered jobs were due.
+             */
+            due?: number;
+            /**
+             * Format: int32
+             * @description How many due jobs completed without throwing.
+             */
+            succeeded?: number;
+            /**
+             * Format: int32
+             * @description How many due jobs threw.
+             */
+            failed?: number;
+            /** @description True when a tick was already running and this one did nothing. */
+            skippedOverlap?: boolean;
+            /** @description One entry per job actually executed, in execution order. */
+            runs?: components["schemas"]["JobRun"][];
         };
         /** @description GET /api/v1/admin/users response; a page of AdminUser records as a bare JSON array. The total row count travels in the Content-Range header (the ra-data-simple-rest convention). */
         AdminUserList: components["schemas"]["AdminUser"][];

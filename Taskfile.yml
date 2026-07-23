@@ -573,8 +573,36 @@ tasks:
           Because there is at most one instance, in-process state (rate limiting, caches)
           is valid by construction. Raising max above 1 is the trigger to move such state
           to Postgres/Redis, not the other way around. See STANDARDS.md.
+        - Scheduled work is triggered from OUTSIDE the container. min-instances=0 means
+          there is no thread alive to run an in-process cron, so zen-jobs exposes
+          POST /api/v1/jobs/trigger and one Cloud Scheduler entry calls it. One entry, one
+          container start, N jobs: N entries would mean N cold starts.
 
       Requires: gcloud auth, and the secrets below present in Secret Manager.
+
+      ONE-TIME SETUP for scheduled work (jobs do not run until this exists):
+
+        1. Mint and store the trigger secret. The service is deployed
+           allow-unauthenticated, so this header secret is what stands between the
+           internet and the job that erases dormant personal data. The endpoint fails
+           closed: with no secret configured it rejects every call.
+
+             openssl rand -base64 32 | tr -d '\n' | \
+               gcloud secrets create ZEN_JOBS_TRIGGER_TOKEN --data-file=- --project=PROJECT
+
+        2. Create the single scheduler entry. Hourly is ample: due-ness is computed from
+           each job's own last_run_at, so the tick rate only bounds how soon a due job is
+           noticed, never how often it runs.
+
+             gcloud scheduler jobs create http zen-jobs-tick \
+               --project=PROJECT --location=REGION \
+               --schedule="0 * * * *" \
+               --uri="https://SERVICE_URL/api/v1/jobs/trigger" \
+               --http-method=POST \
+               --update-headers="X-Zen-Job-Token=THE_SECRET_FROM_STEP_1"
+
+        A missed tick is not a lost run: the next one sees a stale last_run_at and catches
+        up. That is what makes GDPR retention a guarantee here rather than a hope.
     cmds:
       - task: build:server:native
       - |
@@ -592,7 +620,7 @@ tasks:
           --min-instances=0 --max-instances=1 \
           --timeout=300s --port=8080 --concurrency=200 \
           --allow-unauthenticated \
-          --set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,DB_URL=DB_URL:latest,DB_USERNAME=DB_USERNAME:latest,DB_PASSWORD=DB_PASSWORD:latest,CORS_ORIGINS=CORS_ORIGINS:latest,AUTH_REDIRECT_URI=AUTH_REDIRECT_URI:latest,SITE_URL=SITE_URL:latest,SMTP_HOST=SMTP_HOST:latest,SMTP_PORT=SMTP_PORT:latest,SMTP_USERNAME=SMTP_USERNAME:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,SMTP_FROM=SMTP_FROM:latest
+          --set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,DB_URL=DB_URL:latest,DB_USERNAME=DB_USERNAME:latest,DB_PASSWORD=DB_PASSWORD:latest,CORS_ORIGINS=CORS_ORIGINS:latest,AUTH_REDIRECT_URI=AUTH_REDIRECT_URI:latest,SITE_URL=SITE_URL:latest,SMTP_HOST=SMTP_HOST:latest,SMTP_PORT=SMTP_PORT:latest,SMTP_USERNAME=SMTP_USERNAME:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,SMTP_FROM=SMTP_FROM:latest,ZEN_JOBS_TRIGGER_TOKEN=ZEN_JOBS_TRIGGER_TOKEN:latest
 
   # ---------------------------------------------------------------------------
   # Housekeeping

@@ -24,10 +24,13 @@ import zen.identity.user.UserRole;
  * Proves the GDPR data-retention cycle (ROADMAP step 6, DECISIONS ADR-007): dormant accounts are
  * warned twice in their own language and then anonymised, while paying accounts are left alone.
  *
- * <p>The cron is pinned {@code off} in {@code %test}, so the job never fires behind a test's back;
- * each case drives {@link UserRetentionJob#runCycle()} directly, which makes the whole flow
- * deterministic. Mail is captured by {@link MockMailbox} and the warnings arrive from an
- * {@code @ObservesAsync} observer, hence the polling helper.
+ * <p>Nothing schedules the cycle behind a test's back - {@code zen.jobs.tick.cron} is off in
+ * {@code %test} - and each case drives {@link UserRetentionJob#runCycle()} directly, which makes
+ * the whole flow deterministic. Mail is captured by {@link MockMailbox}.
+ *
+ * <p>Since ADR-008 the warning observer is <em>synchronous</em>, because the cycle now stamps an
+ * account only once delivery is confirmed. So the mail is in the mailbox by the time
+ * {@code runCycle()} returns, and the polling this test used to need is gone.
  */
 @QuarkusTest
 class UserRetentionTest {
@@ -40,9 +43,6 @@ class UserRetentionTest {
 
   /** Longer than the configured 7-day gap between the final warning and anonymisation. */
   private static final int SINCE_FINAL_WARNING_DAYS = 10;
-
-  private static final long MAIL_TIMEOUT_MS = 10_000;
-  private static final long POLL_INTERVAL_MS = 50;
 
   @Inject UserRetentionJob retentionJob;
   @Inject MockMailbox mailbox;
@@ -59,7 +59,7 @@ class UserRetentionTest {
 
     retentionJob.runCycle();
 
-    Mail mail = awaitSingleMailTo(email);
+    Mail mail = singleMailTo(email);
     /* 23 days to the final warning plus 7 more to anonymisation. */
     assertEquals("Ваш обліковий запис jZen буде заархівовано через 30 днів", mail.getSubject());
     assertTrue(mail.getHtml().contains("30"), "the body states the same countdown as the subject");
@@ -76,7 +76,7 @@ class UserRetentionTest {
 
     retentionJob.runCycle();
 
-    Mail mail = awaitSingleMailTo(email);
+    Mail mail = singleMailTo(email);
     assertEquals("Last chance - your jZen account is deleted in 7 days", mail.getSubject());
     assertNotNull(reload(id).finalWarningSentAt, "the final warning is stamped");
     assertEquals(email, reload(id).email, "a warned account is not anonymised in the same cycle");
@@ -119,7 +119,41 @@ class UserRetentionTest {
     retentionJob.runCycle();
 
     assertNotNull(reload(id).deletionWarningSentAt);
-    assertEquals("Your jZen account will be archived in 30 days", awaitSingleMailTo(email).getSubject());
+    assertEquals("Your jZen account will be archived in 30 days", singleMailTo(email).getSubject());
+  }
+
+  /**
+   * The idempotency every {@code ZenJob} promises, asserted rather than assumed. An external
+   * scheduler delivers at-least-once and jZen never suppresses a retry, so a duplicate trigger is a
+   * normal event: the second cycle must warn nobody twice and anonymise nobody twice.
+   */
+  @Test
+  void runningTheCycleTwiceIsHarmless() {
+    String warned = "retention-idempotent-warned@example.com";
+    UUID warnedId = persistUser(warned, "en", dormant(), null, null, false);
+    String expiring = "retention-idempotent-expiring@example.com";
+    UUID expiringId =
+        persistUser(
+            expiring,
+            "en",
+            dormant(),
+            OffsetDateTime.now().minusDays(SINCE_FIRST_WARNING_DAYS),
+            OffsetDateTime.now().minusDays(SINCE_FINAL_WARNING_DAYS),
+            false);
+
+    assertEquals(1, retentionJob.runCycle(), "the first cycle anonymises the expired account");
+    OffsetDateTime firstStamp = reload(warnedId).deletionWarningSentAt;
+    assertNotNull(firstStamp);
+
+    assertEquals(0, retentionJob.runCycle(), "the second cycle finds nothing left to anonymise");
+
+    assertEquals(
+        firstStamp, reload(warnedId).deletionWarningSentAt, "the warning stamp is not moved");
+    assertEquals(1, mailbox.getMailsSentTo(warned).size(), "and nobody is warned twice");
+    assertEquals(
+        "anon_" + expiringId + "@deleted.invalid",
+        reload(expiringId).email,
+        "an already-anonymised account is not reprocessed");
   }
 
   private OffsetDateTime dormant() {
@@ -156,21 +190,13 @@ class UserRetentionTest {
     return QuarkusTransaction.requiringNew().call(() -> User.findById(id));
   }
 
-  private Mail awaitSingleMailTo(String address) {
-    long deadline = System.currentTimeMillis() + MAIL_TIMEOUT_MS;
-    while (System.currentTimeMillis() < deadline) {
-      List<Mail> mails = mailbox.getMailsSentTo(address);
-      if (!mails.isEmpty()) {
-        assertEquals(1, mails.size(), "exactly one message expected for " + address);
-        return mails.getFirst();
-      }
-      try {
-        Thread.sleep(POLL_INTERVAL_MS);
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        fail("Interrupted while waiting for mail");
-      }
+  /** The warning observer is synchronous, so the message is already there when the cycle returns. */
+  private Mail singleMailTo(String address) {
+    List<Mail> mails = mailbox.getMailsSentTo(address);
+    if (mails.isEmpty()) {
+      return fail("No mail reached " + address);
     }
-    return fail("No mail reached " + address + " within " + MAIL_TIMEOUT_MS + "ms");
+    assertEquals(1, mails.size(), "exactly one message expected for " + address);
+    return mails.getFirst();
   }
 }

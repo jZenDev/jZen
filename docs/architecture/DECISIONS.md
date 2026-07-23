@@ -8,6 +8,244 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-010 — The deferred donor packages are settled: a complete census, six "never", and nothing ported
+
+**Date:** 2026-07-23. **Status:** accepted. **Discharges:** ROADMAP Step 7, "Deferred package ports".
+
+### Decision
+
+Every package in the DartZen donor now has a disposition, and the open-ended "port only when a
+consumer needs them" list is closed. **Nothing is ported by this step.** The verdict on all six
+remaining packages is **never port the donor package**; where the underlying *capability* could
+still be wanted, the trigger is written below in jZen's own terms, naming no donor path, so Step 8
+is a mechanical strip rather than a second round of decisions.
+
+**1. The census is complete, which the deferred list never was.** Sixteen packages, three verdicts:
+
+| Donor package | LOC | Verdict | Where it stands |
+|---|---|---|---|
+| `dartzen_core` | 758 | **ported** | `zen_core` + `zen-core` (step 2) |
+| `dartzen_transport` | 1579 | **ported** | `zen_transport` + `zen-transport` (steps 1-2) |
+| `dartzen_identity` | 1005 | **ported** | `zen_identity` + `zen-identity` (step 3) |
+| `dartzen_ui_navigation` | 693 | **ported** | `zen_ui_navigation` (step 3) |
+| `dartzen_ui_identity` | 1274 | **ported** | `zen_ui_identity` (step 3) |
+| `dartzen_jobs` | 1892 | **ported** | `zen-jobs` (step 7a, ADR-008) |
+| `dartzen_localization` | 378 | **ported, then retired** | `zen_localization`, deleted at step 7b (ADR-009) |
+| `dartzen_firestore` | 1150 | **never** | MANIFESTO "What jZen explicitly discards"; Supabase/Postgres |
+| `dartzen_server` | 687 | **never** | MANIFESTO; the Quarkus backend is the server |
+| `dartzen_ui_admin` | 1317 | **never** | MANIFESTO; react-admin per ADR-005, confirmed dropped at step 5 |
+| `dartzen_telemetry` | 425 | **never** | pt.3 below |
+| `dartzen_executor` | 1337 | **never** | pt.4 below |
+| `dartzen_cache` | 750 | **never** | pt.5 below |
+| `dartzen_storage` | 703 | **never** | pt.6 below |
+| `dartzen_payments` | 1708 | **never** | pt.7 below |
+| `dartzen_ai` | 2322 | **never** | pt.8 below |
+
+The last three "never" rows in the upper block were already decided in the MANIFESTO and the
+ROADMAP's "Explicitly out of scope", but **the deferred list never named them**, and an unnamed
+package is exactly what makes Step 8's `grep` gate ambiguous. They are restated here so the census
+is closed rather than merely believed to be.
+
+**2. The six deferred packages are a closed dependency island, and its root has no consumers.**
+This single measurement decides most of what follows. Counting every `pubspec.yaml` dependency and
+every `package:` import across the whole donor, outside each package's own directory:
+
+- `dartzen_ai` depends on cache, executor, telemetry, localization, transport, core. Its own
+  consumers: **none**, in any package or app, including ZenDemo.
+- `dartzen_executor` consumers: `dartzen_ai` only. `dartzen_cache` consumers: `dartzen_ai` only.
+- `dartzen_payments` consumers: **none**.
+- `dartzen_telemetry` consumers: `dartzen_ai`, `dartzen_payments`, `dartzen_jobs`.
+- `dartzen_storage` consumers: `dartzen_server` and `dartzen_demo_server`, **both already deleted by
+  decisions taken** (MANIFESTO; ROADMAP step 4).
+
+So four of the six have no live consumer even in the donor; telemetry's only surviving consumer
+path was `dartzen_jobs`, which jZen ported as `zen-jobs` **without** it (ADR-008), proving by
+construction that it was not required; and storage's consumer count in jZen terms is zero by
+construction. The island exists to serve a package nothing uses.
+
+**3. `dartzen_telemetry` is not ported, and no `zen-telemetry` library is created.** ADR-008 already
+removed its stated rationale. What remains does not survive its own evidence: `TelemetryStore` is
+two methods, `TelemetryClient` is a four-method pass-through over it, and the only implementation is
+`FirestoreTelemetryStore` - the package's `pubspec.yaml` declares a dependency on
+`dartzen_firestore`. "The one clean store abstraction in DartZen" is an abstraction over the one
+backend jZen discarded at MANIFESTO level.
+
+Its semantic-event model (`auth.login.success` with user, session, and correlation ids) *is*
+genuinely additive over what jZen has: `zen_jobs` rows are per-job operational state, Micrometer
+counters are aggregates that cannot be queried per user, and structured logs are not queryable at
+all. That is why this is a decision and not an oversight. It is nonetheless **not framework work**,
+on ADR-001's axis: *which* events matter is product content, exactly as wording was for email
+(ADR-007) and job identity was for scheduling (ADR-008). The mechanism a framework would own here is
+Panache plus Flyway, which every jZen application already inherits. A `server/zen-telemetry` claiming
+Flyway band 200-299 would ship a framework-owned table that **no framework code writes to**.
+
+It also does not arrive free: per-user event rows land directly on `users.analytics_consent`, a GDPR
+column the framework already carries, and would have to be anonymised by `UserRetentionService`
+alongside the profile. Taking on a compliance obligation for a table with no consumer is the
+opposite of what step 7a spent its effort discharging.
+
+> **Trigger.** When a jZen application needs to answer a question about user behaviour over time
+> that `zen_jobs` rows, Micrometer counters, and structured logs cannot answer, it defines its own
+> event table in its own application migration band (1000+) and honours `users.analytics_consent`.
+> It is promoted to `server/zen-telemetry` with a reserved band only when a **second** application
+> needs the same table - the same evidence bar ADR-008 set for promoting `JobClock` into `zen-core`.
+
+**4. `dartzen_executor` is not ported: it solves a constraint jZen does not have.** Its entire
+`light` / `medium` / `heavy` taxonomy is a Dart event-loop concern. `light` runs inline, `medium`
+runs in a `dart:isolate` with an enforced timeout, and `heavy` dispatches to `dartzen_jobs`. The
+middle tier exists because a Dart server is single-threaded and CPU work blocks the event loop.
+Quarkus has no such constraint: a JAX-RS resource already runs on a worker thread pool, and
+`@Blocking` / `@NonBlocking` / `ManagedExecutor` are platform primitives. The `heavy` tier is
+`zen-jobs`, already shipped - and ADR-008 already declined the donor's `endpoint` (Cloud Tasks) job
+type that heavy dispatch targets, so the routing decision this package exists to make has no
+remaining destinations.
+
+It would also resurrect retired code: `ZenExecutor`'s constructor takes a `ZenLocalizationService`,
+the mechanism ADR-009 deleted. **This is TA-3's shape exactly** - the technique was right for the
+donor's runtime, the runtime is not jZen's, and the indirection goes with it. There is no trigger:
+the capability is the JVM's.
+
+**5. `dartzen_cache` is not ported.** Two implementations sit behind a four-method `CacheClient`
+(`set`/`get`/`delete`/`clear`): an in-memory map, and `MemorystoreCache`, a **hand-written RESP
+protocol client over a raw `dart:io` Socket** carrying `@visibleForTesting` socket-factory injection
+hooks in the production file. STANDARDS "Deployment model" states that at `--max-instances=1`
+in-process state is *valid by construction*, and that raising max-instances is the documented
+trigger to externalize. So the Redis half solves the problem jZen deliberately does not have, and
+the in-memory half is `quarkus-cache` - one annotation against 750 LOC.
+
+**The Java precedent is zero, not substantial.** The BugEater files matching "cache" are
+`Cache-Control` HTTP *response headers*, an unrelated concept; there is no `io.quarkus.cache`, no
+`@CacheResult`, and no Redis anywhere in that codebase. The existing trigger in STANDARDS is
+sufficient and needs no restatement: **raising `--max-instances` above 1 is the trigger to
+externalize state**, and at that point the answer is the `quarkus-redis-client` extension, not a
+hand-written RESP client.
+
+**6. `dartzen_storage` is not ported, and `server/zen-storage` is not created now.** The package is
+a read-only `ZenStorageReader.read(key)` over the GCS and Firebase SDKs, and its own barrel states
+it is "explicitly GCS-focused" and "NOT a multi-cloud abstraction" - so it structurally cannot
+front Supabase Storage, which is what jZen runs.
+
+The Java evidence answers the "abstraction or passthrough?" question empirically, and answers it
+against a library: BugEater's *entire* object-storage implementation is `SupabaseStorageClient`, a
+**34-line `@RegisterRestClient` interface with two `GET` methods that differ only in `@Produces`**.
+The ~60 remaining matches are call sites building public URL strings. A `zen-storage` library would
+be that passthrough. MANIFESTO settles it directly: real dependencies are first-class and "not
+smuggled behind a portability layer that no second implementation will ever justify."
+
+> **Trigger.** An application that needs object storage declares its own `@RegisterRestClient`
+> against Supabase Storage (or an S3 SDK, since the service is S3-compatible) in its own app server.
+> Promote it to `server/zen-storage` only when a **second** application needs the same client.
+
+**7. `dartzen_payments` is not ported, and payments is an application concern.** 1708 LOC across 25
+files with **zero consumers anywhere in the donor**, wired to Adyen and Strapi, depending on
+`dartzen_localization` (retired) and `dartzen_telemetry` (never ported), and shipping its
+`TestExecutor` / `LocalExecutor` scaffolding inside the public API. The Java side has **no
+implementation to harvest**: three incidental matches, none a payment flow.
+
+Where there is no Java precedent, "port" is the wrong word - it would be greenfield Java design
+merely *informed* by an unconsumed Dart package, a different order of cost and a different claim
+about provenance. And on ADR-001's axis it is application work: a provider, its currencies, its tax
+treatment, and its webhook contract are product policy. The framework share would be
+`quarkus-rest-client` plus a table, which is not a mechanism worth a library until a second
+application shares it.
+
+> **Trigger.** When a jZen application sells something, it implements checkout in its own app server
+> against its chosen provider's SDK, and writes its own migrations in the application band (1000+).
+> `server/zen-payments` is created only when a **second** application needs the same integration.
+
+**8. `dartzen_ai` is not ported.** 2322 LOC hard-wired to GCP Vertex AI and Gemini, with **zero
+consumers** and **zero Java precedent**. It is the sole reason cache, executor, and telemetry exist
+in the donor, so porting it means porting the whole island of pt.2. Its stated contract is that
+"All AI operations MUST be executed via ZenExecutor" - a mandate that only makes sense under the
+event-loop constraint pt.4 just retired. A provider-specific client written against one vendor's
+2025 API is also the fastest-ageing code in the donor.
+
+> **Trigger.** When a jZen application needs a model, it uses a maintained Quarkus extension in its
+> own app server. jZen does not write its own vendor client.
+
+**9. Micrometer stays in the application, not the framework.** `quarkus-micrometer-registry-prometheus`
+is declared in `apps/zen_demo/zen_demo_server/pom.xml` and belongs there. A *registry* binding is a
+deployment choice - which system scrapes you, on what protocol - and by ADR-001's axis that is
+policy, not mechanism. Promoting it to a framework library would force every jZen application to
+expose Prometheus metrics whether or not its host scrapes them. This is the same reasoning that
+keeps mail wording (ADR-007) and job identity (ADR-008) application-side.
+
+**10. Resolving this list before Step 8 is itself part of the decision.** Step 8 strips every donor
+reference from the repository and rewrites these docs to stand alone, which makes the ordering
+load-bearing rather than incidental:
+
+- A package ported **after** Step 8 either reintroduces the citations Step 8 just removed, or is
+  ported with no citation at all, violating STANDARDS "cite the source - for now."
+- Leaving an open-ended "port when demanded" list **through** Step 8 is worse: as written it points
+  at `../DartZen/packages/...` paths that Step 8 exists to erase, so **Step 8 could not honestly
+  complete while the list stood**. A deferral that cites a path the next step deletes is not a
+  deferral, it is a dangling reference.
+
+That is why "never" had to be an available answer and why most of the list receives it. Every
+trigger above is phrased in jZen's own terms - an application, a second application, a
+`--max-instances` value - and none names a donor package or path, so Step 8 can strip citations
+without re-opening any of these decisions.
+
+### What this supersedes, and why
+
+- **"Deferred package ports - port only when a consumer needs them"** and the five-package line
+  **"`dartzen_executor`, `dartzen_payments`, `dartzen_ai`, `dartzen_cache`, `dartzen_storage`
+  (→ Supabase Storage / S3) - no committed target until demanded"** (ROADMAP Step 7) → **closed and
+  replaced by the table above.** *Why:* "deferred with no trigger" is indistinguishable from "not
+  decided", and it was the last thing blocking Step 8 (pt.10). Each package now has a verdict, and
+  each surviving capability has a testable trigger.
+- **"`dartzen_telemetry` → a Panache-backed store (its `TelemetryStore` is the one clean store
+  abstraction in DartZen). Pairs naturally with 7a, which needs somewhere to record job runs"**
+  (ROADMAP Step 7) → **retired in both halves.** ADR-008 already answered the second clause ("Job
+  runs are recorded in the `zen_jobs` row they belong to"); pt.3 answers the first: the abstraction
+  is two methods over Firestore, the backend jZen discarded. *Why:* the sentence outlived both of
+  its premises and would otherwise have been carried into a standalone document as a plan.
+- **"A telemetry store remains deferred on its own merits, not as a prerequisite of this step"**
+  (ADR-008, "What this supersedes") → **resolved.** Those merits were weighed here and did not
+  carry; pt.3 records what a store would genuinely add and why it is still application work.
+- **"These are defaulted/nullable now and their behavior is wired in later steps (email deletion
+  warnings in step 6, payments in step 7)"** (BLUEPRINT "Persistence") and **"`is_premium` both
+  exempts an account from that cycle and awaits payments in step 7"** (`User.java` javadoc) →
+  **corrected.** Payments is not a step-7 deliverable and is not coming as framework work (pt.7).
+  The **column stays and is already load-bearing**: `UserRetentionService` reads it for the premium
+  exemption and `AdminUserResource` exposes it for administration. *Why:* a doc that promises a
+  capability the next ADR declines would be carried verbatim into Step 8's standalone rewrite, which
+  is precisely the drift this log exists to stop. Both wordings are updated to match.
+- **`dartzen_firestore`, `dartzen_server`, and `dartzen_ui_admin` as decisions recorded only in
+  prose** (MANIFESTO "What jZen explicitly discards"; ROADMAP "Explicitly out of scope"; ROADMAP
+  step 5) → **unchanged in substance, entered into the census.** *Why:* the decisions were already
+  correct; they were simply absent from the one list Step 8 will check against, and a package named
+  nowhere cannot be verified as handled.
+
+### Consequence
+
+**Nothing is ported, and the port list is empty.** ROADMAP Step 7 is complete: 7a (`zen-jobs`), 7b
+(typed client i18n), and 7c (this census) are all discharged, with no open sub-item. No framework
+module is created, **no Flyway band is claimed** (200-299 remains free and the STANDARDS table is
+unchanged), no Taskfile target is added, and no dependency enters any `pom.xml` or `pubspec.yaml`.
+Lockstep versioning is unchanged at `0.1.0`.
+
+The four surviving capabilities each have a trigger that is a testable condition rather than a
+sentiment - a second application, an application that sells something, an application that needs a
+model, a `--max-instances` above 1 - and none of them names a donor package, so they survive Step 8
+verbatim.
+
+**Step 8 is unblocked.** Its scope is now measured rather than assumed: 111 files carry a `dartzen`
+or `bugeater` reference (excluding `.git`, `target`, `node_modules`, `.dart_tool`, and `build`), and
+none of them is now a deferral pointing at a path Step 8 must delete.
+
+Verified: no behaviour changed - the diff is three architecture documents plus one javadoc in
+`User.java` - so the verification is that the baseline holds, measured before the edits and re-run
+after rather than assumed. `task build` exits 0 and
+`task test` exits 0 at their existing numbers: the backend suite is **50 tests, 0 failures**;
+`task test:client` is **262** (`zen_core` 88, `zen_identity` 45, `zen_transport` 47,
+`zen_ui_identity` 39, `zen_ui_navigation` 41, navigation example 2); `task test:apps:client` is
+**11**; and `task test:e2e` is **10/10** against live Supabase + Quarkus. `task sync:contracts`
+reports contracts in sync, including the ADR-009 check that generated localizations stay untracked.
+Every figure matches what ADR-009 recorded, which is the point: no code changed.
+
+---
+
 ## ADR-009 — Client i18n is typed and generated: `flutter gen-l10n` per package, and `zen_localization` is retired
 
 **Date:** 2026-07-23. **Status:** accepted. **Discharges:** ADR-004.

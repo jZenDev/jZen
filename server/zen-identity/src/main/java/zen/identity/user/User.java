@@ -23,8 +23,10 @@ import java.util.UUID;
  *       {@code deletion_warning_sent_at}, {@code final_warning_sent_at}.
  * </ul>
  *
- * The deletion-warning timestamps are written by {@link UserRetentionService} (ROADMAP step 6);
- * {@code is_premium} both exempts an account from that cycle and awaits payments in step 7.
+ * The deletion-warning timestamps are written by {@link UserRetentionService} (ROADMAP step 6).
+ * {@code is_premium} exempts an account from that cycle and is administered through
+ * {@code AdminUserResource}; it awaits no further framework work, because a payment flow is
+ * application work rather than framework work (DECISIONS ADR-010).
  * {@code language} feeds i18n and is the sole locale source for email, which has no request to
  * read {@code Accept-Language} from.
  */

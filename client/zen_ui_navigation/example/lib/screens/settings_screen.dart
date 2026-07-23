@@ -1,19 +1,15 @@
-import 'package:zen_localization/zen_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zen_core/zen_core.dart';
 
-import '../l10n/example_messages.dart';
+import '../l10n/generated/example_localizations.dart';
+import '../providers/localization_providers.dart';
 
 /// Settings screen with app preferences
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({
-    required this.localization,
-    required this.language,
     super.key,
   });
-
-  final ZenLocalizationService localization;
-  final String language;
 
   @override
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
@@ -26,7 +22,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final messages = ExampleMessages(widget.localization, widget.language);
+    final messages = ExampleLocalizations.of(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -61,6 +57,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   _textScale = value;
                 });
               },
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.language),
+            title: Text(messages.languageLabel),
+            trailing: SegmentedButton<Locale>(
+              segments: [
+                for (final tag in ZenLocales.supported)
+                  ButtonSegment<Locale>(
+                    value: Locale(tag),
+                    label: Text(tag.toUpperCase()),
+                  ),
+              ],
+              selected: {ref.watch(localeProvider)},
+              onSelectionChanged: (selection) =>
+                  ref.read(localeProvider.notifier).setLocale(selection.first),
             ),
           ),
           const Divider(),

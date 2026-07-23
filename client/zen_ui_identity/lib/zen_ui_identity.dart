@@ -1,8 +1,25 @@
 /// UI identity flows and components for jZen.
+///
+/// ## Localization
+///
+/// Every screen in this package reads its wording from the typed, generated
+/// [IdentityLocalizations], resolved from the [BuildContext] - so a consuming app supplies no
+/// strings, only the delegate:
+///
+/// ```dart
+/// MaterialApp(
+///   localizationsDelegates: IdentityLocalizations.localizationsDelegates,
+///   supportedLocales: IdentityLocalizations.supportedLocales,
+/// )
+/// ```
+///
+/// Changing `MaterialApp.locale` re-renders the flows in the new language; see
+/// `IdentityErrorText.errorText` for the localized wording of a [ZenError].
 library;
 
 // L10n
-export 'src/l10n/identity_messages.dart';
+export 'src/l10n/generated/identity_localizations.dart';
+export 'src/l10n/identity_error_text.dart';
 // Screens
 export 'src/screens/authority_roles_screen.dart';
 export 'src/screens/login_screen.dart';

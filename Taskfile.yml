@@ -145,6 +145,33 @@ tasks:
         PATH="$HOME/.pub-cache/bin:$PATH" protoc -I {{.PROTO_DIR}} --dart_out="$out" "${protos[@]}"
         echo "Generated Dart messages -> $out"
 
+  generate:l10n:
+    desc: Generate the typed client localizations from the ARB files
+    silent: true
+    summary: |
+      Runs `flutter gen-l10n` in every package that declares an l10n.yaml: the ARB files
+      under lib/src/l10n are the source, the classes under lib/src/l10n/generated are the output.
+      (The zen_ui_navigation example has no lib/src, so its pair sits at lib/l10n.)
+
+      Unlike the proto and OpenAPI artifacts, this output is BUILT, NOT TRACKED (see
+      STANDARDS "Code generation" and DECISIONS.md ADR-009): gen-l10n ships inside the
+      Flutter SDK that every consumer of these packages already has, so there is no
+      toolchain boundary to carry the result across. It is gitignored, produced here, and
+      sync:contracts asserts that none of it is tracked.
+    cmds:
+      - |
+        set -e
+        found=0
+        for config in $(find {{.CLIENT_DIR}} {{.APPS_DIR}} -name l10n.yaml -not -path '*/.dart_tool/*' -not -path '*/build/*' | sort); do
+          pkgdir=$(dirname "$config")
+          found=$((found + 1))
+          echo ">> flutter gen-l10n ($pkgdir)"
+          (cd "$pkgdir" && flutter gen-l10n)
+        done
+        if [ "$found" -eq 0 ]; then
+          echo "No localized packages found (no l10n.yaml)."
+        fi
+
   generate:api:
     desc: Build the backend, emit openapi.json, and generate admin types
     cmds:
@@ -179,14 +206,19 @@ tasks:
       without regenerating. Fix by running `task generate:proto generate:api` and
       committing the result, never by editing generated output.
 
+      It also regenerates the client localizations and asserts the opposite property for
+      them: they are BUILT, NOT TRACKED (ADR-009), so the gate fails if any of that output
+      was committed rather than if it changed.
+
       This is the gate that blocks out-of-sync bugs. Wire it into CI.
     cmds:
       - task: generate:proto
       - task: generate:api
+      - task: generate:l10n
       - task: sync:verify
 
   sync:verify:
-    desc: Fail if regeneration produced a dirty working tree
+    desc: Fail if regeneration produced a dirty working tree, or tracked what must not be
     internal: true
     silent: true
     cmds:
@@ -204,6 +236,20 @@ tasks:
           exit 1
         fi
         echo "Contracts in sync."
+      # The mirror-image check for the artifacts the tracking rule sends the other way. A
+      # generated localization file that IS tracked is the failure: it would then be
+      # hand-editable without the compiler or this gate ever noticing.
+      - |
+        set -e
+        tracked=$(git ls-files -- '*/l10n/generated/*')
+        if [ -n "$tracked" ]; then
+          echo "Generated localizations are TRACKED, and must not be (ADR-009):"
+          echo "$tracked"
+          echo
+          echo "Run 'git rm --cached' on them; they are produced by 'task generate:l10n'."
+          exit 1
+        fi
+        echo "Generated localizations correctly untracked."
 
   # ---------------------------------------------------------------------------
   # Build / test
@@ -241,10 +287,12 @@ tasks:
     desc: Resolve and analyze the Dart/Flutter FRAMEWORK library workspace
     dir: "{{.CLIENT_DIR}}"
     cmds:
-      # The workspace holds Flutter packages (zen_localization keeps flutter as a dev
-      # dependency, TA-3), so it is resolved with `flutter pub get`. `dart analyze` then
-      # analyzes every member.
+      # The workspace holds Flutter packages, so it is resolved with `flutter pub get`.
+      # `dart analyze` then analyzes every member.
       - flutter pub get
+      # The typed localizations are generated, not committed (ADR-009), so they must exist
+      # before anything analyzes or compiles a package that imports them.
+      - task: generate:l10n
       - dart analyze
 
   build:apps:
@@ -258,6 +306,7 @@ tasks:
     dir: "{{.APPS_DIR}}"
     cmds:
       - flutter pub get
+      - task: generate:l10n
       - dart analyze
 
   build:apps:server:
@@ -297,11 +346,14 @@ tasks:
     dir: "{{.CLIENT_DIR}}"
     silent: true
     cmds:
+      # The typed localizations are built, not committed (ADR-009), so a clean checkout must
+      # generate them before a test can import them.
+      - task: generate:l10n
       # A failing test fails here - jZen does not swallow test failures.
       #
       # Neither `dart test` nor `flutter test` aggregates a pub workspace, so we iterate the
-      # member packages ourselves. A package that depends on Flutter (dep or dev, e.g.
-      # zen_localization) is run with `flutter test`; a pure-Dart package with `dart test`.
+      # member packages ourselves. A package that depends on Flutter (dep or dev) is run with
+      # `flutter test`; a pure-Dart package with `dart test`.
       #
       # Client config is compile-time (TA-7): the UI packages read ZEN_PLATFORM via
       # String.fromEnvironment, and ZenNavigation asserts it is set. Flutter widget tests are
@@ -341,6 +393,7 @@ tasks:
     dir: "{{.APPS_DIR}}"
     silent: true
     cmds:
+      - task: generate:l10n
       # Same per-package iteration as test:client. Only test/ dirs run here; integration_test/
       # (the live e2e) is driven separately by test:e2e against the real stack.
       - |

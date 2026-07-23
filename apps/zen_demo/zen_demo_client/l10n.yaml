@@ -1,0 +1,13 @@
+# Typed, generated i18n for the zen_demo reference app (ROADMAP step 7b, ADR-009).
+#
+# The app owns ONLY its own strings. The identity and navigation wording it renders comes from
+# zen_ui_identity / zen_ui_navigation, each of which generates its own accessors and delegate,
+# which is why the ~28 keys this app used to duplicate from those packages are gone.
+#
+# The ARB files are the tracked source; lib/src/l10n/generated is built by `task generate:l10n`.
+arb-dir: lib/src/l10n
+template-arb-file: demo_en.arb
+output-dir: lib/src/l10n/generated
+output-localization-file: demo_localizations.dart
+output-class: DemoLocalizations
+nullable-getter: false

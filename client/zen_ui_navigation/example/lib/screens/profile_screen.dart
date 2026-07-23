@@ -1,22 +1,16 @@
-import 'package:zen_localization/zen_localization.dart';
 import 'package:flutter/material.dart';
 
-import '../l10n/example_messages.dart';
+import '../l10n/generated/example_localizations.dart';
 
 /// Profile screen showing user information
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({
-    required this.localization,
-    required this.language,
     super.key,
   });
 
-  final ZenLocalizationService localization;
-  final String language;
-
   @override
   Widget build(BuildContext context) {
-    final messages = ExampleMessages(localization, language);
+    final messages = ExampleLocalizations.of(context);
 
     return Scaffold(
       appBar: AppBar(

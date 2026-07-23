@@ -9,15 +9,21 @@ environment:
 
 resolution: workspace
 
-# Ported from ../DartZen/packages/dartzen_ui_navigation, adopted as-is: only the dartzen_*
-# path deps and the dz* platform constants were renamed to their zen_* equivalents.
+# Ported from ../DartZen/packages/dartzen_ui_navigation: the dartzen_* path deps and the dz*
+# platform constants were renamed to their zen_* equivalents, and the donor's runtime
+# string-key localization was replaced by typed, generated `flutter gen-l10n` accessors
+# (ROADMAP step 7b, DECISIONS.md ADR-009).
 dependencies:
   zen_core:
     path: ../zen_core
-  zen_localization:
-    path: ../zen_localization
   flutter:
     sdk: flutter
+  # Both are imported by the generated NavigationLocalizations. intl is pinned to the version
+  # flutter_localizations itself pins, so an app composing several localized jZen packages
+  # resolves one intl.
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:
@@ -25,6 +31,11 @@ dev_dependencies:
   lints: ^6.0.0
   mocktail: ^1.0.0
   test: ^1.25.0
+
+# `generate: true` is what lets `flutter gen-l10n` (and `flutter test`/`flutter build`) produce
+# lib/src/l10n/generated from lib/src/l10n/*.arb - see l10n.yaml and `task generate:l10n`.
+flutter:
+  generate: true
 
 topics:
   - navigation

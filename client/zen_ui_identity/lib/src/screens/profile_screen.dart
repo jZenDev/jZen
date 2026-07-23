@@ -3,7 +3,8 @@ import 'package:zen_identity/zen_identity.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../l10n/identity_messages.dart';
+import '../l10n/generated/identity_localizations.dart';
+import '../l10n/identity_error_text.dart';
 import '../state/identity_session_store.dart';
 import '../theme/identity_theme_extension.dart';
 import '../widgets/identity_button.dart';
@@ -11,14 +12,12 @@ import '../widgets/identity_status_chip.dart';
 
 /// Displays user profile information and actions.
 class ProfileScreen extends ConsumerWidget {
-  final IdentityMessages messages;
   final VoidCallback? onLogoutSuccess;
   final ValueChanged<Identity>? onLogoutSuccessWithIdentity;
   final VoidCallback? onBackClick;
 
   const ProfileScreen({
     super.key,
-    required this.messages,
     this.onLogoutSuccess,
     this.onLogoutSuccessWithIdentity,
     this.onBackClick,
@@ -26,6 +25,7 @@ class ProfileScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final messages = IdentityLocalizations.of(context);
     final state = ref.watch(identitySessionStoreProvider);
     final theme =
         Theme.of(context).extension<IdentityThemeExtension>() ??
@@ -110,7 +110,7 @@ class ProfileScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, st) => Center(
           child: Text(
-            messages.error(
+            messages.errorText(
               err is ZenError ? err : ZenUnknownError(err.toString()),
             ),
           ),

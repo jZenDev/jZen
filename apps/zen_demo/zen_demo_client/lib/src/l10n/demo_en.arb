@@ -1,0 +1,65 @@
+{
+  "@@locale": "en",
+
+  "appTitle": "jZen Demo",
+  "welcomeTitle": "Welcome to jZen",
+  "welcomeSubtitle": "Sign in to explore the reference app.",
+
+  "navHome": "Home",
+  "navTerms": "Terms",
+  "navProfile": "Profile",
+  "languageLabel": "Language",
+
+  "pingSection": "Ping the server (both transport modes)",
+  "pingJson": "Ping (JSON)",
+  "pingProtobuf": "Ping (Protobuf)",
+  "pingResult": "{mode}: {message}",
+  "@pingResult": {
+    "description": "Result line of a successful ping, naming the transport mode used.",
+    "placeholders": {
+      "mode": { "type": "String" },
+      "message": { "type": "String" }
+    }
+  },
+  "pingError": "Ping failed: {error}",
+  "@pingError": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+
+  "wsSection": "WebSocket echo",
+  "wsConnect": "Connect",
+  "wsDisconnect": "Disconnect",
+  "wsSend": "Send",
+  "wsStatus": "Status: {status}",
+  "@wsStatus": {
+    "placeholders": {
+      "status": { "type": "String" }
+    }
+  },
+  "wsReceived": "Echo: {message}",
+  "@wsReceived": {
+    "placeholders": {
+      "message": { "type": "String" }
+    }
+  },
+
+  "termsTitle": "Terms of Service",
+  "termsLoading": "Loading terms...",
+  "termsError": "Failed to load terms: {error}",
+  "@termsError": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+
+  "profileLoading": "Loading profile...",
+  "profileError": "Failed to load profile: {error}",
+  "@profileError": {
+    "placeholders": {
+      "error": { "type": "String" }
+    }
+  },
+  "profileBio": "Bio"
+}

@@ -49,7 +49,8 @@ Port the foundation, Firestore-free.
 
 - `zen_core` ← `dartzen_core`, stripping GCP env constants
   (`../DartZen/packages/dartzen_core/lib/src/dartzen_constants.dart:20-62`).
-- `zen_localization` ← `dartzen_localization`, made Dart-pure (**TA-3**).
+- `zen_localization` ← `dartzen_localization`, made Dart-pure (**TA-3**). *(Retired in step 7b —
+  see below and [`DECISIONS.md`](./DECISIONS.md) ADR-009.)*
 - `zen_transport` ← `dartzen_transport`: keep the negotiation (header renamed
   `X-Zen-Transport`); replace the msgpack codec with generated protobuf; delete the dead
   `ZenTransport` facade, the duplicate middleware, and the duplicate export barrel (all
@@ -208,9 +209,9 @@ Deliverables:
 
 ## Step 7 — Guaranteed scheduled work, deferred packages, framework improvements ▶
 
-The first item is **required before any production deployment that stores personal data** and is
-now **done** (7a below); the rest are done in isolation, when a consumer needs them (packages) or
-when the framework earns the change (improvements).
+The first item was **required before any production deployment that stores personal data** and is
+**done** (7a below), as is the one committed framework improvement (7b, typed client i18n). The
+rest are done in isolation, when a consumer needs them.
 
 ### 7a — Guaranteed scheduled work (`zen-jobs`) — REQUIRED, not deferred ✅
 
@@ -331,6 +332,80 @@ anonymised without a delivered warning.
 
 </details>
 
+### 7b — Typed, generated client i18n ✅
+
+> **Shaped during delivery (see [`DECISIONS.md`](./DECISIONS.md) ADR-009.)** The client now makes
+> the same choice the server made in ADR-002: the platform's own typed, generated message
+> mechanism. `@MessageBundle` (Quarkus) ↔ `flutter gen-l10n` (Flutter). The two stacks agree.
+
+**Delivered.**
+
+- **`flutter gen-l10n` (intl + ARB), not `slang`** — the tie-breaker being ADR-002's own reasoning:
+  the server picked the *platform's* typed mechanism, so the client picks Flutter's. No third-party
+  dependency in a framework package, and a runtime locale switch re-renders through
+  `MaterialApp.locale` / `Localizations` rather than a global mutable setting.
+- **`zen_localization` is retired** — out of `client/pubspec.yaml`'s workspace, out of all four
+  consuming pubspecs, deleted with its 12 test files (they asserted a string key reached a lookup
+  table; there is no lookup table). The runtime JSON load, the dev/prod merged-bundle split, the
+  cache, and the conditional-import loader are gone. **TA-3 is closed with it**: that assessment
+  existed so a Dart-only *server* package could load translations, and jZen's server is Java.
+- **Per-package generation.** `zen_ui_identity` → `IdentityLocalizations`, `zen_ui_navigation` →
+  `NavigationLocalizations`, `zen_demo_client` → `DemoLocalizations`, the navigation example →
+  `ExampleLocalizations`; the app composes delegates in `MaterialApp` and supplies **no wording**.
+  Screens call `IdentityLocalizations.of(context)` instead of taking a `messages:` argument, which
+  deleted the threading layer in `app.dart` / `HomeShell` / `AuthFlow` / both examples. This also
+  removed the ~28 identity and navigation keys `zen_demo` had **hand-duplicated** into its merged
+  bundles.
+- **`{en, uk}` parity is real.** `zen_ui_identity` and `zen_ui_navigation` shipped English only,
+  while their Ukrainian wording sat copied inside `zen_demo`'s `uk.json`; both now ship both, from
+  those strings verbatim, and so does the navigation example (which gained a language toggle).
+  **`ZenLocales` in `zen_core`** mirrors the server's `zen.core.i18n.ZenLocales`, and each package
+  asserts its generated `supportedLocales` against it.
+- **The output is built, not committed** (STANDARDS "Code generation"): `flutter gen-l10n` is in the
+  Flutter SDK every consumer already has, so there is no toolchain boundary. `task generate:l10n`
+  produces it, `build:client` / `build:apps:client` / `test:client` / `test:apps:client` run it
+  first, `**/l10n/generated/` is gitignored, and `sync:contracts` gained the **mirror-image
+  check** — it fails if any of that output is *tracked*.
+- **The ambient locale (ADR-007) is preserved and simplified.** One `Locale` provider is both
+  `MaterialApp.locale` and the value `ZenClient` reads per request for `Accept-Language`, so a
+  mid-session language switch re-renders the UI *and* reaches `POST /auth/register`. This
+  **reinforces TA-7**: strings are now compile-time constants that tree-shake, the runtime asset
+  path is gone, and `zen_demo` lost its localization boot spinner because there is nothing to fetch.
+
+**Verified.** `task doctor` clean. `task build:client` / `build:apps:client` analyze clean;
+`task build:apps:server` and `task test:apps:server` green (**50 tests, 0 failures**, unchanged —
+the server side was not touched). `task test:client` **262 tests, 0 failures** (`zen_core` 88,
+`zen_identity` 45, `zen_transport` 47, `zen_ui_identity` 39, `zen_ui_navigation` 41, navigation
+example 2) and `task test:apps:client` **11**. The typed behaviour is proven where the string-key
+tests used to be: `identity_localizations_test.dart` pumps a real `LoginScreen` in English, pumps
+the same tree at `uk`, and asserts every string re-rendered and none of the English survived;
+`navigation_mobile_test.dart` does the same for the overflow label; `demo_localizations_test.dart`
+proves one `Locale` change re-renders **all three packages at once** *and* that the same provider
+read is what `ZenClient` sends as `Accept-Language`. `task test:admin` green.
+`task sync:contracts` green including the new tracked-localizations check, and that check was
+proven to reject a generated localization file added to the index. `task test:e2e` is **10/10**
+against live Supabase + Quarkus with the **"the surface is localized (en vs uk)" case passing
+unchanged** — the picked locale still reaches the server. `grep` for `ZenLocalizationService` returns nothing;
+`zen_localization` survives only as prose recording its retirement.
+
+Manually verified against live Supabase + Quarkus (`task run:demo`, the reference app in Chrome):
+the app boots straight to the login screen with **no localization spinner**; registering seeds
+`users.language = en`; picking Ukrainian from the language menu re-renders the whole surface in one
+frame with no reload - `zen_demo`'s own strings (`Демо jZen`, `Пінг сервера (обидва режими
+транспорту)`, the interpolated `Статус: …`), `zen_ui_navigation`'s tab labels via the app
+(`Головна / Умови / Профіль`), and `zen_ui_identity`'s own screens (`Профіль`, `Ролі:`, `Вийти`,
+and the whole auth flow after logout). Pinging again returns `json: Сервер працює` - the *server's*
+Ukrainian wording, and `GET /demo/ping` localizes purely from `Accept-Language`, so that response is
+itself proof the switched locale left the client. The ambient path closes the loop: registering a
+second account **after** the mid-session switch produced `users.language = uk`, and the server
+logged `Sent 'welcome' mail to … in locale 'uk'`. A `flutter build web --release` succeeds with
+**zero l10n assets in the bundle**, the used Ukrainian strings of all three packages compiled into
+`main.dart.js`, and unused accessors tree-shaken out - something the JSON-bundle approach could
+never do.
+
+**Client and server i18n are now consistent: typed and generated on both stacks**, which is the
+point of the step. Adding a locale is symmetric and needs no code edit on either side.
+
 ### Deferred package ports — port only when a consumer needs them
 - `dartzen_telemetry` → a Panache-backed store (its `TelemetryStore` is the one clean
   store abstraction in DartZen — `../DartZen/packages/dartzen_telemetry/lib/src/store/telemetry_store.dart:4`).
@@ -338,18 +413,9 @@ anonymised without a delivered warning.
 - `dartzen_executor`, `dartzen_payments`, `dartzen_ai`, `dartzen_cache`,
   `dartzen_storage` (→ Supabase Storage / S3) — no committed target until demanded.
 
-### Framework improvements — deferred but committed to a plan
+### Framework improvements — remaining, deferred but committed to a plan
 
-- **Typed, generated client i18n** (mirrors the server's Qute `@MessageBundle`; see
-  [`DECISIONS.md`](./DECISIONS.md) ADR-004). Today `zen_localization` is a hand-rolled service over
-  per-locale JSON with runtime **string keys** — the `easy_localization` camp, not idiomatic Flutter.
-  Evaluate and migrate to a **typed, generated** approach: Flutter's official `intl` + **ARB** +
-  `flutter gen-l10n` (generates a compile-checked `AppLocalizations`), or `slang` (typed accessors
-  from JSON/YAML). *Effective Dart*'s "typed over stringly-typed" and consistency with the server
-  (`@MessageBundle`) both point here. Scope: decide `zen_localization`'s fate (replace, wrap, or
-  retire it), migrate the app clients (`apps/*/*_client`) and the `zen_ui_*` package l10n, keep
-  `{en, uk}`, and update the localization docs. A framework-wide change, so it is its own effort,
-  not folded into app work.
+None outstanding. Typed, generated client i18n was the item recorded here; it shipped as 7b above.
 
 ## Step 8 — Standalone: sever the umbilical ☐
 

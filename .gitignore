@@ -30,3 +30,10 @@ build/
 .flutter-plugins-dependencies
 # pubspec.lock IS committed (app-style workspace, publish_to: none).
 # Generated *.pb.dart / *.pbjson.dart ARE committed (cross-language contract artifacts).
+#
+# The typed localizations are NOT (DECISIONS.md ADR-009): `flutter gen-l10n` ships inside the
+# Flutter SDK every consumer of these packages already has, so unlike the proto messages there
+# is no toolchain boundary to carry the output across. The .arb files beside this directory are
+# the tracked source; `task generate:l10n` produces the rest, and `task sync:contracts` fails
+# if any of it is ever committed.
+**/l10n/generated/

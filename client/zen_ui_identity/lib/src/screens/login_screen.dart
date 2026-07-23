@@ -2,7 +2,8 @@ import 'package:zen_identity/zen_identity.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../l10n/identity_messages.dart';
+import '../l10n/generated/identity_localizations.dart';
+import '../l10n/identity_error_text.dart';
 import '../state/identity_session_store.dart';
 import '../theme/identity_theme_extension.dart';
 import '../widgets/identity_button.dart';
@@ -14,11 +15,9 @@ class LoginScreen extends ConsumerStatefulWidget {
   final ValueChanged<Identity>? onLoginSuccessWithIdentity;
   final VoidCallback? onRegisterClick;
   final VoidCallback? onForgotPasswordClick;
-  final IdentityMessages messages;
 
   const LoginScreen({
     super.key,
-    required this.messages,
     this.onLoginSuccess,
     this.onLoginSuccessWithIdentity,
     this.onRegisterClick,
@@ -55,6 +54,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
 
     if (!mounted) return;
+    final messages = IdentityLocalizations.of(context);
 
     result.fold(
       (identity) {
@@ -66,7 +66,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         // Error handling
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(widget.messages.error(failure)),
+            content: Text(messages.errorText(failure)),
             backgroundColor: Theme.of(
               context,
             ).extension<IdentityThemeExtension>()?.errorColor,
@@ -78,9 +78,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Preload messages if not loaded? Usually done at app startup.
-    // We assume messages are ready or we use them synchronously.
-
+    final messages = IdentityLocalizations.of(context);
     final state = ref.watch(identitySessionStoreProvider);
     final isLoading = state.isLoading;
     final theme =
@@ -101,31 +99,31 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    widget.messages.loginTitle,
+                    messages.loginTitle,
                     style: theme.titleStyle.copyWith(color: theme.brandColor),
                     textAlign: TextAlign.center,
                   ),
                   SizedBox(height: theme.spacing * 2),
                   IdentityTextField(
-                    label: widget.messages.emailLabel,
+                    label: messages.emailLabel,
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
                     autofillHints: const [AutofillHints.email],
                     textInputAction: TextInputAction.next,
                     validator: (value) {
                       if (value == null || value.isEmpty) {
-                        return widget.messages.validationRequired;
+                        return messages.validationRequired;
                       }
                       // Basic email regex or just let backend validate
                       if (!value.contains('@')) {
-                        return widget.messages.validationEmail;
+                        return messages.validationEmail;
                       }
                       return null;
                     },
                   ),
                   SizedBox(height: theme.spacing),
                   IdentityTextField(
-                    label: widget.messages.passwordLabel,
+                    label: messages.passwordLabel,
                     controller: _passwordController,
                     obscureText: true,
                     autofillHints: const [AutofillHints.password],
@@ -133,7 +131,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     onFieldSubmitted: (_) => _submit(),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
-                        return widget.messages.validationRequired;
+                        return messages.validationRequired;
                       }
                       return null;
                     },
@@ -142,9 +140,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: IdentityButton(
-                      text: widget
-                          .messages
-                          .restorePasswordTitle, // "Reset Password" usually
+                      text: messages.restorePasswordTitle, // "Reset Password" usually
                       variant: IdentityButtonVariant.text,
                       onPressed: isLoading
                           ? null
@@ -153,14 +149,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   SizedBox(height: theme.spacing),
                   IdentityButton(
-                    text: widget.messages.loginButton,
+                    text: messages.loginButton,
                     isLoading: isLoading,
                     onPressed: _submit,
                   ),
                   SizedBox(height: theme.spacing),
                   const Divider(),
                   IdentityButton(
-                    text: widget.messages.registerTitle, // "Sign Up" usually
+                    text: messages.registerTitle, // "Sign Up" usually
                     variant: IdentityButtonVariant.text,
                     onPressed: isLoading ? null : widget.onRegisterClick,
                   ),

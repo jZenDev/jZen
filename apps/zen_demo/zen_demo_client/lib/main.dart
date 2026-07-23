@@ -24,12 +24,16 @@ void main() {
   // capturing a value) is what makes a mid-session language switch take effect, and it is
   // what carries the chosen locale into POST /auth/register, where the server seeds
   // users.language and every later localized email follows from it.
+  //
+  // The provider holds a Locale (it is also MaterialApp.locale, so the same switch re-renders
+  // the typed generated strings - ADR-009); the wire wants the language tag, which is the one
+  // conversion this seam performs.
   late final ProviderContainer container;
   final identityRepository = SupabaseIdentityRepository(
     client: ZenClient(
       baseUrl: zenApiUrl,
       httpClient: session,
-      language: () => container.read(languageProvider),
+      language: () => container.read(localeProvider).languageCode,
     ),
   );
   final demoRepository = DemoRepository(baseUrl: zenApiUrl, session: session);

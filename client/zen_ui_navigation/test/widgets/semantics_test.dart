@@ -1,17 +1,14 @@
 import 'dart:ui' as ui;
 
-import 'package:zen_localization/zen_localization.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_badge.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_desktop.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_mobile.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_web.dart';
-import 'package:zen_ui_navigation/src/zen_navigation_item.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 
 void main() {
-  const config = ZenLocalizationConfig();
-  final service = ZenLocalizationService(config: config);
 
   group('Semantics Tests', () {
     testWidgets('navigationBadge has correct semantics',
@@ -24,6 +21,8 @@ void main() {
       );
 
       await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
         home: Scaffold(
           body: navigationBadge(item, true),
         ),
@@ -51,14 +50,14 @@ void main() {
       );
 
       await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
         home: Builder(
           builder: (ctx) => buildMobileNavigation(
             context: ctx,
             selectedIndex: 0,
             onItemSelected: (_) {},
             items: items,
-            localization: service,
-            language: 'en',
             labelMore: 'More Menu',
           ),
         ),
@@ -76,6 +75,8 @@ void main() {
       ];
 
       await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
         home: Scaffold(
           body: Builder(
             builder: (context) => buildDesktopNavigation(
@@ -83,8 +84,6 @@ void main() {
               selectedIndex: 0,
               onItemSelected: (_) {},
               items: items,
-              localization: service,
-              language: 'en',
             ),
           ),
         ),
@@ -103,14 +102,14 @@ void main() {
       await tester.pumpWidget(MediaQuery(
         data: const MediaQueryData(size: Size(1200, 800)),
         child: MaterialApp(
+          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+          supportedLocales: NavigationLocalizations.supportedLocales,
           home: Builder(
             builder: (ctx) => buildPlatformNavigation(
               context: ctx,
               selectedIndex: 0,
               onItemSelected: (_) {},
               items: items,
-              localization: service,
-              language: 'en',
             ),
           ),
         ),
@@ -134,6 +133,8 @@ void main() {
       int? selectedIndex;
 
       await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
         home: Builder(
           builder: (ctx) => buildDesktopNavigation(
             context: ctx,
@@ -141,8 +142,6 @@ void main() {
             onItemSelected: (i) => selectedIndex = i,
             onItemSelectedId: (id) => selectedId = id,
             items: items,
-            localization: service,
-            language: 'en',
           ),
         ),
       ));
@@ -169,6 +168,8 @@ void main() {
       await tester.pumpWidget(MediaQuery(
         data: const MediaQueryData(size: Size(1200, 800)),
         child: MaterialApp(
+          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+          supportedLocales: NavigationLocalizations.supportedLocales,
           home: Builder(
             builder: (ctx) => buildPlatformNavigation(
               context: ctx,
@@ -176,8 +177,6 @@ void main() {
               onItemSelected: (i) => selectedIndex = i,
               onItemSelectedId: (id) => selectedId = id,
               items: items,
-              localization: service,
-              language: 'en',
             ),
           ),
         ),
@@ -204,6 +203,8 @@ void main() {
       int? selectedIndex;
 
       await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
         home: Builder(
           builder: (ctx) => buildMobileNavigation(
             context: ctx,
@@ -211,8 +212,6 @@ void main() {
             onItemSelected: (i) => selectedIndex = i,
             onItemSelectedId: (id) => selectedId = id,
             items: items,
-            localization: service,
-            language: 'en',
           ),
         ),
       ));
@@ -240,6 +239,8 @@ void main() {
       int? selectedIndex;
 
       await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
         home: Builder(
           builder: (ctx) => buildMobileNavigation(
             context: ctx,
@@ -247,8 +248,6 @@ void main() {
             onItemSelected: (i) => selectedIndex = i,
             onItemSelectedId: (id) => selectedId = id,
             items: items,
-            localization: service,
-            language: 'en',
             labelMore: 'More',
           ),
         ),

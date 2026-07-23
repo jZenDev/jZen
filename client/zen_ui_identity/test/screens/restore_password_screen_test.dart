@@ -1,13 +1,13 @@
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_identity/zen_identity.dart';
-import 'package:zen_localization/zen_localization.dart';
-import 'package:zen_ui_identity/src/l10n/identity_messages.dart';
 import 'package:zen_ui_identity/src/screens/restore_password_screen.dart';
 import 'package:zen_ui_identity/src/state/identity_repository.dart';
 import 'package:zen_ui_identity/src/theme/identity_theme_extension.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../support/localized_app.dart';
 
 class _FakeRepo implements IdentityRepository {
   ZenResult<void> restoreResult;
@@ -40,42 +40,7 @@ class _FakeRepo implements IdentityRepository {
       const ZenResult.err(ZenUnknownError('not implemented'));
 }
 
-class _FakeLocalization implements ZenLocalizationService {
-  final Map<String, String> _map;
-  _FakeLocalization(this._map);
-
-  Map<String, String> getGlobal(String language) => _map;
-
-  Map<String, String> getModule(String module, String language) => _map;
-
-  @override
-  String translate(
-    String key, {
-    required String language,
-    String? module,
-    Map<String, dynamic> params = const {},
-  }) => _map[key] ?? key;
-
-  @override
-  noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
 void main() {
-  const en = 'en';
-
-  final messages = IdentityMessages(
-    _FakeLocalization({
-      'restore.password.title': 'Restore',
-      'restore.password.info': 'Enter email to restore',
-      'email.label': 'Email',
-      'send.reset.link.button': 'Send',
-      'reset.link.sent.success': 'Sent',
-      'validation.required': 'Required',
-      'validation.email': 'Bad email',
-      'error.not_found': 'Not found',
-    }),
-    en,
-  );
 
   testWidgets('success shows success snackbar and calls callback', (
     tester,
@@ -86,10 +51,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [identityRepositoryProvider.overrideWithValue(repo)],
-        child: MaterialApp(
-          theme: ThemeData(extensions: [IdentityThemeExtension.fallback()]),
+        child: localizedApp(
           home: RestorePasswordScreen(
-            messages: messages,
             onRestoreSuccess: () => called = true,
           ),
         ),
@@ -100,11 +63,11 @@ void main() {
 
     // enter a valid email
     await tester.enterText(find.byType(TextFormField), 'user@example.com');
-    await tester.tap(find.text('Send'));
+    await tester.tap(find.text('Send Link'));
     await tester.pump();
     await tester.pumpAndSettle();
 
-    expect(find.text('Sent'), findsOneWidget);
+    expect(find.text('Reset link sent to your email'), findsOneWidget);
     expect(called, isTrue);
   });
 
@@ -116,9 +79,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [identityRepositoryProvider.overrideWithValue(repo)],
-        child: MaterialApp(
-          theme: ThemeData(extensions: [IdentityThemeExtension.fallback()]),
-          home: RestorePasswordScreen(messages: messages),
+        child: localizedApp(
+          home: RestorePasswordScreen(),
         ),
       ),
     );
@@ -126,11 +88,11 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(find.byType(TextFormField), 'user@example.com');
-    await tester.tap(find.text('Send'));
+    await tester.tap(find.text('Send Link'));
     await tester.pump();
     await tester.pumpAndSettle();
 
-    expect(find.text('Not found'), findsOneWidget);
+    expect(find.text('Requested resource not found.'), findsOneWidget);
 
     final snack = tester.widget<SnackBar>(find.byType(SnackBar));
     expect(snack.backgroundColor, IdentityThemeExtension.fallback().errorColor);

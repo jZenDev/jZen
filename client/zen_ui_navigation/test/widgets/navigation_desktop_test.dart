@@ -1,9 +1,8 @@
 import 'package:zen_core/zen_core.dart';
-import 'package:zen_localization/zen_localization.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_desktop.dart';
-import 'package:zen_ui_navigation/src/zen_navigation_item.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 
 void main() {
   testWidgets('buildDesktopNavigation renders NavigationRail and selected body',
@@ -32,19 +31,15 @@ void main() {
       ),
     ];
 
-    final localization = ZenLocalizationService(
-      config: const ZenLocalizationConfig(),
-    );
-
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      supportedLocales: NavigationLocalizations.supportedLocales,
       home: Builder(
           builder: (context) => buildDesktopNavigation(
                 context: context,
                 selectedIndex: 1,
                 onItemSelected: (_) {},
                 items: items,
-                localization: localization,
-                language: 'en',
               )),
     ));
 

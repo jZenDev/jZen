@@ -119,8 +119,18 @@ now read as `zen`.
 ## Client structure (Dart) and the compile-time config rule
 
 Two pub workspaces resolve independently: `client/` (framework libs: `zen_core`, `zen_transport`,
-`zen_identity`, `zen_localization`, `zen_ui_*`) and `apps/` (app clients, path-depending into
-`client/`). Both share one product version (lockstep).
+`zen_identity`, `zen_ui_*`) and `apps/` (app clients, path-depending into `client/`). Both share one
+product version (lockstep).
+
+**Client i18n is typed and generated** (ADR-009), mirroring the server's Qute `@MessageBundle`.
+Every package that renders text owns its own `lib/src/l10n/*.arb` + `l10n.yaml` and generates typed
+accessors with `flutter gen-l10n` (`task generate:l10n`); an app composes the delegates in
+`MaterialApp.localizationsDelegates` and supplies no wording. Unlike the `.pb.dart` messages this
+output is **built, not committed** (`**/l10n/generated/` is gitignored) because gen-l10n ships
+in the Flutter SDK; `sync:contracts` fails if any of it is ever tracked. The supported set is
+`ZenLocales` in `zen_core` (`{en, uk}`, fallback `en`), mirroring server `zen.core.i18n.ZenLocales`.
+The chosen `Locale` is also what `ZenClient` sends as `Accept-Language` (ADR-007). The old
+`zen_localization` package (runtime string-key lookups) is retired, and TA-3 with it.
 
 **The Dart/Flutter client keeps compile-time config** (`String.fromEnvironment`) and
 `if (dart.library.io)` / `if (dart.library.html)` conditional imports — this is load-bearing, not a

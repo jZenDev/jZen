@@ -1,0 +1,11 @@
+# Typed, generated i18n for zen_ui_identity (ROADMAP step 7b, DECISIONS.md ADR-009).
+#
+# The ARB files under arb-dir are the SOURCE and are tracked; everything under output-dir is
+# GENERATED and is not (STANDARDS "Code generation"). Run `task generate:l10n`.
+arb-dir: lib/src/l10n
+template-arb-file: identity_en.arb
+output-dir: lib/src/l10n/generated
+output-localization-file: identity_localizations.dart
+output-class: IdentityLocalizations
+# A missing delegate is a wiring bug that should fail at the call site, not resolve to null.
+nullable-getter: false

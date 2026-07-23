@@ -2,20 +2,32 @@ import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'providers/localization_providers.dart'; // Added import
+import 'l10n/generated/example_localizations.dart';
+import 'providers/localization_providers.dart';
 import 'providers/navigation_providers.dart';
 
 void main() {
   runApp(const ProviderScope(child: NavigationExampleApp()));
 }
 
-class NavigationExampleApp extends StatelessWidget {
+class NavigationExampleApp extends ConsumerWidget {
   const NavigationExampleApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
       title: 'jZen Navigation Demo',
+      // The chosen locale drives Localizations, which re-renders every screen reading
+      // ExampleLocalizations.of(context) - including this package's own overflow label.
+      locale: ref.watch(localeProvider),
+      // Per-package generation (ADR-009) means each localized package brings its own
+      // delegate and the app composes them: the example's own strings, plus the ones
+      // zen_ui_navigation owns, plus Flutter's built-in Material/Cupertino/Widgets sets.
+      localizationsDelegates: const [
+        ...ExampleLocalizations.localizationsDelegates,
+        NavigationLocalizations.delegate,
+      ],
+      supportedLocales: ExampleLocalizations.supportedLocales,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.deepPurple,
@@ -42,18 +54,13 @@ class AdaptiveNavigationShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selectedIndex = ref.watch(selectedNavigationIndexProvider);
-    final navItems = ref.watch(navigationItemsProvider);
-    final localization = ref.watch(localizationServiceProvider);
-    final language = ref.watch(languageProvider);
 
     return ZenNavigation(
-      items: navItems,
+      items: navigationItems(ExampleLocalizations.of(context)),
       selectedIndex: selectedIndex,
       onItemSelected: (index) {
         ref.read(selectedNavigationIndexProvider.notifier).setIndex(index);
       },
-      localization: localization,
-      language: language,
     );
   }
 }

@@ -1,9 +1,8 @@
-import 'package:zen_localization/zen_localization.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_native.dart'
     as native;
-import 'package:zen_ui_navigation/src/zen_navigation_item.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 
 void main() {
   testWidgets('navigation_native build is tolerated across platforms',
@@ -17,8 +16,6 @@ void main() {
       ),
     );
 
-    final localization =
-        ZenLocalizationService(config: const ZenLocalizationConfig());
 
     // Attempt to build the native platform widget. On some ZEN_PLATFORM
     // compile-time settings this will return a widget; on others it may
@@ -26,14 +23,14 @@ void main() {
     // outcomes as acceptable for CI.
     try {
       await tester.pumpWidget(MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
         home: Builder(
             builder: (ctx) => native.buildPlatformNavigation(
                   context: ctx,
                   selectedIndex: 0,
                   onItemSelected: (_) {},
                   items: items,
-                  localization: localization,
-                  language: 'en',
                 )),
       ));
 

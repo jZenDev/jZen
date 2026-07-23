@@ -1,29 +1,12 @@
 import 'package:zen_core/zen_core.dart';
-import 'package:zen_localization/zen_localization.dart';
 import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
-class MockLocalizationService extends Mock implements ZenLocalizationService {}
-
 class MockBuildContext extends Mock implements BuildContext {}
 
 void main() {
-  late MockLocalizationService localizationService;
-
-  setUp(() {
-    localizationService = MockLocalizationService();
-    when(
-      () => localizationService.translate(
-        any<String>(),
-        language: any<String>(named: 'language'),
-        module: any<String>(named: 'module'),
-        params: any<Map<String, dynamic>>(named: 'params'),
-      ),
-    ).thenAnswer((invocation) => invocation.positionalArguments[0] as String);
-  });
-
   group('ZenNavigationItem', () {
     testWidgets('creates item with required fields', (tester) async {
       final item = ZenNavigationItem(
@@ -85,12 +68,12 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+          supportedLocales: NavigationLocalizations.supportedLocales,
           home: ZenNavigation(
             items: items,
             selectedIndex: 0,
             onItemSelected: (index) {},
-            localization: localizationService,
-            language: 'en',
           ),
         ),
       );
@@ -119,12 +102,12 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
+          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+          supportedLocales: NavigationLocalizations.supportedLocales,
           home: ZenNavigation(
             items: items,
             selectedIndex: 0,
             onItemSelected: (index) {},
-            localization: localizationService,
-            language: 'en',
           ),
         ),
       );

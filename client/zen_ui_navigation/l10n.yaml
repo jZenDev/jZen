@@ -1,0 +1,14 @@
+# Typed, generated i18n for zen_ui_navigation (ROADMAP step 7b, DECISIONS.md ADR-009).
+#
+# The ARB files under arb-dir are the SOURCE and are tracked; everything under output-dir is
+# GENERATED and is not (STANDARDS "Code generation": an artifact is tracked exactly when the
+# toolchain that consumes it cannot produce it, and `flutter gen-l10n` ships inside the Flutter
+# SDK every consumer of this package already has). Run `task generate:l10n`.
+arb-dir: lib/src/l10n
+template-arb-file: navigation_en.arb
+output-dir: lib/src/l10n/generated
+output-localization-file: navigation_localizations.dart
+output-class: NavigationLocalizations
+# A package's strings are not optional: a missing delegate is a wiring bug that should fail
+# loudly at the call site, not resolve to null and be silently null-checked away.
+nullable-getter: false

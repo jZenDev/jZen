@@ -1,24 +1,21 @@
-import 'package:zen_localization/zen_localization.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zen_core/zen_core.dart';
 
-/// Provider for the localization service.
-final localizationServiceProvider = Provider<ZenLocalizationService>((ref) {
-  // Localization files are in lib/l10n/ declared as assets
-  final config = ZenLocalizationConfig(globalPath: 'lib/l10n');
-  return ZenLocalizationService(config: config);
-});
-
-/// Notifier for the current language code.
-class LanguageNotifier extends Notifier<String> {
+/// The example's chosen locale, feeding `MaterialApp.locale`.
+///
+/// Holding a [Locale] rather than a language-code string is the typed half of the same move
+/// that replaced string-key lookups with generated accessors (ADR-009): what it may hold is
+/// `ZenLocales.supported`, and `Localizations` re-renders every dependent when it changes, so
+/// no screen has to observe the language itself.
+class LocaleNotifier extends Notifier<Locale> {
   @override
-  String build() => 'en';
+  Locale build() => const Locale(ZenLocales.fallback);
 
-  void setLanguage(String language) {
-    state = language;
-  }
+  void setLocale(Locale locale) => state = locale;
 }
 
-/// Provider for the current language code.
-final languageProvider = NotifierProvider<LanguageNotifier, String>(
-  LanguageNotifier.new,
+/// Provider for the current locale.
+final localeProvider = NotifierProvider<LocaleNotifier, Locale>(
+  LocaleNotifier.new,
 );

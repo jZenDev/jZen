@@ -1,0 +1,7 @@
+{
+  "@@locale": "en",
+  "more": "More",
+  "@more": {
+    "description": "Label and tooltip of the mobile overflow button, shown when the item count exceeds zenMaxItemsMobile."
+  }
+}

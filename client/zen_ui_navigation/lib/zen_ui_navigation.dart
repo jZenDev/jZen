@@ -29,7 +29,21 @@
 ///     onItemSelected: ref.read(navProvider.notifier).select,
 /// )
 /// ```
+///
+/// ## Localization
+///
+/// The package owns its own strings (today just the mobile overflow label) as typed,
+/// generated accessors - see `NavigationLocalizations`, produced by `flutter gen-l10n` from
+/// `lib/l10n/navigation_*.arb`. Register the delegate once, in the app's `MaterialApp`:
+///
+/// ```dart
+/// MaterialApp(
+///   localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+///   supportedLocales: NavigationLocalizations.supportedLocales,
+/// )
+/// ```
 library;
 
+export 'src/l10n/generated/navigation_localizations.dart';
 export 'src/zen_navigation.dart';
 export 'src/zen_navigation_item.dart';

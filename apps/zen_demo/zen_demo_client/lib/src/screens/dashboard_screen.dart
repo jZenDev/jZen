@@ -2,9 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zen_core/zen_core.dart';
 import 'package:zen_transport/zen_transport.dart';
 
-import '../demo_messages.dart';
+import '../l10n/generated/demo_localizations.dart';
 import '../providers.dart';
 
 /// The demo hub, ported from
@@ -12,9 +13,7 @@ import '../providers.dart';
 /// server in both transport modes, runs the WebSocket echo, and switches language - proving the
 /// dual-mode transport, the WebSocket product feature, and a localized surface from one screen.
 class DemoDashboardScreen extends ConsumerStatefulWidget {
-  const DemoDashboardScreen({required this.messages, super.key});
-
-  final DemoMessages messages;
+  const DemoDashboardScreen({super.key});
 
   @override
   ConsumerState<DemoDashboardScreen> createState() => _DemoDashboardScreenState();
@@ -35,8 +34,8 @@ class _DemoDashboardScreenState extends ConsumerState<DemoDashboardScreen> {
   }
 
   Future<void> _ping(ZenTransportFormat format) async {
-    final messages = widget.messages;
-    final language = ref.read(languageProvider);
+    final messages = DemoLocalizations.of(context);
+    final language = ref.read(localeProvider).languageCode;
     final result = await ref
         .read(demoRepositoryProvider)
         .ping(format: format, language: language);
@@ -88,7 +87,7 @@ class _DemoDashboardScreenState extends ConsumerState<DemoDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final messages = widget.messages;
+    final messages = DemoLocalizations.of(context);
     final connected = _socket != null;
 
     return Scaffold(
@@ -152,18 +151,28 @@ class _LanguageMenu extends ConsumerWidget {
 
   final String label;
 
+  /// The language each supported locale is offered under, written in that language.
+  /// Endonyms are deliberately not localized, so they are the one place in the app that is
+  /// not an ARB entry.
+  static const Map<String, String> _endonyms = {
+    ZenLocales.en: 'English',
+    ZenLocales.uk: 'Українська',
+  };
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final language = ref.watch(languageProvider);
-    return PopupMenuButton<String>(
+    final locale = ref.watch(localeProvider);
+    return PopupMenuButton<Locale>(
       icon: const Icon(Icons.translate),
       tooltip: label,
-      initialValue: language,
-      onSelected: (value) =>
-          ref.read(languageProvider.notifier).setLanguage(value),
-      itemBuilder: (context) => const [
-        PopupMenuItem(value: 'en', child: Text('English')),
-        PopupMenuItem(value: 'uk', child: Text('Українська')),
+      initialValue: locale,
+      // Setting the locale does two things at once (ADR-007 + ADR-009): Localizations
+      // re-renders this frame in the new language, and the very next request carries it as
+      // Accept-Language, because ZenClient reads this same notifier per request.
+      onSelected: (value) => ref.read(localeProvider.notifier).setLocale(value),
+      itemBuilder: (context) => [
+        for (final tag in ZenLocales.supported)
+          PopupMenuItem(value: Locale(tag), child: Text(_endonyms[tag]!)),
       ],
     );
   }

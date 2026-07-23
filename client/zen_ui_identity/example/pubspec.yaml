@@ -18,8 +18,6 @@ dependencies:
     path: ../../zen_core
   zen_identity:
     path: ../../zen_identity
-  zen_localization:
-    path: ../../zen_localization
   zen_ui_navigation:
     path: ../../zen_ui_navigation
   zen_ui_identity:

@@ -1,5 +1,6 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:zen_localization/zen_localization.dart';
+import 'package:zen_core/zen_core.dart';
 
 import 'demo_repository.dart';
 
@@ -9,26 +10,26 @@ final demoRepositoryProvider = Provider<DemoRepository>((ref) {
   throw UnimplementedError('demoRepositoryProvider must be overridden');
 });
 
-/// The current UI language code ({en, uk}), driving both the demo strings and the reused
-/// identity/navigation packages, and sent to the server as Accept-Language.
-class LanguageNotifier extends Notifier<String> {
+/// The current UI locale, one of `ZenLocales.supported`.
+///
+/// It has two jobs, and keeping them on one provider is what makes the language switch honest:
+///
+/// 1. it is `MaterialApp.locale`, so `Localizations` re-renders every screen reading the
+///    generated `DemoLocalizations` / `IdentityLocalizations` / `NavigationLocalizations`;
+/// 2. its language code is what `ZenClient` emits as `Accept-Language` on every request
+///    (ADR-007) - main.dart hands `ZenClient` a callback that reads *this* notifier, so a
+///    mid-session switch reaches the next request, including `POST /auth/register`, where the
+///    server seeds `users.language` and every later localized email follows from it.
+///
+/// A [Locale] rather than a language-code string: the framework's supported set is
+/// [ZenLocales.supported], and a `Locale` is what Flutter's localization stack consumes.
+class LocaleNotifier extends Notifier<Locale> {
   @override
-  String build() => 'en';
+  Locale build() => const Locale(ZenLocales.fallback);
 
-  void setLanguage(String language) => state = language;
+  void setLocale(Locale locale) => state = locale;
 }
 
-final languageProvider = NotifierProvider<LanguageNotifier, String>(
-  LanguageNotifier.new,
+final localeProvider = NotifierProvider<LocaleNotifier, Locale>(
+  LocaleNotifier.new,
 );
-
-/// Builds the localization service and loads the merged global bundles for both locales up
-/// front (production-mode localization: one merged file per language). The UI shows a spinner
-/// until this resolves. Loading both means switching languages is instant and offline.
-final localizationServiceProvider = FutureProvider<ZenLocalizationService>((ref) async {
-  // globalPath defaults to 'assets/l10n' in ZenLocalizationConfig, so it need not be repeated.
-  final service = ZenLocalizationService(config: const ZenLocalizationConfig());
-  await service.loadGlobalMessages('en');
-  await service.loadGlobalMessages('uk');
-  return service;
-});

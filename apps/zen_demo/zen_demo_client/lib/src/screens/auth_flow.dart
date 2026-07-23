@@ -9,9 +9,7 @@ import 'package:zen_ui_identity/zen_ui_identity.dart';
 enum _AuthScreen { login, register, restore }
 
 class AuthFlow extends ConsumerStatefulWidget {
-  const AuthFlow({required this.messages, super.key});
-
-  final IdentityMessages messages;
+  const AuthFlow({super.key});
 
   @override
   ConsumerState<AuthFlow> createState() => _AuthFlowState();
@@ -23,23 +21,19 @@ class _AuthFlowState extends ConsumerState<AuthFlow> {
   void _go(_AuthScreen screen) => setState(() => _screen = screen);
 
   @override
-  Widget build(BuildContext context) {
-    final messages = widget.messages;
-    return switch (_screen) {
-      _AuthScreen.login => LoginScreen(
-        messages: messages,
-        onRegisterClick: () => _go(_AuthScreen.register),
-        onForgotPasswordClick: () => _go(_AuthScreen.restore),
-      ),
-      _AuthScreen.register => RegisterScreen(
-        messages: messages,
-        onLoginClick: () => _go(_AuthScreen.login),
-      ),
-      _AuthScreen.restore => RestorePasswordScreen(
-        messages: messages,
-        onBackClick: () => _go(_AuthScreen.login),
-        onRestoreSuccess: () => _go(_AuthScreen.login),
-      ),
-    };
-  }
+  Widget build(BuildContext context) => switch (_screen) {
+    // The screens take no wording: each reads IdentityLocalizations off the context, so the
+    // app supplies only the delegate and the chosen locale (ADR-009).
+    _AuthScreen.login => LoginScreen(
+      onRegisterClick: () => _go(_AuthScreen.register),
+      onForgotPasswordClick: () => _go(_AuthScreen.restore),
+    ),
+    _AuthScreen.register => RegisterScreen(
+      onLoginClick: () => _go(_AuthScreen.login),
+    ),
+    _AuthScreen.restore => RestorePasswordScreen(
+      onBackClick: () => _go(_AuthScreen.login),
+      onRestoreSuccess: () => _go(_AuthScreen.login),
+    ),
+  };
 }

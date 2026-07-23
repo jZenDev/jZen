@@ -17,8 +17,12 @@ dependencies:
   zen_ui_navigation:
     path: ../
 
-  zen_localization:
-    path: ../../zen_localization
+  zen_core:
+    path: ../../zen_core
+
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
 
   flutter_riverpod: ^3.0.3   # State management
   cupertino_icons: ^1.0.8 # Icons
@@ -28,7 +32,8 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
 
+# `generate: true` drives `flutter gen-l10n` from l10n.yaml. The l10n JSON assets are gone:
+# generated strings are Dart code, not a runtime asset load (ADR-009, reinforcing TA-7).
 flutter:
   uses-material-design: true
-  assets:
-    - lib/l10n/
+  generate: true

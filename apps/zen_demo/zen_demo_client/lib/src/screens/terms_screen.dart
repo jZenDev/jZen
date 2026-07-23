@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zen_transport/zen_transport.dart';
 
-import '../demo_messages.dart';
+import '../l10n/generated/demo_localizations.dart';
 import '../providers.dart';
 
 /// Loads and displays the localized Markdown terms of service, re-fetching when the language
@@ -11,9 +11,7 @@ import '../providers.dart';
 /// demo free of a discontinued dependency - the point being that localized content is fetched
 /// from the real server, which this shows plainly.
 class DemoTermsScreen extends ConsumerStatefulWidget {
-  const DemoTermsScreen({required this.messages, super.key});
-
-  final DemoMessages messages;
+  const DemoTermsScreen({super.key});
 
   @override
   ConsumerState<DemoTermsScreen> createState() => _DemoTermsScreenState();
@@ -40,7 +38,10 @@ class _DemoTermsScreenState extends ConsumerState<DemoTermsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final language = ref.watch(languageProvider);
+    final messages = DemoLocalizations.of(context);
+    // The language code, not the Locale: it is what the server's Accept-Language and the
+    // /demo/terms query expect (ADR-007).
+    final language = ref.watch(localeProvider).languageCode;
     if (language != _loadedLanguage) {
       // Language changed (or first build): reload after this frame.
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -49,20 +50,20 @@ class _DemoTermsScreenState extends ConsumerState<DemoTermsScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text(widget.messages.termsTitle)),
+      appBar: AppBar(title: Text(messages.termsTitle)),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: _buildBody(),
+        child: _buildBody(messages),
       ),
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(DemoLocalizations messages) {
     if (_error != null) {
-      return Center(child: Text(widget.messages.termsError(_error!)));
+      return Center(child: Text(messages.termsError(_error!)));
     }
     if (_terms == null) {
-      return Center(child: Text(widget.messages.termsLoading));
+      return Center(child: Text(messages.termsLoading));
     }
     return SingleChildScrollView(
       child: SelectableText(_terms!.content),

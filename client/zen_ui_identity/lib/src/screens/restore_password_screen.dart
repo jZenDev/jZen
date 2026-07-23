@@ -2,7 +2,8 @@ import 'package:zen_core/zen_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../l10n/identity_messages.dart';
+import '../l10n/generated/identity_localizations.dart';
+import '../l10n/identity_error_text.dart';
 import '../state/identity_session_store.dart';
 import '../theme/identity_theme_extension.dart';
 import '../widgets/identity_button.dart';
@@ -12,11 +13,9 @@ import '../widgets/identity_text_field.dart';
 class RestorePasswordScreen extends ConsumerStatefulWidget {
   final VoidCallback? onRestoreSuccess;
   final VoidCallback? onBackClick;
-  final IdentityMessages messages;
 
   const RestorePasswordScreen({
     super.key,
-    required this.messages,
     this.onRestoreSuccess,
     this.onBackClick,
   });
@@ -45,12 +44,13 @@ class _RestorePasswordScreenState extends ConsumerState<RestorePasswordScreen> {
     );
 
     if (!mounted) return;
+    final messages = IdentityLocalizations.of(context);
 
     result.fold(
       (_) {
         // Success
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(widget.messages.resetLinkSentSuccess)),
+          SnackBar(content: Text(messages.resetLinkSentSuccess)),
         );
 
         widget.onRestoreSuccess?.call();
@@ -58,7 +58,7 @@ class _RestorePasswordScreenState extends ConsumerState<RestorePasswordScreen> {
       (ZenError error) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(widget.messages.error(error)),
+            content: Text(messages.errorText(error)),
             backgroundColor: Theme.of(
               context,
             ).extension<IdentityThemeExtension>()?.errorColor,
@@ -70,6 +70,7 @@ class _RestorePasswordScreenState extends ConsumerState<RestorePasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final messages = IdentityLocalizations.of(context);
     final theme =
         Theme.of(context).extension<IdentityThemeExtension>() ??
         IdentityThemeExtension.fallback();
@@ -77,11 +78,11 @@ class _RestorePasswordScreenState extends ConsumerState<RestorePasswordScreen> {
     return Scaffold(
       backgroundColor: theme.surfaceColor,
       appBar: AppBar(
-        title: Text(widget.messages.restorePasswordTitle),
+        title: Text(messages.restorePasswordTitle),
         leading: widget.onBackClick != null
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
-                tooltip: widget.messages.backButtonTooltip,
+                tooltip: messages.backButtonTooltip,
                 onPressed: widget.onBackClick,
               )
             : null,
@@ -101,13 +102,13 @@ class _RestorePasswordScreenState extends ConsumerState<RestorePasswordScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    widget.messages.restorePasswordInfo,
+                    messages.restorePasswordInfo,
                     style: theme.subtitleStyle,
                     textAlign: TextAlign.center,
                   ),
                   SizedBox(height: theme.spacing * 2),
                   IdentityTextField(
-                    label: widget.messages.emailLabel,
+                    label: messages.emailLabel,
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
                     autofillHints: const [AutofillHints.email],
@@ -115,17 +116,17 @@ class _RestorePasswordScreenState extends ConsumerState<RestorePasswordScreen> {
                     onFieldSubmitted: (_) => _submit(),
                     validator: (value) {
                       if (value == null || value.isEmpty) {
-                        return widget.messages.validationRequired;
+                        return messages.validationRequired;
                       }
                       if (!value.contains('@')) {
-                        return widget.messages.validationEmail;
+                        return messages.validationEmail;
                       }
                       return null;
                     },
                   ),
                   SizedBox(height: theme.spacing * 2),
                   IdentityButton(
-                    text: widget.messages.sendResetLinkButton,
+                    text: messages.sendResetLinkButton,
                     isLoading: ref
                         .watch(identitySessionStoreProvider)
                         .isLoading,

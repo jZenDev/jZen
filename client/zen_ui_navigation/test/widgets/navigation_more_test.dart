@@ -1,9 +1,9 @@
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_more.dart';
-import 'package:zen_ui_navigation/src/zen_navigation_item.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 
 void main() {
   testWidgets(
@@ -32,6 +32,8 @@ void main() {
     var selectedCalled = -1;
 
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      supportedLocales: NavigationLocalizations.supportedLocales,
       home: NavigationMorePage(
         overflowItems: overflow,
         selectedIndex: 5, // corresponds to overflow index 1 when indexOffset=4
@@ -81,6 +83,8 @@ void main() {
     var selected = -1;
 
     await tester.pumpWidget(CupertinoApp(
+      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      supportedLocales: NavigationLocalizations.supportedLocales,
       home: NavigationMorePage(
         overflowItems: items,
         selectedIndex: 0,
@@ -125,6 +129,8 @@ void main() {
     const selectedIndex = indexOffset + 1; // second item selected
 
     await tester.pumpWidget(CupertinoApp(
+      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      supportedLocales: NavigationLocalizations.supportedLocales,
       home: NavigationMorePage(
         overflowItems: items,
         selectedIndex: selectedIndex,
@@ -176,6 +182,8 @@ void main() {
     ];
 
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      supportedLocales: NavigationLocalizations.supportedLocales,
       home: NavigationMorePage(
         overflowItems: overflow,
         selectedIndex: -1, // no selection
@@ -209,6 +217,8 @@ void main() {
     ];
 
     await tester.pumpWidget(CupertinoApp(
+      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      supportedLocales: NavigationLocalizations.supportedLocales,
       home: NavigationMorePage(
         overflowItems: items,
         selectedIndex: -1,
@@ -244,6 +254,8 @@ void main() {
     ];
 
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      supportedLocales: NavigationLocalizations.supportedLocales,
       theme: ThemeData(primaryColor: Colors.green),
       home: NavigationMorePage(
         overflowItems: overflow,
@@ -283,6 +295,8 @@ void main() {
     final called = <int>[];
 
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      supportedLocales: NavigationLocalizations.supportedLocales,
       home: NavigationMorePage(
         overflowItems: overflow,
         selectedIndex: -1,
@@ -307,6 +321,8 @@ void main() {
     if (zenIsIOS) return;
 
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      supportedLocales: NavigationLocalizations.supportedLocales,
       home: NavigationMorePage(
         overflowItems: const [],
         selectedIndex: -1,
@@ -328,6 +344,8 @@ void main() {
     if (!zenIsIOS) return;
 
     await tester.pumpWidget(CupertinoApp(
+      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      supportedLocales: NavigationLocalizations.supportedLocales,
       home: NavigationMorePage(
         overflowItems: const [],
         selectedIndex: -1,

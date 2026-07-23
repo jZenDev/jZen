@@ -1,32 +1,31 @@
-import 'package:zen_localization/zen_localization.dart';
 import 'package:flutter/material.dart';
 
-import '../l10n/example_messages.dart';
+import '../l10n/generated/example_localizations.dart';
 
 /// Home screen showing an overview
 class HomeScreen extends StatelessWidget {
   const HomeScreen({
-    required this.localization,
-    required this.language,
     super.key,
   });
 
-  final ZenLocalizationService localization;
-  final String language;
-
   @override
   Widget build(BuildContext context) {
-    final messages = ExampleMessages(localization, language);
+    final messages = ExampleLocalizations.of(context);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(messages.homeTitle),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: Center(
+      // Scrollable, because real prose does not fit a short viewport. Until this step the
+      // screen rendered bare message keys (the strings were never actually loaded), so the
+      // overflow only became visible once the generated wording arrived.
+      body: SingleChildScrollView(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            const SizedBox(height: 24),
             Icon(
               Icons.home,
               size: 120,
@@ -54,7 +53,7 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildFeatureList(BuildContext context, ExampleMessages messages) {
+  Widget _buildFeatureList(BuildContext context, ExampleLocalizations messages) {
     return Card(
       margin: const EdgeInsets.all(16),
       child: Padding(

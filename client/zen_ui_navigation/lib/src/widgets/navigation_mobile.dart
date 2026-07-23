@@ -1,9 +1,8 @@
 import 'package:zen_core/zen_core.dart';
-import 'package:zen_localization/zen_localization.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import '../l10n/navigation_messages.dart';
+import '../l10n/generated/navigation_localizations.dart';
 import '../zen_navigation.dart';
 import '../zen_navigation_item.dart';
 import 'navigation_badge.dart';
@@ -19,13 +18,10 @@ Widget _widget({
   required int selectedIndex,
   required ValueChanged<int> onItemSelected,
   required List<ZenNavigationItem> items,
-  required ZenLocalizationService localization,
-  required String language,
   ValueChanged<String>? onItemSelectedId,
   String? labelMore,
 }) {
-  final messages = NavigationMessages(localization, language);
-  final moreLabel = labelMore ?? messages.more;
+  final moreLabel = labelMore ?? NavigationLocalizations.of(context).more;
   final List<ZenNavigationItem> visible = items.take(zenMaxItemsMobile).toList();
   final List<ZenNavigationItem> overflow = items.length > zenMaxItemsMobile
       ? items.skip(zenMaxItemsMobile).toList()

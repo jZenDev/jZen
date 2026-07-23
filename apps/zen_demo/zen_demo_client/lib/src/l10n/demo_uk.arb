@@ -1,0 +1,33 @@
+{
+  "@@locale": "uk",
+
+  "appTitle": "Демо jZen",
+  "welcomeTitle": "Ласкаво просимо до jZen",
+  "welcomeSubtitle": "Увійдіть, щоб дослідити еталонний застосунок.",
+
+  "navHome": "Головна",
+  "navTerms": "Умови",
+  "navProfile": "Профіль",
+  "languageLabel": "Мова",
+
+  "pingSection": "Пінг сервера (обидва режими транспорту)",
+  "pingJson": "Пінг (JSON)",
+  "pingProtobuf": "Пінг (Protobuf)",
+  "pingResult": "{mode}: {message}",
+  "pingError": "Пінг не вдався: {error}",
+
+  "wsSection": "Ехо через WebSocket",
+  "wsConnect": "Підключитися",
+  "wsDisconnect": "Відключитися",
+  "wsSend": "Надіслати",
+  "wsStatus": "Статус: {status}",
+  "wsReceived": "Ехо: {message}",
+
+  "termsTitle": "Умови використання",
+  "termsLoading": "Завантаження умов...",
+  "termsError": "Не вдалося завантажити умови: {error}",
+
+  "profileLoading": "Завантаження профілю...",
+  "profileError": "Не вдалося завантажити профіль: {error}",
+  "profileBio": "Біографія"
+}

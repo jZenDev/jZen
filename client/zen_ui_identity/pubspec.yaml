@@ -9,20 +9,26 @@ environment:
 
 resolution: workspace
 
-# Ported from ../DartZen/packages/dartzen_ui_identity, adopted as-is: it is provider-agnostic
-# (zero Firebase references), so the Supabase re-point is pure wiring in the consuming app -
-# override identityRepositoryProvider with a SupabaseIdentityRepository (see example/).
+# Ported from ../DartZen/packages/dartzen_ui_identity: provider-agnostic (zero Firebase
+# references), so the Supabase re-point is pure wiring in the consuming app - override
+# identityRepositoryProvider with a SupabaseIdentityRepository (see example/). The donor's
+# runtime string-key localization was replaced by typed, generated `flutter gen-l10n`
+# accessors (ROADMAP step 7b, DECISIONS.md ADR-009).
 dependencies:
   zen_core:
     path: ../zen_core
   zen_identity:
     path: ../zen_identity
-  zen_localization:
-    path: ../zen_localization
   zen_ui_navigation:
     path: ../zen_ui_navigation
   flutter:
     sdk: flutter
+  # Both are imported by the generated IdentityLocalizations. intl is pinned to the version
+  # flutter_localizations itself pins, so an app composing several localized jZen packages
+  # resolves one intl.
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
   flutter_riverpod: ^3.0.3
 
 dev_dependencies:
@@ -37,6 +43,7 @@ topics:
   - flutter
   - zen
 
+# `generate: true` drives `flutter gen-l10n` from l10n.yaml. The per-locale JSON asset is
+# gone: generated strings are Dart code, not a runtime asset load (ADR-009, TA-7).
 flutter:
-  assets:
-    - lib/src/l10n/
+  generate: true

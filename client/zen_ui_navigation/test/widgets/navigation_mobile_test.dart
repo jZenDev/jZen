@@ -1,14 +1,11 @@
 import 'package:zen_core/zen_core.dart';
-import 'package:zen_localization/zen_localization.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_mobile.dart';
-import 'package:zen_ui_navigation/src/zen_navigation_item.dart';
+import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  const config = ZenLocalizationConfig();
-  final service = ZenLocalizationService(config: config);
 
   testWidgets('mobile navigation shows body and items without overflow',
       (WidgetTester tester) async {
@@ -25,14 +22,14 @@ void main() {
     var selected = 1;
 
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      supportedLocales: NavigationLocalizations.supportedLocales,
       home: Builder(
           builder: (ctx) => buildMobileNavigation(
                 context: ctx,
                 selectedIndex: selected,
                 onItemSelected: (i) => selected = i,
                 items: items,
-                localization: service,
-                language: 'en',
                 labelMore: 'More',
               )),
     ));
@@ -62,14 +59,14 @@ void main() {
     var selected = -1;
 
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      supportedLocales: NavigationLocalizations.supportedLocales,
       home: Builder(
           builder: (ctx) => buildMobileNavigation(
                 context: ctx,
                 selectedIndex: 0,
                 onItemSelected: (i) => selected = i,
                 items: items,
-                localization: service,
-                language: 'en',
                 labelMore: 'More',
               )),
     ));
@@ -106,14 +103,14 @@ void main() {
     var selectedCalled = -1;
 
     await tester.pumpWidget(MaterialApp(
+      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      supportedLocales: NavigationLocalizations.supportedLocales,
       home: Builder(
           builder: (ctx) => buildMobileNavigation(
                 context: ctx,
                 selectedIndex: 4,
                 onItemSelected: (i) => selectedCalled = i,
                 items: items,
-                localization: service,
-                language: 'en',
                 labelMore: 'More',
               )),
     ));
@@ -137,7 +134,7 @@ void main() {
   });
 
   testWidgets(
-      'mobile navigation uses localization more label when labelMore omitted (Material)',
+      'mobile navigation localizes the more label when labelMore is omitted (Material)',
       (WidgetTester tester) async {
     if (zenIsIOS) return;
 
@@ -152,31 +149,34 @@ void main() {
       ),
     );
 
-    final prodService = ZenLocalizationService(
-      config: const ZenLocalizationConfig(),
-    );
+    Widget app(Locale locale) => MaterialApp(
+          locale: locale,
+          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+          supportedLocales: NavigationLocalizations.supportedLocales,
+          home: Builder(
+              builder: (ctx) => buildMobileNavigation(
+                    context: ctx,
+                    selectedIndex: 4,
+                    onItemSelected: (_) {},
+                    items: items,
+                    // labelMore omitted, so the label comes from the generated
+                    // NavigationLocalizations resolved off the BuildContext.
+                  )),
+        );
 
-    await tester.pumpWidget(MaterialApp(
-      home: Builder(
-          builder: (ctx) => buildMobileNavigation(
-                context: ctx,
-                selectedIndex: 4,
-                onItemSelected: (_) {},
-                items: items,
-                localization: prodService,
-                language: 'en',
-                // labelMore omitted to exercise NavigationMessages.more
-              )),
-    ));
-
+    await tester.pumpWidget(app(const Locale(ZenLocales.en)));
     await tester.pumpAndSettle();
+    expect(find.text('More'), findsWidgets);
 
-    // The More label should come from localization (in production returns key)
-    expect(find.text('navigation.more'), findsWidgets);
+    // Switching the ambient locale re-renders the label from the other ARB.
+    await tester.pumpWidget(app(const Locale(ZenLocales.uk)));
+    await tester.pumpAndSettle();
+    expect(find.text('More'), findsNothing);
+    expect(find.text('Ще'), findsWidgets);
   });
 
   testWidgets(
-      'mobile navigation uses localization more label when labelMore omitted (Cupertino)',
+      'mobile navigation localizes the more label when labelMore is omitted (Cupertino)',
       (WidgetTester tester) async {
     if (!zenIsIOS) return;
 
@@ -190,26 +190,26 @@ void main() {
       ),
     );
 
-    final prodService = ZenLocalizationService(
-      config: const ZenLocalizationConfig(),
-    );
+    Widget app(Locale locale) => CupertinoApp(
+          locale: locale,
+          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+          supportedLocales: NavigationLocalizations.supportedLocales,
+          home: Builder(
+              builder: (ctx) => buildMobileNavigation(
+                    context: ctx,
+                    selectedIndex: 4,
+                    onItemSelected: (_) {},
+                    items: items,
+                  )),
+        );
 
-    await tester.pumpWidget(CupertinoApp(
-      home: Builder(
-          builder: (ctx) => buildMobileNavigation(
-                context: ctx,
-                selectedIndex: 4,
-                onItemSelected: (_) {},
-                items: items,
-                localization: prodService,
-                language: 'en',
-                // labelMore omitted to exercise NavigationMessages.more
-              )),
-    ));
-
+    await tester.pumpWidget(app(const Locale(ZenLocales.en)));
     await tester.pumpAndSettle();
+    expect(find.text('More'), findsWidgets);
 
-    expect(find.text('navigation.more'), findsWidgets);
+    await tester.pumpWidget(app(const Locale(ZenLocales.uk)));
+    await tester.pumpAndSettle();
+    expect(find.text('Ще'), findsWidgets);
   });
 
   testWidgets(
@@ -231,14 +231,14 @@ void main() {
     var selectedCalled = -1;
 
     await tester.pumpWidget(CupertinoApp(
+      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      supportedLocales: NavigationLocalizations.supportedLocales,
       home: Builder(
           builder: (ctx) => buildMobileNavigation(
                 context: ctx,
                 selectedIndex: 4,
                 onItemSelected: (i) => selectedCalled = i,
                 items: items,
-                localization: service,
-                language: 'en',
                 labelMore: 'More',
               )),
     ));

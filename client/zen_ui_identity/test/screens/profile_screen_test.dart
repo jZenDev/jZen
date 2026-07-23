@@ -1,13 +1,12 @@
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_identity/zen_identity.dart';
-import 'package:zen_localization/zen_localization.dart';
-import 'package:zen_ui_identity/src/l10n/identity_messages.dart';
 import 'package:zen_ui_identity/src/screens/profile_screen.dart';
 import 'package:zen_ui_identity/src/state/identity_repository.dart';
-import 'package:zen_ui_identity/src/theme/identity_theme_extension.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../support/localized_app.dart';
 
 class _FakeRepo implements IdentityRepository {
   ZenResult<IdentityContract?> current;
@@ -41,35 +40,7 @@ class _FakeRepo implements IdentityRepository {
   Future<ZenResult<void>> logout() async => logoutResult;
 }
 
-class _FakeLocalization implements ZenLocalizationService {
-  final Map<String, String> _map;
-  _FakeLocalization(this._map);
-
-  @override
-  String translate(
-    String key, {
-    required String language,
-    String? module,
-    Map<String, dynamic> params = const {},
-  }) => _map[key] ?? key;
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
 void main() {
-  const en = 'en';
-  final msgs = IdentityMessages(
-    _FakeLocalization({
-      'profile.title': 'Profile',
-      'not.authenticated': 'Not Auth',
-      'roles.label': 'Roles',
-      'logout.button': 'Logout',
-      'profile.avatar.label': 'Avatar',
-      'back.button.tooltip': 'Back',
-    }),
-    en,
-  );
 
   testWidgets('shows not authenticated when no identity', (tester) async {
     final repo = _FakeRepo(current: const ZenResult.ok(null));
@@ -77,15 +48,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [identityRepositoryProvider.overrideWithValue(repo)],
-        child: MaterialApp(
-          theme: ThemeData(extensions: [IdentityThemeExtension.fallback()]),
-          home: ProfileScreen(messages: msgs),
+        child: localizedApp(
+          home: ProfileScreen(),
         ),
       ),
     );
 
     await tester.pumpAndSettle();
-    expect(find.text('Not Auth'), findsOneWidget);
+    expect(find.text('Not authenticated'), findsOneWidget);
   });
 
   testWidgets('displays profile and calls logout callback', (tester) async {
@@ -108,10 +78,8 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [identityRepositoryProvider.overrideWithValue(repo)],
-        child: MaterialApp(
-          theme: ThemeData(extensions: [IdentityThemeExtension.fallback()]),
+        child: localizedApp(
           home: ProfileScreen(
-            messages: msgs,
             onLogoutSuccess: () => called = true,
             onLogoutSuccessWithIdentity: (id) => logoutIdentity = id,
           ),
@@ -126,12 +94,12 @@ void main() {
 
     // Check Semantics
     expect(
-      tester.getSemantics(find.byTooltip('Logout').first).tooltip,
-      contains('Logout'),
+      tester.getSemantics(find.byTooltip('Log Out').first).tooltip,
+      contains('Log Out'),
     );
     expect(
       tester.getSemantics(find.byType(CircleAvatar)).label,
-      contains('Avatar'),
+      contains('Profile avatar'),
     );
 
     await tester.tap(find.byIcon(Icons.logout).first);

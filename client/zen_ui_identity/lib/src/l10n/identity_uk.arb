@@ -1,0 +1,39 @@
+{
+  "@@locale": "uk",
+
+  "loginTitle": "Увійти",
+  "registerTitle": "Зареєструватися",
+  "restorePasswordTitle": "Скинути пароль",
+
+  "emailLabel": "Електронна пошта",
+  "passwordLabel": "Пароль",
+  "confirmPasswordLabel": "Підтвердьте пароль",
+
+  "loginButton": "Увійти",
+  "registerButton": "Створити акаунт",
+  "sendResetLinkButton": "Надіслати посилання",
+  "logoutButton": "Вийти",
+
+  "profileTitle": "Профіль",
+  "rolesTitle": "Ваші ролі",
+  "rolesLabel": "Ролі:",
+  "profileAvatarLabel": "Аватар профілю",
+  "backButtonTooltip": "Назад",
+
+  "restorePasswordInfo": "Введіть свою електронну пошту, і ми надішлемо посилання для скидання пароля.",
+  "resetLinkSentSuccess": "Посилання для скидання надіслано на вашу пошту",
+  "alreadyHaveAccount": "Вже маєте акаунт?",
+  "noRolesAssigned": "Ролі не призначено",
+  "notAuthenticated": "Не автентифіковано",
+
+  "unknownError": "Сталася невідома помилка.",
+
+  "validationRequired": "Обов'язково",
+  "validationEmail": "Некоректна пошта",
+  "validationPasswordMismatch": "Паролі не збігаються",
+
+  "errorUnauthorized": "Невірні облікові дані або немає доступу.",
+  "errorNotFound": "Запитаний ресурс не знайдено.",
+  "errorValidation": "Помилка перевірки. Перевірте введені дані.",
+  "errorConflict": "Виник конфлікт (наприклад, користувач уже існує)."
+}

@@ -24,8 +24,9 @@ dependencies:
     path: ../../../client/zen_core
   zen_identity:
     path: ../../../client/zen_identity
-  zen_localization:
-    path: ../../../client/zen_localization
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
   zen_transport:
     path: ../../../client/zen_transport
   zen_ui_identity:
@@ -41,7 +42,9 @@ dev_dependencies:
   # the live stack. It uses package:test (not flutter_test) so it stays headless - see test:e2e.
   test: ^1.25.0
 
+# `generate: true` drives `flutter gen-l10n` from l10n.yaml. There are no l10n assets any
+# more: the app's strings are compiled in (ADR-009), and the identity/navigation wording comes
+# from those packages' own generated accessors rather than a merged bundle this app maintained.
 flutter:
   uses-material-design: true
-  assets:
-    - assets/l10n/
+  generate: true

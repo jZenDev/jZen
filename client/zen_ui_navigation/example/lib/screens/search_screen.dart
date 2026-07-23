@@ -1,18 +1,12 @@
-import 'package:zen_localization/zen_localization.dart';
 import 'package:flutter/material.dart';
 
-import '../l10n/example_messages.dart';
+import '../l10n/generated/example_localizations.dart';
 
 /// Search screen with search functionality demo
 class SearchScreen extends StatefulWidget {
   const SearchScreen({
-    required this.localization,
-    required this.language,
     super.key,
   });
-
-  final ZenLocalizationService localization;
-  final String language;
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -20,7 +14,6 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final _searchController = TextEditingController();
-  late ExampleMessages _messages;
   final List<String> _allItems = [
     'Flutter',
     'Dart',
@@ -38,17 +31,7 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   void initState() {
     super.initState();
-    _messages = ExampleMessages(widget.localization, widget.language);
     _filteredItems = _allItems;
-  }
-
-  @override
-  void didUpdateWidget(SearchScreen oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.language != widget.language ||
-        oldWidget.localization != widget.localization) {
-      _messages = ExampleMessages(widget.localization, widget.language);
-    }
   }
 
   @override
@@ -71,9 +54,13 @@ class _SearchScreenState extends State<SearchScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Resolved in build, not cached in state: a locale switch rebuilds this subtree and the
+    // new wording is picked up with no didUpdateWidget bookkeeping of its own.
+    final messages = ExampleLocalizations.of(context);
+
     return Scaffold(
       appBar: AppBar(
-        title: Text(_messages.searchTitle),
+        title: Text(messages.searchTitle),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
       body: Column(
@@ -83,7 +70,7 @@ class _SearchScreenState extends State<SearchScreen> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: _messages.searchHint,
+                hintText: messages.searchHint,
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
@@ -110,7 +97,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(
-                          '${_messages.searchSelected}${_filteredItems[index]}',
+                          '${messages.searchSelected}${_filteredItems[index]}',
                         ),
                         duration: const Duration(seconds: 1),
                       ),

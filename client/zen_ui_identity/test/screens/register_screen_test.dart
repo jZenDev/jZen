@@ -2,14 +2,12 @@ import 'dart:async';
 
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_identity/zen_identity.dart';
-import 'package:zen_localization/zen_localization.dart';
-import 'package:zen_ui_identity/src/l10n/identity_messages.dart';
-import 'package:zen_ui_identity/src/screens/register_screen.dart';
-import 'package:zen_ui_identity/src/state/identity_session_store.dart';
-import 'package:zen_ui_identity/src/theme/identity_theme_extension.dart';
+import 'package:zen_ui_identity/zen_ui_identity.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import '../support/localized_app.dart';
 
 // Helper to create a valid Identity instance for tests
 Identity makeTestIdentity() {
@@ -40,43 +38,15 @@ class TestIdentitySessionStore extends IdentitySessionStore {
 
 void main() {
   late TestIdentitySessionStore testStore;
-  late IdentityMessages messages;
+  late IdentityLocalizations messages;
 
-  setUp(() {
-    testStore = TestIdentitySessionStore();
-    const config = ZenLocalizationConfig(isProduction: false);
-    final service = ZenLocalizationService(config: config);
-    // Inject identity.en.json keys directly into the module cache for tests
-    service.cache.setModule('identity', 'en', {
-      'login.title': 'Log In',
-      'register.title': 'Sign Up',
-      'restore.password.title': 'Reset Password',
-      'email.label': 'Email',
-      'password.label': 'Password',
-      'confirm.password.label': 'Confirm Password',
-      'login.button': 'Log In',
-      'register.button': 'Create Account',
-      'send.reset.link.button': 'Send Link',
-      'profile.title': 'Profile',
-      'logout.button': 'Log Out',
-      'roles.title': 'Your Roles',
-      'unknown.error': 'An unknown error occurred.',
-      'validation.required': 'Required',
-      'validation.email': 'Invalid email',
-      'validation.password.mismatch': 'Passwords do not match',
-      'error.unauthorized': 'Invalid credentials or unauthorized access.',
-      'error.not_found': 'Requested resource not found.',
-      'error.validation': 'Validation failed. Please check your input.',
-      'error.conflict': 'A conflict occurred (e.g., user already exists).',
-      'restore.password.info':
-          "Enter your email address and we'll send you a link to reset your password.",
-      'reset.link.sent.success': 'Reset link sent to your email',
-      'already.have.account': 'Already have an account?',
-      'not.authenticated': 'Not authenticated',
-      'roles.label': 'Roles:',
-    });
-    messages = IdentityMessages(service, 'en');
+  setUpAll(() async {
+    // The package's real English strings, loaded through the generated delegate - the same
+    // values the screen will render, so an ARB edit cannot pass a stale expectation.
+    messages = await identityMessages(ZenLocales.en);
   });
+
+  setUp(() => testStore = TestIdentitySessionStore());
 
   Widget buildTestable({
     VoidCallback? onRegisterSuccess,
@@ -84,10 +54,8 @@ void main() {
   }) {
     return ProviderScope(
       overrides: [identitySessionStoreProvider.overrideWith(() => testStore)],
-      child: MaterialApp(
-        theme: ThemeData(extensions: [IdentityThemeExtension.fallback()]),
+      child: localizedApp(
         home: RegisterScreen(
-          messages: messages,
           onRegisterSuccess: onRegisterSuccess,
           onLoginClick: onLoginClick,
         ),

@@ -25,7 +25,7 @@ jZen/
 │   └── zen-jobs/             # guaranteed scheduled work: external trigger + persisted job state
 ├── client/                   # Dart/Flutter FRAMEWORK libraries (pub workspace)
 │   ├── pubspec.yaml          # workspace root
-│   └── zen_core/  zen_transport/  zen_identity/  zen_localization/  zen_ui_*/
+│   └── zen_core/  zen_transport/  zen_identity/  zen_ui_*/
 ├── apps/                     # APPLICATIONS built on the framework
 │   ├── pubspec.yaml          # pub workspace root for the app clients
 │   └── zen_demo/             # the reference app (showcase + living e2e test stand)
@@ -231,6 +231,38 @@ own two mail templates are English-only hardcoded strings — jZen does not carr
 limitation forward. `SUPPORTED` locales start at `{en, uk}` and grow with the message
 bundles, no code change per template.
 
+## Client localization
+
+Typed and generated, mirroring the server's `@MessageBundle` (ADR-002) — the two stacks make the
+same choice, which is the whole point of ROADMAP step 7b. See
+[`DECISIONS.md`](./DECISIONS.md) ADR-009.
+
+```
+lib/src/l10n/identity_{en,uk}.arb  ──flutter gen-l10n──▶  IdentityLocalizations (+ delegate)
+lib/src/l10n/navigation_{en,uk}.arb                    ▶  NavigationLocalizations
+lib/src/l10n/demo_{en,uk}.arb                          ▶  DemoLocalizations
+```
+
+- **The ARB files are the source and are tracked; the generated classes are not.** `flutter
+  gen-l10n` ships inside the Flutter SDK, so unlike the `.pb.dart` messages there is no toolchain
+  boundary to carry output across — see STANDARDS "Code generation". `task generate:l10n` produces
+  them, `build:client` / `test:client` run it first, and `sync:contracts` fails if any generated
+  localization is ever *committed*.
+- **Every localized package owns its own strings**, generates its own accessors, and ships a
+  delegate; an application composes the delegates in `MaterialApp.localizationsDelegates` and
+  supplies **no wording**. A framework screen calls `IdentityLocalizations.of(context)` rather than
+  taking a messages argument, so a locale change is one rebuild.
+- **`ZenLocales` (in `zen_core`) is the client's single declaration of the supported set**,
+  mirroring the server's `zen.core.i18n.ZenLocales`: `{en, uk}`, fallback `en`. Each package tests
+  its generated `supportedLocales` against it, so an ARB set cannot drift from what the server can
+  answer in.
+- **The locale is app state, not config.** A single `Locale` provider is both `MaterialApp.locale`
+  (so `Localizations` re-renders the typed strings) and the value `ZenClient` reads per request for
+  `Accept-Language` (ADR-007) — so the language a user picks reaches `POST /auth/register`, seeds
+  `users.language`, and every later localized email follows from it. This *strengthens* **TA-7**:
+  the strings are now compile-time constants that tree-shake, and the runtime JSON asset path is
+  gone.
+
 ## Persistence
 
 PostgreSQL via Hibernate Panache (active-record; BugEater has 19 `PanacheEntityBase` and
@@ -360,13 +392,20 @@ resource method only ever names the domain model. This is not a mechanical port 
 untyped envelope — it is accepted, bounded cost paid once per endpoint, and it is what buys
 the contract-first guarantee.
 
-### TA-3 · `dartzen_localization` drags in the Flutter SDK
+### TA-3 · `dartzen_localization` drags in the Flutter SDK — CLOSED, and the package is gone (ROADMAP step 7b)
 It declares `flutter` as a dependency (`../DartZen/packages/dartzen_localization/pubspec.yaml`)
 yet is consumed by Dart-only server packages.
 
-**Resolution:** keep its existing
-conditional-import pattern (`loader_flutter.dart` / `loader_io.dart` / `loader_stub.dart`)
-and move `flutter` to a dev-only dependency so `zen_localization` is Dart-pure.
+**Original resolution (steps 2-7a):** keep its existing conditional-import pattern
+(`loader_flutter.dart` / `loader_io.dart` / `loader_stub.dart`) and move `flutter` to a dev-only
+dependency so `zen_localization` is Dart-pure.
+
+**Closed by ADR-009.** `zen_localization` is retired. The technique was right for the constraint,
+but **the constraint was the donor's**: it existed so a Dart-only *server* package could load
+translations, and jZen's server is Java. Every consumer of client strings — `zen_ui_identity`,
+`zen_ui_navigation`, both examples, `zen_demo_client` — is a Flutter package, so nothing was ever
+being kept Dart-pure. Client i18n is now typed and generated per package (see "Client
+localization" below); there is no loader, no runtime bundle, and no assessment left to carry.
 
 ### TA-4 · Dropping Firebase Hosting deletes two hacks
 BugEater packs `"access|refresh"` into a single `__session` cookie and sets

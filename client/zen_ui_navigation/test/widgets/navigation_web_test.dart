@@ -1,9 +1,8 @@
 import 'package:zen_core/zen_core.dart';
-import 'package:zen_localization/zen_localization.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_web.dart';
-import 'package:zen_ui_navigation/src/zen_navigation_item.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 
 // These two exercise the web navigation layout (a Scaffold.drawer / top menu). They belong
 // to the web platform pass (ZEN_PLATFORM=web on the web runtime): on the host VM run the
@@ -20,20 +19,18 @@ void main() {
       ),
     );
 
-    final localization =
-        ZenLocalizationService(config: const ZenLocalizationConfig());
 
     await tester.pumpWidget(MediaQuery(
       data: const MediaQueryData(size: Size(360, 800)),
       child: MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
         home: Builder(
             builder: (ctx) => buildPlatformNavigation(
                   context: ctx,
                   selectedIndex: 0,
                   onItemSelected: (_) {},
                   items: items,
-                  localization: localization,
-                  language: 'en',
                 )),
       ),
     ));
@@ -55,22 +52,20 @@ void main() {
       ),
     );
 
-    final localization =
-        ZenLocalizationService(config: const ZenLocalizationConfig());
 
     var selected = -1;
 
     await tester.pumpWidget(MediaQuery(
       data: const MediaQueryData(size: Size(1200, 800)),
       child: MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
         home: Builder(
             builder: (ctx) => buildPlatformNavigation(
                   context: ctx,
                   selectedIndex: 1,
                   onItemSelected: (i) => selected = i,
                   items: items,
-                  localization: localization,
-                  language: 'en',
                 )),
       ),
     ));

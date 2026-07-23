@@ -1,0 +1,8 @@
+# Typed, generated i18n for the zen_ui_navigation example (ROADMAP step 7b, ADR-009).
+# The ARB files are the tracked source; lib/l10n/generated is built by `task generate:l10n`.
+arb-dir: lib/l10n
+template-arb-file: example_en.arb
+output-dir: lib/l10n/generated
+output-localization-file: example_localizations.dart
+output-class: ExampleLocalizations
+nullable-getter: false

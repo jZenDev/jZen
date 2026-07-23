@@ -11,10 +11,8 @@ environment:
 
 resolution: workspace
 
-# Ported from ../DartZen/packages/dartzen_identity: the provider-agnostic contracts and
-# domain models are kept; the Firestore repository/mapper and the GCP Identity Toolkit token
-# verifier are discarded (Firebase is out of jZen). The new SupabaseIdentityRepository
-# implements the declared IdentityRepository over the zen-identity Supabase endpoints (TA-5).
+# Provider-agnostic identity contracts and domain models, plus SupabaseIdentityRepository,
+# which implements the declared IdentityRepository over the zen-identity Supabase endpoints.
 dependencies:
   meta: ^1.11.0
   # Standard, inspectable email validation (a project value; used before hitting the network).

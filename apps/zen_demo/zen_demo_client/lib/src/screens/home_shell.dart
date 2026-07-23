@@ -8,8 +8,7 @@ import 'dashboard_screen.dart';
 import 'terms_screen.dart';
 
 /// The authenticated shell: the reused ZenNavigation adaptive layout hosting the demo dashboard,
-/// the localized terms, and the reused identity profile screen (which owns logout). Mirrors how
-/// DartZen's main_screen.dart composed the demo's sections, but on the jZen navigation package.
+/// the localized terms, and the reused identity profile screen (which owns logout).
 ///
 /// Nothing here threads wording any more (ADR-009): the tab labels come from this app's own
 /// generated accessors, and each hosted screen resolves its own package's accessors from the

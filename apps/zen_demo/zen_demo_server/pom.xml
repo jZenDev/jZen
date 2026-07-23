@@ -3,8 +3,8 @@
   zen-app :: the runnable Quarkus application. The only module with
   <packaging>quarkus</packaging>; every other module is a plain jar.
 
-  Assembles the REST surface, the infrastructure filters harvested from BugEater's
-  jlogicsoftware/application/**, and the generated openapi.json.
+  Assembles the framework libraries into a runnable backend: the REST surface, the
+  infrastructure filters, and the generated openapi.json.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -72,8 +72,8 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-rest</artifactId>
     </dependency>
-    <!-- Backs the demo /api/v1/demo/ws echo endpoint (DemoWebSocket), replacing DartZen's
-         deleted shelf_web_socket route. zen_demo drives it via zen_transport's ZenWebSocket. -->
+    <!-- Backs the demo /api/v1/demo/ws echo endpoint (DemoWebSocket). zen_demo drives it via
+         zen_transport's ZenWebSocket. -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-websockets-next</artifactId>
@@ -85,12 +85,9 @@
       <artifactId>quarkus-hibernate-validator</artifactId>
     </dependency>
 
-    <!-- Derives openapi.json from the annotated resources. NOTE: this extension is
-         already a dependency in BugEater but is entirely unused there – zero
-         @Operation/@Schema/@Tag annotations and no quarkus.smallrye-openapi.* config.
-         jZen is the first place it does real work. See BLUEPRINT.md TA-1: it cannot
-         introspect protobuf-generated classes cleanly, so model schemas are merged in
-         from a static META-INF/openapi.yaml emitted by protoc. -->
+    <!-- Derives openapi.json from the annotated resources. It cannot introspect
+         protobuf-generated classes cleanly, so model schemas are merged in from a static
+         META-INF/openapi.yaml instead. See STANDARDS.md "OpenAPI and the REST surface". -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-smallrye-openapi</artifactId>

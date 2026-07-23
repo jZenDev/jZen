@@ -1,6 +1,3 @@
-// Ported from
-// ../DartZen/packages/dartzen_core/lib/src/logging/impl/strategy_flutter.dart.
-// The donor's default log name 'dartzen.core.ZenLogger' is renamed 'zen.core.ZenLogger'.
 import 'dart:developer' as developer;
 
 import 'strategy.dart';

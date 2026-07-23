@@ -9,8 +9,7 @@ import jakarta.transaction.Transactional;
 import java.util.UUID;
 
 /**
- * Transactional wrapper for loading a user's role from the {@code users} table. Ported from
- * ../BugEater/.../application/security/UserRoleLoader.java.
+ * Transactional wrapper for loading a user's role from the {@code users} table.
  *
  * <p>Extracted so {@link RoleAugmentor} calls a properly proxied CDI method that activates a
  * Hibernate session via {@code @Transactional}. The {@code to_regclass} guard lets role

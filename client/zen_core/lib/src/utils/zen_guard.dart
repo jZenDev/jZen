@@ -1,4 +1,3 @@
-// Ported verbatim from ../DartZen/packages/dartzen_core/lib/src/utils/zen_guard.dart.
 import '../result/zen_error.dart';
 import '../result/zen_result.dart';
 

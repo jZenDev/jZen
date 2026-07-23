@@ -16,10 +16,10 @@ import 'package:protobuf/protobuf.dart' as $pb;
 
 export 'package:protobuf/protobuf.dart' show GeneratedMessageGenericExtensions;
 
-/// Uniform error payload. Replaces DartZen's `{id, status, data, error}` envelope
-/// (dropped): HTTP status carries the status, the X-Request-ID header carries the request
-/// id, and this message carries the error detail. See docs/architecture/BLUEPRINT.md
-/// (TA-2) for why every endpoint declares typed messages instead of an untyped envelope.
+/// Uniform error payload. jZen carries no request/response envelope: HTTP status carries the
+/// status, the X-Request-ID header carries the request id, and this message carries the error
+/// detail. See docs/architecture/STANDARDS.md "Source of truth" for why every endpoint
+/// declares its own typed messages instead of an untyped payload.
 class ZenError extends $pb.GeneratedMessage {
   factory ZenError({
     $core.String? code,

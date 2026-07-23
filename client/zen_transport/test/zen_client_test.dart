@@ -1,5 +1,4 @@
-// Re-architected from ../DartZen/packages/dartzen_transport/test/zen_client_test.dart.
-// Exercises the typed send<T> API and the two TA-6 fixes (default codec via
+// Exercises the typed send<T> API and the client's two invariants (default codec via
 // selectDefaultCodec; a decode failure surfaces a ZenError, never a silent null).
 import 'dart:typed_data';
 
@@ -26,7 +25,7 @@ http.Response _encodedResponse(
 
 void main() {
   group('ZenClient construction', () {
-    test('TA-6 #1: default format comes from selectDefaultCodec()', () {
+    test('default format comes from selectDefaultCodec()', () {
       final client = ZenClient(baseUrl: 'http://localhost:8080');
       expect(client.format, selectDefaultCodec());
     });
@@ -270,7 +269,7 @@ void main() {
       expect(error.zenError.message, 'Forbidden');
     });
 
-    test('TA-6 #2: malformed 200 body surfaces a ZenError, not a null/ok', () async {
+    test('malformed 200 body surfaces a ZenError, not a null/ok', () async {
       final mock = MockClient((request) async {
         return http.Response.bytes(
           Uint8List.fromList([0x7b, 0x7b, 0x7b]), // "{{{" - not valid JSON

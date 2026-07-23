@@ -2,11 +2,8 @@
 <!--
   zen-transport :: the dual-mode negotiation seam.
 
-  Owns the port of DartZen's transport negotiation (its X-DZ-Transport header, renamed
-  X-Zen-Transport here)
-  (../DartZen/packages/dartzen_transport/lib/src/zen_transport_header.dart:4 defines the
-  header name verbatim; ../DartZen/packages/dartzen_server/lib/src/middleware/transport_middleware.dart:75-99
-  defines the negotiation order: header -> content-type sniff -> default JSON).
+  Owns the X-Zen-Transport negotiation: the header selects json or protobuf, and the
+  negotiation order is header -> content-type sniff -> default JSON.
 
   Consumes the generated protobuf DTOs from the zen-proto leaf module. protoc itself is
   resolved from Maven Central (zen-proto's plugin), so no system protoc is required for
@@ -54,7 +51,8 @@
          The server Jackson writer is not just unnecessary here, it is harmful: it greedily
          claims application/json via a build-time-optimized path that bypasses normal
          MessageBodyWriter priority, serializing the proto's builder internals and 500ing.
-         See BLUEPRINT.md TA-1. -->
+         It must be ABSENT, not out-prioritized. See STANDARDS.md "Backend multi-module
+         rules". -->
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-rest</artifactId>

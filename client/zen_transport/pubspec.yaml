@@ -11,11 +11,9 @@ environment:
 
 resolution: workspace
 
-# Re-architected from ../DartZen/packages/dartzen_transport: the hand-written MessagePack
-# binary codec is replaced by Protobuf (protobuf runtime; protoc_plugin generates the
-# messages under lib/src/generated), and the {id,status,data,error} envelope is dropped in
-# favor of typed proto bodies. See docs/architecture/BLUEPRINT.md "The dual-mode transport
-# seam".
+# The binary codec is Protobuf (protobuf runtime; protoc_plugin generates the messages under
+# lib/src/generated) and bodies are typed proto messages with no envelope. See
+# docs/architecture/BLUEPRINT.md "The dual-mode transport seam".
 dependencies:
   # fixnum backs the Int64 fields the protobuf runtime generates (e.g. HealthStatus.timestampMs).
   fixnum: ^1.1.0

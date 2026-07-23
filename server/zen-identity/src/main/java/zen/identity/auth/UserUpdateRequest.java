@@ -1,4 +1,4 @@
 package zen.identity.auth;
 
-/** Request body for {@code PUT /user}. Ported from ../BugEater/.../auth/UserUpdateRequest.java. */
+/** Request body for {@code PUT /user}. */
 public record UserUpdateRequest(String password) {}

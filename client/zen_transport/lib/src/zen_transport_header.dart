@@ -1,7 +1,5 @@
-// Ported from ../DartZen/packages/dartzen_transport/lib/src/zen_transport_header.dart.
-// The header is renamed X-DZ-Transport -> X-Zen-Transport and the binary format is
-// Protobuf instead of MessagePack (docs/architecture/BLUEPRINT.md "The dual-mode transport
-// seam"). This matches the Quarkus server's negotiation from ROADMAP step 1.
+// The client half of the negotiation seam (docs/architecture/BLUEPRINT.md "The dual-mode
+// transport seam"). These values must match the Quarkus server's ZenTransportFormat.
 import 'zen_transport_exception.dart';
 
 /// The header name used for transport format negotiation.

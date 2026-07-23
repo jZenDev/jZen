@@ -5,11 +5,9 @@ import jakarta.ws.rs.core.MediaType;
 /**
  * The two wire formats behind the {@code X-Zen-Transport} negotiation seam.
  *
- * <p>The negotiation logic is ported from DartZen's {@code ZenTransportFormat}
- * ({@code ../DartZen/packages/dartzen_transport/lib/src/zen_transport_header.dart:7}),
- * with two changes: the binary codec is Protobuf rather than MessagePack, and the header
- * is renamed {@code X-DZ-Transport -> X-Zen-Transport} because "DZ" stood for DartZen,
- * which jZen no longer is.
+ * <p>These values are the server half of the seam and must stay in step with the client's
+ * {@code ZenTransportFormat} in {@code zen_transport}. Parsing is case-insensitive and an
+ * unrecognised value falls back to JSON, so an unknown header can never fail a request.
  */
 public enum ZenTransportFormat {
   JSON("json", MediaType.APPLICATION_JSON),
@@ -39,11 +37,9 @@ public enum ZenTransportFormat {
   /**
    * Resolves the response format for a request.
    *
-   * <p>Negotiation order is ported from DartZen's server middleware
-   * ({@code dartzen_server/.../transport_middleware.dart:75-99}):
-   * explicit {@code X-Zen-Transport} header, then a sniff of the request Content-Type,
-   * then default JSON. An unparseable header value falls through rather than failing —
-   * matching the Dart middleware, which silently ignores a bad header.
+   * <p>Negotiation order: explicit {@code X-Zen-Transport} header, then a sniff of the request
+   * Content-Type, then default JSON. An unparseable header value falls through rather than
+   * failing, so a client that sends nonsense gets JSON rather than an error.
    */
   public static ZenTransportFormat negotiate(String header, MediaType contentType) {
     ZenTransportFormat fromHeader = parseOrNull(header);
@@ -70,7 +66,7 @@ public enum ZenTransportFormat {
       case "json":
         return JSON;
       case "protobuf":
-      case "msgpack": // legacy DartZen native value; treated as the binary format
+      case "msgpack": // accepted alias for the binary format
         return PROTOBUF;
       default:
         return null;

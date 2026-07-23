@@ -6,9 +6,8 @@ import jakarta.ws.rs.container.ContainerResponseFilter;
 import jakarta.ws.rs.ext.Provider;
 
 /**
- * Response half of the seam: echoes the negotiated {@code X-Zen-Transport} value back to
- * the client, matching DartZen's server behavior (its transport middleware sets the
- * header on the outgoing response). Lets a client confirm which format it received.
+ * Response half of the seam: echoes the negotiated {@code X-Zen-Transport} value back on the
+ * outgoing response, so a caller can confirm which format it actually got.
  */
 @Provider
 public class ZenTransportResponseFilter implements ContainerResponseFilter {

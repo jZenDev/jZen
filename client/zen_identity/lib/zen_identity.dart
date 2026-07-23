@@ -1,8 +1,8 @@
 /// Identity capability for the jZen client.
 ///
-/// Exposes the provider-agnostic [IdentityRepository] contract and identity domain models
-/// (ported from ../DartZen/packages/dartzen_identity) plus the Supabase-backed
-/// [SupabaseIdentityRepository] that implements the contract over the zen-identity endpoints.
+/// Exposes the provider-agnostic [IdentityRepository] contract and identity domain models,
+/// plus the Supabase-backed [SupabaseIdentityRepository] that implements the contract over
+/// the zen-identity endpoints.
 library;
 
 export 'src/identity_contracts.dart';

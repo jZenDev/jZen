@@ -1,6 +1,4 @@
-// Ported from ../DartZen/packages/dartzen_core/test/constants_test.dart, rewritten off
-// flutter_test onto package:test (zen_core is framework-free) and with the GCP/Firestore
-// constant assertions dropped (those constants were stripped from zen_constants.dart).
+// Runs on package:test rather than flutter_test, because zen_core is framework-free.
 import 'package:test/test.dart';
 import 'package:zen_core/src/zen_constants.dart';
 

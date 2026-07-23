@@ -22,13 +22,9 @@ environment:
 # workspace, apps/pubspec.yaml), depending on these libraries by relative path. A package's own
 # example/ (a single-library demo) stays with its package, per the Dart convention.
 #
-# Members land as steps complete:
-#   Step 2: zen_core, zen_transport
-#   Step 3: zen_identity, zen_ui_navigation, zen_ui_identity (+ their example apps)
-#
-# zen_localization was retired in step 7b (DECISIONS.md ADR-009): client i18n is now typed and
-# generated per package by `flutter gen-l10n`, so the runtime string-key service, its per-locale
-# JSON bundles, and its conditional-import loader have no consumer left.
+# Client i18n is typed and generated per package by `flutter gen-l10n`, so a package that
+# renders text owns its own .arb files rather than sharing a localization library
+# (DECISIONS.md ADR-009).
 workspace:
   - zen_core
   - zen_transport

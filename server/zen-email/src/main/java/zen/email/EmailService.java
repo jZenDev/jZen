@@ -12,16 +12,15 @@ import org.jboss.logging.Logger;
 import zen.core.i18n.ZenLocales;
 
 /**
- * Sends localized transactional email. New code, not a port: nothing in the donor backend
- * abstracted mail (its one sender injected {@code io.quarkus.mailer.Mailer} inline and hardcoded
- * English subjects), and that limitation is not carried forward -
- * ../BugEater/bugeater-quarkus/src/main/java/jlogicsoftware/user/UserCleanupService.java:28.
+ * Sends localized transactional email. An inline {@code io.quarkus.mailer.Mailer} call with a
+ * hardcoded English subject cannot be localized, which is the limitation this service exists to
+ * prevent.
  *
  * <p>This is the framework <em>mechanism</em> only. It owns locale resolution, template selection,
  * rendering, and the guarantee that sending never breaks the caller. It owns no wording and no
  * branding: applications supply the subject (from their typed Qute {@code @MessageBundle}) and the
  * per-locale templates under {@code src/main/resources/templates/mail/}, exactly as an application
- * supplies the component schemas the framework's REST resources reference (TA-1). See DECISIONS
+ * supplies the component schemas the framework's REST resources reference. See DECISIONS
  * ADR-007.
  *
  * <p>The provider is irrelevant here: {@code quarkus-mailer} speaks plain SMTP, so Brevo is only a

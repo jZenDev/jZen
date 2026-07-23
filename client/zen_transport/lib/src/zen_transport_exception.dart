@@ -1,6 +1,3 @@
-// Ported verbatim from
-// ../DartZen/packages/dartzen_transport/lib/src/zen_transport_exception.dart.
-
 /// Exception thrown by zen_transport operations.
 ///
 /// This is the only exception type used throughout the transport layer.

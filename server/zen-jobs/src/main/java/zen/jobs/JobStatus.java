@@ -4,10 +4,8 @@ package zen.jobs;
  * Terminal outcome of one job run, persisted in {@code zen_jobs.last_status} and echoed in the
  * {@code JobRun} proto.
  *
- * <p>Two values, not the donor's seven
- * (../DartZen/packages/dartzen_jobs/lib/src/models/job_status.dart). Its five {@code skipped*}
- * variants describe features jZen deliberately did not port - dependencies, skip dates, and
- * start/end windows - and a status that can never be written is not a status.
+ * <p>Two values only. jZen has no job dependencies, skip dates, or start/end windows, so there
+ * are no "skipped" outcomes to record: a status that can never be written is not a status.
  */
 public enum JobStatus {
   /** The job returned normally. */

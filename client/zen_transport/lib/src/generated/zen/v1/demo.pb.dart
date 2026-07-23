@@ -19,7 +19,7 @@ export 'package:protobuf/protobuf.dart' show GeneratedMessageGenericExtensions;
 
 /// GET /api/v1/demo/ping response. A liveness probe that returns a message localized from the
 /// request's Accept-Language (supported {en, uk}), demonstrating server-side localization and
-/// both transport modes. Maps to DartZen's PingContract (message + timestamp).
+/// both transport modes.
 class Ping extends $pb.GeneratedMessage {
   factory Ping({
     $core.String? message,
@@ -88,7 +88,7 @@ class Ping extends $pb.GeneratedMessage {
 }
 
 /// GET /api/v1/demo/terms response. Localized Markdown terms content, selected by the
-/// request's Accept-Language. Maps to DartZen's TermsContract (content + content_type).
+/// request's Accept-Language.
 class Terms extends $pb.GeneratedMessage {
   factory Terms({
     $core.String? content,
@@ -158,7 +158,6 @@ class Terms extends $pb.GeneratedMessage {
 
 /// GET /api/v1/demo/profile response. The authenticated user's demo profile, resolved from the
 /// session cookie (SmallRye JWT reads zen_access_token); returns a ZenError 401 when anonymous.
-/// Maps to DartZen's ProfileContract (user_id, display_name, email, bio).
 class DemoProfile extends $pb.GeneratedMessage {
   factory DemoProfile({
     $core.String? userId,
@@ -253,10 +252,10 @@ class DemoProfile extends $pb.GeneratedMessage {
   void clearBio() => $_clearField(4);
 }
 
-/// Bidirectional frame for the /api/v1/demo/ws echo endpoint. Maps to DartZen's
-/// WebSocketMessageContract. The client sends type "message"; the server echoes it back as
-/// type "echo", or replies type "error" on a decode failure. zen_demo forces the protobuf
-/// binary format for the socket, so both platforms send binary frames.
+/// Bidirectional frame for the /api/v1/demo/ws echo endpoint. The client sends type
+/// "message"; the server echoes it back as type "echo", or replies type "error" on a decode
+/// failure. zen_demo forces the protobuf binary format for the socket, so both platforms send
+/// binary frames.
 class WebSocketMessage extends $pb.GeneratedMessage {
   factory WebSocketMessage({
     $core.String? type,

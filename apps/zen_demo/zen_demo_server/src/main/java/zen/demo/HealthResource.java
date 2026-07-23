@@ -20,7 +20,7 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
  * picks JSON or Protobuf from the {@code X-Zen-Transport} header. That is the "Zen"
  * developer experience the transport mandate asks for.
  *
- * <p>Two implementation notes, both consequences of TA-1 (see BLUEPRINT.md):
+ * <p>Two implementation notes, both required by STANDARDS "OpenAPI and the REST surface":
  * <ul>
  *   <li>The entity is wrapped in {@link Response} rather than returned as a bare
  *       {@code HealthStatus}. A bare proto return type triggers Quarkus REST's build-time

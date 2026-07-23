@@ -1,5 +1,4 @@
-// Ported from ../DartZen/packages/dartzen_core/test/logging_test.dart, rewritten off
-// flutter_test onto package:test (zen_core is framework-free).
+// Runs on package:test rather than flutter_test, because zen_core is framework-free.
 import 'package:test/test.dart';
 import 'package:zen_core/src/logging/zen_logger.dart';
 

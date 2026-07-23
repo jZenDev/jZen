@@ -1,9 +1,7 @@
-// Ported from ../DartZen/packages/dartzen_transport/test/zen_codec_selector_test.dart.
-//
-// Preserves the donor's recompile-per-env/platform matrix (DartZen's
-// scripts/collect_smoke_test_coverage.sh ran `dart --define=DZ_ENV=..
-// --define=DZ_PLATFORM=..`). Here the assertion is derived from the same compile-time
-// signals, so a single test body is correct under every compile:
+// The codec selector is compile-time, so it cannot be exercised by varying a value at
+// runtime: it is proven by recompiling per ZEN_ENV/platform. The assertion below is derived
+// from the same compile-time signals the selector reads, so a single test body is correct
+// under every compile in the matrix:
 //   - default (ZEN_ENV unset -> prd) on VM  -> protobuf
 //   - --define=ZEN_ENV=dev                  -> json  (any platform)
 //   - -p chrome (web)                       -> json

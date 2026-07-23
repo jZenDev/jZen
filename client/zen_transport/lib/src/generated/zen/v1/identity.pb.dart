@@ -18,9 +18,9 @@ import 'package:protobuf/protobuf.dart' as $pb;
 export 'package:protobuf/protobuf.dart' show GeneratedMessageGenericExtensions;
 
 /// The authenticated identity / session payload. Returned by login, register, refresh, and
-/// the get-current-identity probe. Maps to DartZen's IdentityContract: `id`, a lifecycle
-/// (state + optional reason), an authority (roles + capabilities), and a creation timestamp.
-/// An Identity with an empty `id` denotes "no session" (the anonymous probe result).
+/// the get-current-identity probe: an id, a lifecycle (state + optional reason), an authority
+/// (roles + capabilities), and a creation timestamp. An Identity with an empty `id` denotes
+/// "no session" (the anonymous probe result).
 class Identity extends $pb.GeneratedMessage {
   factory Identity({
     $core.String? id,
@@ -113,7 +113,7 @@ class Identity extends $pb.GeneratedMessage {
   @$pb.TagNumber(4)
   $pb.PbList<$core.String> get roles => $_getList(3);
 
-  /// Fine-grained capabilities, if any. Empty for the role-only model ported from BugEater.
+  /// Fine-grained capabilities, if any. Empty: jZen's authorization model is role-only.
   @$pb.TagNumber(5)
   $pb.PbList<$core.String> get capabilities => $_getList(4);
 

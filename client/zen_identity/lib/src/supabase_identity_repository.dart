@@ -6,13 +6,12 @@ import 'package:zen_transport/zen_transport.dart' as pb;
 import 'identity_contracts.dart';
 import 'zen_identity_config.dart';
 
-/// A Supabase-backed [IdentityRepository] (TA-5).
+/// A Supabase-backed [IdentityRepository].
 ///
-/// This is the implementation DartZen never had: it implements the declared
-/// [IdentityRepository] interface exactly (`getCurrentIdentity`, `loginWithEmail`,
-/// `registerWithEmail`, `restorePassword`, `logout`), discarding the disjoint
-/// `FirestoreIdentityRepository` method set. It is backed by the zen-identity Supabase
-/// endpoints, called through zen_transport's dual-mode [pb.ZenClient] with typed proto
+/// It implements the declared [IdentityRepository] interface exactly (`getCurrentIdentity`,
+/// `loginWithEmail`, `registerWithEmail`, `restorePassword`, `logout`) and adds nothing to
+/// it, so the UI packages can depend on the contract alone. It is backed by the zen-identity
+/// Supabase endpoints, called through zen_transport's dual-mode [pb.ZenClient] with typed proto
 /// messages; the wire format (JSON or Protobuf) is chosen compile-time by the transport layer.
 ///
 /// The session lives in httpOnly cookies the server sets and SmallRye JWT reads; on the web

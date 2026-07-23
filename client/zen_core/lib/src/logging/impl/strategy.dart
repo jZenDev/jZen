@@ -1,6 +1,3 @@
-// Ported verbatim from
-// ../DartZen/packages/dartzen_core/lib/src/logging/impl/strategy.dart.
-
 /// Internal strategy for logging.
 abstract class ZenLoggerStrategy {
   /// Logs a [message]. [isError] indicates if it's an error level log.

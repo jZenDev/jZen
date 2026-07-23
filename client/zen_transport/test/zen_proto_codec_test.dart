@@ -1,6 +1,6 @@
 // Proves proto messages round-trip in BOTH transport modes: Protobuf binary
 // (writeToBuffer/mergeFromBuffer) and canonical proto3 JSON
-// (toProto3Json/mergeFromProto3Json). Replaces the donor's msgpack/json round-trip suites.
+// (toProto3Json/mergeFromProto3Json).
 import 'dart:convert';
 
 import 'package:fixnum/fixnum.dart';

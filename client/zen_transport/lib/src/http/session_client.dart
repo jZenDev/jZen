@@ -1,5 +1,5 @@
 // The compile-time platform seam for session persistence, structured exactly like
-// zen_codec_selector.dart (TA-7, docs/architecture/STANDARDS.md): a default library that
+// zen_codec_selector.dart (docs/architecture/STANDARDS.md): a default library that
 // imports the stub, with `dart.library.io` / `dart.library.html` swapping in the native or
 // web implementation so the toolchain tree-shakes the wrong platform's code out of each bundle.
 //

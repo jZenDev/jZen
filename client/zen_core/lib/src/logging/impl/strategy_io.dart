@@ -1,5 +1,3 @@
-// Ported verbatim from
-// ../DartZen/packages/dartzen_core/lib/src/logging/impl/strategy_io.dart.
 import 'dart:io';
 
 import 'strategy.dart';

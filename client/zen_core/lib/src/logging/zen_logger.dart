@@ -1,5 +1,4 @@
-// Ported from ../DartZen/packages/dartzen_core/lib/src/logging/zen_logger.dart.
-// The conditional import is preserved verbatim: it tree-shakes the platform-specific
+// The conditional import below tree-shakes the platform-specific
 // strategy so only one is compiled in (stub / dart:io / Flutter dart:developer).
 import 'impl/strategy_stub.dart'
     if (dart.library.io) 'impl/strategy_io.dart'

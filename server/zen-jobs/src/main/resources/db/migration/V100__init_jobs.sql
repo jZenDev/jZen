@@ -8,9 +8,9 @@
  *
  * This table is the reason scheduled work is a guarantee rather than a hope: last_run_at is what
  * due-ness is computed from, so a tick missed while the service was scaled to zero is caught up
- * on the next one instead of being lost. Replaces the donor's Firestore `jobs` collection
- * (../DartZen/packages/dartzen_jobs/lib/src/models/job_config.dart); its dependencies, priority,
- * skipDates, startAt/endAt, and maxRetries columns are deliberately not carried over.
+ * on the next one instead of being lost. A job carries an interval, an enabled flag, and its run
+ * outcome, and nothing more: retries come from the external scheduler's at-least-once delivery
+ * plus the next tick.
  *
  * Rows are seeded from the registered ZenJob beans at startup and owned by the database
  * thereafter, so a schedule change or an emergency stop is an UPDATE, not a redeploy.

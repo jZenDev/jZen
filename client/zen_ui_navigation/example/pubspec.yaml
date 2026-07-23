@@ -33,7 +33,7 @@ dev_dependencies:
   flutter_lints: ^6.0.0
 
 # `generate: true` drives `flutter gen-l10n` from l10n.yaml. The l10n JSON assets are gone:
-# generated strings are Dart code, not a runtime asset load (ADR-009, reinforcing TA-7).
+# generated strings are Dart code, not a runtime asset load (ADR-009).
 flutter:
   uses-material-design: true
   generate: true

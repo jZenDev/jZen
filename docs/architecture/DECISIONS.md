@@ -6,6 +6,153 @@ here with its justification so the reasoning is never lost. Newest first.
 
 Each entry: **what changed**, the **docs it supersedes**, and the **justification**.
 
+> **This log is a sealed archive (ADR-011).** An accepted entry is never retroactively edited: it
+> is the record of what was decided, on the evidence available then. Later thinking arrives as a
+> *new* entry that supersedes it, which is why the supersession chains below are readable at all.
+> One consequence is deliberate and worth stating: entries written during the project's first phase
+> name the systems jZen was originally derived from, because in several cases those systems *were*
+> the evidence. Step 8's verification search excludes this file for exactly that reason.
+
+---
+
+## ADR-011 — jZen is standalone; the decision log is sealed rather than rewritten
+
+**Date:** 2026-07-23. **Status:** accepted. **Discharges:** ROADMAP Step 8.
+
+### Decision
+
+Step 8 removes every trace of the systems jZen was built from, so that the codebase explains itself
+on its own terms. Five coupled choices, one of which is a genuine conflict between two rules this
+project holds:
+
+**1. The strip covers everything a reader or a contributor sees.** Source comments, `pom.xml` and
+`pubspec.yaml` prose, `application.properties`, `supabase/config.toml`, the `.proto` files,
+`MANIFESTO` / `BLUEPRINT` / `ROADMAP` / `STANDARDS`, both `CHANGELOG.md` files, the agent-facing
+`CLAUDE.md` and `.claude/skills/`, and one pair of `.arb` files whose text a *user* could read.
+
+**2. `DECISIONS.md` is sealed, not rewritten — and this is the one real decision in the step.**
+ROADMAP Step 8 says to strip every reference, and its verification line says a grep must return
+nothing. Applied literally to this log, that destroys the thing the log exists for. Its own charter
+is "every drift from a prior decision is recorded here with its justification so the reasoning is
+never lost", and in several entries the justification *is* the evidence: ADR-010 is a census whose
+subjects are package names, ADR-008 declines a specific job-type triad, ADR-009 retires a package
+because the constraint that motivated it belonged to another system. Rewriting those leaves
+justifications that no longer parse - "not ported", but what wasn't? - and deleting them reopens
+decisions that were settled on evidence no longer in the tree.
+
+Four things resolve it, and they all point the same way:
+
+- **Step 8's own scope clause already excluded this file.** It names "source comments, `pom.xml` /
+  `pubspec.yaml` prose, `application.properties` comments, and these **four** docs". There are five
+  architecture documents; "the four architecture docs" has meant `MANIFESTO`, `BLUEPRINT`,
+  `ROADMAP`, `STANDARDS` since ROADMAP Step 0, with `DECISIONS` always cited separately. The scope
+  clause is precise and the verification line is loose, so the verification line is what gets fixed.
+- **ADR-010 pt.10 already did the work this depends on.** It deliberately phrased every
+  forward-looking trigger in jZen's own terms "so Step 8 can strip citations without re-opening any
+  of these decisions." The *live* content of this log is therefore already standalone; what remains
+  is retrospect, which is the part an archive is for.
+- **The log already has this norm.** ADR-009 kept ADR-004 "in this log unedited, as the record of a
+  deferral that was honoured rather than forgotten."
+- **A rewritten archive cannot be audited.** Once an accepted entry can be edited to match present
+  circumstances, no entry can be trusted to say what was actually decided - and that failure is
+  silent, which is the kind this project rejects everywhere else.
+
+**3. The verification is a check that was run, not a standing gate.** It searches every **tracked**
+file and excludes exactly one path, this log. Tracked rather than working-tree, so an untracked
+local file cannot report a failure no clone would see.
+
+Installing it as a permanent Taskfile target was tried and reverted. Step 8 is terminal: nothing in
+the project produces these references any more, so the target would guard a failure mode that has
+stopped occurring - and, holding the pattern it searches for, it would have had to exempt its own
+definition, adding a second exemption that existed only because the first one did. The rule it
+would enforce is better placed where a contributor meets it: STANDARDS, and `CLAUDE.md`'s
+instruction to explain things on jZen's own terms. ROADMAP Step 8 states the search in words rather
+than quoting a pattern that would match the document quoting it.
+
+**4. The Technical Assessments section is deleted, and its rules are folded into STANDARDS.** TA-1
+through TA-7 documented gaps between what jZen needed and what it started from, which is a category
+that stops existing at this step. But three carried live rules `STANDARDS` did not yet state, and
+deleting the section without folding them in would have lost a rule while deleting a citation:
+
+| | Disposition |
+|---|---|
+| TA-1 | **Folded.** The `Response` + `@APIResponse(@Schema(ref=…))` + static `META-INF/openapi.yaml` merge is now STANDARDS "OpenAPI and the REST surface". Its other two findings (no server-side `quarkus-rest-jackson`; Jandex on every library module) were already carried. |
+| TA-2 | **Folded.** "Every endpoint declares its own request and response messages; no generic payload type and no envelope" is now under STANDARDS "Source of truth". |
+| TA-3 | **Deleted.** Closed by ADR-009; the package it described no longer exists and no rule survives it. |
+| TA-4 | **Reworded in place.** STANDARDS "Deployment model" already carried the rule; it now states the constraint (nothing may sit between the client and Cloud Run that strips or renames cookies, and what it would cost to introduce one) instead of the history. |
+| TA-5 | **Deleted.** A gap resolved in code at step 3; no rule survives it. |
+| TA-6 | **Folded.** The client's two invariants - default format from `selectDefaultCodec()`, and a decode failure surfacing a `ZenError` rather than a null - are now STANDARDS "Failures surface; nothing is swallowed", together with the rule that no task swallows a failure. |
+| TA-7 | **Deleted as a duplicate.** It was already restated verbatim as STANDARDS "Client config is compile-time (non-negotiable)". |
+
+**The `TA-N` vocabulary had spread well beyond the section**: roughly 45 tracked files referenced an
+assessment by number, including `.claude/skills/`, `Taskfile.yml`, `admin/`, Java sources, Dart
+sources, tests, and YAML. None was caught by the reference grep, and every one would have become a
+pointer into a section that no longer exists. All were repointed to the rule that now carries them.
+
+**5. `CLAUDE.md` is in scope, though it is not one of the four docs.** It is the first file every
+future contributor and agent reads, and it carried the "cite the source - for now" instruction. A
+standalone product whose entry-point document tells the next contributor to cite sources that no
+longer exist would undo this step at the first commit after it.
+
+### What this supersedes, and why
+
+- **STANDARDS "Fidelity to the source"** → **retired, which is what it was written to be.** It
+  said so itself: "These citations are deliberate, removable scaffolding: ROADMAP step 8 strips
+  every reference." Its read-only rule generalizes and survives as STANDARDS "Work happens inside
+  this repository"; its do-not-carry-bugs-forward rule survives as the concrete invariants in
+  "Failures surface; nothing is swallowed"; the citation rule is gone.
+- **ROADMAP Step 8's verification, "`grep -ri …` (outside git history) returns nothing"** →
+  **restated over tracked files, excluding this log.** *Why:* the original could not be satisfied as
+  written without destroying this archive; and taken over the working tree rather than tracked
+  files, it could be held red by a file no clone contains. It is also no longer quoted verbatim in
+  the ROADMAP, because a document recording the removal of a pattern necessarily contains that
+  pattern - the check is described in words instead.
+- **MANIFESTO "Provenance, and its expiry"** → **deleted, having expired exactly as it predicted.**
+  It promised that "the final roadmap step strips every reference and rewrites these documents to
+  stand on their own; from that point jZen has only its own philosophy, its own history, and its own
+  name." That point is now.
+- **BLUEPRINT "Technical Assessments" (TA-1..TA-7)** → **deleted, with three rules folded into
+  STANDARDS** per the table above. Earlier entries in this log refer to these by number; that table
+  is where those references resolve from now on.
+- **Both `CHANGELOG.md` files' `0.1.0` entries** → **rewritten** to describe what the release
+  contains rather than what it was derived from. *Why:* a changelog ships inside the published
+  package to consumers with no knowledge of this project's history, and `0.1.0` is unreleased, so
+  no published record is being altered.
+- **`client/pubspec.yaml`'s note recording `zen_localization`'s retirement** (ADR-009) →
+  **deleted.** *Why:* a workspace list should describe the packages that exist. ADR-009 is the
+  permanent record of the one that does not.
+
+### Consequence
+
+No tracked file outside this log names a system jZen was built from. The vocabulary is uniformly
+jZen's, which is what makes **ROADMAP Step 9 (READMEs) writable** - there is now exactly one way to describe this codebase, so a README cannot
+contradict the documents beneath it.
+
+**No behaviour changed.** The diff is comments, prose, and regenerated generated-comments. The
+seven references inside tracked `.pb.dart` files were cleared by fixing `common.proto`,
+`demo.proto`, and `identity.proto` and running `task generate:proto` - never by editing generated
+output, which STANDARDS forbids and `sync:contracts` is built to catch. **No structural change:**
+no framework module, no Taskfile target, **no Flyway band claimed** (200-299 remains free), no new
+dependency in any `pom.xml` or `pubspec.yaml`. Lockstep versioning is unchanged at `0.1.0`.
+
+**One rule was earned the hard way and is now written down.** The three Flyway migrations carry
+comment blocks, and editing them changed their checksums - Flyway hashes the whole file, comments
+included - so every database that had already applied them refused to boot. It surfaced as a red
+`test:e2e` against the local stack. Because jZen has never been deployed or published, no database
+beyond a local one was affected and the clean comments were kept; a local reset was the entire cost.
+This was the last moment that was true, and STANDARDS "Database migrations" now says so: **an
+applied migration is immutable, including its comments.** Exempting `db/migration/*.sql` from the
+verification was considered and rejected - the references there were pure provenance carrying no
+reasoning, so removing them cost nothing, and a check that passes while the tree still names those
+systems would be decoration. **This log is the only exclusion, and it is argued on archival grounds
+rather than convenience.**
+
+**One item is deliberately left alone.** `ZenTransportFormat.parseOrNull` accepts `"msgpack"` as an
+alias for the binary format. No test asserts it and no jZen client sends it, but removing the branch
+would change what an inbound `X-Zen-Transport: msgpack` resolves to (binary today, JSON after), and
+this step changes no behaviour. Its comment no longer explains the value by naming where it came
+from. Removing the alias is a small behavioural decision for a later step.
+
 ---
 
 ## ADR-010 — The deferred donor packages are settled: a complete census, six "never", and nothing ported

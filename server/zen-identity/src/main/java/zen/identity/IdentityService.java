@@ -17,9 +17,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 /**
- * Orchestrates the identity flows over Supabase Auth. A focused re-implementation of
- * ../BugEater/.../auth/AuthService.java (the donor is large and couples in the discarded
- * Qute {@code *PageResource} surface): call Supabase, reconcile the local {@code users} row,
+ * Orchestrates the identity flows over Supabase Auth: call Supabase, reconcile the local
+ * {@code users} row,
  * hand the resulting session back to {@code AuthResource} to set cookies and map to proto.
  *
  * <p>The outbound Supabase call runs outside any DB transaction; the local upsert is a

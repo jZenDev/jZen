@@ -14,12 +14,10 @@ import zen.identity.event.DeliveryReceipt;
 
 /**
  * GDPR Art. 5(1)(e) data retention: warn the owners of long-dormant accounts twice, then anonymise
- * what is still dormant. A focused re-implementation of the donor's retention pass
- * (../BugEater/bugeater-quarkus/src/main/java/jlogicsoftware/user/UserCleanupService.java and
- * .../DataRetentionJob.java), reduced to the part the {@code users} table actually models: the two
- * warning timestamps and the terminal anonymisation. The donor's fourth phase - deleting
- * unconfirmed identities through the Supabase admin API - needs a service-role key and is not part
- * of this work (DECISIONS ADR-007).
+ * what is still dormant. Scoped to what the {@code users} table models: the two warning
+ * timestamps and the terminal anonymisation. Deleting the identity itself from {@code auth.users}
+ * is deliberately out of scope - it needs a service-role key and reaches into a table Supabase
+ * owns, not jZen (DECISIONS ADR-007).
  *
  * <p><strong>Finding and stamping are separate operations, and the warning happens in between</strong>
  * (ADR-008). {@code findAccountsDue*} only reads; {@link UserRetentionJob} fires the warning and

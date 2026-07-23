@@ -1,4 +1,3 @@
-// Ported from ../DartZen/packages/dartzen_core/test/zen_logger_test.dart.
 import 'package:test/test.dart';
 import 'package:zen_core/src/logging/impl/strategy_io.dart'
     show getStrategy, ZenLoggerStrategyIO;

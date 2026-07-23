@@ -32,7 +32,7 @@ import org.eclipse.microprofile.openapi.annotations.parameters.RequestBody;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 
 /**
- * The identity REST surface, backing DartZen's {@code IdentityRepository} (TA-5) over Supabase.
+ * The identity REST surface over Supabase, backing the client's {@code IdentityRepository}.
  *
  * <p>This is a framework resource: it lives in zen-identity (a Jandex-indexed library) so that
  * every jZen application inherits the auth surface just by depending on the module, instead of
@@ -41,11 +41,11 @@ import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
  * ({@code Identity}, {@code LoginRequest}, ...) through its static {@code META-INF/openapi.yaml}.
  *
  * <p>Every proto-returning method returns {@link Response} wrapping the proto (a bare proto
- * return type triggers Quarkus's build-time Jackson writer and 500s, TA-1) and declares its
+ * return type triggers Quarkus's build-time Jackson writer and 500s) and declares its
  * OpenAPI schema by {@code $ref}. The wire format (JSON or Protobuf) is chosen by the
  * {@code zen.transport} seam from {@code X-Zen-Transport}; the method never names it.
  *
- * <p>Cookies are the un-hacked TA-4 set: {@code zen_access_token} (SmallRye JWT reads it via
+ * <p>One normally-named cookie per token: {@code zen_access_token} (SmallRye JWT reads it via
  * {@code mp.jwt.token.cookie}), {@code zen_refresh_token}, and a JS-readable {@code XSRF-TOKEN}.
  * No {@code __session}, no {@code access|refresh} packing.
  */

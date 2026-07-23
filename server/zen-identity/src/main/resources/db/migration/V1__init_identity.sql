@@ -1,17 +1,16 @@
 /*
- * Identity schema. Ports the users table from
- * ../BugEater/bugeater-quarkus/src/main/resources/db/migration/V1__init.sql, dropping every
- * learning-domain table (courses, modules, quizzes, xp, ...). Only the users table is
- * identity infrastructure.
+ * Identity schema: the users table, the application profile keyed by the Supabase identity.
+ * This is framework infrastructure only; an application's own tables go in the application
+ * version band (see STANDARDS "Database migrations").
  *
  * The id is the Supabase auth.users.id (assigned from the JWT sub). No foreign key to
  * auth.users: the @QuarkusTest Dev Services database is plain PostgreSQL with no auth schema,
  * and Supabase owns that table's lifecycle anyway.
  *
- * Beyond the donor's V1 columns this adds four first-class product columns (present in the
- * donor entity via later migrations): is_premium (payment) and analytics_consent /
- * deletion_warning_sent_at / final_warning_sent_at (GDPR data retention). See
- * docs/architecture/BLUEPRINT.md "Persistence".
+ * Beyond the identity columns, four are first-class cross-cutting product concerns:
+ * is_premium (payment) and analytics_consent / deletion_warning_sent_at /
+ * final_warning_sent_at (GDPR data retention). See docs/architecture/BLUEPRINT.md
+ * "Persistence".
  */
 
 DO $$

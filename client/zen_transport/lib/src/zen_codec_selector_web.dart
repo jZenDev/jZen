@@ -1,5 +1,3 @@
-// Ported verbatim from
-// ../DartZen/packages/dartzen_transport/lib/src/zen_codec_selector_web.dart.
 import 'zen_transport_header.dart';
 
 /// Web platform codec selector.

@@ -10,10 +10,10 @@ option java_package = "zen.proto.v1";
 option java_multiple_files = true;
 option java_outer_classname = "CommonProto";
 
-// Uniform error payload. Replaces DartZen's `{id, status, data, error}` envelope
-// (dropped): HTTP status carries the status, the X-Request-ID header carries the request
-// id, and this message carries the error detail. See docs/architecture/BLUEPRINT.md
-// (TA-2) for why every endpoint declares typed messages instead of an untyped envelope.
+// Uniform error payload. jZen carries no request/response envelope: HTTP status carries the
+// status, the X-Request-ID header carries the request id, and this message carries the error
+// detail. See docs/architecture/STANDARDS.md "Source of truth" for why every endpoint
+// declares its own typed messages instead of an untyped payload.
 message ZenError {
   // Machine-readable error code, e.g. "validation", "unauthorized", "not_found".
   string code = 1;

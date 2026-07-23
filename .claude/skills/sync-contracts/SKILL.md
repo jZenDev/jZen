@@ -34,5 +34,5 @@ check.
 
 Generated JSON is proto3 canonical JSON (lowerCamelCase field names) from `JsonFormat`. That's the
 same shape Dart's `protoc_plugin` and `openapi-typescript` emit, so all three languages agree. When
-hand-authoring OpenAPI component schemas (see the `add-endpoint` skill / TA-1), match those camelCase
+hand-authoring OpenAPI component schemas (see the `add-endpoint` skill), match those camelCase
 names.

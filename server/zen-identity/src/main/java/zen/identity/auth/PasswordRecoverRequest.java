@@ -1,7 +1,7 @@
 package zen.identity.auth;
 
 /**
- * Request body for {@code POST /recover}. Ported from ../BugEater/.../auth/PasswordRecoverRequest.java
- * (outbound record; the donor's bean-validation annotations are dropped, see SupabaseTokenRequest).
+ * Request body for {@code POST /recover}. An outbound record; see SupabaseTokenRequest for why
+ * these carry no bean-validation annotations.
  */
 public record PasswordRecoverRequest(String email) {}

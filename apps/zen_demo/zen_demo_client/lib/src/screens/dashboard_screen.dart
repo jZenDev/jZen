@@ -8,8 +8,7 @@ import 'package:zen_transport/zen_transport.dart';
 import '../l10n/generated/demo_localizations.dart';
 import '../providers.dart';
 
-/// The demo hub, ported from
-/// ../DartZen/apps/ZenDemo/dartzen_demo_client/lib/src/screens/main_screen.dart: it pings the
+/// The demo hub: it pings the
 /// server in both transport modes, runs the WebSocket echo, and switches language - proving the
 /// dual-mode transport, the WebSocket product feature, and a localized surface from one screen.
 class DemoDashboardScreen extends ConsumerStatefulWidget {

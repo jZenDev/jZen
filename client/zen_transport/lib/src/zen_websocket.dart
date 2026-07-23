@@ -1,7 +1,5 @@
-// Re-architected from
-// ../DartZen/packages/dartzen_transport/lib/src/internal/websocket/zen_websocket.dart.
-// Sends and receives typed protobuf messages (no {id,status,data,error} envelope) via
-// ZenProtoCodec, with the wire format chosen by selectDefaultCodec().
+// Sends and receives typed protobuf messages (there is no envelope) via ZenProtoCodec, with
+// the wire format chosen by selectDefaultCodec().
 import 'dart:async';
 import 'dart:typed_data';
 

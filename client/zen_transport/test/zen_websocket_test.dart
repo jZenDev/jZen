@@ -1,6 +1,4 @@
-// Re-architected from
-// ../DartZen/packages/dartzen_transport/test/zen_websocket_test.dart. Uses an in-memory
-// fake channel to exercise the typed send/receive path (no envelope).
+// Uses an in-memory fake channel to exercise the typed send/receive path (no envelope).
 import 'dart:async';
 import 'dart:typed_data';
 

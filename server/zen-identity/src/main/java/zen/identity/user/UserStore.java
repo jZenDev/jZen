@@ -39,10 +39,8 @@ public class UserStore {
    * read a header from.
    *
    * <p>Signing in also clears any pending data-retention warnings: the account is demonstrably
-   * active again, so it must fall out of the deletion pipeline. The donor left the timestamps set
-   * and went on to delete accounts whose owners had come back
-   * (../BugEater/bugeater-quarkus/src/main/java/jlogicsoftware/user/UserCleanupService.java:143);
-   * that is a bug, and STANDARDS forbids carrying donor bugs across.
+   * active again, so it must fall out of the deletion pipeline. Leaving the stamps set would
+   * anonymise an account whose owner had demonstrably come back.
    */
   @Transactional
   public Upsert upsertOnLogin(UserPayload payload, String preferredLanguage) {

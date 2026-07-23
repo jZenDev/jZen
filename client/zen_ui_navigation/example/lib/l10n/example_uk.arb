@@ -2,7 +2,7 @@
   "@@locale": "uk",
 
   "homeTitle": "Головна",
-  "homeWelcome": "Ласкаво просимо до демонстрації навігації DartZen",
+  "homeWelcome": "Ласкаво просимо до демонстрації навігації jZen",
   "homeDescription": "Цей застосунок демонструє можливості адаптивної навігації пакета zen_ui_navigation.",
   "homeFeaturesTitle": "Можливості:",
   "homeFeaturesAdaptive": "✓ Адаптивна навігація (мобільні, планшети, комп'ютери)",

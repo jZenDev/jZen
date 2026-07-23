@@ -2,9 +2,7 @@
 ///
 /// One header (`X-Zen-Transport`) negotiates between canonical proto3 JSON and Protobuf
 /// binary over the same typed endpoints. Callers send and receive typed protobuf messages;
-/// there is no `{id,status,data,error}` envelope.
-///
-/// Re-architected from ../DartZen/packages/dartzen_transport.
+/// there is no envelope.
 library;
 
 export 'src/generated/zen/v1/common.pb.dart';

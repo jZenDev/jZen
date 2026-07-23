@@ -4,9 +4,7 @@ import jakarta.persistence.AttributeConverter;
 
 /**
  * Application-managed user role. Roles live in the {@code users} table, never in the JWT
- * (see {@code RoleAugmentor}). Ported from
- * ../BugEater/bugeater-quarkus/src/main/java/jlogicsoftware/application/UserRole.java (the
- * donor's Eclipse JDT {@code @Nullable} annotations are dropped; jZen does not depend on JDT).
+ * (see {@code RoleAugmentor}).
  */
 public enum UserRole {
   USER(Names.USER),

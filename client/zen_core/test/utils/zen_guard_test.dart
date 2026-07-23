@@ -1,4 +1,3 @@
-// Ported from ../DartZen/packages/dartzen_core/test/utils/zen_guard_test.dart.
 import 'package:test/test.dart';
 import 'package:zen_core/src/result/zen_error.dart';
 import 'package:zen_core/src/utils/zen_guard.dart';

@@ -9,9 +9,12 @@ The rules that keep the monorepo honest. Philosophy is in
 - **`Taskfile.yml` is the only orchestrator.** It triggers native tools; it never
   replaces them. `mvnw` owns Java resolution, `dart pub` owns Dart, `pnpm` owns
   TypeScript. A task that reimplements what a package manager already does is a bug.
-- This replaces DartZen's Melos (`../DartZen/melos.yaml` + ~170 lines of `melos.scripts`
-  in `../DartZen/pubspec.yaml:46-217`). Do not reintroduce Melos, Gradle-as-orchestrator,
-  or any second build driver.
+- **One orchestrator, and only one.** Do not introduce Melos, Gradle-as-orchestrator, or any
+  second build driver beside the Taskfile.
+- **No task ever swallows a failure.** A task that runs a test suite propagates its exit code;
+  `|| true`, a discarded status, or a loop that keeps going after a red suite turns the gate
+  into decoration. `task test:client` iterating workspace members is the case to watch, because
+  a per-member loop is exactly where a lost exit code hides.
 - Run `task doctor` after cloning. It distinguishes tools the Java build needs from the
   extra tools (`protoc`, `protoc-gen-dart`) that only Dart proto codegen needs — the
   Java build resolves `protoc` from Maven Central and needs no system install.
@@ -98,6 +101,13 @@ Two rules the walking skeleton established, both mandatory for every backend mod
   A new library claims the next free hundred *in this table* as part of its first migration, so two
   libraries developed in parallel cannot both land a `V3`. Applications start at 1000 so no library
   can ever grow into an application's numbering. See [`DECISIONS.md`](./DECISIONS.md) ADR-008.
+- **An applied migration is immutable — including its comments.** Flyway checksums the whole file,
+  so correcting a typo in a comment block is indistinguishable from rewriting the DDL: every
+  database that already ran it fails validation at startup and will not boot until it is repaired.
+  Once a migration has run anywhere but a disposable local database, it is frozen; a change to the
+  schema is a new version, and a comment that has become wrong is left wrong or corrected in the
+  code the migration supports. jZen deliberately does not set `validate-on-migrate=false`, which is
+  what would hide this.
 
 ## Scheduled work
 
@@ -120,6 +130,36 @@ below: in-process *time* is invalid under scale-to-zero. Three rules, all enforc
   verbs, status codes).
 - Everything else — Java DTOs, Dart messages, `openapi.json`, TS types — is **derived**.
   Editing a derived artifact by hand is a defect, and `sync:contracts` will catch it.
+- **Every endpoint declares its own request and response messages. There is no generic
+  payload type and no envelope.** Per-endpoint messages in `proto/zen/v1/<domain>.proto`;
+  cross-cutting shapes once in `common.proto` (`ZenError`, `PageRequest`); **MapStruct** maps
+  the Panache entity ⇄ the proto message so a resource method only ever names the domain
+  model. This is a bounded cost paid once per endpoint, and it is what buys the contract-first
+  guarantee: an untyped `data` field would put the payload shape back outside the contract,
+  where nothing can generate a client from it. Correspondingly there is nowhere for an
+  envelope to live, and none is needed — HTTP status carries the status, `X-Request-ID`
+  carries the request id, and `ZenError` carries the error.
+
+## OpenAPI and the REST surface
+
+**SmallRye cannot cleanly introspect a protobuf-generated class.** Those classes expose
+builder internals, and the introspector documents them as schema fields: a resource returning
+a bare proto message produces upwards of 130 garbage schemas (`UnknownFieldSet`,
+`descriptorForType`, …) instead of the one real one. This is a property of the two libraries,
+not a bug to wait out, so jZen works around it structurally and every resource follows the
+same shape:
+
+- **A resource method returns `jakarta.ws.rs.core.Response`, never a bare proto message.**
+  `Response` is opaque to the introspector, so nothing gets scanned.
+- **The response schema is declared by reference**, `@APIResponse(… @Schema(ref = "…"))`.
+- **The clean component schema is supplied by the application's static
+  `META-INF/openapi.yaml`**, over which SmallRye merges its annotation-scanned *paths*. Paths
+  come from the resource, schemas come from the app - including for framework resources like
+  `AuthResource`, whose paths ship in the library and whose schemas the app supplies.
+
+The result is an `openapi.json` carrying exactly the declared schemas, which
+`openapi-typescript` turns into usable TS types. A bare-proto return type also fails at
+runtime, not just in the docs: it triggers Quarkus's build-time Jackson writer and 500s.
 
 ## Package modularity (hybrid, not monolith)
 
@@ -168,20 +208,25 @@ developers must never have to reconcile "jZen v2" with "zen_core 1.2.1, zen_tran
   language's suite. Never the "clone-and-modify" anti-pattern: fix the shared package,
   release the product, let consumers pick up the new version.
 
-## Fidelity to the source
+## Failures surface; nothing is swallowed
 
-- **The donor repos are read-only.** `../DartZen` and `../BugEater` are reference sources.
-  Never modify, move, delete, or even reformat a file in either — all work happens inside
-  `jZen/`. They are studied and copied from, never touched.
-- **Cite the source — for now.** During the migration every ported decision names the
-  legacy file it came from; unsourced logic is suspect ("logic not found"). These
-  citations are deliberate, removable scaffolding: ROADMAP step 8 strips every DartZen /
-  BugEater reference and makes jZen a standalone product with its own docs.
-- **Do not carry over donor bugs.** Named examples, all documented in
-  [`BLUEPRINT.md`](./BLUEPRINT.md): DartZen's `test` script swallows Flutter failures
-  with `|| true` (jZen's `task test:client` does not); `ZenClient` swallows decode errors
-  (**TA-6**, fix on port); the `__session` cookie packing is a Firebase-Hosting
-  workaround (**TA-4**, dropped).
+A silent failure is worse than a loud one, because it removes the signal that something needs
+fixing. Three places this is a stated rule rather than a habit:
+
+- **The client never swallows a decode failure.** `ZenClient` returns a `ZenError`
+  (`common.proto`) through `ZenResult.err` when a response body cannot be decoded — never a
+  `null` payload that a caller reads as an empty-but-valid result. A caller must be able to
+  tell "the server said nothing" from "I could not understand what the server said".
+- **The client's default wire format is computed, never hardcoded.** It comes from
+  `selectDefaultCodec()`, the compile-time platform selector. A literal default silently
+  disables the negotiation seam on whichever platform it is wrong for.
+- **No task swallows a failure** — see "Orchestration" above.
+
+## Work happens inside this repository
+
+All work happens inside `jZen/`. Nothing in a build, a task, or a tool run reaches outside the
+repository root to modify, move, or reformat a file. Anything jZen depends on comes in as a
+declared dependency, never as an edit somewhere else on the machine.
 
 ## Client config is compile-time (non-negotiable)
 
@@ -190,7 +235,7 @@ developers must never have to reconcile "jZen v2" with "zen_core 1.2.1, zen_tran
   what lets the toolchain tree-shake native-only code (e.g. the Protobuf binary path) out
   of the JS/Wasm web bundle and web-only code out of the AOT-native binary. No native code
   in a web bundle, and vice versa. Runtime config on the client is forbidden — it defeats
-  tree-shaking. See **TA-7**.
+  tree-shaking. This is the one client/server asymmetry the architecture mandates on purpose.
 - The **server** uses runtime config (MicroProfile / `application.properties`): one binary
   serves both native and web clients, and it has no bundle to shrink.
 
@@ -222,9 +267,13 @@ developers must never have to reconcile "jZen v2" with "zen_core 1.2.1, zen_tran
   [`DECISIONS.md`](./DECISIONS.md) ADR-008. A framework `@Scheduled` binding survives only as
   the `%dev` convenience that drives the same tick locally; it defaults to `off` and is pinned
   off in `%prod`, where it provably cannot fire.
-- **No Firebase Hosting.** jZen serves Cloud Run directly. This is load-bearing: it is
-  why normal cookie names and proactive auth work (**TA-4**). Do not reintroduce a
-  cookie-stripping edge without also reintroducing the `__session` hack.
+- **Nothing sits between the client and Cloud Run.** jZen is served directly, and that is
+  load-bearing rather than incidental: it is why each token can live in its own
+  normally-named cookie that SmallRye JWT parses on its own (`mp.jwt.token.cookie`) with
+  `quarkus.http.auth.proactive=true`. An edge that strips or renames cookies breaks the whole
+  auth path, and the only way back is to pack the tokens into whatever single cookie survives,
+  add a filter to unpack them, and turn proactive auth off so login and register are not 401'd
+  before that filter runs. Do not introduce such an edge without accepting all three.
 - **Native prod builds.** Prod ships a native image (`task build:server:native` →
   `Dockerfile.native-micro`). Container builds are pinned to `linux/amd64` so the image
   matches Cloud Run regardless of the developer's machine. The native image is also what
@@ -233,11 +282,9 @@ developers must never have to reconcile "jZen v2" with "zen_core 1.2.1, zen_tran
 
 ## Frontend split
 
-- **Product UI:** the DartZen Flutter packages, for mobile / desktop / web.
+- **Product UI:** the `zen_ui_*` Flutter packages, for mobile / desktop / web.
 - **Admin UI:** a `react-admin` framework scaffold (`@jzen/admin-core` in `admin/`:
   data provider, auth provider, login page) that each app assembles into its own panel
   under `apps/<app>/<app>_admin` (ADR-005), consuming the same OpenAPI-documented REST
-  API via generated `openapi-typescript` types. Scaffolded clean — nothing in BugEater's
-  three React apps used react-admin or had an admin screen, and their conventions conflict
-  three ways across React 18/19.
+  API via generated `openapi-typescript` types.
 - Admin always speaks `X-Zen-Transport: json`; Protobuf binary is for native apps only.

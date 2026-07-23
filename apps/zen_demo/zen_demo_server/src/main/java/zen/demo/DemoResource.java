@@ -30,14 +30,12 @@ import org.eclipse.microprofile.openapi.annotations.media.Schema;
 import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
 
 /**
- * The reference app's demo REST surface (ROADMAP step 4), replacing the deleted
- * ../DartZen/apps/ZenDemo/dartzen_demo_server Shelf routes with jZen-native endpoints:
- * {@code /ping} (../dartzen_demo_server/lib/src/dartzen_demo_server.dart GET /ping),
- * {@code /terms} (GET /terms), and {@code /profile} (GET /profile/{userId}). Auth itself is
- * reused from {@code AuthResource}; the donor's Firebase {@code /login} is not ported.
+ * The reference app's demo REST surface (ROADMAP step 4): {@code /ping}, {@code /terms}, and
+ * {@code /profile}. Auth itself is not redeclared here - it is reused from the framework's
+ * {@code AuthResource}.
  *
  * <p>Same rules as {@link HealthResource}: every method returns {@link Response} wrapping a proto
- * message (a bare proto return type triggers Quarkus's build-time Jackson writer and 500s, TA-1)
+ * message (a bare proto return type triggers Quarkus's build-time Jackson writer and 500s)
  * and declares its OpenAPI schema by {@code $ref} into {@code META-INF/openapi.yaml}. The
  * {@code zen.transport} seam picks JSON or Protobuf from {@code X-Zen-Transport}; the method
  * never names a wire format. This is what lets the demo prove a typed round-trip in both modes.

@@ -290,9 +290,12 @@ the owner policy on Supabase, and is a no-op on plain PostgreSQL so tests still 
 **Compliance columns are first-class.** The `users` table has zero learning-domain columns,
 but it deliberately keeps two cross-cutting product concerns from the donor entity: **payment**
 (`is_premium`) and **GDPR / data retention** (`analytics_consent`, `deletion_warning_sent_at`,
-`final_warning_sent_at`). These are defaulted/nullable now and their behavior is wired in
-later steps (email deletion warnings in step 6, payments in step 7); keeping the columns from
-the start avoids a schema migration when that behavior lands.
+`final_warning_sent_at`). The retention columns are written by `UserRetentionService` as of step 6.
+`is_premium` is **already load-bearing** - it exempts an account from the retention cycle and is
+administered through `AdminUserResource` - but a **payment flow is application work, not framework
+work** (see [`DECISIONS.md`](./DECISIONS.md) ADR-010): an application that sells something
+implements checkout in its own server, so no step of this roadmap delivers one. The column stays
+because the exemption needs it, and keeping it from the start avoided a schema migration.
 
 ## Scheduled work
 

@@ -16,12 +16,19 @@ class LoginScreen extends ConsumerStatefulWidget {
   final VoidCallback? onRegisterClick;
   final VoidCallback? onForgotPasswordClick;
 
+  /// Optional informational widget shown beneath the title, before the fields. The screen ships
+  /// no wording of its own, so an app that needs to say something on the login page (a demo
+  /// hint, a maintenance notice) supplies it here already localized. Null renders nothing, so
+  /// the default screen is unchanged.
+  final Widget? banner;
+
   const LoginScreen({
     super.key,
     this.onLoginSuccess,
     this.onLoginSuccessWithIdentity,
     this.onRegisterClick,
     this.onForgotPasswordClick,
+    this.banner,
   });
 
   @override
@@ -104,6 +111,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     textAlign: TextAlign.center,
                   ),
                   SizedBox(height: theme.spacing * 2),
+                  if (widget.banner != null) ...[
+                    widget.banner!,
+                    SizedBox(height: theme.spacing * 2),
+                  ],
                   IdentityTextField(
                     label: messages.emailLabel,
                     controller: _emailController,

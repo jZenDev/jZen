@@ -30,7 +30,7 @@ vars:
   # Cloud Run coordinates, overridable via the environment.
   GCP_PROJECT: '{{.GCP_PROJECT | default "CHANGEME-jzen"}}'
   GCP_REGION: '{{.GCP_REGION | default "europe-central2"}}'
-  SERVICE_NAME: '{{.SERVICE_NAME | default "zen-app"}}'
+  SERVICE_NAME: '{{.SERVICE_NAME | default "zen-demo-server"}}'
   AR_REPO: '{{.AR_REPO | default "jzen"}}'
 
 tasks:
@@ -227,7 +227,9 @@ tasks:
         if ! git rev-parse --git-dir >/dev/null 2>&1; then
           echo "Not a git repository, cannot verify contract sync."; exit 1
         fi
-        dirty=$(git status --porcelain -- '*.generated.ts' '*.pb.dart' '*.pbjson.dart' '*.pbenum.dart' 'proto/**')
+        # The proto watch is scoped to the .proto SOURCES, not everything under proto/: the gate
+        # detects contract drift, and a doc file beside the contract (proto/README.md) is not one.
+        dirty=$(git status --porcelain -- '*.generated.ts' '*.pb.dart' '*.pbjson.dart' '*.pbenum.dart' 'proto/**/*.proto')
         if [ -n "$dirty" ]; then
           echo "Contracts are OUT OF SYNC. Regenerated output differs from what is committed:"
           echo "$dirty"
@@ -692,3 +694,75 @@ tasks:
       - rm -rf {{.ADMIN_DIR}}/dist {{.ADMIN_DIR}}/node_modules/.vite
       - rm -rf {{.DEMO_ADMIN_DIR}}/dist {{.DEMO_ADMIN_DIR}}/node_modules/.vite
       - find . -name .dart_tool -type d -prune -exec rm -rf {} +
+
+  verify:docs:
+    desc: Fail if a README names a non-existent task, or a module LICENSE drifted from root
+    silent: true
+    summary: |
+      The documentation drift gate (ROADMAP step 9, DECISIONS.md ADR-012). Prose has no
+      compiler and no contract-sync, so two things a README carries can rot silently, and this
+      task checks the two that are mechanically checkable:
+
+        1. Every `task <name>` a README mentions must exist in `task --list`. This is what would
+           have caught a README promising `task run:all` brings up more than it does. Only
+           commands are checked - inline-code spans and code-fence command lines - so a bare
+           `task` in prose or a flag like `task --list` is skipped.
+        2. Every module LICENSE (the copies beside each pubspec/pom, git ls-files '*/LICENSE')
+           must be byte-identical to the root LICENSE. A licence that differs from the one it
+           claims to be is a legal defect, and sixteen copies of a 190-line file is a drift
+           surface a diff closes for free.
+
+      Unlike the step-8 standalone check (a terminal one-shot, reverted once its failure mode
+      stopped occurring), README and LICENSE drift START the moment those files exist and keep
+      recurring, so this ships as a standing gate. Wire it into CI beside sync:contracts.
+    cmds:
+      - |
+        # No `pipefail`: the membership test below is `printf | grep -q`, and a matching grep
+        # closes the pipe early, so pipefail would turn printf's harmless EPIPE into a failure.
+        set -u
+        if ! git rev-parse --git-dir >/dev/null 2>&1; then
+          echo "Not a git repository, cannot verify docs."; exit 1
+        fi
+
+        # NO_COLOR plus an ANSI strip: `task --list` colorizes when it thinks it has a terminal,
+        # and a colorized line does not match the parse below. Depending on TTY detection would
+        # make this gate pass or fail by accident, so both defences are applied.
+        valid=$(NO_COLOR=1 task --list 2>/dev/null \
+          | sed -E 's/\x1b\[[0-9;]*m//g' \
+          | sed -nE 's/^\* ([a-z0-9:_-]+):.*/\1/p' | sort -u)
+        if [ -z "$valid" ]; then
+          echo "Could not read the task list; refusing to pass vacuously."; exit 1
+        fi
+        fail=0
+
+        # A literal backtick would be command substitution to the task interpreter, so the
+        # inline-code delimiter is built with printf rather than written into the pattern.
+        bt=$(printf '\140')
+
+        echo "Checking task references in READMEs..."
+        for md in $(git ls-files '*README.md'); do
+          refs=$( { grep -oE "${bt}task +[a-z][a-z0-9:_ -]*${bt}" "$md" 2>/dev/null | tr -d "${bt}"
+                    grep -oE '^ *task +[a-z][a-z0-9:_ -]*' "$md" 2>/dev/null
+                  } | sed -E 's/^ *task +//' )
+          for name in $refs; do
+            case "$name" in -*) continue ;; esac
+            if ! printf '%s\n' "$valid" | grep -qxF "$name"; then
+              echo "  MISSING: '$md' references 'task $name', not in 'task --list'"
+              fail=1
+            fi
+          done
+        done
+        [ "$fail" -eq 0 ] && echo "  All README task references resolve."
+
+        echo "Checking LICENSE copies..."
+        count=0
+        for lic in $(git ls-files '*/LICENSE'); do
+          if diff -q LICENSE "$lic" >/dev/null 2>&1; then
+            count=$((count + 1))
+          else
+            echo "  DRIFTED: '$lic' differs from the root LICENSE"; fail=1
+          fi
+        done
+        [ "$fail" -eq 0 ] && echo "  All $count module LICENSE copies are byte-identical to root."
+
+        [ "$fail" -eq 0 ] && echo "Docs verified." || { echo "Docs verification FAILED."; exit 1; }

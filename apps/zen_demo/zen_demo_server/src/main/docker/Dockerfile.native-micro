@@ -1,9 +1,13 @@
 ####
 # Runs the jZen Quarkus application as a native executable (no JVM) on a micro base image.
 #
-# Build:
-#   ./mvnw package -Dnative -Dquarkus.native.container-build=true -pl zen-app -am
-#   docker build -f zen-app/src/main/docker/Dockerfile.native-micro -t jzen/zen-app .
+# Build (from the repository root):
+#   server/mvnw package -Dnative -Dquarkus.native.container-build=true \
+#     -f apps/zen_demo/zen_demo_server/pom.xml
+#   docker build -f apps/zen_demo/zen_demo_server/src/main/docker/Dockerfile.native-micro \
+#     -t jzen/zen-demo-server apps/zen_demo/zen_demo_server
+#
+# Note the build context is the app module directory, so the COPY below is relative to it.
 #
 # Or just: task deploy:cloudrun
 ###
@@ -13,7 +17,7 @@ WORKDIR /work/
 RUN chown 1001 /work \
     && chmod "g+rwX" /work \
     && chown 1001:root /work
-COPY --chown=1001:root --chmod=0755 zen-app/target/*-runner /work/application
+COPY --chown=1001:root --chmod=0755 target/*-runner /work/application
 
 EXPOSE 8080
 USER 1001

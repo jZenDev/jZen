@@ -4,6 +4,7 @@
   "appTitle": "jZen Demo",
   "welcomeTitle": "Welcome to jZen",
   "welcomeSubtitle": "Sign in to explore the reference app.",
+  "demoLoginHint": "Demo: there is no shared account. Tap Sign Up to create one — the local stack confirms it instantly and signs you in.",
 
   "navHome": "Home",
   "navTerms": "Terms",

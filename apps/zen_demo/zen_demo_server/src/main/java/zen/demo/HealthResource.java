@@ -53,7 +53,7 @@ public class HealthResource {
     HealthStatus status =
         HealthStatus.newBuilder()
             .setStatus("ok")
-            .setService("zen-app")
+            .setService("zen-demo-server")
             .setTimestampMs(System.currentTimeMillis())
             .build();
     return Response.ok(status).build();

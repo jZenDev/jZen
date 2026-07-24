@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  zen-app :: the runnable Quarkus application. The only module with
+  zen-demo-server :: the reference app's runnable Quarkus backend. The only module with
   <packaging>quarkus</packaging>; every other module is a plain jar.
 
   Assembles the framework libraries into a runnable backend: the REST surface, the

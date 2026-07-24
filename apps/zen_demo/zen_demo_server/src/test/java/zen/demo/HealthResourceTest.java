@@ -38,7 +38,7 @@ class HealthResourceTest {
     HealthStatus.Builder parsed = HealthStatus.newBuilder();
     JsonFormat.parser().merge(resp.getBody().asString(), parsed);
     assertEquals("ok", parsed.getStatus());
-    assertEquals("zen-app", parsed.getService());
+    assertEquals("zen-demo-server", parsed.getService());
     assertTrue(parsed.getTimestampMs() > 0);
   }
 
@@ -56,7 +56,7 @@ class HealthResourceTest {
     // Body must be valid protobuf binary: parse it back with the generated type.
     HealthStatus parsed = HealthStatus.parseFrom(resp.getBody().asByteArray());
     assertEquals("ok", parsed.getStatus());
-    assertEquals("zen-app", parsed.getService());
+    assertEquals("zen-demo-server", parsed.getService());
     assertTrue(parsed.getTimestampMs() > 0);
   }
 

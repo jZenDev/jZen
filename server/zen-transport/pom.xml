@@ -69,7 +69,7 @@
     <plugins>
       <!-- Generates META-INF/jandex.idx so Quarkus discovers this module's JAX-RS
            providers (the transport filters and MessageBodyWriter/Readers) when it is a
-           dependency of zen-app. Without an index, @Provider classes in a dependency jar
+           dependency of an app server. Without an index, @Provider classes in a dependency jar
            are invisible to Quarkus and the whole transport seam silently does nothing.
            Every jZen library module that contributes beans or providers needs this. -->
       <plugin>

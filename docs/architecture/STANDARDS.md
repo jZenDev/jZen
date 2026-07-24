@@ -185,7 +185,7 @@ ADR-001). The repository root is language-neutral (only `Taskfile.yml`).
 
 jZen is a **product**, not a loose bag of libraries, so it uses **unified (lockstep)
 versioning**: every package and module — Java, Dart, TypeScript — carries the same version,
-which *is* the product version. jZen 2.3.1 means `zen_core`, `zen_transport`, `zen-app`,
+which *is* the product version. jZen 2.3.1 means `zen_core`, `zen_transport`, `zen-transport`,
 `@jzen/admin-core` are all 2.3.1. This is the industry norm for a coherent product (Angular, Nx,
 Spring Boot's BOM) and the reason is exactly the confusion to avoid: users and external
 developers must never have to reconcile "jZen v2" with "zen_core 1.2.1, zen_transport 2.0.0".

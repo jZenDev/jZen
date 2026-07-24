@@ -40,7 +40,7 @@ Delivered.
 - **Verified:** a `@QuarkusTest` (`HealthResourceTest`, Dev Services Postgres) asserts
   both modes green; a live server confirmed the exit test —
   `curl -H "X-Zen-Transport: protobuf"` returns 20 bytes of parseable protobuf,
-  `-H "X-Zen-Transport: json"` returns `{"status":"ok","service":"zen-app",...}` canonical
+  `-H "X-Zen-Transport: json"` returns `{"status":"ok","service":"zen-demo-server",...}` canonical
   proto3 JSON, both echoing the negotiated `X-Zen-Transport` header; no header defaults to
   JSON.
 
@@ -455,47 +455,96 @@ stopped occurring, and it would have to exempt its own definition to avoid match
 searches for. The rule it enforced lives in STANDARDS and `CLAUDE.md` instead, where it belongs -
 anything a reader needs is explained on jZen's own terms.
 
-## Step 9 — Documentation: READMEs ☐ (final step)
+## Step 9 — Documentation: READMEs ✅ (final step — closes the ROADMAP)
 
-Written last, so they describe jZen as built and in its own voice. Step 8 made this writable:
-there is now one vocabulary to write in. The `docs/architecture/` set stays the deep reference;
-these READMEs are the front door.
+> **Shaped during delivery (see [`DECISIONS.md`](./DECISIONS.md) ADR-012).** This step's own brief
+> was written at Step 0, and three later ADRs (001, 008) moved the tree underneath it — it asked for
+> `client/zen_demo/README.md`, listed a `server/` module map naming a deleted `zen-app` and omitting
+> `zen-jobs`, and left `apps/` out of the repository map. Those were corrected against the built
+> tree, the same way Step 8 fixed its own stale verification line. The wording below states what was
+> delivered.
 
-- **Root `README.md`** — the entry point for both audiences:
-  - *What jZen is* — one-paragraph product description and the philosophy in brief (link
-    to `docs/architecture/MANIFESTO.md`).
-  - *See it run* — lead with `zen_demo`: `task run:demo` as the fastest way to watch the
-    whole product work end to end, framed as both the showcase and the living test stand.
-  - *Repository map* — `server/` / `client/` / `admin/` / `proto/` / `supabase/`, one line
-    each, linking to their own READMEs.
-  - *Quick start (users)* — prerequisites, `task doctor`, `task run:all`, where each
-    surface comes up (API, admin panel, demo app) and how to reach them.
-  - *Quick start (developers)* — clone → `task deps` → `task build` → `task test`; the
-    contract-first workflow (edit `.proto` → `task sync:contracts`); how to add an
-    endpoint or a package; the golden rules (generated files are committed, never
-    hand-edited; client config is compile-time); `task test:e2e` runs `zen_demo` against
-    the real stack as the integration gate.
-  - *Deploy* — `task deploy:cloudrun`, the single-instance cost model, required secrets.
-  - Badges/licence, contribution pointer, link to `docs/architecture/`.
-- **Per-project READMEs**, each self-contained:
-  - `server/README.md` — module map (`zen-proto/core/transport/identity/email/app`), the
-    dual-mode transport seam, running/testing (Dev Services), the "no rest-jackson" and
-    "Jandex on every library module" rules, config reference.
-  - `client/README.md` — the pub workspace, package list and responsibilities, the
-    compile-time-config / bundle tree-shaking rule and `ZEN_*` build defines, per-platform
-    run/build.
-  - `client/zen_demo/README.md` — its dual role (product showcase + living e2e test
-    stand), what it exercises end to end (auth, both transport modes, localization, an
-    error path), `task run:demo` vs `task test:e2e`, and the "no mocks — hits the real
-    stack" rule.
-  - `admin/README.md` — ReactAdmin app, generated `openapi-typescript` types, dev server
-    and proxy, adding a resource.
-  - `proto/README.md` — proto is the source of truth, `zen.v1` layout and versioning,
-    `task sync:contracts` and the drift gate, how each language consumes the output.
-  - `supabase/README.md` — local stack, ports, migrations, auth/JWKS wiring.
-- **Verification:** a new contributor can go from clone to a running `task run:all` using
-  only the root README; each sub-project README stands on its own; every command shown
-  actually runs.
+**Delivered.** Written last, in jZen's own voice, so they describe the framework as built. The
+`docs/architecture/` set stays the deep reference; these READMEs are the front door.
+
+- **Fifteen tracked READMEs, by a stated rule.** A directory gets a README when it is a *front door*
+  — the repo root; each top-level surface a contributor treats as a unit (`server/`, `client/`,
+  `admin/`, `proto/`, `supabase/`, `scripts/`); the reference app as a unit (`apps/zen_demo/`) and
+  its client (`zen_demo_client`); and **every publishable library**, since each is bound for a
+  registry and needs a landing page of its own (all five `client/zen_*` packages, plus
+  `@jzen/admin-core`). A directory reached only *through* a front door gets none, so
+  `zen_demo_server` and `zen_demo_admin` do not — their story lives in the surface README above
+  them. Each publishable package carries a **"part of the jZen monorepo"** note; the Java tier
+  carries the same statement as inherited Maven metadata, because Maven reads metadata, not
+  READMEs. The rule, not the list, is what answers the next package.
+- **The root `README.md`** leads with the thing that demonstrates the product (`task run:demo`),
+  then a repository map naming all eight top-level directories (the `apps/` framework-vs-application
+  split included), a users' quick start (`task doctor` → `task run:all`, and where each surface
+  comes up — noting `run:all` brings up Supabase and the backend only, the panel separately), a
+  developers' quick start (clone → `task deps` → `task build` → `task test`, the contract-first loop,
+  the golden rules), deploy, and the Apache-2.0 licence.
+- **Five pre-existing READMEs, dispositioned individually.** The `zen_demo_client` **stock Flutter
+  template stub** was rewritten wholesale; the two `zen_ui_*` READMEs and the navigation `example/`
+  README were already accurate and kept; `scripts/README.md`, which this step never named, was kept
+  because `scripts/` is a front door.
+- **The licence is propagated.** The root Apache-2.0 `LICENSE` was copied byte-identically (proven by
+  `diff`) into every Dart package and Java module directory — sixteen copies in all — and, because
+  Maven and npm read metadata rather than the file, a `<licenses>` block was added to `server/pom.xml`
+  (inherited by every module) and a `"license"` field to both `package.json` files.
+- **A documentation drift gate ships: `task verify:docs`.** It asserts that every `task <name>` a
+  README mentions resolves in `task --list`, and that every module `LICENSE` is byte-identical to
+  root. Unlike Step 8's terminal one-shot check (reverted once its failure mode stopped occurring),
+  README and LICENSE drift begin the moment those files exist and recur, so a standing gate is
+  justified; wire it into CI beside `sync:contracts`. Both arms were shown to fail on injected drift.
+- **Review corrections, folded in before commit** (ADR-012 pt.7). A read-through corrected five
+  things the first draft got wrong: every publishable library now carries its own README and a
+  monorepo provenance note; the deploy section no longer claims web/admin are excluded "by design"
+  (they are simply not built yet); "build your app by copying the shape" became **depend on the
+  libraries and upgrade by version**, which is the architecture's actual claim; the server tier is
+  labelled **Java/Quarkus** so it cannot be misread as hand-rolled; and the reference app now tells a
+  first-time user **on screen** that it has no seeded account. That last one is **the step's single
+  behaviour change** — `LoginScreen` gained an optional, wording-free `banner` slot (null by default)
+  that `zen_demo` fills with a localized hint. Test counts are unchanged.
+
+- **Verification (as enforced):** a new contributor can go from clone to a running stack using only
+  the root README; each sub-project README stands on its own; every command shown was **run on the
+  delivery machine**; `task verify:docs` mechanically holds the task-reference and licence-copy
+  invariants; and `task build` / `task test` / `task sync:contracts` stay green with every test count
+  identical to the pre-Step-9 baseline (ADR-012).
+
+**This closes the ROADMAP's planned steps.** There is no Step 10, and no numbered step is
+outstanding. Two different things follow from here, and they are deliberately kept apart:
+
+- **Optional directions**, gated on evidence rather than scheduled: a second application under
+  `apps/` (which is what actually exercises the framework claim of ADR-001), and the capability
+  triggers in [`DECISIONS.md`](./DECISIONS.md) ADR-010 — none of whose conditions is met today.
+- **Required work before anything ships**, in the appendix below. Completing the roadmap is not
+  the same as being production-ready, and the appendix is where that difference is written down.
+
+## Appendix — beyond the roadmap: what is not yet production-ready
+
+The nine steps built a framework that composes end to end, proved it with a reference app, and
+gated it. **None of that makes a product shippable on it yet.** The items below were never
+numbered steps that slipped — they are the boundary between "the framework is built" and "a
+product runs on it in production", and they surfaced while Step 9 documented the system. They are
+recorded here rather than left to be rediscovered. See [`DECISIONS.md`](./DECISIONS.md) ADR-013.
+
+| Gap | Where it stands today | What "done" means |
+|---|---|---|
+| **The packages are unpublished** | Everything is `0.1.0`; the Dart packages are `publish_to: none`, the npm packages `private`, and the Java modules are installed to a local repository. An application consumes the framework by **local path** only. | `zen_*` on pub.dev, the Java modules in a Maven registry, `@jzen/*` on npm — so an app depends on a **version** and upgrades by bumping it. |
+| **The web app has no deploy path** | `flutter build web` produces a bundle nothing ships. The backend container serves the API only, and in local dev the web app runs on its own origin behind CORS. | A deploy task that puts the bundle on GCP — its own container on Cloud Run, or static hosting — and a documented origin/CORS story for it. |
+| **The admin panel has no deploy path** | `task build:admin` produces a Vite bundle nothing ships; same situation as the web app. | The same: a deploy task and a hosting target. |
+| **Native app pipelines do not exist** | No store or notarization automation for mobile/desktop. | Per-application release pipelines. This is the one item genuinely left to each app rather than the framework. |
+| **The backend deploy path is unproven** | `task deploy:cloudrun` has never run end to end; jZen has never been deployed. Step 9 found its `Dockerfile` `COPY` was in fact broken by an earlier module rename, which no gate could have caught. | One successful deploy to a real Cloud Run service, with the secrets and the Cloud Scheduler entry in place. |
+
+**Publishing is the largest of these**, because it is the framework's whole distribution claim:
+until the packages are in registries, "build your app on jZen" means "check out this repository",
+and the lockstep-versioning contract in [`STANDARDS.md`](./STANDARDS.md) has nothing to bite on.
+STANDARDS "Code generation" already names publishing as the exit condition for tracking generated
+code, so this is a promise the documents have made and the project has not yet kept.
+
+**Nothing here is a hidden defect.** Each is a known, stated boundary; the only thing that was
+wrong was a set of documents that read as finished. That is what this appendix fixes.
 
 ## Explicitly out of scope
 

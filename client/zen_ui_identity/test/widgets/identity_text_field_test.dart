@@ -4,9 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('IdentityTextField', () {
-    testWidgets('renders with label and controller', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('renders with label and controller', (WidgetTester tester) async {
       final controller = TextEditingController();
 
       await tester.pumpWidget(
@@ -39,19 +37,13 @@ void main() {
       expect(find.text('Invalid email'), findsOneWidget);
     });
 
-    testWidgets('applies obscureText for password field', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('applies obscureText for password field', (WidgetTester tester) async {
       final controller = TextEditingController();
 
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
-            body: IdentityTextField(
-              label: 'Password',
-              controller: controller,
-              obscureText: true,
-            ),
+            body: IdentityTextField(label: 'Password', controller: controller, obscureText: true),
           ),
         ),
       );
@@ -61,9 +53,7 @@ void main() {
       expect(find.byType(TextFormField), findsOneWidget);
     });
 
-    testWidgets('updates controller when text changes', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('updates controller when text changes', (WidgetTester tester) async {
       final controller = TextEditingController();
 
       await tester.pumpWidget(

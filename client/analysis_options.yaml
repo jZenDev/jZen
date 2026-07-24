@@ -2,9 +2,26 @@
 # client/ unless a package overrides it.
 include: package:flutter_lints/flutter.yaml
 
+# jZen's chosen Dart line width. `dart format` defaults to 80 and the tree was previously at that
+# width, so adopting 100 was a deliberate change, not a preservation of existing style: it cost one
+# reformat of 88 files that un-wrapped constructs the 80-column default had split. The width is
+# declared rather than left implicit so it is a property of the repository instead of a property of
+# whichever Dart version a contributor happens to run — see the toolchain-pinning work, which exists
+# because formatter output that shifts with the SDK is a silent source of spurious diffs.
+# apps/analysis_options.yaml must carry the same value; a framework and its applications disagreeing
+# about width would mean `task format` rewrapping whichever side it touched last.
+#
+# Only `page_width` belongs here. A `formatter: exclude:` key is accepted silently and does
+# nothing on this Dart — it was tried and still formatted all 12 generated files — so the
+# generated protobuf is kept out of the formatter by the find in `Taskfile.yml`'s DART_FORMAT
+# instead. Do not re-add it here and assume it works; it reads as protection that is not there.
+formatter:
+  page_width: 100
+
 analyzer:
   exclude:
-    # Generated protobuf Dart is committed but not hand-authored, do not lint it.
+    # Generated protobuf Dart is committed but not hand-authored, do not lint it. This governs
+    # ANALYSIS only — `dart format` does not read it. Formatting exclusion is in the Taskfile.
     - "**/generated/**"
     - "**/*.pb.dart"
     - "**/*.pbenum.dart"

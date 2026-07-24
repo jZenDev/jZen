@@ -6,9 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-
-  testWidgets('mobile navigation shows body and items without overflow',
-      (WidgetTester tester) async {
+  testWidgets('mobile navigation shows body and items without overflow', (
+    WidgetTester tester,
+  ) async {
     final items = List.generate(
       3,
       (i) => ZenNavigationItem(
@@ -21,18 +21,21 @@ void main() {
 
     var selected = 1;
 
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      home: Builder(
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
+        home: Builder(
           builder: (ctx) => buildMobileNavigation(
-                context: ctx,
-                selectedIndex: selected,
-                onItemSelected: (i) => selected = i,
-                items: items,
-                labelMore: 'More',
-              )),
-    ));
+            context: ctx,
+            selectedIndex: selected,
+            onItemSelected: (i) => selected = i,
+            items: items,
+            labelMore: 'More',
+          ),
+        ),
+      ),
+    );
 
     // Body should show the selected item's content
     expect(find.text('Content 1'), findsOneWidget);
@@ -43,52 +46,54 @@ void main() {
   });
 
   testWidgets(
-      'buildMobileNavigation shows bottom bar and opens more page for overflow (additional)',
-      (WidgetTester tester) async {
-    // Create more items than zenMaxItemsMobile (4) to cause overflow
-    final items = List.generate(
-      6,
-      (i) => ZenNavigationItem(
-        id: 'id_extra_$i',
-        label: 'Item $i',
-        builder: (c) => Text('page_$i'),
-      ),
-    );
+    'buildMobileNavigation shows bottom bar and opens more page for overflow (additional)',
+    (WidgetTester tester) async {
+      // Create more items than zenMaxItemsMobile (4) to cause overflow
+      final items = List.generate(
+        6,
+        (i) =>
+            ZenNavigationItem(id: 'id_extra_$i', label: 'Item $i', builder: (c) => Text('page_$i')),
+      );
 
-    // reuse the service defined above
-    var selected = -1;
+      // reuse the service defined above
+      var selected = -1;
 
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      home: Builder(
-          builder: (ctx) => buildMobileNavigation(
-                context: ctx,
-                selectedIndex: 0,
-                onItemSelected: (i) => selected = i,
-                items: items,
-                labelMore: 'More',
-              )),
-    ));
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+          supportedLocales: NavigationLocalizations.supportedLocales,
+          home: Builder(
+            builder: (ctx) => buildMobileNavigation(
+              context: ctx,
+              selectedIndex: 0,
+              onItemSelected: (i) => selected = i,
+              items: items,
+              labelMore: 'More',
+            ),
+          ),
+        ),
+      );
 
-    // BottomNavigationBar should be present
-    expect(find.byType(BottomNavigationBar), findsOneWidget);
+      // BottomNavigationBar should be present
+      expect(find.byType(BottomNavigationBar), findsOneWidget);
 
-    // Tap the 'More' label to navigate to the overflow page
-    await tester.tap(find.text('More'));
-    await tester.pumpAndSettle();
+      // Tap the 'More' label to navigate to the overflow page
+      await tester.tap(find.text('More'));
+      await tester.pumpAndSettle();
 
-    // Overflow page should show overflow item labels
-    expect(find.text('Item 4'), findsOneWidget);
+      // Overflow page should show overflow item labels
+      expect(find.text('Item 4'), findsOneWidget);
 
-    // Tap overflow item and ensure callback invoked with global index
-    await tester.tap(find.text('Item 4'));
-    await tester.pumpAndSettle();
-    expect(selected, equals(4));
-  });
+      // Tap overflow item and ensure callback invoked with global index
+      await tester.tap(find.text('Item 4'));
+      await tester.pumpAndSettle();
+      expect(selected, equals(4));
+    },
+  );
 
-  testWidgets('mobile navigation overflow opens NavigationMorePage and selects',
-      (WidgetTester tester) async {
+  testWidgets('mobile navigation overflow opens NavigationMorePage and selects', (
+    WidgetTester tester,
+  ) async {
     // Create more items than zenMaxItemsMobile (4) to cause overflow
     final items = List.generate(
       5,
@@ -102,18 +107,21 @@ void main() {
 
     var selectedCalled = -1;
 
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      home: Builder(
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
+        home: Builder(
           builder: (ctx) => buildMobileNavigation(
-                context: ctx,
-                selectedIndex: 4,
-                onItemSelected: (i) => selectedCalled = i,
-                items: items,
-                labelMore: 'More',
-              )),
-    ));
+            context: ctx,
+            selectedIndex: 4,
+            onItemSelected: (i) => selectedCalled = i,
+            items: items,
+            labelMore: 'More',
+          ),
+        ),
+      ),
+    );
 
     // Selected item's body should be shown (overflow item)
     expect(find.text('Content 4'), findsOneWidget);
@@ -133,9 +141,9 @@ void main() {
     expect(selectedCalled, 4);
   });
 
-  testWidgets(
-      'mobile navigation localizes the more label when labelMore is omitted (Material)',
-      (WidgetTester tester) async {
+  testWidgets('mobile navigation localizes the more label when labelMore is omitted (Material)', (
+    WidgetTester tester,
+  ) async {
     if (zenIsIOS) return;
 
     // Create more items than zenMaxItemsMobile (4) to cause overflow
@@ -150,19 +158,20 @@ void main() {
     );
 
     Widget app(Locale locale) => MaterialApp(
-          locale: locale,
-          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-          supportedLocales: NavigationLocalizations.supportedLocales,
-          home: Builder(
-              builder: (ctx) => buildMobileNavigation(
-                    context: ctx,
-                    selectedIndex: 4,
-                    onItemSelected: (_) {},
-                    items: items,
-                    // labelMore omitted, so the label comes from the generated
-                    // NavigationLocalizations resolved off the BuildContext.
-                  )),
-        );
+      locale: locale,
+      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      supportedLocales: NavigationLocalizations.supportedLocales,
+      home: Builder(
+        builder: (ctx) => buildMobileNavigation(
+          context: ctx,
+          selectedIndex: 4,
+          onItemSelected: (_) {},
+          items: items,
+          // labelMore omitted, so the label comes from the generated
+          // NavigationLocalizations resolved off the BuildContext.
+        ),
+      ),
+    );
 
     await tester.pumpWidget(app(const Locale(ZenLocales.en)));
     await tester.pumpAndSettle();
@@ -175,9 +184,9 @@ void main() {
     expect(find.text('Ще'), findsWidgets);
   });
 
-  testWidgets(
-      'mobile navigation localizes the more label when labelMore is omitted (Cupertino)',
-      (WidgetTester tester) async {
+  testWidgets('mobile navigation localizes the more label when labelMore is omitted (Cupertino)', (
+    WidgetTester tester,
+  ) async {
     if (!zenIsIOS) return;
 
     final items = List.generate(
@@ -191,17 +200,18 @@ void main() {
     );
 
     Widget app(Locale locale) => CupertinoApp(
-          locale: locale,
-          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-          supportedLocales: NavigationLocalizations.supportedLocales,
-          home: Builder(
-              builder: (ctx) => buildMobileNavigation(
-                    context: ctx,
-                    selectedIndex: 4,
-                    onItemSelected: (_) {},
-                    items: items,
-                  )),
-        );
+      locale: locale,
+      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      supportedLocales: NavigationLocalizations.supportedLocales,
+      home: Builder(
+        builder: (ctx) => buildMobileNavigation(
+          context: ctx,
+          selectedIndex: 4,
+          onItemSelected: (_) {},
+          items: items,
+        ),
+      ),
+    );
 
     await tester.pumpWidget(app(const Locale(ZenLocales.en)));
     await tester.pumpAndSettle();
@@ -212,9 +222,9 @@ void main() {
     expect(find.text('Ще'), findsWidgets);
   });
 
-  testWidgets(
-      'mobile navigation (Cupertino) shows tab bar and handles overflow',
-      (WidgetTester tester) async {
+  testWidgets('mobile navigation (Cupertino) shows tab bar and handles overflow', (
+    WidgetTester tester,
+  ) async {
     if (!zenIsIOS) return;
 
     // Create more items than zenMaxItemsMobile to cause overflow
@@ -230,18 +240,21 @@ void main() {
 
     var selectedCalled = -1;
 
-    await tester.pumpWidget(CupertinoApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      home: Builder(
+    await tester.pumpWidget(
+      CupertinoApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
+        home: Builder(
           builder: (ctx) => buildMobileNavigation(
-                context: ctx,
-                selectedIndex: 4,
-                onItemSelected: (i) => selectedCalled = i,
-                items: items,
-                labelMore: 'More',
-              )),
-    ));
+            context: ctx,
+            selectedIndex: 4,
+            onItemSelected: (i) => selectedCalled = i,
+            items: items,
+            labelMore: 'More',
+          ),
+        ),
+      ),
+    );
 
     await tester.pumpAndSettle();
 

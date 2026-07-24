@@ -4,9 +4,7 @@ import '../l10n/generated/example_localizations.dart';
 
 /// Profile screen showing user information
 class ProfileScreen extends StatelessWidget {
-  const ProfileScreen({
-    super.key,
-  });
+  const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -20,9 +18,9 @@ class ProfileScreen extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.edit),
             onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(messages.profileEditClicked)),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text(messages.profileEditClicked)));
             },
           ),
         ],
@@ -35,9 +33,7 @@ class ProfileScreen extends StatelessWidget {
               children: [
                 CircleAvatar(
                   radius: 60,
-                  backgroundColor: Theme.of(
-                    context,
-                  ).colorScheme.primaryContainer,
+                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
                   child: Icon(
                     Icons.person,
                     size: 60,
@@ -45,10 +41,7 @@ class ProfileScreen extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Text(
-                  'John Doe',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
+                Text('John Doe', style: Theme.of(context).textTheme.headlineSmall),
                 const SizedBox(height: 8),
                 Text(
                   'john.doe@example.com',
@@ -114,11 +107,7 @@ class ProfileScreen extends StatelessWidget {
 }
 
 class _ProfileTile extends StatelessWidget {
-  const _ProfileTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
+  const _ProfileTile({required this.icon, required this.title, required this.subtitle});
 
   final IconData icon;
   final String title;
@@ -126,20 +115,12 @@ class _ProfileTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      subtitle: Text(subtitle),
-    );
+    return ListTile(leading: Icon(icon), title: Text(title), subtitle: Text(subtitle));
   }
 }
 
 class _ProfileActionTile extends StatelessWidget {
-  const _ProfileActionTile({
-    required this.icon,
-    required this.title,
-    required this.onTap,
-  });
+  const _ProfileActionTile({required this.icon, required this.title, required this.onTap});
 
   final IconData icon;
   final String title;

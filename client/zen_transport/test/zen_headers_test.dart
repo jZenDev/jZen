@@ -15,33 +15,18 @@ void main() {
 
     test('parse handles valid values', () {
       expect(ZenTransportFormat.parse('json'), ZenTransportFormat.json);
-      expect(
-        ZenTransportFormat.parse('protobuf'),
-        ZenTransportFormat.protobuf,
-      );
+      expect(ZenTransportFormat.parse('protobuf'), ZenTransportFormat.protobuf);
     });
 
     test('parse is case-insensitive', () {
       expect(ZenTransportFormat.parse('JSON'), ZenTransportFormat.json);
-      expect(
-        ZenTransportFormat.parse('Protobuf'),
-        ZenTransportFormat.protobuf,
-      );
-      expect(
-        ZenTransportFormat.parse('PROTOBUF'),
-        ZenTransportFormat.protobuf,
-      );
+      expect(ZenTransportFormat.parse('Protobuf'), ZenTransportFormat.protobuf);
+      expect(ZenTransportFormat.parse('PROTOBUF'), ZenTransportFormat.protobuf);
     });
 
     test('parse throws ZenTransportException on unknown values', () {
-      expect(
-        () => ZenTransportFormat.parse('xml'),
-        throwsA(isA<ZenTransportException>()),
-      );
-      expect(
-        () => ZenTransportFormat.parse(''),
-        throwsA(isA<ZenTransportException>()),
-      );
+      expect(() => ZenTransportFormat.parse('xml'), throwsA(isA<ZenTransportException>()));
+      expect(() => ZenTransportFormat.parse(''), throwsA(isA<ZenTransportException>()));
     });
 
     test('parse exception message names the bad value', () {

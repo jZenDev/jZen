@@ -30,6 +30,4 @@ class LocaleNotifier extends Notifier<Locale> {
   void setLocale(Locale locale) => state = locale;
 }
 
-final localeProvider = NotifierProvider<LocaleNotifier, Locale>(
-  LocaleNotifier.new,
-);
+final localeProvider = NotifierProvider<LocaleNotifier, Locale>(LocaleNotifier.new);

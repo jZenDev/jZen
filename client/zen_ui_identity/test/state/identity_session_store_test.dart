@@ -18,20 +18,14 @@ class _FakeRepo implements IdentityRepository {
     ZenResult<IdentityContract>? registerResult,
     ZenResult<void>? restoreResult,
     ZenResult<void>? logoutResult,
-  }) : getCurrentIdentityResult =
-           getCurrentIdentityResult ?? const ZenResult.ok(null),
-       loginResult =
-           loginResult ?? const ZenResult.err(ZenUnknownError('not set')),
-       registerResult =
-           registerResult ?? const ZenResult.err(ZenUnknownError('not set')),
-       restoreResult =
-           restoreResult ?? const ZenResult.err(ZenUnknownError('not set')),
-       logoutResult =
-           logoutResult ?? const ZenResult.err(ZenUnknownError('not set'));
+  }) : getCurrentIdentityResult = getCurrentIdentityResult ?? const ZenResult.ok(null),
+       loginResult = loginResult ?? const ZenResult.err(ZenUnknownError('not set')),
+       registerResult = registerResult ?? const ZenResult.err(ZenUnknownError('not set')),
+       restoreResult = restoreResult ?? const ZenResult.err(ZenUnknownError('not set')),
+       logoutResult = logoutResult ?? const ZenResult.err(ZenUnknownError('not set'));
 
   @override
-  Future<ZenResult<IdentityContract?>> getCurrentIdentity() async =>
-      getCurrentIdentityResult;
+  Future<ZenResult<IdentityContract?>> getCurrentIdentity() async => getCurrentIdentityResult;
 
   @override
   Future<ZenResult<IdentityContract>> loginWithEmail({
@@ -46,8 +40,7 @@ class _FakeRepo implements IdentityRepository {
   }) async => registerResult;
 
   @override
-  Future<ZenResult<void>> restorePassword({required String email}) async =>
-      restoreResult;
+  Future<ZenResult<void>> restorePassword({required String email}) async => restoreResult;
 
   @override
   Future<ZenResult<void>> logout() async => logoutResult;
@@ -62,9 +55,7 @@ IdentityContract _makeContract(String id) => IdentityContract(
 
 void main() {
   test('build sets initial session from repository', () async {
-    final fake = _FakeRepo(
-      getCurrentIdentityResult: ZenResult.ok(_makeContract('sub')),
-    );
+    final fake = _FakeRepo(getCurrentIdentityResult: ZenResult.ok(_makeContract('sub')));
     final container = ProviderContainer(
       overrides: [identityRepositoryProvider.overrideWithValue(fake)],
     );
@@ -143,15 +134,11 @@ void main() {
     final ok = await notifierOk.restorePassword('a@b.com');
     expect(ok.isSuccess, true);
 
-    final fakeErr = _FakeRepo(
-      restoreResult: const ZenResult.err(ZenNotFoundError('no')),
-    );
+    final fakeErr = _FakeRepo(restoreResult: const ZenResult.err(ZenNotFoundError('no')));
     final containerErr = ProviderContainer(
       overrides: [identityRepositoryProvider.overrideWithValue(fakeErr)],
     );
-    final notifierErr = containerErr.read(
-      identitySessionStoreProvider.notifier,
-    );
+    final notifierErr = containerErr.read(identitySessionStoreProvider.notifier);
     final err = await notifierErr.restorePassword('a@b.com');
     expect(err.isFailure, true);
   });

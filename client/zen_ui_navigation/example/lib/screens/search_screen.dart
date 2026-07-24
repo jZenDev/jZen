@@ -4,9 +4,7 @@ import '../l10n/generated/example_localizations.dart';
 
 /// Search screen with search functionality demo
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({
-    super.key,
-  });
+  const SearchScreen({super.key});
 
   @override
   State<SearchScreen> createState() => _SearchScreenState();
@@ -96,9 +94,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   onTap: () {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text(
-                          '${messages.searchSelected}${_filteredItems[index]}',
-                        ),
+                        content: Text('${messages.searchSelected}${_filteredItems[index]}'),
                         duration: const Duration(seconds: 1),
                       ),
                     );

@@ -70,11 +70,7 @@ void main() {
         MaterialApp(
           localizationsDelegates: NavigationLocalizations.localizationsDelegates,
           supportedLocales: NavigationLocalizations.supportedLocales,
-          home: ZenNavigation(
-            items: items,
-            selectedIndex: 0,
-            onItemSelected: (index) {},
-          ),
+          home: ZenNavigation(items: items, selectedIndex: 0, onItemSelected: (index) {}),
         ),
       );
 
@@ -104,11 +100,7 @@ void main() {
         MaterialApp(
           localizationsDelegates: NavigationLocalizations.localizationsDelegates,
           supportedLocales: NavigationLocalizations.supportedLocales,
-          home: ZenNavigation(
-            items: items,
-            selectedIndex: 0,
-            onItemSelected: (index) {},
-          ),
+          home: ZenNavigation(items: items, selectedIndex: 0, onItemSelected: (index) {}),
         ),
       );
 

@@ -4,9 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('IdentityStatusChip displays label and uses theme color', (
-    tester,
-  ) async {
+  testWidgets('IdentityStatusChip displays label and uses theme color', (tester) async {
     final theme = IdentityThemeExtension.fallback();
 
     await tester.pumpWidget(
@@ -21,9 +19,7 @@ void main() {
     expect(text.style?.color, theme.brandColor);
   });
 
-  testWidgets('IdentityStatusChip factory success uses success color', (
-    tester,
-  ) async {
+  testWidgets('IdentityStatusChip factory success uses success color', (tester) async {
     final theme = IdentityThemeExtension.fallback();
 
     await tester.pumpWidget(

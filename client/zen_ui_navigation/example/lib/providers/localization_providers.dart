@@ -16,6 +16,4 @@ class LocaleNotifier extends Notifier<Locale> {
 }
 
 /// Provider for the current locale.
-final localeProvider = NotifierProvider<LocaleNotifier, Locale>(
-  LocaleNotifier.new,
-);
+final localeProvider = NotifierProvider<LocaleNotifier, Locale>(LocaleNotifier.new);

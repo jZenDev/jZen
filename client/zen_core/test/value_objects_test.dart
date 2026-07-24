@@ -41,65 +41,38 @@ void main() {
       });
 
       test('validates language code with region', () {
-        expect(
-          ZenLocale.create(languageCode: 'en', regionCode: 'GB').isSuccess,
-          isTrue,
-        );
-        expect(
-          ZenLocale.create(languageCode: 'uk', regionCode: 'UA').isSuccess,
-          isTrue,
-        );
+        expect(ZenLocale.create(languageCode: 'en', regionCode: 'GB').isSuccess, isTrue);
+        expect(ZenLocale.create(languageCode: 'uk', regionCode: 'UA').isSuccess, isTrue);
       });
 
       test('rejects invalid language codes', () {
         expect(ZenLocale.create(languageCode: 'E').isFailure, isTrue);
         expect(ZenLocale.create(languageCode: 'ENG').isFailure, isTrue);
-        expect(
-          ZenLocale.create(languageCode: 'EN').isFailure,
-          isTrue,
-        ); // Uppercase
+        expect(ZenLocale.create(languageCode: 'EN').isFailure, isTrue); // Uppercase
         expect(ZenLocale.create(languageCode: '').isFailure, isTrue);
       });
 
       test('rejects invalid region codes', () {
-        expect(
-          ZenLocale.create(languageCode: 'en', regionCode: 'u').isFailure,
-          isTrue,
-        );
+        expect(ZenLocale.create(languageCode: 'en', regionCode: 'u').isFailure, isTrue);
         expect(
           ZenLocale.create(languageCode: 'en', regionCode: 'us').isFailure,
           isTrue,
         ); // Lowercase
-        expect(
-          ZenLocale.create(languageCode: 'en', regionCode: 'USA').isFailure,
-          isTrue,
-        );
+        expect(ZenLocale.create(languageCode: 'en', regionCode: 'USA').isFailure, isTrue);
       });
 
       test('toString formats correctly', () {
         final locale1 = ZenLocale.create(languageCode: 'en').dataOrNull!;
         expect(locale1.toString(), 'en');
 
-        final locale2 = ZenLocale.create(
-          languageCode: 'uk',
-          regionCode: 'UA',
-        ).dataOrNull!;
+        final locale2 = ZenLocale.create(languageCode: 'uk', regionCode: 'UA').dataOrNull!;
         expect(locale2.toString(), 'uk_UA');
       });
 
       test('equality and hashCode work', () {
-        final locale1 = ZenLocale.create(
-          languageCode: 'uk',
-          regionCode: 'UA',
-        ).dataOrNull!;
-        final locale2 = ZenLocale.create(
-          languageCode: 'uk',
-          regionCode: 'UA',
-        ).dataOrNull!;
-        final locale3 = ZenLocale.create(
-          languageCode: 'en',
-          regionCode: 'GB',
-        ).dataOrNull!;
+        final locale1 = ZenLocale.create(languageCode: 'uk', regionCode: 'UA').dataOrNull!;
+        final locale2 = ZenLocale.create(languageCode: 'uk', regionCode: 'UA').dataOrNull!;
+        final locale3 = ZenLocale.create(languageCode: 'en', regionCode: 'GB').dataOrNull!;
 
         expect(locale1, equals(locale2));
         expect(locale1.hashCode, equals(locale2.hashCode));

@@ -15,30 +15,29 @@ Widget _widget({
   required List<ZenNavigationItem> items,
   ValueChanged<String>? onItemSelectedId,
   String? labelMore,
-}) =>
-    Row(
-      children: [
-        NavigationRail(
-          selectedIndex: selectedIndex,
-          onDestinationSelected: (int index) {
-            onItemSelected(index);
-            onItemSelectedId?.call(items[index].id);
-          },
-          labelType: NavigationRailLabelType.all,
-          destinations: [
-            for (int i = 0; i < items.length; i++)
-              NavigationRailDestination(
-                icon: Semantics(
-                  label: items[i].label,
-                  button: true,
-                  selected: i == selectedIndex,
-                  child: navigationBadge(items[i], i == selectedIndex),
-                ),
-                label: Text(items[i].label),
-              ),
-          ],
-        ),
-        const VerticalDivider(thickness: 1, width: 1),
-        Expanded(child: items[selectedIndex].builder(context)),
+}) => Row(
+  children: [
+    NavigationRail(
+      selectedIndex: selectedIndex,
+      onDestinationSelected: (int index) {
+        onItemSelected(index);
+        onItemSelectedId?.call(items[index].id);
+      },
+      labelType: NavigationRailLabelType.all,
+      destinations: [
+        for (int i = 0; i < items.length; i++)
+          NavigationRailDestination(
+            icon: Semantics(
+              label: items[i].label,
+              button: true,
+              selected: i == selectedIndex,
+              child: navigationBadge(items[i], i == selectedIndex),
+            ),
+            label: Text(items[i].label),
+          ),
       ],
-    );
+    ),
+    const VerticalDivider(thickness: 1, width: 1),
+    Expanded(child: items[selectedIndex].builder(context)),
+  ],
+);

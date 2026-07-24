@@ -31,28 +31,18 @@ void main() {
       final stackTrace = StackTrace.current;
 
       expect(
-        () => logger.error(
-          'Error with exception',
-          error: exception,
-          stackTrace: stackTrace,
-        ),
+        () => logger.error('Error with exception', error: exception, stackTrace: stackTrace),
         returnsNormally,
       );
     });
 
     test('logs messages with internal data', () {
       expect(
-        () => logger.debug(
-          'Debug with data',
-          internalData: {'key': 'value', 'count': 42},
-        ),
+        () => logger.debug('Debug with data', internalData: {'key': 'value', 'count': 42}),
         returnsNormally,
       );
 
-      expect(
-        () => logger.info('Info with data', internalData: {'userId': '123'}),
-        returnsNormally,
-      );
+      expect(() => logger.info('Info with data', internalData: {'userId': '123'}), returnsNormally);
     });
   });
 }

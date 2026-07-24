@@ -104,9 +104,7 @@ class ZenClient {
     final requestId = _generateRequestId();
     final uri = Uri.parse('$baseUrl$path');
     final requestHeaders = _buildHeaders(headers, requestId);
-    final Uint8List? encodedBody = body == null
-        ? null
-        : ZenProtoCodec.encode(body, format);
+    final Uint8List? encodedBody = body == null ? null : ZenProtoCodec.encode(body, format);
 
     final http.Response response;
     try {
@@ -117,11 +115,7 @@ class ZenClient {
           headers: requestHeaders,
           body: encodedBody,
         ),
-        ZenHttpMethod.put => await _httpClient.put(
-          uri,
-          headers: requestHeaders,
-          body: encodedBody,
-        ),
+        ZenHttpMethod.put => await _httpClient.put(uri, headers: requestHeaders, body: encodedBody),
         ZenHttpMethod.delete => await _httpClient.delete(
           uri,
           headers: requestHeaders,
@@ -132,10 +126,7 @@ class ZenClient {
       // Network / I/O failure never yields a null payload.
       return ZenResult.err(
         ZenTransportError(
-          pb.ZenError(
-            code: ZenTransportErrorCode.network.wire,
-            message: 'Request failed: $e',
-          ),
+          pb.ZenError(code: ZenTransportErrorCode.network.wire, message: 'Request failed: $e'),
         ),
       );
     }
@@ -147,8 +138,7 @@ class ZenClient {
     T Function() createEmpty,
     String path, {
     Map<String, String>? headers,
-  }) =>
-      send(createEmpty, method: ZenHttpMethod.get, path: path, headers: headers);
+  }) => send(createEmpty, method: ZenHttpMethod.get, path: path, headers: headers);
 
   /// Sends a POST request with an optional typed [body] and decodes the response into [T].
   Future<ZenResult<T>> post<T extends GeneratedMessage>(
@@ -156,13 +146,7 @@ class ZenClient {
     String path, {
     GeneratedMessage? body,
     Map<String, String>? headers,
-  }) => send(
-    createEmpty,
-    method: ZenHttpMethod.post,
-    path: path,
-    body: body,
-    headers: headers,
-  );
+  }) => send(createEmpty, method: ZenHttpMethod.post, path: path, body: body, headers: headers);
 
   /// Sends a PUT request with an optional typed [body] and decodes the response into [T].
   Future<ZenResult<T>> put<T extends GeneratedMessage>(
@@ -170,13 +154,7 @@ class ZenClient {
     String path, {
     GeneratedMessage? body,
     Map<String, String>? headers,
-  }) => send(
-    createEmpty,
-    method: ZenHttpMethod.put,
-    path: path,
-    body: body,
-    headers: headers,
-  );
+  }) => send(createEmpty, method: ZenHttpMethod.put, path: path, body: body, headers: headers);
 
   /// Sends a DELETE request and decodes the response into [T].
   Future<ZenResult<T>> delete<T extends GeneratedMessage>(
@@ -184,21 +162,12 @@ class ZenClient {
     String path, {
     GeneratedMessage? body,
     Map<String, String>? headers,
-  }) => send(
-    createEmpty,
-    method: ZenHttpMethod.delete,
-    path: path,
-    body: body,
-    headers: headers,
-  );
+  }) => send(createEmpty, method: ZenHttpMethod.delete, path: path, body: body, headers: headers);
 
   /// Closes the HTTP client.
   void close() => _httpClient.close();
 
-  Map<String, String> _buildHeaders(
-    Map<String, String>? customHeaders,
-    String requestId,
-  ) {
+  Map<String, String> _buildHeaders(Map<String, String>? customHeaders, String requestId) {
     // Resolved per request, not cached: the user can switch language mid-session.
     final locale = language?.call();
     return {
@@ -237,8 +206,7 @@ class ZenClient {
           ZenTransportError(
             pb.ZenError(
               code: ZenTransportErrorCode.decode.wire,
-              message:
-                  'Unrecognized $zenTransportHeaderName header: "$headerValue"',
+              message: 'Unrecognized $zenTransportHeaderName header: "$headerValue"',
             ),
           ),
         );

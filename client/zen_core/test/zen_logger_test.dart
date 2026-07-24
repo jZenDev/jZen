@@ -1,6 +1,5 @@
 import 'package:test/test.dart';
-import 'package:zen_core/src/logging/impl/strategy_io.dart'
-    show getStrategy, ZenLoggerStrategyIO;
+import 'package:zen_core/src/logging/impl/strategy_io.dart' show getStrategy, ZenLoggerStrategyIO;
 import 'package:zen_core/zen_core.dart';
 
 void main() {

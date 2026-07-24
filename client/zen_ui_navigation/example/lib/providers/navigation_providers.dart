@@ -56,5 +56,6 @@ class NavigationIndexNotifier extends Notifier<int> {
 }
 
 /// Provider for selected navigation index
-final selectedNavigationIndexProvider =
-    NotifierProvider<NavigationIndexNotifier, int>(NavigationIndexNotifier.new);
+final selectedNavigationIndexProvider = NotifierProvider<NavigationIndexNotifier, int>(
+  NavigationIndexNotifier.new,
+);

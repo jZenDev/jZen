@@ -17,8 +17,7 @@ class _IdleRepository implements IdentityRepository {
   const _IdleRepository();
 
   @override
-  Future<ZenResult<IdentityContract?>> getCurrentIdentity() async =>
-      const ZenResult.ok(null);
+  Future<ZenResult<IdentityContract?>> getCurrentIdentity() async => const ZenResult.ok(null);
 
   @override
   Future<ZenResult<IdentityContract>> loginWithEmail({
@@ -42,10 +41,7 @@ class _IdleRepository implements IdentityRepository {
 
 void main() {
   test('ships exactly the locales ZenLocales declares', () {
-    expect(
-      IdentityLocalizations.supportedLocales.map((l) => l.languageCode),
-      ZenLocales.supported,
-    );
+    expect(IdentityLocalizations.supportedLocales.map((l) => l.languageCode), ZenLocales.supported);
   });
 
   test('every locale carries its own wording', () async {
@@ -74,13 +70,9 @@ void main() {
     expect(en.errorText(const ZenUnknownError('relay refused')), 'relay refused');
   });
 
-  testWidgets('switching the ambient locale re-renders the screen', (
-    tester,
-  ) async {
+  testWidgets('switching the ambient locale re-renders the screen', (tester) async {
     Widget app(String locale) => ProviderScope(
-      overrides: [
-        identityRepositoryProvider.overrideWithValue(const _IdleRepository()),
-      ],
+      overrides: [identityRepositoryProvider.overrideWithValue(const _IdleRepository())],
       child: localizedApp(home: const LoginScreen(), locale: locale),
     );
 

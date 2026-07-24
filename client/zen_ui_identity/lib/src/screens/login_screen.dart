@@ -55,10 +55,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final controller = ref.read(identitySessionStoreProvider.notifier);
-    final result = await controller.login(
-      _emailController.text.trim(),
-      _passwordController.text,
-    );
+    final result = await controller.login(_emailController.text.trim(), _passwordController.text);
 
     if (!mounted) return;
     final messages = IdentityLocalizations.of(context);
@@ -74,9 +71,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(messages.errorText(failure)),
-            backgroundColor: Theme.of(
-              context,
-            ).extension<IdentityThemeExtension>()?.errorColor,
+            backgroundColor: Theme.of(context).extension<IdentityThemeExtension>()?.errorColor,
           ),
         );
       },
@@ -89,8 +84,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final state = ref.watch(identitySessionStoreProvider);
     final isLoading = state.isLoading;
     final theme =
-        Theme.of(context).extension<IdentityThemeExtension>() ??
-        IdentityThemeExtension.fallback();
+        Theme.of(context).extension<IdentityThemeExtension>() ?? IdentityThemeExtension.fallback();
 
     return Scaffold(
       backgroundColor: theme.surfaceColor,
@@ -153,9 +147,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     child: IdentityButton(
                       text: messages.restorePasswordTitle, // "Reset Password" usually
                       variant: IdentityButtonVariant.text,
-                      onPressed: isLoading
-                          ? null
-                          : widget.onForgotPasswordClick,
+                      onPressed: isLoading ? null : widget.onForgotPasswordClick,
                     ),
                   ),
                   SizedBox(height: theme.spacing),

@@ -61,9 +61,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(messages.errorText(failure)),
-            backgroundColor: Theme.of(
-              context,
-            ).extension<IdentityThemeExtension>()?.errorColor,
+            backgroundColor: Theme.of(context).extension<IdentityThemeExtension>()?.errorColor,
           ),
         );
       },
@@ -76,8 +74,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     final state = ref.watch(identitySessionStoreProvider);
     final isLoading = state.isLoading;
     final theme =
-        Theme.of(context).extension<IdentityThemeExtension>() ??
-        IdentityThemeExtension.fallback();
+        Theme.of(context).extension<IdentityThemeExtension>() ?? IdentityThemeExtension.fallback();
 
     return Scaffold(
       backgroundColor: theme.surfaceColor,
@@ -154,10 +151,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(
-                          messages.alreadyHaveAccount,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        Text(messages.alreadyHaveAccount, overflow: TextOverflow.ellipsis),
                         IdentityButton(
                           text: messages.loginButton,
                           variant: IdentityButtonVariant.text,

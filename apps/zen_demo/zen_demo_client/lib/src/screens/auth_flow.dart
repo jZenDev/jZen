@@ -34,9 +34,7 @@ class _AuthFlowState extends ConsumerState<AuthFlow> {
       // slot is the framework's.
       banner: _DemoLoginHint(),
     ),
-    _AuthScreen.register => RegisterScreen(
-      onLoginClick: () => _go(_AuthScreen.login),
-    ),
+    _AuthScreen.register => RegisterScreen(onLoginClick: () => _go(_AuthScreen.login)),
     _AuthScreen.restore => RestorePasswordScreen(
       onBackClick: () => _go(_AuthScreen.login),
       onRestoreSuccess: () => _go(_AuthScreen.login),
@@ -58,11 +56,7 @@ class _DemoLoginHint extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.info_outline,
-            size: 20,
-            color: theme.colorScheme.onSecondaryContainer,
-          ),
+          Icon(Icons.info_outline, size: 20, color: theme.colorScheme.onSecondaryContainer),
           const SizedBox(width: 8),
           Expanded(
             child: Text(

@@ -81,10 +81,7 @@ class IdentityThemeExtension extends ThemeExtension<IdentityThemeExtension> {
   }
 
   @override
-  IdentityThemeExtension lerp(
-    covariant ThemeExtension<IdentityThemeExtension>? other,
-    double t,
-  ) {
+  IdentityThemeExtension lerp(covariant ThemeExtension<IdentityThemeExtension>? other, double t) {
     if (other is! IdentityThemeExtension) {
       return this;
     }
@@ -96,11 +93,7 @@ class IdentityThemeExtension extends ThemeExtension<IdentityThemeExtension> {
       surfaceColor: Color.lerp(surfaceColor, other.surfaceColor, t)!,
       titleStyle: TextStyle.lerp(titleStyle, other.titleStyle, t)!,
       subtitleStyle: TextStyle.lerp(subtitleStyle, other.subtitleStyle, t)!,
-      containerPadding: EdgeInsetsGeometry.lerp(
-        containerPadding,
-        other.containerPadding,
-        t,
-      )!,
+      containerPadding: EdgeInsetsGeometry.lerp(containerPadding, other.containerPadding, t)!,
       spacing: (spacing + (other.spacing - spacing) * t),
     );
   }

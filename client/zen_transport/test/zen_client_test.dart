@@ -9,18 +9,19 @@ import 'package:zen_transport/zen_transport.dart';
 
 /// Builds a response carrying [message] encoded in [format], echoing the X-Zen-Transport
 /// header the way the Quarkus server does.
-http.Response _encodedResponse(
-  dynamic message,
-  ZenTransportFormat format,
-  int status,
-) {
+http.Response _encodedResponse(dynamic message, ZenTransportFormat format, int status) {
   final bytes = ZenProtoCodec.encode(message, format);
   // The http package lowercases response header keys; emulate that here.
-  return http.Response.bytes(bytes, status, headers: {
-    zenTransportHeaderName.toLowerCase(): format.value,
-    'content-type':
-        format == ZenTransportFormat.json ? 'application/json' : 'application/x-protobuf',
-  });
+  return http.Response.bytes(
+    bytes,
+    status,
+    headers: {
+      zenTransportHeaderName.toLowerCase(): format.value,
+      'content-type': format == ZenTransportFormat.json
+          ? 'application/json'
+          : 'application/x-protobuf',
+    },
+  );
 }
 
 void main() {
@@ -31,10 +32,7 @@ void main() {
     });
 
     test('explicit format overrides the default', () {
-      final client = ZenClient(
-        baseUrl: 'http://localhost:8080',
-        format: ZenTransportFormat.json,
-      );
+      final client = ZenClient(baseUrl: 'http://localhost:8080', format: ZenTransportFormat.json);
       expect(client.format, ZenTransportFormat.json);
     });
   });
@@ -53,11 +51,7 @@ void main() {
             200,
           );
         });
-        final client = ZenClient(
-          baseUrl: 'http://host',
-          format: format,
-          httpClient: mock,
-        );
+        final client = ZenClient(baseUrl: 'http://host', format: format, httpClient: mock);
 
         final result = await client.get(HealthStatus.new, '/api/v1/health');
         expect(result.isSuccess, isTrue);
@@ -153,10 +147,7 @@ void main() {
   group('ZenClient Accept-Language', () {
     /// Builds a client whose [language] callback returns whatever [locale] currently holds,
     /// and captures the headers the request went out with.
-    ZenClient clientReading(
-      String Function() locale,
-      void Function(http.Request) capture,
-    ) {
+    ZenClient clientReading(String Function() locale, void Function(http.Request) capture) {
       final mock = MockClient((request) async {
         capture(request);
         return _encodedResponse(
@@ -257,9 +248,7 @@ void main() {
     });
 
     test('non-2xx with empty body synthesizes a ZenError from the status', () async {
-      final mock = MockClient(
-        (request) async => http.Response('', 403, reasonPhrase: 'Forbidden'),
-      );
+      final mock = MockClient((request) async => http.Response('', 403, reasonPhrase: 'Forbidden'));
       final client = ZenClient(baseUrl: 'http://host', httpClient: mock);
 
       final result = await client.get(HealthStatus.new, '/api/v1/secret');

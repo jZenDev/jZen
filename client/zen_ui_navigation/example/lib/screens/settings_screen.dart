@@ -7,9 +7,7 @@ import '../providers/localization_providers.dart';
 
 /// Settings screen with app preferences
 class SettingsScreen extends ConsumerStatefulWidget {
-  const SettingsScreen({
-    super.key,
-  });
+  const SettingsScreen({super.key});
 
   @override
   ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
@@ -65,10 +63,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             trailing: SegmentedButton<Locale>(
               segments: [
                 for (final tag in ZenLocales.supported)
-                  ButtonSegment<Locale>(
-                    value: Locale(tag),
-                    label: Text(tag.toUpperCase()),
-                  ),
+                  ButtonSegment<Locale>(value: Locale(tag), label: Text(tag.toUpperCase())),
               ],
               selected: {ref.watch(localeProvider)},
               onSelectionChanged: (selection) =>
@@ -125,9 +120,9 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Text(
         title,
-        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
-        ),
+        style: Theme.of(
+          context,
+        ).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.primary),
       ),
     );
   }

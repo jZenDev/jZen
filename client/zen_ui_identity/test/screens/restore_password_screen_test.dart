@@ -12,12 +12,10 @@ import '../support/localized_app.dart';
 class _FakeRepo implements IdentityRepository {
   ZenResult<void> restoreResult;
   _FakeRepo({ZenResult<void>? restoreResult})
-    : restoreResult =
-          restoreResult ?? const ZenResult.err(ZenUnknownError('not set'));
+    : restoreResult = restoreResult ?? const ZenResult.err(ZenUnknownError('not set'));
 
   @override
-  Future<ZenResult<IdentityContract?>> getCurrentIdentity() async =>
-      const ZenResult.ok(null);
+  Future<ZenResult<IdentityContract?>> getCurrentIdentity() async => const ZenResult.ok(null);
 
   @override
   Future<ZenResult<IdentityContract>> loginWithEmail({
@@ -32,30 +30,21 @@ class _FakeRepo implements IdentityRepository {
   }) async => const ZenResult.err(ZenUnknownError('not implemented'));
 
   @override
-  Future<ZenResult<void>> restorePassword({required String email}) async =>
-      restoreResult;
+  Future<ZenResult<void>> restorePassword({required String email}) async => restoreResult;
 
   @override
-  Future<ZenResult<void>> logout() async =>
-      const ZenResult.err(ZenUnknownError('not implemented'));
+  Future<ZenResult<void>> logout() async => const ZenResult.err(ZenUnknownError('not implemented'));
 }
 
 void main() {
-
-  testWidgets('success shows success snackbar and calls callback', (
-    tester,
-  ) async {
+  testWidgets('success shows success snackbar and calls callback', (tester) async {
     final repo = _FakeRepo(restoreResult: const ZenResult.ok(null));
     var called = false;
 
     await tester.pumpWidget(
       ProviderScope(
         overrides: [identityRepositoryProvider.overrideWithValue(repo)],
-        child: localizedApp(
-          home: RestorePasswordScreen(
-            onRestoreSuccess: () => called = true,
-          ),
-        ),
+        child: localizedApp(home: RestorePasswordScreen(onRestoreSuccess: () => called = true)),
       ),
     );
 
@@ -72,16 +61,12 @@ void main() {
   });
 
   testWidgets('error shows error snackbar with error color', (tester) async {
-    final repo = _FakeRepo(
-      restoreResult: const ZenResult.err(ZenNotFoundError('no')),
-    );
+    final repo = _FakeRepo(restoreResult: const ZenResult.err(ZenNotFoundError('no')));
 
     await tester.pumpWidget(
       ProviderScope(
         overrides: [identityRepositoryProvider.overrideWithValue(repo)],
-        child: localizedApp(
-          home: RestorePasswordScreen(),
-        ),
+        child: localizedApp(home: RestorePasswordScreen()),
       ),
     );
 

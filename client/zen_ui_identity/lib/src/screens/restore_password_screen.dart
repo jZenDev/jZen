@@ -14,15 +14,10 @@ class RestorePasswordScreen extends ConsumerStatefulWidget {
   final VoidCallback? onRestoreSuccess;
   final VoidCallback? onBackClick;
 
-  const RestorePasswordScreen({
-    super.key,
-    this.onRestoreSuccess,
-    this.onBackClick,
-  });
+  const RestorePasswordScreen({super.key, this.onRestoreSuccess, this.onBackClick});
 
   @override
-  ConsumerState<RestorePasswordScreen> createState() =>
-      _RestorePasswordScreenState();
+  ConsumerState<RestorePasswordScreen> createState() => _RestorePasswordScreenState();
 }
 
 class _RestorePasswordScreenState extends ConsumerState<RestorePasswordScreen> {
@@ -39,9 +34,7 @@ class _RestorePasswordScreenState extends ConsumerState<RestorePasswordScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final controller = ref.read(identitySessionStoreProvider.notifier);
-    final result = await controller.restorePassword(
-      _emailController.text.trim(),
-    );
+    final result = await controller.restorePassword(_emailController.text.trim());
 
     if (!mounted) return;
     final messages = IdentityLocalizations.of(context);
@@ -49,9 +42,9 @@ class _RestorePasswordScreenState extends ConsumerState<RestorePasswordScreen> {
     result.fold(
       (_) {
         // Success
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(messages.resetLinkSentSuccess)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(messages.resetLinkSentSuccess)));
 
         widget.onRestoreSuccess?.call();
       },
@@ -59,9 +52,7 @@ class _RestorePasswordScreenState extends ConsumerState<RestorePasswordScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(messages.errorText(error)),
-            backgroundColor: Theme.of(
-              context,
-            ).extension<IdentityThemeExtension>()?.errorColor,
+            backgroundColor: Theme.of(context).extension<IdentityThemeExtension>()?.errorColor,
           ),
         );
       },
@@ -72,8 +63,7 @@ class _RestorePasswordScreenState extends ConsumerState<RestorePasswordScreen> {
   Widget build(BuildContext context) {
     final messages = IdentityLocalizations.of(context);
     final theme =
-        Theme.of(context).extension<IdentityThemeExtension>() ??
-        IdentityThemeExtension.fallback();
+        Theme.of(context).extension<IdentityThemeExtension>() ?? IdentityThemeExtension.fallback();
 
     return Scaffold(
       backgroundColor: theme.surfaceColor,
@@ -127,9 +117,7 @@ class _RestorePasswordScreenState extends ConsumerState<RestorePasswordScreen> {
                   SizedBox(height: theme.spacing * 2),
                   IdentityButton(
                     text: messages.sendResetLinkButton,
-                    isLoading: ref
-                        .watch(identitySessionStoreProvider)
-                        .isLoading,
+                    isLoading: ref.watch(identitySessionStoreProvider).isLoading,
                     onPressed: _submit,
                   ),
                 ],

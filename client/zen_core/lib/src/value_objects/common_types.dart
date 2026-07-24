@@ -19,15 +19,13 @@ final class ZenTimestamp {
   /// Creates a [ZenTimestamp] from a specific [dateTime].
   ///
   /// Forces the [dateTime] to UTC.
-  factory ZenTimestamp.from(DateTime dateTime) =>
-      ZenTimestamp._(dateTime.toUtc());
+  factory ZenTimestamp.from(DateTime dateTime) => ZenTimestamp._(dateTime.toUtc());
 
   @override
   String toString() => value.toIso8601String();
 
   @override
-  bool operator ==(Object other) =>
-      other is ZenTimestamp && other.value == value;
+  bool operator ==(Object other) => other is ZenTimestamp && other.value == value;
 
   @override
   int get hashCode => value.hashCode;
@@ -42,9 +40,8 @@ final class ZenTimestamp {
   int get millisecondsSinceEpoch => value.millisecondsSinceEpoch;
 
   /// Creates a [ZenTimestamp] from [milliseconds] since epoch.
-  factory ZenTimestamp.fromMilliseconds(int milliseconds) => ZenTimestamp._(
-    DateTime.fromMillisecondsSinceEpoch(milliseconds, isUtc: true),
-  );
+  factory ZenTimestamp.fromMilliseconds(int milliseconds) =>
+      ZenTimestamp._(DateTime.fromMillisecondsSinceEpoch(milliseconds, isUtc: true));
 }
 
 /// A value object representing a locale with a mandatory language code
@@ -65,20 +62,13 @@ final class ZenLocale {
   ///
   /// [languageCode] must be 2 lowercase letters.
   /// [regionCode] if present must be 2 uppercase letters.
-  static ZenResult<ZenLocale> create({
-    required String languageCode,
-    String? regionCode,
-  }) {
+  static ZenResult<ZenLocale> create({required String languageCode, String? regionCode}) {
     if (!RegExp(r'^[a-z]{2}$').hasMatch(languageCode)) {
-      return ZenResult.err(
-        ZenValidationError('Invalid language code: $languageCode'),
-      );
+      return ZenResult.err(ZenValidationError('Invalid language code: $languageCode'));
     }
 
     if (regionCode != null && !RegExp(r'^[A-Z]{2}$').hasMatch(regionCode)) {
-      return ZenResult.err(
-        ZenValidationError('Invalid region code: $regionCode'),
-      );
+      return ZenResult.err(ZenValidationError('Invalid region code: $regionCode'));
     }
 
     return ZenResult.ok(ZenLocale._(languageCode, regionCode));
@@ -86,14 +76,11 @@ final class ZenLocale {
 
   /// Returns the string representation (e.g., "uk" or "uk_UA").
   @override
-  String toString() =>
-      regionCode == null ? languageCode : '${languageCode}_$regionCode';
+  String toString() => regionCode == null ? languageCode : '${languageCode}_$regionCode';
 
   @override
   bool operator ==(Object other) =>
-      other is ZenLocale &&
-      other.languageCode == languageCode &&
-      other.regionCode == regionCode;
+      other is ZenLocale && other.languageCode == languageCode && other.regionCode == regionCode;
 
   @override
   int get hashCode => Object.hash(languageCode, regionCode);

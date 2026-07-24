@@ -45,7 +45,5 @@ void main() {
     ],
   );
 
-  runApp(
-    UncontrolledProviderScope(container: container, child: const DemoApp()),
-  );
+  runApp(UncontrolledProviderScope(container: container, child: const DemoApp()));
 }

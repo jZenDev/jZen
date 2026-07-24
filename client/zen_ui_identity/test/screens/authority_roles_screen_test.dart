@@ -33,21 +33,17 @@ class _FakeRepo implements IdentityRepository {
       const ZenResult.err(ZenUnknownError('no'));
 
   @override
-  Future<ZenResult<void>> logout() async =>
-      const ZenResult.err(ZenUnknownError('no'));
+  Future<ZenResult<void>> logout() async => const ZenResult.err(ZenUnknownError('no'));
 }
 
 void main() {
-
   testWidgets('shows unauthenticated when no identity', (tester) async {
     final repo = _FakeRepo(current: const ZenResult.ok(null));
 
     await tester.pumpWidget(
       ProviderScope(
         overrides: [identityRepositoryProvider.overrideWithValue(repo)],
-        child: localizedApp(
-          home: AuthorityRolesScreen(),
-        ),
+        child: localizedApp(home: AuthorityRolesScreen()),
       ),
     );
 
@@ -68,9 +64,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [identityRepositoryProvider.overrideWithValue(repo)],
-        child: localizedApp(
-          home: AuthorityRolesScreen(),
-        ),
+        child: localizedApp(home: AuthorityRolesScreen()),
       ),
     );
 
@@ -91,9 +85,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [identityRepositoryProvider.overrideWithValue(repo)],
-        child: localizedApp(
-          home: AuthorityRolesScreen(),
-        ),
+        child: localizedApp(home: AuthorityRolesScreen()),
       ),
     );
 

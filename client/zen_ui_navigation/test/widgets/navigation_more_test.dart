@@ -6,42 +6,47 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 
 void main() {
-  testWidgets(
-      'NavigationMorePage material branch shows selection and calls callback',
-      (WidgetTester tester) async {
+  testWidgets('NavigationMorePage material branch shows selection and calls callback', (
+    WidgetTester tester,
+  ) async {
     // Material branch is not built on iOS; skip when running with zenIsIOS.
     if (zenIsIOS) return;
     final overflow = [
       ZenNavigationItem(
-          id: 'a',
-          label: 'A',
-          icon: Icons.home,
-          builder: (c) => const SizedBox.shrink()),
+        id: 'a',
+        label: 'A',
+        icon: Icons.home,
+        builder: (c) => const SizedBox.shrink(),
+      ),
       ZenNavigationItem(
-          id: 'b',
-          label: 'B',
-          icon: Icons.search,
-          builder: (c) => const SizedBox.shrink()),
+        id: 'b',
+        label: 'B',
+        icon: Icons.search,
+        builder: (c) => const SizedBox.shrink(),
+      ),
       ZenNavigationItem(
-          id: 'c',
-          label: 'C',
-          icon: Icons.settings,
-          builder: (c) => const SizedBox.shrink()),
+        id: 'c',
+        label: 'C',
+        icon: Icons.settings,
+        builder: (c) => const SizedBox.shrink(),
+      ),
     ];
 
     var selectedCalled = -1;
 
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      home: NavigationMorePage(
-        overflowItems: overflow,
-        selectedIndex: 5, // corresponds to overflow index 1 when indexOffset=4
-        indexOffset: 4,
-        onItemSelected: (i) => selectedCalled = i,
-        labelMore: 'More',
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
+        home: NavigationMorePage(
+          overflowItems: overflow,
+          selectedIndex: 5, // corresponds to overflow index 1 when indexOffset=4
+          indexOffset: 4,
+          onItemSelected: (i) => selectedCalled = i,
+          labelMore: 'More',
+        ),
       ),
-    ));
+    );
 
     // AppBar title
     expect(find.text('More'), findsOneWidget);
@@ -67,8 +72,7 @@ void main() {
     expect(selectedCalled, 5);
   });
 
-  testWidgets('NavigationMorePage cupertino simple added test',
-      (WidgetTester tester) async {
+  testWidgets('NavigationMorePage cupertino simple added test', (WidgetTester tester) async {
     if (!zenIsIOS) return;
 
     final items = List<ZenNavigationItem>.generate(
@@ -82,17 +86,19 @@ void main() {
 
     var selected = -1;
 
-    await tester.pumpWidget(CupertinoApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      home: NavigationMorePage(
-        overflowItems: items,
-        selectedIndex: 0,
-        indexOffset: 0,
-        onItemSelected: (int idx) => selected = idx,
-        labelMore: 'More',
+    await tester.pumpWidget(
+      CupertinoApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
+        home: NavigationMorePage(
+          overflowItems: items,
+          selectedIndex: 0,
+          indexOffset: 0,
+          onItemSelected: (int idx) => selected = idx,
+          labelMore: 'More',
+        ),
       ),
-    ));
+    );
 
     // Verify cupertino labels present
     expect(find.text('CItem 0'), findsOneWidget);
@@ -103,8 +109,9 @@ void main() {
     expect(selected, equals(1));
   });
 
-  testWidgets('NavigationMorePage Cupertino shows checkmark and calls callback',
-      (WidgetTester tester) async {
+  testWidgets('NavigationMorePage Cupertino shows checkmark and calls callback', (
+    WidgetTester tester,
+  ) async {
     // This test targets the Cupertino branch compiled for iOS.
     if (!zenIsIOS) return;
 
@@ -128,17 +135,19 @@ void main() {
     const indexOffset = 10;
     const selectedIndex = indexOffset + 1; // second item selected
 
-    await tester.pumpWidget(CupertinoApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      home: NavigationMorePage(
-        overflowItems: items,
-        selectedIndex: selectedIndex,
-        indexOffset: indexOffset,
-        onItemSelected: (i) => selected = i,
-        labelMore: 'More',
+    await tester.pumpWidget(
+      CupertinoApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
+        home: NavigationMorePage(
+          overflowItems: items,
+          selectedIndex: selectedIndex,
+          indexOffset: indexOffset,
+          onItemSelected: (i) => selected = i,
+          labelMore: 'More',
+        ),
       ),
-    ));
+    );
 
     await tester.pumpAndSettle();
 
@@ -150,8 +159,7 @@ void main() {
     expect(find.byIcon(CupertinoIcons.checkmark_alt), findsOneWidget);
 
     // Verify leading icon color for selected item is activeBlue.
-    final cupertinoTileB =
-        tester.widget(find.widgetWithText(CupertinoListTile, 'B'));
+    final cupertinoTileB = tester.widget(find.widgetWithText(CupertinoListTile, 'B'));
     // CupertinoListTile.leading is an Icon when used in this widget.
     final Icon cupertinoLeading = (cupertinoTileB as dynamic).leading as Icon;
     expect(cupertinoLeading.color, CupertinoColors.activeBlue);
@@ -164,107 +172,118 @@ void main() {
   });
 
   testWidgets(
-      'NavigationMorePage material branch unselected items show no check and normal style',
-      (WidgetTester tester) async {
-    if (zenIsIOS) return;
+    'NavigationMorePage material branch unselected items show no check and normal style',
+    (WidgetTester tester) async {
+      if (zenIsIOS) return;
 
-    final overflow = [
-      ZenNavigationItem(
+      final overflow = [
+        ZenNavigationItem(
           id: 'a',
           label: 'A',
           icon: Icons.home,
-          builder: (c) => const SizedBox.shrink()),
-      ZenNavigationItem(
+          builder: (c) => const SizedBox.shrink(),
+        ),
+        ZenNavigationItem(
           id: 'b',
           label: 'B',
           icon: Icons.search,
-          builder: (c) => const SizedBox.shrink()),
-    ];
+          builder: (c) => const SizedBox.shrink(),
+        ),
+      ];
 
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      home: NavigationMorePage(
-        overflowItems: overflow,
-        selectedIndex: -1, // no selection
-        indexOffset: 0,
-        onItemSelected: (_) {},
-        labelMore: 'More',
-      ),
-    ));
+      await tester.pumpWidget(
+        MaterialApp(
+          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+          supportedLocales: NavigationLocalizations.supportedLocales,
+          home: NavigationMorePage(
+            overflowItems: overflow,
+            selectedIndex: -1, // no selection
+            indexOffset: 0,
+            onItemSelected: (_) {},
+            labelMore: 'More',
+          ),
+        ),
+      );
 
-    await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
 
-    // No check icons should be present
-    expect(find.byIcon(Icons.check), findsNothing);
+      // No check icons should be present
+      expect(find.byIcon(Icons.check), findsNothing);
 
-    // Titles should have normal fontWeight
-    final Text titleA = tester.widget(find.text('A'));
-    expect(titleA.style?.fontWeight, FontWeight.normal);
-  });
+      // Titles should have normal fontWeight
+      final Text titleA = tester.widget(find.text('A'));
+      expect(titleA.style?.fontWeight, FontWeight.normal);
+    },
+  );
 
   testWidgets(
-      'NavigationMorePage cupertino branch unselected items use label color and no trailing',
-      (WidgetTester tester) async {
-    if (!zenIsIOS) return;
+    'NavigationMorePage cupertino branch unselected items use label color and no trailing',
+    (WidgetTester tester) async {
+      if (!zenIsIOS) return;
 
-    final items = <ZenNavigationItem>[
-      ZenNavigationItem(
+      final items = <ZenNavigationItem>[
+        ZenNavigationItem(
           id: 'a',
           label: 'A',
           icon: CupertinoIcons.home,
-          builder: (c) => const SizedBox.shrink()),
-    ];
+          builder: (c) => const SizedBox.shrink(),
+        ),
+      ];
 
-    await tester.pumpWidget(CupertinoApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      home: NavigationMorePage(
-        overflowItems: items,
-        selectedIndex: -1,
-        indexOffset: 0,
-        onItemSelected: (_) {},
-        labelMore: 'More',
-      ),
-    ));
+      await tester.pumpWidget(
+        CupertinoApp(
+          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+          supportedLocales: NavigationLocalizations.supportedLocales,
+          home: NavigationMorePage(
+            overflowItems: items,
+            selectedIndex: -1,
+            indexOffset: 0,
+            onItemSelected: (_) {},
+            labelMore: 'More',
+          ),
+        ),
+      );
 
-    await tester.pumpAndSettle();
+      await tester.pumpAndSettle();
 
-    // No checkmark should be present
-    expect(find.byIcon(CupertinoIcons.checkmark_alt), findsNothing);
+      // No checkmark should be present
+      expect(find.byIcon(CupertinoIcons.checkmark_alt), findsNothing);
 
-    // Leading icon should use CupertinoColors.label
-    final cupertinoTileA =
-        tester.widget(find.widgetWithText(CupertinoListTile, 'A'));
-    final Icon cupertinoLeading = (cupertinoTileA as dynamic).leading as Icon;
-    expect(cupertinoLeading.color, CupertinoColors.label);
-  });
+      // Leading icon should use CupertinoColors.label
+      final cupertinoTileA = tester.widget(find.widgetWithText(CupertinoListTile, 'A'));
+      final Icon cupertinoLeading = (cupertinoTileA as dynamic).leading as Icon;
+      expect(cupertinoLeading.color, CupertinoColors.label);
+    },
+  );
 
-  testWidgets(
-      'NavigationMorePage material respects Theme primaryColor for selected visuals',
-      (WidgetTester tester) async {
+  testWidgets('NavigationMorePage material respects Theme primaryColor for selected visuals', (
+    WidgetTester tester,
+  ) async {
     if (zenIsIOS) return;
 
     final overflow = [
       ZenNavigationItem(
-          id: 'a',
-          label: 'A',
-          icon: Icons.home,
-          builder: (c) => const SizedBox.shrink()),
+        id: 'a',
+        label: 'A',
+        icon: Icons.home,
+        builder: (c) => const SizedBox.shrink(),
+      ),
     ];
 
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      theme: ThemeData(primaryColor: Colors.green),
-      home: NavigationMorePage(
-        overflowItems: overflow,
-        selectedIndex: 0,
-        indexOffset: 0,
-        onItemSelected: (_) {},
-        labelMore: 'More',
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
+        theme: ThemeData(primaryColor: Colors.green),
+        home: NavigationMorePage(
+          overflowItems: overflow,
+          selectedIndex: 0,
+          indexOffset: 0,
+          onItemSelected: (_) {},
+          labelMore: 'More',
+        ),
       ),
-    ));
+    );
 
     await tester.pumpAndSettle();
 
@@ -278,33 +297,36 @@ void main() {
     expect(check.color, Colors.green);
   });
 
-  testWidgets(
-      'NavigationMorePage material calls callback for each overflow item',
-      (WidgetTester tester) async {
+  testWidgets('NavigationMorePage material calls callback for each overflow item', (
+    WidgetTester tester,
+  ) async {
     if (zenIsIOS) return;
 
     final overflow = List.generate(
       3,
       (i) => ZenNavigationItem(
-          id: 'id_$i',
-          label: 'Item $i',
-          icon: Icons.home,
-          builder: (c) => const SizedBox.shrink()),
+        id: 'id_$i',
+        label: 'Item $i',
+        icon: Icons.home,
+        builder: (c) => const SizedBox.shrink(),
+      ),
     );
 
     final called = <int>[];
 
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      home: NavigationMorePage(
-        overflowItems: overflow,
-        selectedIndex: -1,
-        indexOffset: 10,
-        onItemSelected: called.add,
-        labelMore: 'More',
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
+        home: NavigationMorePage(
+          overflowItems: overflow,
+          selectedIndex: -1,
+          indexOffset: 10,
+          onItemSelected: called.add,
+          labelMore: 'More',
+        ),
       ),
-    ));
+    );
 
     await tester.pumpAndSettle();
 
@@ -316,21 +338,24 @@ void main() {
     }
   });
 
-  testWidgets('NavigationMorePage material empty overflow shows title only',
-      (WidgetTester tester) async {
+  testWidgets('NavigationMorePage material empty overflow shows title only', (
+    WidgetTester tester,
+  ) async {
     if (zenIsIOS) return;
 
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      home: NavigationMorePage(
-        overflowItems: const [],
-        selectedIndex: -1,
-        indexOffset: 0,
-        onItemSelected: (_) {},
-        labelMore: 'More',
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
+        home: NavigationMorePage(
+          overflowItems: const [],
+          selectedIndex: -1,
+          indexOffset: 0,
+          onItemSelected: (_) {},
+          labelMore: 'More',
+        ),
       ),
-    ));
+    );
 
     await tester.pumpAndSettle();
 
@@ -339,21 +364,24 @@ void main() {
     expect(find.byType(ListTile), findsNothing);
   });
 
-  testWidgets('NavigationMorePage cupertino empty overflow shows title only',
-      (WidgetTester tester) async {
+  testWidgets('NavigationMorePage cupertino empty overflow shows title only', (
+    WidgetTester tester,
+  ) async {
     if (!zenIsIOS) return;
 
-    await tester.pumpWidget(CupertinoApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      home: NavigationMorePage(
-        overflowItems: const [],
-        selectedIndex: -1,
-        indexOffset: 0,
-        onItemSelected: (_) {},
-        labelMore: 'More',
+    await tester.pumpWidget(
+      CupertinoApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
+        home: NavigationMorePage(
+          overflowItems: const [],
+          selectedIndex: -1,
+          indexOffset: 0,
+          onItemSelected: (_) {},
+          labelMore: 'More',
+        ),
       ),
-    ));
+    );
 
     await tester.pumpAndSettle();
 

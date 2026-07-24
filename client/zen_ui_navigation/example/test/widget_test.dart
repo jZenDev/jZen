@@ -4,12 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('NavigationExampleApp app builds and shows navigation', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      const ProviderScope(child: NavigationExampleApp()),
-    );
+  testWidgets('NavigationExampleApp app builds and shows navigation', (WidgetTester tester) async {
+    await tester.pumpWidget(const ProviderScope(child: NavigationExampleApp()));
     await tester.pumpAndSettle();
 
     // Verify the app builds without errors
@@ -17,12 +13,8 @@ void main() {
     expect(find.byType(AdaptiveNavigationShell), findsOneWidget);
   });
 
-  testWidgets('AdaptiveNavigationShell renders navigation items', (
-    WidgetTester tester,
-  ) async {
-    await tester.pumpWidget(
-      const ProviderScope(child: NavigationExampleApp()),
-    );
+  testWidgets('AdaptiveNavigationShell renders navigation items', (WidgetTester tester) async {
+    await tester.pumpWidget(const ProviderScope(child: NavigationExampleApp()));
     await tester.pumpAndSettle();
 
     // Verify navigation is rendered

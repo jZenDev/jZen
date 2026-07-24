@@ -19,10 +19,7 @@ void main() {
       DemoLocalizations.delegate.load(Locale(locale));
 
   test('ships exactly the locales ZenLocales declares', () {
-    expect(
-      DemoLocalizations.supportedLocales.map((l) => l.languageCode),
-      ZenLocales.supported,
-    );
+    expect(DemoLocalizations.supportedLocales.map((l) => l.languageCode), ZenLocales.supported);
   });
 
   test('demo strings resolve in English', () async {
@@ -61,15 +58,11 @@ void main() {
     String acceptLanguage() => container.read(localeProvider).languageCode;
 
     expect(acceptLanguage(), ZenLocales.en);
-    container.read(localeProvider.notifier).setLocale(
-      const Locale(ZenLocales.uk),
-    );
+    container.read(localeProvider.notifier).setLocale(const Locale(ZenLocales.uk));
     expect(acceptLanguage(), ZenLocales.uk);
   });
 
-  testWidgets('one locale change re-renders the app and both framework packages', (
-    tester,
-  ) async {
+  testWidgets('one locale change re-renders the app and both framework packages', (tester) async {
     // Three delegates, three packages, one Locale: the composition ADR-009 chose.
     final container = ProviderContainer();
     addTearDown(container.dispose);
@@ -105,9 +98,7 @@ void main() {
     expect(find.text('Profile'), findsOneWidget);
     expect(find.text('More'), findsOneWidget);
 
-    container.read(localeProvider.notifier).setLocale(
-      const Locale(ZenLocales.uk),
-    );
+    container.read(localeProvider.notifier).setLocale(const Locale(ZenLocales.uk));
     await tester.pumpAndSettle();
 
     expect(find.text('Умови'), findsOneWidget);

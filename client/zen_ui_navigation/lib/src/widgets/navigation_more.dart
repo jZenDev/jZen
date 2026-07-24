@@ -38,9 +38,7 @@ class NavigationMorePage extends StatelessWidget {
   Widget build(BuildContext context) {
     if (zenIsIOS) {
       return CupertinoPageScaffold(
-        navigationBar: CupertinoNavigationBar(
-          middle: Text(labelMore),
-        ),
+        navigationBar: CupertinoNavigationBar(middle: Text(labelMore)),
         child: SafeArea(
           child: ListView.builder(
             itemCount: overflowItems.length,
@@ -52,16 +50,11 @@ class NavigationMorePage extends StatelessWidget {
               return CupertinoListTile(
                 leading: Icon(
                   item.icon,
-                  color: isSelected
-                      ? CupertinoColors.activeBlue
-                      : CupertinoColors.label,
+                  color: isSelected ? CupertinoColors.activeBlue : CupertinoColors.label,
                 ),
                 title: Text(item.label),
                 trailing: isSelected
-                    ? const Icon(
-                        CupertinoIcons.checkmark_alt,
-                        color: CupertinoColors.activeBlue,
-                      )
+                    ? const Icon(CupertinoIcons.checkmark_alt, color: CupertinoColors.activeBlue)
                     : null,
                 onTap: () {
                   onItemSelected(globalIndex);
@@ -75,9 +68,7 @@ class NavigationMorePage extends StatelessWidget {
 
     // Material design
     return Scaffold(
-      appBar: AppBar(
-        title: Text(labelMore),
-      ),
+      appBar: AppBar(title: Text(labelMore)),
       body: ListView.builder(
         itemCount: overflowItems.length,
         itemBuilder: (BuildContext context, int index) {
@@ -86,10 +77,7 @@ class NavigationMorePage extends StatelessWidget {
           final bool isSelected = selectedIndex == globalIndex;
 
           return ListTile(
-            leading: Icon(
-              item.icon,
-              color: isSelected ? Theme.of(context).primaryColor : null,
-            ),
+            leading: Icon(item.icon, color: isSelected ? Theme.of(context).primaryColor : null),
             title: Text(
               item.label,
               style: TextStyle(
@@ -97,12 +85,7 @@ class NavigationMorePage extends StatelessWidget {
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
               ),
             ),
-            trailing: isSelected
-                ? Icon(
-                    Icons.check,
-                    color: Theme.of(context).primaryColor,
-                  )
-                : null,
+            trailing: isSelected ? Icon(Icons.check, color: Theme.of(context).primaryColor) : null,
             onTap: () {
               onItemSelected(globalIndex);
             },

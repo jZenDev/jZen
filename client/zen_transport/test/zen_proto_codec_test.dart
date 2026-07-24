@@ -85,11 +85,7 @@ void main() {
       // Not valid JSON, and (usually) not a valid protobuf wire form.
       final garbage = utf8.encode('this is not a valid message {{{');
       expect(
-        () => ZenProtoCodec.decode(
-          garbage,
-          ZenTransportFormat.json,
-          HealthStatus.new,
-        ),
+        () => ZenProtoCodec.decode(garbage, ZenTransportFormat.json, HealthStatus.new),
         throwsA(isA<ZenTransportException>()),
       );
     });

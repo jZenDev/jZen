@@ -39,12 +39,9 @@ class IdentityTextField extends StatelessWidget {
   Widget build(BuildContext context) {
     // Access custom theme
     final theme =
-        Theme.of(context).extension<IdentityThemeExtension>() ??
-        IdentityThemeExtension.fallback();
+        Theme.of(context).extension<IdentityThemeExtension>() ?? IdentityThemeExtension.fallback();
 
-    final borderSide = BorderSide(
-      color: theme.brandColor.withValues(alpha: 0.5),
-    );
+    final borderSide = BorderSide(color: theme.brandColor.withValues(alpha: 0.5));
     final errorBorderSide = BorderSide(color: theme.errorColor);
 
     return Column(
@@ -72,9 +69,7 @@ class IdentityTextField extends StatelessWidget {
             onFieldSubmitted: onFieldSubmitted,
             validator: validator,
             enabled: enabled,
-            style: theme.subtitleStyle.copyWith(
-              color: Theme.of(context).colorScheme.onSurface,
-            ),
+            style: theme.subtitleStyle.copyWith(color: Theme.of(context).colorScheme.onSurface),
             decoration: InputDecoration(
               hintText: hint,
               errorText: errorText,
@@ -95,10 +90,7 @@ class IdentityTextField extends StatelessWidget {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),
-                borderSide: borderSide.copyWith(
-                  width: 2,
-                  color: theme.brandColor,
-                ),
+                borderSide: borderSide.copyWith(width: 2, color: theme.brandColor),
               ),
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(8),

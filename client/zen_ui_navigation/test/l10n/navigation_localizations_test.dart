@@ -16,12 +16,8 @@ void main() {
   });
 
   test('resolves the overflow label per locale', () async {
-    final en = await NavigationLocalizations.delegate.load(
-      const Locale(ZenLocales.en),
-    );
-    final uk = await NavigationLocalizations.delegate.load(
-      const Locale(ZenLocales.uk),
-    );
+    final en = await NavigationLocalizations.delegate.load(const Locale(ZenLocales.en));
+    final uk = await NavigationLocalizations.delegate.load(const Locale(ZenLocales.uk));
 
     expect(en.more, 'More');
     expect(uk.more, 'Ще');

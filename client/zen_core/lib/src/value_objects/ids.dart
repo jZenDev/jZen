@@ -34,8 +34,7 @@ final class EmailAddress {
   String toString() => value;
 
   @override
-  bool operator ==(Object other) =>
-      other is EmailAddress && other.value == value;
+  bool operator ==(Object other) => other is EmailAddress && other.value == value;
 
   @override
   int get hashCode => value.hashCode;

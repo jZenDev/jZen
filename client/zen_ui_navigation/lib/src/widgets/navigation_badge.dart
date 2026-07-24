@@ -12,22 +12,11 @@ m.Widget navigationBadge(ZenNavigationItem item, bool selected) {
   final m.Widget child;
   if (item.badgeCount != null && item.badgeCount! > 0) {
     child = (zenIsIOS || zenIsMacOS)
-        ? m.Badge(
-            label: c.Text('${item.badgeCount}'),
-            child: icon,
-          )
-        : m.Badge(
-            label: m.Text('${item.badgeCount}'),
-            child: icon,
-          );
+        ? m.Badge(label: c.Text('${item.badgeCount}'), child: icon)
+        : m.Badge(label: m.Text('${item.badgeCount}'), child: icon);
   } else {
     child = icon;
   }
 
-  return m.Semantics(
-    label: item.label,
-    button: true,
-    selected: selected,
-    child: child,
-  );
+  return m.Semantics(label: item.label, button: true, selected: selected, child: child);
 }

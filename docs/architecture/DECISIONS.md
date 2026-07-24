@@ -15,6 +15,253 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-015 — The appendix gains a delivery order, because a goal was named: a deployed POC
+
+**Date:** 2026-07-24. **Status:** accepted. **Follows:** ADR-013, ADR-014.
+
+### Decision
+
+ADR-013 recorded the remaining pre-production work as an unordered census, and argued against giving
+it an order. That argument was correct **for a census**. It stops being sufficient once an objective
+is named, and one now is: **get a demonstrable POC deployed** — a running stack a person can be shown,
+rather than a framework that composes on a laptop.
+
+**1. The order comes from the goal, not from the items.** This is the part worth preserving from
+ADR-013: the appendix items genuinely have no intrinsic sequence, each being independently
+triggered. What creates a sequence is an objective, because an objective makes some items
+prerequisites and others irrelevant. The order below is therefore a property of *this* goal and is
+expected to change when the goal does — which is why it lives in the appendix as a delivery plan and
+does **not** become Steps 10-11-12.
+
+**2. The order, with the dependency that forces most of it:**
+
+| | Item | Why here |
+|---|---|---|
+| 1 | Fix `format:`'s `\|\| true` | A rule violation (STANDARDS "Orchestration") in the tasks CI will later automate. Fixing a swallow after wiring a pipeline around it means the pipeline inherits the blind spot. Minutes of work. |
+| 2 | Pin the toolchain | Presence is checked, versions are not; no `.tool-versions` / `mise.toml` / devcontainer exists. Native-image builds are sensitive to JDK/GraalVM drift, so this directly de-risks the next item. |
+| 3 | Deploy the backend to Cloud Run | The hard prerequisite: everything visible depends on a live API. Also the step that finally makes GDPR retention *run* — see point 5. |
+| 4 | Deploy the Flutter web app, same-origin | The POC's user-facing surface. Blocked by 3. |
+| 5 | Deploy the admin panel, same container | The POC's third language binding. See point 4. |
+| 6 | CI | Sustains quality; it does not produce the first deploy. |
+| 7 | Publish the packages | Serves *other developers adopting the framework* — a different audience from the one a POC is for, and not on its path. |
+
+**3. Publishing drops below the POC, reversing the emphasis ADR-013 gave it.** ADR-013 called
+publishing "the largest of these", and it remains the largest *gap*. It is not the most urgent
+*task*, because size and urgency are different properties: publishing matters when someone else
+builds on jZen, whereas a POC proves the thing runs at all. Publishing is additionally gated on CI —
+shipping unverified versions to a registry is worse than shipping none, since a registry version is
+not retractable the way a branch is.
+
+**4. The admin panel is part of the POC, not an item after it.** Two reasons, the second decisive:
+
+- It is **already architected same-origin**, and more so than the Flutter app. `vite.config.ts`
+  proxies `/api` and `/openapi` to the backend under the comment *"Same-origin proxy so the httpOnly
+  `zen_access_token` cookie flows without CORS juggling"*. Deploying it same-origin makes production
+  match dev. The web app is the surface that does *not* match: the appendix records it running on
+  its own origin behind CORS locally.
+- It is **the only surface that exercises the third language binding.** The contract-first claim is
+  proto → Java **and** Dart **and** TypeScript; the Flutter client demonstrates the first two, and
+  only the panel drives `schema.generated.ts`, the `Content-Range` pagination convention, and the
+  JSON transport mode against generated types. A POC without it demonstrates two thirds of the
+  headline claim. MANIFESTO names react-admin as one of three stack pillars, STANDARDS "Frontend
+  split" makes Product UI and Admin UI co-equal, and ADR-005 made `@jzen/admin-core` framework code
+  — leaving it undeployed leaves framework code unexercised.
+
+**5. One consequence of the ordering is a correctness claim, not a preference.** ROADMAP 7a states
+"The GDPR obligation is now discharged in production." That is true of the code and false of the
+world: retention fires only when a Cloud Scheduler entry calls `POST /api/v1/jobs/trigger`, and no
+such entry exists because nothing has been deployed. The mechanism is proven (ADR-008; 10 framework
+unit tests over a driven clock, 2 e2e cases); the trigger is simply not wired to anything real.
+Item 3 above is what makes that sentence true.
+
+**6. Two items are declarations rather than queued work**, recorded so they are not mistaken for
+work left undone:
+
+- **Native release pipelines are per-application.** Signing identities, store accounts, and
+  notarization credentials belong to whoever ships a product, not to the libraries it is built on.
+  Filed against an app when an app ships; blocks nothing.
+- **`task`'s `sources:`/`generates:` fingerprinting is refused, not merely unused.** It would defeat
+  `sync:contracts`. Promoted to a STANDARDS "Orchestration" rule rather than left as a backlog note,
+  because the hazard is invisible from the feature's description — see "What this supersedes" below.
+
+### What this supersedes, and why
+
+- **"The remaining work is an appendix, not Steps 10-11-12 … numbering them would misrepresent both
+  their history and their nature — a numbered step is a commitment with an order, whereas these are
+  a boundary the project has not yet crossed, each independently triggered."** (ADR-013 pt.2) →
+  **refined.** *Why:* the conclusion stands and the appendix stays an appendix — nothing becomes a
+  numbered step, the nine-step sequence stays readable as history, and no item is reframed as
+  planned work that slipped. What ADR-013 lacked was an objective; it was written as a census of a
+  boundary, and a census legitimately has no order. Point 1 above states the distinction that
+  reconciles the two: the items still have no *intrinsic* order, and the sequence is a property of
+  the goal now in hand. If the goal changes, the sequence is rewritten and ADR-013's reasoning is
+  untouched.
+- **"Publishing is the largest of these"** (ROADMAP appendix, following the gap table) →
+  **reframed, not contradicted.** *Why:* it is still the largest gap. Point 3 separates size from
+  urgency and puts it last for this goal, on audience rather than on effort.
+- **"A deploy task that puts the bundle on GCP — its own container on Cloud Run, or static hosting —
+  and a documented origin/CORS story for it."** (ROADMAP appendix, web-app row; the admin row
+  inherited it) → **corrected.** *Why:* it presented as an open choice something two existing
+  constraints already close. An edge that proxies the API is forbidden by STANDARDS "Deployment
+  model", and `deploy:cloudrun` rules out `firebase deploy` by name — Firebase Hosting forwards only
+  `__session` and jZen sets three cookies. A separate origin that does *not* proxy the API escapes
+  that rule and lands on the other: `SessionService` sets all three cookies `SameSite=LAX` and
+  `run.app` is on the Public Suffix List, so two default Cloud Run URLs are cross-site and the
+  cookie is never attached — login returns 200 and every later request arrives anonymous. Both roads
+  end at same-origin. The ROADMAP rows and the note beneath them now say so.
+
+### Consequence
+
+The appendix is now a delivery plan for a stated goal while remaining a boundary census, and the two
+readings are distinguished rather than conflated. Three things hold as a result:
+
+- **The POC's completion criterion is explicit**: a deployed backend, a deployed web app, and a
+  deployed admin panel, all same-origin — at which point all three language bindings of the
+  contract-first claim are demonstrated on live infrastructure rather than in a test suite.
+- **The ordering is falsifiable.** It derives from one goal and two repository facts (the cookie
+  policy and the admin's existing dev topology), all cited above. A different goal produces a
+  different order, and that is not drift.
+- **The GDPR sentence in ROADMAP 7a is on notice.** It is currently ahead of reality and becomes
+  true at item 3; until then it should be read as describing the mechanism, not the deployment.
+
+**No behaviour changed.** The diff is the ROADMAP appendix, this entry, and one STANDARDS
+"Orchestration" rule; `verify:docs` is green and no task, module, or generated artifact is touched.
+
+## ADR-014 — The orchestrator is a task runner by design: `task`, and not make, Bazel, Nx, or Melos
+
+**Date:** 2026-07-24. **Status:** accepted. **Follows:** ADR-013.
+
+### Decision
+
+STANDARDS "Orchestration" has always *stated* the orchestrator rule — `Taskfile.yml` is the only
+one, it triggers native tools rather than replacing them, and no second build driver joins it — but
+it never **argued** it. A rule without its reasoning is indistinguishable from an arbitrary one, and
+it invites the same question from every new reader: *why not `make`, which is everywhere and which
+nobody has to learn?* That question was asked, answered in conversation, and lost. This entry is the
+answer, recorded once.
+
+**1. The category is the decision.** `task` is a **task runner**; `make`, Bazel, Pants, and Buck2
+are **build systems**. jZen picks the runner category on purpose, and the reason is already written
+down one line above the rule it explains: *"A task that reimplements what a package manager already
+does is a bug."* Incrementality in this repository belongs to `mvnw`, `dart pub`, and `pnpm` — each
+of which does it better for its own language than any orchestrator could. An orchestrator carrying
+its own dependency graph is one that is *tempted* to duplicate them. **The orchestrator is chosen to
+be too weak to become a build system.** That is a feature, and it is the same instinct that keeps
+`zen_core` dependency-free and that answered "no" six times in ADR-010.
+
+**2. Not `make`.** The strongest objection — universal availability, universal familiarity, no new
+dependency — is real, and for a C, Go, or Rust project it would win. It loses here on four specific
+counts, all measured against this repository rather than asserted:
+
+- **The multi-line problem, which macOS makes fatal.** In `make`, every recipe line is its own
+  subshell: variables and `cd` do not survive between lines. The remedy is `.ONESHELL:`, introduced
+  in **GNU Make 3.82**. macOS ships **GNU Make 3.81 (2006)**, frozen at the GPLv3 licence change and
+  never advanced — confirmed on the delivery machine. The Taskfile currently has **12 multi-line
+  shell blocks** and **19 tasks using `dir:`** across 40 tasks. `deploy:cloudrun` alone assigns
+  `IMAGE` and then uses it on three subsequent lines; under 3.81 that variable is gone by line two.
+- **The escaping problem.** `make` claims `$`, so every shell variable doubles. `doctor` defines a
+  shell function taking `$1 $2 $3` and reads `$HOME` and `$missing`; as a Makefile recipe those all
+  become `$$1`, `$$HOME`, `$$missing`. That task is currently readable, and it would stop being so —
+  which lands squarely on MANIFESTO's own bar.
+- **The discovery problem, which is load-bearing here.** `task --list` emits every task with its
+  `desc:`, and `verify:docs` (ADR-012) **mechanically asserts that every `task <name>` named in a
+  README resolves in that list**. `make` has no equivalent; the conventional substitute is a
+  hand-rolled `##`-comment convention plus an `awk` parser. Replacing a builtin with a bespoke
+  comment DSL, in a project whose headline rule is "no custom magic", is the objection this entry
+  finds hardest to answer.
+- **The phony tax.** All 40 targets would need `.PHONY`, forever, or break the day a directory
+  shares a target's name.
+
+  The escape — move all 12 blocks into `scripts/` and have `make` call them — works, but splits the
+  logic across two locations and trades "learn six YAML keys" for "learn `make` *and* navigate a
+  script directory". Note also what is actually being avoided: a Taskfile is YAML with about six
+  keys (`desc`, `cmds`, `deps`, `dir`, `silent`, `sources`/`generates`) wrapping plain bash, whereas
+  `make` is a genuine macro language with automatic variables, pattern rules, text functions, and
+  two assignment semantics. **`make` is the larger DSL.** It feels smaller only because it is
+  familiar.
+
+**3. Not Bazel, Pants, or Buck2.** These are the real industrial answer for polyglot monorepos at
+scale, and they are wrong here for a structural reason, not a scale one: their model *is* replacing
+native tool resolution with a hermetic graph, which contradicts the rule in point 1 directly. And
+decisively — **Flutter has no viable Bazel story.** Dart's Bazel rules are effectively unmaintained
+and Flutter insists on owning its own build and tree-shaking, which ADR-009 proved is load-bearing
+for jZen (the web bundle's tree-shaking is *why* client config is compile-time). Adopting Bazel
+would mean fighting the toolchain the architecture is built on.
+
+**4. Not Nx or Turborepo.** JS-first. Both require `node_modules` and a JS toolchain at the
+repository root, breaking the language-neutral root that BLUEPRINT and `CLAUDE.md` both state (no
+root `pom.xml`, no root `pubspec.yaml` — and by the same logic, no root `package.json`). They would
+still shell out to Java and Dart as opaque commands, exactly as the Taskfile does, while adding a
+plugin system, a generator system, and a daemon. That is more magic, not less. **Moon** is the most
+credibly polyglot of this family and remains the one to re-examine first if point 7 ever fires, but
+Dart/Flutter is not first-class there either.
+
+**5. Not Melos.** Already excluded by name in STANDARDS, and worth stating why the exclusion is
+structural rather than a preference: Melos is Dart-only, so it could never be *the* orchestrator of
+a repository that also builds Java and TypeScript. It could only ever be a *second* driver, which is
+the thing the "one orchestrator, and only one" rule forbids.
+
+**6. The MANIFESTO scope question, answered.** "No *custom* magic" is written about **code
+generation** — it reads "jZen adopts industry-standard, inspectable **generators** only" and lists
+generators. The orchestrator was never inside that clause, so `task` was never in violation of its
+letter. This entry nonetheless holds the orchestrator to the clause's *spirit* — inspectable, no
+bespoke DSL, nothing a reader must learn from scratch — because that is the bar a reader will apply
+whether or not the sentence names it, and because points 2–5 are decided on exactly those grounds.
+
+**7. The reversal trigger, stated as a testable condition** (the ADR-010 pattern: a trigger, not a
+deferral). Two, and neither is met today:
+
+- **If the Taskfile's recipe bodies collapse to one-line wrappers with the real logic living in
+  `scripts/`**, then `task` is adding nothing that `make` does not, the four objections in point 2
+  evaporate along with the multi-line blocks that cause them, and `make`'s ubiquity wins. Revisit
+  then.
+- **If a second application under `apps/` makes full-fanout CI wall-time unacceptable**, the answer
+  is, in order: `sources:`/`generates:` fingerprinting (native to `task`, currently unused across all
+  40 tasks), then affected-detection scripting, then Moon. **Bazel does not become correct at that
+  point** — the Flutter constraint in point 3 is structural and does not soften with scale.
+
+### What this supersedes, and why
+
+- **"`Taskfile.yml` is the only orchestrator. It triggers native tools; it never replaces them."**
+  (STANDARDS "Orchestration") → **refined, not reversed.** *Why:* the rule stands exactly as
+  written; what it lacked was the reasoning that makes it defensible to someone encountering it
+  cold. The sentence "a task that reimplements what a package manager already does is a bug" turns
+  out to be the whole argument compressed to one line, and this entry unpacks it. STANDARDS gains a
+  pointer here; its wording is otherwise untouched.
+- **"Do not introduce Melos, Gradle-as-orchestrator, or any second build driver beside the
+  Taskfile."** (STANDARDS "Orchestration") → **refined.** *Why:* that list reads as three specific
+  prohibitions, so a reader may reasonably ask whether a tool not on it (Nx, Bazel, Moon, `just`) is
+  therefore permitted. Points 2–5 supply the general test the list was standing in for: a candidate
+  must not replace native tool resolution, must not require a language-specific toolchain at the
+  repository root, and must not require jZen to hand-roll what `task` provides as a builtin.
+- **"jZen adopts industry-standard, inspectable generators only"** (MANIFESTO "No *custom* magic") →
+  **scope clarified.** *Why:* the clause is about code generation and does not reach the
+  orchestrator, but it is routinely read as a whole-repository claim — which is what prompted this
+  entry. Point 6 states the boundary and then voluntarily accepts the stricter reading.
+
+### Consequence
+
+The orchestrator choice now has a written argument, and the recurring question has a citable answer
+instead of a rule that must be taken on faith. Three invariants follow:
+
+- **The runner/build-system boundary is explicit.** Any future proposal to give the orchestrator its
+  own dependency graph, cache, or resolution logic is now arguing against a recorded decision rather
+  than filling a silence.
+- **The trigger in point 7 is the only route to reopening this**, on the ADR-010 bar: a measured
+  condition, not a preference. Both conditions are false as of this entry.
+- **`task` itself remains an unpinned, unchecked dependency.** `doctor` cannot check it — `task` is
+  what runs `doctor` — and no version is pinned for it or for any other tool: presence is checked,
+  versions are not, and no `.tool-versions` / `mise.toml` / devcontainer exists. That is a real gap,
+  it is tracked with the production backlog rather than here, and it should be closed alongside CI,
+  where an unpinned toolchain stops being a local inconvenience and becomes a source of silent
+  divergence between CI and a contributor's machine.
+
+**No behaviour changed.** The diff is this entry plus a cross-reference in STANDARDS "Orchestration";
+no task, module, or generated artifact is touched, so `build`, `test`, and `sync:contracts` are
+unaffected by construction. What *was* measured, on the delivery machine, is the evidence in point 2:
+`make --version` reports GNU Make 3.81 (2006), and the Taskfile contains 12 multi-line shell blocks
+and 19 `dir:` declarations across 40 tasks.
+
 ## ADR-013 — Completing the roadmap is not being production-ready: the remaining work is named, not implied
 
 **Date:** 2026-07-23. **Status:** accepted. **Follows:** ADR-012 / ROADMAP Step 9.

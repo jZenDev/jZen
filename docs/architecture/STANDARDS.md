@@ -10,11 +10,26 @@ The rules that keep the monorepo honest. Philosophy is in
   replaces them. `mvnw` owns Java resolution, `dart pub` owns Dart, `pnpm` owns
   TypeScript. A task that reimplements what a package manager already does is a bug.
 - **One orchestrator, and only one.** Do not introduce Melos, Gradle-as-orchestrator, or any
-  second build driver beside the Taskfile.
+  second build driver beside the Taskfile. The general test behind that list, and the argument
+  for `task` over `make`, Bazel, and Nx, is [`DECISIONS.md`](./DECISIONS.md) ADR-014: the
+  orchestrator is a **task runner** and is deliberately too weak to become a build system,
+  because incrementality belongs to `mvnw` / `dart pub` / `pnpm`. ADR-014 also states the two
+  measured conditions under which this would be reopened.
 - **No task ever swallows a failure.** A task that runs a test suite propagates its exit code;
   `|| true`, a discarded status, or a loop that keeps going after a red suite turns the gate
   into decoration. `task test:client` iterating workspace members is the case to watch, because
   a per-member loop is exactly where a lost exit code hides.
+- **Never fingerprint a task that a gate composes.** `task` can skip work whose inputs are
+  unchanged (`sources:` / `generates:`), and that is forbidden on any task a gate runs — today
+  `generate:proto`, `generate:api`, and `generate:l10n`, which `sync:contracts` composes.
+  *Why:* `sync:verify` detects drift by regenerating and then diffing the working tree, so a
+  skipped regeneration produces a clean tree and the gate reports success **without having
+  checked anything**. The defect it exists to catch — a hand-edited tracked generated file — does
+  not touch a `.proto`, so the fingerprint would match and the task would skip precisely when it
+  matters. This is the "turns the gate into decoration" failure above, arriving through a
+  performance feature rather than a discarded exit code. Skipping is only ever safe for a task
+  no gate depends on, and the native tools already do that better for their own languages
+  ([`DECISIONS.md`](./DECISIONS.md) ADR-014).
 - Run `task doctor` after cloning. It distinguishes tools the Java build needs from the
   extra tools (`protoc`, `protoc-gen-dart`) that only Dart proto codegen needs — the
   Java build resolves `protoc` from Maven Central and needs no system install.

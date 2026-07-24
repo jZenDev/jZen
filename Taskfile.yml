@@ -53,41 +53,120 @@ tasks:
   # Environment
   # ---------------------------------------------------------------------------
   doctor:
-    desc: Check that every required tool is present
+    desc: Check that every required tool is present AND at the pinned version
     silent: true
+    summary: |
+      Checks presence and, for the four build-input tools, the pinned version.
+
+      It used to check presence only, which meant "JDK 25" was documentation rather than
+      enforcement: a contributor on another version got a green doctor and a confusing
+      failure later, or worse, silently different output. `task format` is the live case —
+      the committed Dart layout is what Dart 3.12.2 produces.
+
+      EACH PIN LIVES WHERE ITS OWN ECOSYSTEM ALREADY LOOKS FOR IT, and this task reads those
+      files rather than restating a version:
+
+        .sdkmanrc      java     SDKMAN     `sdk env`
+        .fvmrc         flutter  FVM        `fvm use` (Flutter carries Dart, so this pins Dart)
+        .nvmrc         node     nvm        `nvm use`
+        package.json   pnpm     corepack   "packageManager", which corepack enforces itself
+
+      No universal version manager sits over the top of those. That is the same rule the
+      orchestrator follows (DECISIONS.md ADR-014): the native tool owns its domain, and a
+      layer above it would be a portability layer nothing here asks for. The pnpm entry is
+      the cleanest case — corepack reads "packageManager" to decide which pnpm to run, so
+      the pin and its enforcement are literally the same field.
+
+      doctor reports drift; the ecosystem tool fixes it. Tools with no pin are presence-only,
+      each for a reason given beside its check below.
     cmds:
       - |
         set -e
         missing=0
+        # Each pin is read from the file its own ecosystem already reads, so a version is
+        # never restated here and the check cannot drift from what the tools enforce.
+        pin_java()    { sed -n 's/^java=\([0-9][0-9.]*\).*/\1/p' .sdkmanrc | head -1; }
+        pin_flutter() { sed -n 's/.*"flutter" *: *"\([^"]*\)".*/\1/p' .fvmrc | head -1; }
+        pin_node()    { tr -d 'v \n' < .nvmrc; }
+        pin_pnpm()    { sed -n 's/.*"packageManager" *: *"pnpm@\([^"]*\)".*/\1/p' "$1" | head -1; }
+
+        # Presence only. Used for tools that are services, clients, or codegen extras.
         check() {
           if command -v "$1" >/dev/null 2>&1; then
-            printf '  \033[32mok\033[0m   %-12s %s\n' "$1" "$($2 2>&1 | head -1)"
+            printf '  \033[32mok\033[0m   %-14s %s\n' "$1" "$($2 2>&1 | head -1)"
           else
-            printf '  \033[31mMISS\033[0m %-12s %s\n' "$1" "$3"
+            printf '  \033[31mMISS\033[0m %-14s %s\n' "$1" "$3"
             missing=1
           fi
         }
-        echo "jZen toolchain:"
-        check java    "java -version"        "install JDK 25"
-        check dart    "dart --version"       "https://dart.dev/get-dart"
-        check flutter "flutter --version"    "https://docs.flutter.dev/get-started/install"
-        check pnpm    "pnpm --version"       "npm i -g pnpm"
-        check supabase "supabase --version"  "brew install supabase/tap/supabase"
-        check docker  "docker --version"     "https://docs.docker.com/get-docker"
-        check gcloud  "gcloud --version"     "https://cloud.google.com/sdk/docs/install"
-        echo "Dart protobuf codegen (needed by generate:proto, not by the Java build):"
-        check protoc  "protoc --version"     "brew install protobuf"
-        if [ -x "$HOME/.pub-cache/bin/protoc-gen-dart" ]; then
-          printf '  \033[32mok\033[0m   %-12s %s\n' "protoc-gen-dart" "$HOME/.pub-cache/bin/protoc-gen-dart"
-        else
-          printf '  \033[31mMISS\033[0m %-12s %s\n' "protoc-gen-dart" "dart pub global activate protoc_plugin"
+
+        # Presence AND version. $2 must print a BARE version (e.g. 25.0.2), so the comparison
+        # never depends on how a tool decorates its output. $5 names the tool that fixes a
+        # drift, because that differs per ecosystem — which is the point of pinning natively.
+        # A match is equality or a dot-boundary prefix, so a pin of "25" accepts 25.0.2 and
+        # rejects 21.0.5 — including when 21 was built in a year containing "25".
+        checkv() {
+          name=$1; ver_cmd=$2; hint=$3; want=$4; fix=$5
+          if ! command -v "$name" >/dev/null 2>&1; then
+            printf '  \033[31mMISS\033[0m %-14s %s\n' "$name" "$hint"; missing=1; return
+          fi
+          got=$(eval "$ver_cmd" 2>/dev/null | head -1)
+          if [ "$got" = "$want" ] || [ "${got#"$want".}" != "$got" ]; then
+            printf '  \033[32mok\033[0m   %-14s %s\n' "$name" "$got"
+          else
+            printf '  \033[31mDRIFT\033[0m %-13s %s (want %s)\n' "$name" "$got" "$want"
+            printf '       %-14s run: %s\n' "" "$fix"
+            missing=1
+          fi
+        }
+
+        echo "jZen toolchain (each version pinned in its own ecosystem's file):"
+        checkv java    "java -version 2>&1 | sed -n '1s/.*\"\([0-9][^\"]*\)\".*/\1/p'" "sdk env install"                              "$(pin_java)"    "sdk env"
+        checkv flutter "flutter --version | awk 'NR==1{print \$2}'"                    "https://docs.flutter.dev/get-started/install" "$(pin_flutter)" "fvm use"
+        checkv node    "node --version | tr -d v"                                      "nvm install"                                  "$(pin_node)"    "nvm use"
+        checkv pnpm    "pnpm --version"                                                "corepack enable"                              "$(pin_pnpm admin/package.json)" "corepack enable"
+
+        # The two package.json files must agree, or corepack would enforce a different pnpm
+        # per package and doctor would only ever see the first one.
+        pm_core=$(pin_pnpm admin/package.json)
+        pm_app=$(pin_pnpm {{.DEMO_ADMIN_DIR}}/package.json)
+        if [ "$pm_core" != "$pm_app" ]; then
+          printf '  \033[31mDRIFT\033[0m %-13s packageManager disagrees: admin=%s demo_admin=%s\n' "pnpm pin" "$pm_core" "$pm_app"
           missing=1
         fi
+
+        echo "Present-but-unpinned, each for a reason:"
+        check dart     "dart --version"      "comes with Flutter; never install separately — .fvmrc pins it"
+        check supabase "supabase --version"  "a local dev service, not a build input: brew install supabase/tap/supabase"
+        check docker   "docker --version"    "a daemon, not a toolchain version: https://docs.docker.com/get-docker"
+        check gcloud   "gcloud --version"    "a deploy-time client, expected to self-update: https://cloud.google.com/sdk/docs/install"
+        echo "Dart protobuf codegen (needed by generate:proto, not by the Java build):"
+        check protoc   "protoc --version"    "brew install protobuf"
+        if [ -x "$HOME/.pub-cache/bin/protoc-gen-dart" ]; then
+          printf '  \033[32mok\033[0m   %-14s %s\n' "protoc-gen-dart" "$HOME/.pub-cache/bin/protoc-gen-dart"
+        else
+          printf '  \033[31mMISS\033[0m %-14s %s\n' "protoc-gen-dart" "dart pub global activate protoc_plugin"
+          missing=1
+        fi
+        # The switchers are optional: a matching version installed any other way is still a
+        # match, so their absence is a note rather than a failure — they are only what makes
+        # fixing a drift a one-liner.
+        #
+        # SDKMAN and nvm are SHELL FUNCTIONS sourced into an interactive shell, not binaries, so
+        # `command -v sdk` fails here even when they are installed and on PATH. Probing for their
+        # init script is what actually answers the question; probing the command name would
+        # report every user of them as not having them. FVM really is a binary.
+        [ -s "$HOME/.sdkman/bin/sdkman-init.sh" ] || \
+          printf '  \033[33mnote\033[0m %-14s not found, so .sdkmanrc cannot be applied — https://sdkman.io\n' "sdkman"
+        [ -s "$HOME/.nvm/nvm.sh" ] || \
+          printf '  \033[33mnote\033[0m %-14s not found, so .nvmrc cannot be applied — https://github.com/nvm-sh/nvm\n' "nvm"
+        command -v fvm >/dev/null 2>&1 || \
+          printf '  \033[33mnote\033[0m %-14s not installed, so .fvmrc cannot be applied — brew tap leoafarias/fvm && brew install fvm\n' "fvm"
         echo
         # protoc is NOT required for the Java build: protobuf-maven-plugin resolves the
         # protoc binary from Maven Central (see server/zen-proto/pom.xml).
-        if [ "$missing" -eq 0 ]; then echo "All tools present."; else
-          echo "Some tools are missing. Java builds still work; Dart proto codegen will not."; exit 1; fi
+        if [ "$missing" -eq 0 ]; then echo "Toolchain matches the pinned versions."; else
+          echo "Toolchain is missing a tool or drifted from a pin. See the fix beside each line above."; exit 1; fi
 
   deps:
     desc: Resolve dependencies for every sub-project (native tools do the work)

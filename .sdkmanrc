@@ -1,0 +1,15 @@
+# jZen's JDK pin, read by SDKMAN (`sdk env`).
+#
+# GraalVM CE rather than a plain JDK, matching what this repository is developed against. The
+# native image does NOT come from here: `task build:server:native` passes
+# `-Dquarkus.native.container-build=true`, so native-image runs inside Quarkus's builder container
+# and is pinned by the Quarkus version. This JDK is what runs Maven, Quarkus dev mode, and the
+# backend test suites.
+#
+# `sdk env` applies it; `sdk env install` installs it first if missing. If you want it to apply
+# automatically on cd, set sdkman_auto_env=true in ~/.sdkman/etc/config — SDKMAN ships it false.
+#
+# Note server/pom.xml's <maven.compiler.release>25</maven.compiler.release> is a different claim
+# and stays as it is: that states the bytecode level the published artifacts target, which a
+# consumer relies on, whereas this states the JDK this repository is built with.
+java=25.0.2-graalce

@@ -50,10 +50,7 @@ class _DemoTermsScreenState extends ConsumerState<DemoTermsScreen> {
 
     return Scaffold(
       appBar: AppBar(title: Text(messages.termsTitle)),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: _buildBody(messages),
-      ),
+      body: Padding(padding: const EdgeInsets.all(16), child: _buildBody(messages)),
     );
   }
 
@@ -64,8 +61,6 @@ class _DemoTermsScreenState extends ConsumerState<DemoTermsScreen> {
     if (_terms == null) {
       return Center(child: Text(messages.termsLoading));
     }
-    return SingleChildScrollView(
-      child: SelectableText(_terms!.content),
-    );
+    return SingleChildScrollView(child: SelectableText(_terms!.content));
   }
 }

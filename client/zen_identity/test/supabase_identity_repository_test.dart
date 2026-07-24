@@ -12,9 +12,7 @@ import 'package:zen_transport/zen_transport.dart' as pb;
 /// are all exercised without a live backend. The client is pinned to JSON so responses are
 /// easy to craft as canonical proto3 JSON.
 void main() {
-  SupabaseIdentityRepository repoReturning(
-    http.Response Function(http.Request request) handler,
-  ) {
+  SupabaseIdentityRepository repoReturning(http.Response Function(http.Request request) handler) {
     final client = pb.ZenClient(
       baseUrl: 'http://test.local',
       format: pb.ZenTransportFormat.json,
@@ -26,28 +24,20 @@ void main() {
   http.Response jsonResponse(Object? proto3Json, {int status = 200}) => http.Response(
     jsonEncode(proto3Json),
     status,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'x-zen-transport': 'json',
-    },
+    headers: {'content-type': 'application/json; charset=utf-8', 'x-zen-transport': 'json'},
   );
 
-  Map<String, dynamic> identityJson({
-    required String id,
-    List<String> roles = const ['user'],
-  }) =>
+  Map<String, dynamic> identityJson({required String id, List<String> roles = const ['user']}) =>
       pb.Identity(id: id, lifecycleState: 'active', roles: roles).toProto3Json()
           as Map<String, dynamic>;
 
   group('loginWithEmail', () {
     test('maps a 200 Identity to an IdentityContract', () async {
-      final repo = repoReturning(
-        (req) {
-          expect(req.url.path, '/api/v1/auth/login');
-          expect(req.method, 'POST');
-          return jsonResponse(identityJson(id: 'u1', roles: ['user', 'admin']));
-        },
-      );
+      final repo = repoReturning((req) {
+        expect(req.url.path, '/api/v1/auth/login');
+        expect(req.method, 'POST');
+        return jsonResponse(identityJson(id: 'u1', roles: ['user', 'admin']));
+      });
 
       final result = await repo.loginWithEmail(email: 'a@b.com', password: 'secret1');
 
@@ -164,12 +154,10 @@ void main() {
 
   group('logout', () {
     test('returns ok on a 204', () async {
-      final repo = repoReturning(
-        (req) {
-          expect(req.url.path, '/api/v1/auth/logout');
-          return http.Response('', 204, headers: {'x-zen-transport': 'json'});
-        },
-      );
+      final repo = repoReturning((req) {
+        expect(req.url.path, '/api/v1/auth/logout');
+        return http.Response('', 204, headers: {'x-zen-transport': 'json'});
+      });
       final result = await repo.logout();
       expect(result.isSuccess, isTrue);
     });

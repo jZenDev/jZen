@@ -25,9 +25,7 @@ class ZenProtoCodec {
         case ZenTransportFormat.protobuf:
           return message.writeToBuffer();
         case ZenTransportFormat.json:
-          return Uint8List.fromList(
-            utf8.encode(jsonEncode(message.toProto3Json())),
-          );
+          return Uint8List.fromList(utf8.encode(jsonEncode(message.toProto3Json())));
       }
     } catch (e) {
       throw ZenTransportException('Failed to encode message: $e');
@@ -52,8 +50,7 @@ class ZenProtoCodec {
         case ZenTransportFormat.protobuf:
           return createEmpty()..mergeFromBuffer(bytes);
         case ZenTransportFormat.json:
-          return createEmpty()
-            ..mergeFromProto3Json(jsonDecode(utf8.decode(bytes)));
+          return createEmpty()..mergeFromProto3Json(jsonDecode(utf8.decode(bytes)));
       }
     } catch (e) {
       throw ZenTransportException('Failed to decode message: $e');

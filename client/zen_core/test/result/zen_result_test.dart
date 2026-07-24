@@ -32,10 +32,7 @@ void main() {
     test('fold returns correct value for failure', () {
       const error = ZenValidationError('fail');
       const result = ZenResult<String>.err(error);
-      final value = result.fold(
-        (data) => 'success',
-        (e) => 'fail: ${e.message}',
-      );
+      final value = result.fold((data) => 'success', (e) => 'fail: ${e.message}');
       expect(value, 'fail: fail');
     });
 

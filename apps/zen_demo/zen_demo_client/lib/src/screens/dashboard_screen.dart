@@ -35,28 +35,26 @@ class _DemoDashboardScreenState extends ConsumerState<DemoDashboardScreen> {
   Future<void> _ping(ZenTransportFormat format) async {
     final messages = DemoLocalizations.of(context);
     final language = ref.read(localeProvider).languageCode;
-    final result = await ref
-        .read(demoRepositoryProvider)
-        .ping(format: format, language: language);
+    final result = await ref.read(demoRepositoryProvider).ping(format: format, language: language);
     if (!mounted) return;
     result.fold(
-      (ping) => setState(
-        () => _pingResult = messages.pingResult(format.value, ping.message),
-      ),
+      (ping) => setState(() => _pingResult = messages.pingResult(format.value, ping.message)),
       (failure) => setState(() => _pingResult = messages.pingError(failure.message)),
     );
   }
 
   void _connect() {
     final socket = ref.read(demoRepositoryProvider).connectWebSocket();
-    _subscription = socket.responses(WebSocketMessage.new).listen(
-      (message) {
-        if (mounted) setState(() => _wsEcho = message.payload);
-      },
-      onError: (Object _) {
-        if (mounted) setState(() => _wsStatus = 'error');
-      },
-    );
+    _subscription = socket
+        .responses(WebSocketMessage.new)
+        .listen(
+          (message) {
+            if (mounted) setState(() => _wsEcho = message.payload);
+          },
+          onError: (Object _) {
+            if (mounted) setState(() => _wsStatus = 'error');
+          },
+        );
     setState(() {
       _socket = socket;
       _wsStatus = 'connected';
@@ -112,24 +110,15 @@ class _DemoDashboardScreenState extends ConsumerState<DemoDashboardScreen> {
               ),
             ],
           ),
-          if (_pingResult != null) ...[
-            const SizedBox(height: 8),
-            Text(_pingResult!),
-          ],
+          if (_pingResult != null) ...[const SizedBox(height: 8), Text(_pingResult!)],
           const Divider(height: 32),
           Text(messages.wsSection, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
             children: [
-              FilledButton(
-                onPressed: connected ? null : _connect,
-                child: Text(messages.wsConnect),
-              ),
-              FilledButton.tonal(
-                onPressed: connected ? _send : null,
-                child: Text(messages.wsSend),
-              ),
+              FilledButton(onPressed: connected ? null : _connect, child: Text(messages.wsConnect)),
+              FilledButton.tonal(onPressed: connected ? _send : null, child: Text(messages.wsSend)),
               OutlinedButton(
                 onPressed: connected ? _disconnect : null,
                 child: Text(messages.wsDisconnect),

@@ -40,10 +40,7 @@ class DemoApp extends ConsumerWidget {
   }
 
   ThemeData _theme(Brightness brightness) {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: Colors.deepPurple,
-      brightness: brightness,
-    );
+    final scheme = ColorScheme.fromSeed(seedColor: Colors.deepPurple, brightness: brightness);
     return ThemeData(
       colorScheme: scheme,
       useMaterial3: true,
@@ -72,8 +69,7 @@ class _Root extends ConsumerWidget {
     return session.when(
       loading: () => const _Splash(),
       error: (_, _) => const AuthFlow(),
-      data: (identity) =>
-          identity == null ? const AuthFlow() : const HomeShell(),
+      data: (identity) => identity == null ? const AuthFlow() : const HomeShell(),
     );
   }
 }

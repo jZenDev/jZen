@@ -28,8 +28,7 @@ class ProfileScreen extends ConsumerWidget {
     final messages = IdentityLocalizations.of(context);
     final state = ref.watch(identitySessionStoreProvider);
     final theme =
-        Theme.of(context).extension<IdentityThemeExtension>() ??
-        IdentityThemeExtension.fallback();
+        Theme.of(context).extension<IdentityThemeExtension>() ?? IdentityThemeExtension.fallback();
 
     return Scaffold(
       backgroundColor: theme.surfaceColor,
@@ -75,11 +74,7 @@ class ProfileScreen extends ConsumerWidget {
                 ),
               ),
               SizedBox(height: theme.spacing),
-              Text(
-                subject,
-                style: theme.titleStyle,
-                textAlign: TextAlign.center,
-              ),
+              Text(subject, style: theme.titleStyle, textAlign: TextAlign.center),
               SizedBox(height: theme.spacing),
               Text(messages.rolesLabel, style: theme.subtitleStyle),
               SizedBox(height: theme.spacing / 2),
@@ -95,9 +90,7 @@ class ProfileScreen extends ConsumerWidget {
                 variant: IdentityButtonVariant.secondary,
                 onPressed: () async {
                   final identity = ref.read(identitySessionStoreProvider).value;
-                  await ref
-                      .read(identitySessionStoreProvider.notifier)
-                      .logout();
+                  await ref.read(identitySessionStoreProvider.notifier).logout();
                   onLogoutSuccess?.call();
                   if (identity != null) {
                     onLogoutSuccessWithIdentity?.call(identity);
@@ -109,11 +102,7 @@ class ProfileScreen extends ConsumerWidget {
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, st) => Center(
-          child: Text(
-            messages.errorText(
-              err is ZenError ? err : ZenUnknownError(err.toString()),
-            ),
-          ),
+          child: Text(messages.errorText(err is ZenError ? err : ZenUnknownError(err.toString()))),
         ),
       ),
     );

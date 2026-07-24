@@ -7,10 +7,7 @@ void main() {
     test('fromDomain and toDomain round-trip', () {
       final domain = Authority(
         roles: {Role.admin, Role.user},
-        capabilities: {
-          const Capability.reconstruct('edit'),
-          const Capability.reconstruct('view'),
-        },
+        capabilities: {const Capability.reconstruct('edit'), const Capability.reconstruct('view')},
       );
       final contract = AuthorityContract.fromDomain(domain);
       final roundTrip = contract.toDomain();
@@ -28,10 +25,7 @@ void main() {
 
   group('IdentityLifecycleContract', () {
     test('fromDomain and toDomain round-trip', () {
-      const domain = IdentityLifecycle.reconstruct(
-        IdentityState.revoked,
-        'reason',
-      );
+      const domain = IdentityLifecycle.reconstruct(IdentityState.revoked, 'reason');
       final contract = IdentityLifecycleContract.fromDomain(domain);
       final roundTrip = contract.toDomain();
       expect(roundTrip, domain);
@@ -78,19 +72,13 @@ void main() {
     });
 
     test('handles null roles/capabilities', () {
-      final contract = AuthorityContract.fromJson(const {
-        'roles': null,
-        'capabilities': null,
-      });
+      final contract = AuthorityContract.fromJson(const {'roles': null, 'capabilities': null});
       expect(contract.roles, isEmpty);
       expect(contract.capabilities, isEmpty);
     });
 
     test('toDomain with invalid role/capability', () {
-      const contract = AuthorityContract(
-        roles: ['INVALID!'],
-        capabilities: ['invalid-cap'],
-      );
+      const contract = AuthorityContract(roles: ['INVALID!'], capabilities: ['invalid-cap']);
       final authority = contract.toDomain();
       // reconstruct should preserve values even if they would be invalid
       expect(authority.roles.first.name, 'INVALID!');

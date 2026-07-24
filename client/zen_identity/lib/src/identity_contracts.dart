@@ -13,17 +13,13 @@ final class AuthorityContract {
   final List<String> capabilities;
 
   /// Creates an [AuthorityContract].
-  const AuthorityContract({
-    this.roles = const [],
-    this.capabilities = const [],
-  });
+  const AuthorityContract({this.roles = const [], this.capabilities = const []});
 
   /// Maps [Authority] domain model to [AuthorityContract].
-  factory AuthorityContract.fromDomain(Authority authority) =>
-      AuthorityContract(
-        roles: authority.roles.map((r) => r.name).toList(),
-        capabilities: authority.capabilities.map((c) => c.id).toList(),
-      );
+  factory AuthorityContract.fromDomain(Authority authority) => AuthorityContract(
+    roles: authority.roles.map((r) => r.name).toList(),
+    capabilities: authority.capabilities.map((c) => c.id).toList(),
+  );
 
   /// Maps [AuthorityContract] to [Authority] domain model.
   Authority toDomain() => Authority(
@@ -32,19 +28,13 @@ final class AuthorityContract {
   );
 
   /// Creates [AuthorityContract] from JSON.
-  factory AuthorityContract.fromJson(Map<String, dynamic> json) =>
-      AuthorityContract(
-        roles: List<String>.from(json['roles'] as Iterable? ?? []),
-        capabilities: List<String>.from(
-          json['capabilities'] as Iterable? ?? [],
-        ),
-      );
+  factory AuthorityContract.fromJson(Map<String, dynamic> json) => AuthorityContract(
+    roles: List<String>.from(json['roles'] as Iterable? ?? []),
+    capabilities: List<String>.from(json['capabilities'] as Iterable? ?? []),
+  );
 
   /// Converts this [AuthorityContract] to JSON.
-  Map<String, dynamic> toJson() => {
-    'roles': roles,
-    'capabilities': capabilities,
-  };
+  Map<String, dynamic> toJson() => {'roles': roles, 'capabilities': capabilities};
 }
 
 /// Serializable representation of IdentityLifecycle.
@@ -61,32 +51,20 @@ final class IdentityLifecycleContract {
 
   /// Maps [IdentityLifecycle] domain model to [IdentityLifecycleContract].
   factory IdentityLifecycleContract.fromDomain(IdentityLifecycle lifecycle) =>
-      IdentityLifecycleContract(
-        state: lifecycle.state.name,
-        reason: lifecycle.reason,
-      );
+      IdentityLifecycleContract(state: lifecycle.state.name, reason: lifecycle.reason);
 
   /// Maps [IdentityLifecycleContract] to [IdentityLifecycle] domain model.
   IdentityLifecycle toDomain() => IdentityLifecycle.reconstruct(
-    IdentityState.values.firstWhere(
-      (s) => s.name == state,
-      orElse: () => IdentityState.pending,
-    ),
+    IdentityState.values.firstWhere((s) => s.name == state, orElse: () => IdentityState.pending),
     reason,
   );
 
   /// Creates [IdentityLifecycleContract] from JSON.
   factory IdentityLifecycleContract.fromJson(Map<String, dynamic> json) =>
-      IdentityLifecycleContract(
-        state: json['state'] as String,
-        reason: json['reason'] as String?,
-      );
+      IdentityLifecycleContract(state: json['state'] as String, reason: json['reason'] as String?);
 
   /// Converts this [IdentityLifecycleContract] to JSON.
-  Map<String, dynamic> toJson() => {
-    'state': state,
-    if (reason != null) 'reason': reason,
-  };
+  Map<String, dynamic> toJson() => {'state': state, if (reason != null) 'reason': reason};
 }
 
 /// Serializable representation of Identity.
@@ -129,17 +107,12 @@ final class IdentityContract {
   );
 
   /// Creates [IdentityContract] from JSON.
-  factory IdentityContract.fromJson(Map<String, dynamic> json) =>
-      IdentityContract(
-        id: json['id'] as String,
-        lifecycle: IdentityLifecycleContract.fromJson(
-          json['lifecycle'] as Map<String, dynamic>,
-        ),
-        authority: AuthorityContract.fromJson(
-          json['authority'] as Map<String, dynamic>,
-        ),
-        createdAt: json['createdAt'] as int,
-      );
+  factory IdentityContract.fromJson(Map<String, dynamic> json) => IdentityContract(
+    id: json['id'] as String,
+    lifecycle: IdentityLifecycleContract.fromJson(json['lifecycle'] as Map<String, dynamic>),
+    authority: AuthorityContract.fromJson(json['authority'] as Map<String, dynamic>),
+    createdAt: json['createdAt'] as int,
+  );
 
   /// Converts this [IdentityContract] to JSON.
   Map<String, dynamic> toJson() => {

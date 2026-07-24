@@ -10,13 +10,10 @@ import '../support/localized_app.dart';
 
 class _FakeRepo implements IdentityRepository {
   final Future<ZenResult<IdentityContract>> Function(String, String)? _login;
-  _FakeRepo({
-    Future<ZenResult<IdentityContract>> Function(String, String)? login,
-  }) : _login = login;
+  _FakeRepo({Future<ZenResult<IdentityContract>> Function(String, String)? login}) : _login = login;
 
   @override
-  Future<ZenResult<IdentityContract?>> getCurrentIdentity() async =>
-      const ZenResult.ok(null);
+  Future<ZenResult<IdentityContract?>> getCurrentIdentity() async => const ZenResult.ok(null);
 
   @override
   Future<ZenResult<IdentityContract>> loginWithEmail({
@@ -38,21 +35,17 @@ class _FakeRepo implements IdentityRepository {
       const ZenResult.err(ZenUnknownError('no'));
 
   @override
-  Future<ZenResult<void>> logout() async =>
-      const ZenResult.err(ZenUnknownError('no'));
+  Future<ZenResult<void>> logout() async => const ZenResult.err(ZenUnknownError('no'));
 }
 
 void main() {
-
   testWidgets('shows validation errors when fields empty', (tester) async {
     final repo = _FakeRepo();
 
     await tester.pumpWidget(
       ProviderScope(
         overrides: [identityRepositoryProvider.overrideWithValue(repo)],
-        child: localizedApp(
-          home: LoginScreen(),
-        ),
+        child: localizedApp(home: LoginScreen()),
       ),
     );
 
@@ -63,9 +56,7 @@ void main() {
     expect(find.text('Required'), findsNWidgets(2));
   });
 
-  testWidgets('forgot password and register callbacks are invoked', (
-    tester,
-  ) async {
+  testWidgets('forgot password and register callbacks are invoked', (tester) async {
     final repo = _FakeRepo();
     var forgot = false;
     var register = false;
@@ -133,16 +124,13 @@ void main() {
 
   testWidgets('failed login shows error SnackBar', (tester) async {
     final repo = _FakeRepo(
-      login: (_, _) async =>
-          const ZenResult.err(ZenUnknownError('bad credentials')),
+      login: (_, _) async => const ZenResult.err(ZenUnknownError('bad credentials')),
     );
 
     await tester.pumpWidget(
       ProviderScope(
         overrides: [identityRepositoryProvider.overrideWithValue(repo)],
-        child: localizedApp(
-          home: LoginScreen(),
-        ),
+        child: localizedApp(home: LoginScreen()),
       ),
     );
 

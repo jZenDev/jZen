@@ -22,9 +22,7 @@ void main() {
       expect(r1.isSuccess, isTrue);
       expect((r1 as ZenSuccess).data, 'ok');
 
-      final r2 = await ZenTry.callAsync<String>(
-        () async => throw Exception('err'),
-      );
+      final r2 = await ZenTry.callAsync<String>(() async => throw Exception('err'));
       expect(r2.isFailure, isTrue);
       expect((r2 as ZenFailure).error, isA<ZenUnknownError>());
     });

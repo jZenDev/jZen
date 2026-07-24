@@ -48,17 +48,11 @@ void main() {
 
   setUp(() => testStore = TestIdentitySessionStore());
 
-  Widget buildTestable({
-    VoidCallback? onRegisterSuccess,
-    VoidCallback? onLoginClick,
-  }) {
+  Widget buildTestable({VoidCallback? onRegisterSuccess, VoidCallback? onLoginClick}) {
     return ProviderScope(
       overrides: [identitySessionStoreProvider.overrideWith(() => testStore)],
       child: localizedApp(
-        home: RegisterScreen(
-          onRegisterSuccess: onRegisterSuccess,
-          onLoginClick: onLoginClick,
-        ),
+        home: RegisterScreen(onRegisterSuccess: onRegisterSuccess, onLoginClick: onLoginClick),
       ),
     );
   }
@@ -94,10 +88,7 @@ void main() {
   testWidgets('shows validation error for password mismatch', (tester) async {
     await tester.pumpWidget(buildTestable());
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byType(TextFormField).at(0),
-      'user@example.com',
-    );
+    await tester.enterText(find.byType(TextFormField).at(0), 'user@example.com');
     await tester.enterText(find.byType(TextFormField).at(1), 'password1');
     await tester.enterText(find.byType(TextFormField).at(2), 'password2');
     await tester.tap(find.text(messages.registerButton));
@@ -105,9 +96,7 @@ void main() {
     expect(find.text(messages.validationPasswordMismatch), findsOneWidget);
   });
 
-  testWidgets('calls onRegisterSuccess on successful registration', (
-    tester,
-  ) async {
+  testWidgets('calls onRegisterSuccess on successful registration', (tester) async {
     bool called = false;
     testStore.onRegister = (email, password) async {
       return ZenResult.ok(makeTestIdentity());
@@ -120,10 +109,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byType(TextFormField).at(0),
-      'user@example.com',
-    );
+    await tester.enterText(find.byType(TextFormField).at(0), 'user@example.com');
     await tester.enterText(find.byType(TextFormField).at(1), 'password');
     await tester.enterText(find.byType(TextFormField).at(2), 'password');
     await tester.tap(find.text(messages.registerButton));
@@ -137,10 +123,7 @@ void main() {
     };
     await tester.pumpWidget(buildTestable());
     await tester.pumpAndSettle();
-    await tester.enterText(
-      find.byType(TextFormField).at(0),
-      'user@example.com',
-    );
+    await tester.enterText(find.byType(TextFormField).at(0), 'user@example.com');
     await tester.enterText(find.byType(TextFormField).at(1), 'password');
     await tester.enterText(find.byType(TextFormField).at(2), 'password');
     await tester.tap(find.text(messages.registerButton));

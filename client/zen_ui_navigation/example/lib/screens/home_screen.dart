@@ -4,9 +4,7 @@ import '../l10n/generated/example_localizations.dart';
 
 /// Home screen showing an overview
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({
-    super.key,
-  });
+  const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -26,11 +24,7 @@ class HomeScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const SizedBox(height: 24),
-            Icon(
-              Icons.home,
-              size: 120,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+            Icon(Icons.home, size: 120, color: Theme.of(context).colorScheme.primary),
             const SizedBox(height: 24),
             Text(
               messages.homeWelcome,
@@ -40,10 +34,7 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: 16),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                messages.homeDescription,
-                textAlign: TextAlign.center,
-              ),
+              child: Text(messages.homeDescription, textAlign: TextAlign.center),
             ),
             const SizedBox(height: 32),
             _buildFeatureList(context, messages),
@@ -61,10 +52,7 @@ class HomeScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              messages.homeFeaturesTitle,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            Text(messages.homeFeaturesTitle, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             _FeatureItem(text: messages.homeFeaturesAdaptive),
             _FeatureItem(text: messages.homeFeaturesHighlights),
@@ -85,9 +73,6 @@ class _FeatureItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Text(text),
-    );
+    return Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Text(text));
   }
 }

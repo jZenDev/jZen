@@ -11,9 +11,7 @@ final class IdentityId {
   /// Creates and validates an [IdentityId].
   static ZenResult<IdentityId> create(String value) {
     if (value.trim().isEmpty) {
-      return const ZenResult.err(
-        ZenValidationError('IdentityId cannot be empty'),
-      );
+      return const ZenResult.err(ZenValidationError('IdentityId cannot be empty'));
     }
     return ZenResult.ok(IdentityId._(value));
   }
@@ -94,9 +92,7 @@ final class Capability {
     }
     if (!RegExp(r'^[a-z0-9_]+$').hasMatch(id)) {
       return const ZenResult.err(
-        ZenValidationError(
-          'Capability ID must be lowercase alphanumeric or "_"',
-        ),
+        ZenValidationError('Capability ID must be lowercase alphanumeric or "_"'),
       );
     }
     return ZenResult.ok(Capability._(id));
@@ -127,8 +123,7 @@ final class Authority {
   const Authority({this.roles = const {}, this.capabilities = const {}});
 
   /// Evaluates if the authority possesses the required capability.
-  bool hasCapability(Capability capability) =>
-      capabilities.contains(capability);
+  bool hasCapability(Capability capability) => capabilities.contains(capability);
 
   /// Evaluates if the authority possesses any of the required roles.
   bool hasRole(Role role) => roles.contains(role);
@@ -142,8 +137,7 @@ final class Authority {
   @override
   int get hashCode => Object.hashAll(roles) ^ Object.hashAll(capabilities);
 
-  bool _setEquals<T>(Set<T> a, Set<T> b) =>
-      a.length == b.length && a.containsAll(b);
+  bool _setEquals<T>(Set<T> a, Set<T> b) => a.length == b.length && a.containsAll(b);
 }
 
 /// Represents the stable lifecycle states of an identity.
@@ -176,8 +170,7 @@ final class IdentityLifecycle {
   const IdentityLifecycle._(this.state, [this.reason]);
 
   /// Creates an initial [IdentityState.pending] lifecycle.
-  factory IdentityLifecycle.initial() =>
-      const IdentityLifecycle._(IdentityState.pending);
+  factory IdentityLifecycle.initial() => const IdentityLifecycle._(IdentityState.pending);
 
   /// Transitions to [IdentityState.active] state.
   ZenResult<IdentityLifecycle> activate() {
@@ -190,9 +183,7 @@ final class IdentityLifecycle {
   /// Transitions to [IdentityState.revoked] state.
   ZenResult<IdentityLifecycle> revoke(String reason) {
     if (reason.trim().isEmpty) {
-      return const ZenResult.err(
-        ZenValidationError('Revocation reason cannot be empty'),
-      );
+      return const ZenResult.err(ZenValidationError('Revocation reason cannot be empty'));
     }
     return ZenResult.ok(IdentityLifecycle._(IdentityState.revoked, reason));
   }
@@ -207,9 +198,7 @@ final class IdentityLifecycle {
 
   @override
   bool operator ==(Object other) =>
-      other is IdentityLifecycle &&
-      other.state == state &&
-      other.reason == reason;
+      other is IdentityLifecycle && other.state == state && other.reason == reason;
   @override
   int get hashCode => state.hashCode ^ (reason?.hashCode ?? 0);
 
@@ -228,10 +217,7 @@ final class IdentityVerificationFacts {
   final bool phoneVerified;
 
   /// Creates [IdentityVerificationFacts].
-  const IdentityVerificationFacts({
-    required this.emailVerified,
-    this.phoneVerified = false,
-  });
+  const IdentityVerificationFacts({required this.emailVerified, this.phoneVerified = false});
 
   @override
   bool operator ==(Object other) =>
@@ -289,40 +275,25 @@ final class Identity {
     }
 
     return ZenResult.ok(
-      Identity(
-        id: id,
-        lifecycle: lifecycle,
-        authority: authority,
-        createdAt: createdAt,
-      ),
+      Identity(id: id, lifecycle: lifecycle, authority: authority, createdAt: createdAt),
     );
   }
 
   /// Evaluates if the identity is allowed to perform an action requiring a [Capability].
   ZenResult<bool> can(Capability capability) {
     if (!lifecycle.state.canAct) {
-      return const ZenResult.err(
-        ZenUnauthorizedError('Identity is not active'),
-      );
+      return const ZenResult.err(ZenUnauthorizedError('Identity is not active'));
     }
     return ZenResult.ok(authority.hasCapability(capability));
   }
 
   /// Transitions the identity to a new lifecycle state.
-  Identity withLifecycle(IdentityLifecycle next) => Identity(
-    id: id,
-    lifecycle: next,
-    authority: authority,
-    createdAt: createdAt,
-  );
+  Identity withLifecycle(IdentityLifecycle next) =>
+      Identity(id: id, lifecycle: next, authority: authority, createdAt: createdAt);
 
   /// Updates the authority of the identity.
-  Identity withAuthority(Authority next) => Identity(
-    id: id,
-    lifecycle: lifecycle,
-    authority: next,
-    createdAt: createdAt,
-  );
+  Identity withAuthority(Authority next) =>
+      Identity(id: id, lifecycle: lifecycle, authority: next, createdAt: createdAt);
 
   @override
   bool operator ==(Object other) =>

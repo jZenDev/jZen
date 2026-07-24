@@ -24,19 +24,14 @@ class IdentityButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme =
-        Theme.of(context).extension<IdentityThemeExtension>() ??
-        IdentityThemeExtension.fallback();
+        Theme.of(context).extension<IdentityThemeExtension>() ?? IdentityThemeExtension.fallback();
 
     final disabled = onPressed == null || isLoading;
 
     return SizedBox(height: 48, child: _buildButton(context, theme, disabled));
   }
 
-  Widget _buildButton(
-    BuildContext context,
-    IdentityThemeExtension theme,
-    bool disabled,
-  ) {
+  Widget _buildButton(BuildContext context, IdentityThemeExtension theme, bool disabled) {
     final child = isLoading
         ? SizedBox(
             width: 20,
@@ -52,10 +47,7 @@ class IdentityButton extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (icon != null) ...[
-                Icon(icon, size: 20),
-                const SizedBox(width: 8),
-              ],
+              if (icon != null) ...[Icon(icon, size: 20), const SizedBox(width: 8)],
               Text(text, style: const TextStyle(fontWeight: FontWeight.bold)),
             ],
           );
@@ -67,9 +59,7 @@ class IdentityButton extends StatelessWidget {
           style: FilledButton.styleFrom(
             backgroundColor: theme.brandColor,
             foregroundColor: theme.surfaceColor,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           ),
           child: child,
         );
@@ -79,9 +69,7 @@ class IdentityButton extends StatelessWidget {
           style: OutlinedButton.styleFrom(
             foregroundColor: theme.brandColor,
             side: BorderSide(color: theme.brandColor),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           ),
           child: child,
         );
@@ -90,9 +78,7 @@ class IdentityButton extends StatelessWidget {
           onPressed: disabled ? null : onPressed,
           style: TextButton.styleFrom(
             foregroundColor: theme.brandColor,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           ),
           child: child,
         );

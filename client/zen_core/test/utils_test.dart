@@ -17,9 +17,7 @@ void main() {
     });
 
     test('callAsync catches exception', () async {
-      final result = await ZenTry.callAsync(
-        () async => throw Exception('async oops'),
-      );
+      final result = await ZenTry.callAsync(() async => throw Exception('async oops'));
       expect(result.isFailure, isTrue);
       expect(result.errorOrNull?.message, contains('Exception: async oops'));
       expect(result.errorOrNull, isA<ZenUnknownError>());

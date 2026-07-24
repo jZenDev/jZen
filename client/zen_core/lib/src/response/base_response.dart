@@ -55,23 +55,21 @@ final class BaseResponse<T> {
   });
 
   /// Creates a successful response.
-  factory BaseResponse.success(T data, {String message = 'Success'}) =>
-      BaseResponse._(
-        success: true,
-        message: message,
-        data: data,
-        timestamp: DateTime.now().toUtc(),
-      );
+  factory BaseResponse.success(T data, {String message = 'Success'}) => BaseResponse._(
+    success: true,
+    message: message,
+    data: data,
+    timestamp: DateTime.now().toUtc(),
+  );
 
   /// Creates a failure response.
-  factory BaseResponse.failure(String message, {String? errorCode, T? data}) =>
-      BaseResponse._(
-        success: false,
-        message: message,
-        errorCode: errorCode ?? BaseResponseErrorCode.unknown.wire,
-        data: data,
-        timestamp: DateTime.now().toUtc(),
-      );
+  factory BaseResponse.failure(String message, {String? errorCode, T? data}) => BaseResponse._(
+    success: false,
+    message: message,
+    errorCode: errorCode ?? BaseResponseErrorCode.unknown.wire,
+    data: data,
+    timestamp: DateTime.now().toUtc(),
+  );
 
   /// Creates a failure response from a [ZenError].
   factory BaseResponse.fromError(ZenError error, {T? data}) {

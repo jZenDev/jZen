@@ -15,9 +15,7 @@ class LocaleNotifier extends Notifier<Locale> {
   void setLocale(Locale locale) => state = locale;
 }
 
-final localeProvider = NotifierProvider<LocaleNotifier, Locale>(
-  LocaleNotifier.new,
-);
+final localeProvider = NotifierProvider<LocaleNotifier, Locale>(LocaleNotifier.new);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,9 +26,7 @@ void main() async {
         // Choosing the provider is pure wiring: the UI depends only on the IdentityRepository
         // interface, so wiring the real repository is a one-line provider override. It
         // targets the compile-time ZEN_API_URL and talks to the zen-identity endpoints.
-        identityRepositoryProvider.overrideWith(
-          (ref) => SupabaseIdentityRepository(),
-        ),
+        identityRepositoryProvider.overrideWith((ref) => SupabaseIdentityRepository()),
       ],
       child: const ExampleApp(),
     ),
@@ -102,14 +98,8 @@ class _ExampleAppState extends ConsumerState<ExampleApp> {
         ),
 
         // Main Authenticated Routes using HomeScreen wrapper
-        GoRoute(
-          path: '/profile',
-          builder: (context, state) => const HomeScreen(initialIndex: 0),
-        ),
-        GoRoute(
-          path: '/roles',
-          builder: (context, state) => const HomeScreen(initialIndex: 1),
-        ),
+        GoRoute(path: '/profile', builder: (context, state) => const HomeScreen(initialIndex: 0)),
+        GoRoute(path: '/roles', builder: (context, state) => const HomeScreen(initialIndex: 1)),
       ],
     );
 

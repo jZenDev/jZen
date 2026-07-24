@@ -40,15 +40,17 @@ Widget _widget({
   final List<BottomNavigationBarItem> itemsElements = [];
   for (int i = 0; i < visible.length; i++) {
     final item = visible[i];
-    itemsElements.add(BottomNavigationBarItem(
-      icon: Semantics(
+    itemsElements.add(
+      BottomNavigationBarItem(
+        icon: Semantics(
+          label: item.label,
+          button: true,
+          selected: i == selectedIndex,
+          child: navigationBadge(item, i == selectedIndex),
+        ),
         label: item.label,
-        button: true,
-        selected: i == selectedIndex,
-        child: navigationBadge(item, i == selectedIndex),
       ),
-      label: item.label,
-    ));
+    );
   }
 
   // Create the "more" item if there are overflow items
@@ -59,9 +61,7 @@ Widget _widget({
               label: moreLabel,
               button: true,
               selected: selectedIndex >= zenMaxItemsMobile,
-              child: const Icon(
-                zenIsIOS ? CupertinoIcons.ellipsis : Icons.more_horiz,
-              ),
+              child: const Icon(zenIsIOS ? CupertinoIcons.ellipsis : Icons.more_horiz),
             ),
             label: moreLabel,
             tooltip: moreLabel,
@@ -69,10 +69,7 @@ Widget _widget({
         ]
       : <BottomNavigationBarItem>[];
 
-  final itemsList = <BottomNavigationBarItem>[
-    ...itemsElements,
-    ...itemsMoreLabel
-  ];
+  final itemsList = <BottomNavigationBarItem>[...itemsElements, ...itemsMoreLabel];
 
   // Handle navigation bar tap
   void handleNavTap(int index) {

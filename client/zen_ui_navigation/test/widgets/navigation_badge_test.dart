@@ -6,9 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 
 void main() {
-  testWidgets(
-      'navigationBadge shows badge text when badgeCount present (Material)',
-      (WidgetTester tester) async {
+  testWidgets('navigationBadge shows badge text when badgeCount present (Material)', (
+    WidgetTester tester,
+  ) async {
     if (zenIsIOS || zenIsMacOS) return;
 
     final item = ZenNavigationItem(
@@ -19,11 +19,13 @@ void main() {
       builder: (c) => const SizedBox.shrink(),
     );
 
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      home: Scaffold(body: navigationBadge(item, false)),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
+        home: Scaffold(body: navigationBadge(item, false)),
+      ),
+    );
 
     await tester.pumpAndSettle();
 
@@ -31,9 +33,9 @@ void main() {
     expect(find.byIcon(Icons.home), findsWidgets);
   });
 
-  testWidgets(
-      'navigationBadge shows badge text when badgeCount present (Cupertino)',
-      (WidgetTester tester) async {
+  testWidgets('navigationBadge shows badge text when badgeCount present (Cupertino)', (
+    WidgetTester tester,
+  ) async {
     if (!zenIsIOS && !zenIsMacOS) return;
 
     final item = ZenNavigationItem(
@@ -44,10 +46,13 @@ void main() {
       builder: (c) => const SizedBox.shrink(),
     );
 
-    await tester.pumpWidget(CupertinoApp(
+    await tester.pumpWidget(
+      CupertinoApp(
         localizationsDelegates: NavigationLocalizations.localizationsDelegates,
         supportedLocales: NavigationLocalizations.supportedLocales,
-        home: Builder(builder: (c) => navigationBadge(item, false))));
+        home: Builder(builder: (c) => navigationBadge(item, false)),
+      ),
+    );
 
     await tester.pumpAndSettle();
 
@@ -55,8 +60,7 @@ void main() {
     expect(find.byType(Icon), findsWidgets);
   });
 
-  testWidgets('navigationBadge without badgeCount shows icon only',
-      (WidgetTester tester) async {
+  testWidgets('navigationBadge without badgeCount shows icon only', (WidgetTester tester) async {
     final item = ZenNavigationItem(
       id: 'i',
       label: 'I',
@@ -64,16 +68,14 @@ void main() {
       builder: (c) => const SizedBox.shrink(),
     );
 
-    await tester.pumpWidget(
-        MaterialApp(home: Scaffold(body: navigationBadge(item, false))));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: navigationBadge(item, false))));
     await tester.pumpAndSettle();
 
     expect(find.text('1'), findsNothing);
     expect(find.byIcon(Icons.home), findsWidgets);
   });
 
-  testWidgets('navigationBadge shows label when badgeCount present',
-      (WidgetTester tester) async {
+  testWidgets('navigationBadge shows label when badgeCount present', (WidgetTester tester) async {
     final item = ZenNavigationItem(
       id: 'msg',
       label: 'Messages',
@@ -82,18 +84,21 @@ void main() {
       badgeCount: 3,
     );
 
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      home: Scaffold(body: Center(child: navigationBadge(item, false))),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
+        home: Scaffold(body: Center(child: navigationBadge(item, false))),
+      ),
+    );
 
     expect(find.text('3'), findsOneWidget);
     expect(find.byIcon(Icons.message), findsOneWidget);
   });
 
-  testWidgets('navigationBadge does not show label when badgeCount null',
-      (WidgetTester tester) async {
+  testWidgets('navigationBadge does not show label when badgeCount null', (
+    WidgetTester tester,
+  ) async {
     final item = ZenNavigationItem(
       id: 'home',
       label: 'Home',
@@ -101,18 +106,19 @@ void main() {
       builder: (c) => const SizedBox.shrink(),
     );
 
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      home: Scaffold(body: Center(child: navigationBadge(item, false))),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
+        home: Scaffold(body: Center(child: navigationBadge(item, false))),
+      ),
+    );
 
     expect(find.text('0'), findsNothing);
     expect(find.byIcon(Icons.home), findsOneWidget);
   });
 
-  testWidgets('navigationBadge cupertino variant from target merged',
-      (WidgetTester tester) async {
+  testWidgets('navigationBadge cupertino variant from target merged', (WidgetTester tester) async {
     if (!zenIsIOS && !zenIsMacOS) return;
 
     final item = ZenNavigationItem(
@@ -123,10 +129,13 @@ void main() {
       badgeCount: 7,
     );
 
-    await tester.pumpWidget(CupertinoApp(
+    await tester.pumpWidget(
+      CupertinoApp(
         localizationsDelegates: NavigationLocalizations.localizationsDelegates,
         supportedLocales: NavigationLocalizations.supportedLocales,
-        home: CupertinoPageScaffold(child: navigationBadge(item, false))));
+        home: CupertinoPageScaffold(child: navigationBadge(item, false)),
+      ),
+    );
 
     expect(find.text('7'), findsOneWidget);
     expect(find.byIcon(Icons.cake), findsOneWidget);

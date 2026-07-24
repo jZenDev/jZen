@@ -27,6 +27,15 @@ vars:
   DEMO_ADMIN_DIR: apps/zen_demo/zen_demo_admin
   OPENAPI_JSON: apps/zen_demo/zen_demo_server/target/openapi/openapi.json
 
+  # `dart format` over a workspace, minus the tracked generated protobuf. It has no ignore file
+  # and does not read `analyzer: exclude:` (that governs analysis), so the exclusion lives here.
+  # Formatting a generated file makes `sync:contracts` report drift the next time protoc runs.
+  # Width is NOT passed as a flag: it is declared in each workspace's analysis_options.yaml so an
+  # IDE format-on-save produces the same result as this task.
+  DART_FORMAT: >-
+    find . -name '*.dart' ! -path '*/generated/*' ! -path '*/.dart_tool/*' -print0
+    | xargs -0 dart format
+
   # Cloud Run coordinates, overridable via the environment.
   GCP_PROJECT: '{{.GCP_PROJECT | default "CHANGEME-jzen"}}'
   GCP_REGION: '{{.GCP_REGION | default "europe-central2"}}'
@@ -688,11 +697,18 @@ tasks:
       which hid the fact that prettier was never a declared dependency — the task reported
       success while formatting no TypeScript at all, for as long as it has existed.
 
-      Each admin package declares its own prettier, and `zen_demo_admin` carries a
-      `.prettierignore` for `schema.generated.ts`: that file is generated AND tracked, so
-      formatting it would fail `sync:contracts` on every run.
+      BOTH toolchains must be kept off the tracked generated files, for the same reason and
+      by different means. `zen_demo_admin` carries a `.prettierignore` for
+      `schema.generated.ts`; Dart has no such file and `dart format` ignores the
+      `analyzer: exclude:` block (that governs analysis, not formatting), so the generated
+      protobuf is excluded by the find below. Format either of them and the next
+      regeneration re-emits the generator's own layout, so `sync:contracts` reports drift.
+
+      Line width is declared per workspace in `analysis_options.yaml` (`formatter:
+      page_width: 100`), not passed here, so an IDE format-on-save agrees with this task.
     cmds:
-      - cd {{.CLIENT_DIR}} && dart format .
+      - cd {{.CLIENT_DIR}} && {{.DART_FORMAT}}
+      - cd {{.APPS_DIR}} && {{.DART_FORMAT}}
       - cd {{.ADMIN_DIR}} && pnpm exec prettier --write "src/**/*.{ts,tsx}"
       - cd {{.DEMO_ADMIN_DIR}} && pnpm exec prettier --write "src/**/*.{ts,tsx}"
 

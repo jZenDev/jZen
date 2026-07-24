@@ -63,10 +63,7 @@ final class ZenSuccess<T> extends ZenResult<T> {
   ZenError? get errorOrNull => null;
 
   @override
-  R fold<R>(
-    R Function(T data) onSuccess,
-    R Function(ZenError error) onFailure,
-  ) => onSuccess(data);
+  R fold<R>(R Function(T data) onSuccess, R Function(ZenError error) onFailure) => onSuccess(data);
 
   @override
   String toString() => 'ZenSuccess($data)';
@@ -103,10 +100,7 @@ final class ZenFailure<T> extends ZenResult<T> {
   ZenError? get errorOrNull => error;
 
   @override
-  R fold<R>(
-    R Function(T data) onSuccess,
-    R Function(ZenError error) onFailure,
-  ) => onFailure(error);
+  R fold<R>(R Function(T data) onSuccess, R Function(ZenError error) onFailure) => onFailure(error);
 
   @override
   String toString() => 'ZenFailure($error)';

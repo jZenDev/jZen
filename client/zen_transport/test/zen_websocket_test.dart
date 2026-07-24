@@ -31,8 +31,7 @@ class _FakeSink implements WebSocketSink {
   Future<dynamic> get done => Future<void>.value();
 }
 
-class _FakeChannel extends StreamChannelMixin<dynamic>
-    implements WebSocketChannel {
+class _FakeChannel extends StreamChannelMixin<dynamic> implements WebSocketChannel {
   _FakeChannel(this._incoming);
 
   final Stream<dynamic> _incoming;
@@ -60,10 +59,7 @@ class _FakeChannel extends StreamChannelMixin<dynamic>
 void main() {
   group('ZenWebSocket.decodeMessage', () {
     test('decodes a Uint8List frame', () {
-      final bytes = ZenProtoCodec.encode(
-        HealthStatus(status: 'ok'),
-        ZenTransportFormat.protobuf,
-      );
+      final bytes = ZenProtoCodec.encode(HealthStatus(status: 'ok'), ZenTransportFormat.protobuf);
       final decoded = ZenWebSocket.decodeMessage(
         bytes,
         ZenTransportFormat.protobuf,
@@ -73,10 +69,7 @@ void main() {
     });
 
     test('decodes a List<int> frame', () {
-      final bytes = ZenProtoCodec.encode(
-        HealthStatus(status: 'ok'),
-        ZenTransportFormat.protobuf,
-      );
+      final bytes = ZenProtoCodec.encode(HealthStatus(status: 'ok'), ZenTransportFormat.protobuf);
       final decoded = ZenWebSocket.decodeMessage(
         bytes.toList(), // List<int>, not Uint8List
         ZenTransportFormat.protobuf,
@@ -87,11 +80,8 @@ void main() {
 
     test('throws FormatException on an unexpected frame type', () {
       expect(
-        () => ZenWebSocket.decodeMessage(
-          'not-bytes',
-          ZenTransportFormat.protobuf,
-          HealthStatus.new,
-        ),
+        () =>
+            ZenWebSocket.decodeMessage('not-bytes', ZenTransportFormat.protobuf, HealthStatus.new),
         throwsA(isA<FormatException>()),
       );
     });
@@ -100,10 +90,7 @@ void main() {
   group('ZenWebSocket', () {
     test('send encodes the message onto the sink', () {
       final channel = _FakeChannel(const Stream<dynamic>.empty());
-      final ws = ZenWebSocket.withChannel(
-        channel,
-        format: ZenTransportFormat.protobuf,
-      );
+      final ws = ZenWebSocket.withChannel(channel, format: ZenTransportFormat.protobuf);
 
       ws.send(HealthStatus(status: 'ok', service: 'zen-demo-server'));
 
@@ -123,10 +110,7 @@ void main() {
         ZenTransportFormat.protobuf,
       );
       final channel = _FakeChannel(Stream<dynamic>.value(incoming));
-      final ws = ZenWebSocket.withChannel(
-        channel,
-        format: ZenTransportFormat.protobuf,
-      );
+      final ws = ZenWebSocket.withChannel(channel, format: ZenTransportFormat.protobuf);
 
       final first = await ws.responses(HealthStatus.new).first;
       expect(first.status, 'ok');
@@ -135,10 +119,7 @@ void main() {
 
     test('close delegates the code and reason to the sink', () async {
       final channel = _FakeChannel(const Stream<dynamic>.empty());
-      final ws = ZenWebSocket.withChannel(
-        channel,
-        format: ZenTransportFormat.protobuf,
-      );
+      final ws = ZenWebSocket.withChannel(channel, format: ZenTransportFormat.protobuf);
 
       await ws.close(1000, 'bye');
       expect(channel.closeCode, 1000);

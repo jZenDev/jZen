@@ -4,8 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  testWidgets('ZenNavigation renders body content',
-      (WidgetTester tester) async {
+  testWidgets('ZenNavigation renders body content', (WidgetTester tester) async {
     // ZenNavigation selects platform builders and is not implemented on web.
     if (zenIsWeb) return;
     var selectedIndex = 0;

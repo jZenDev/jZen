@@ -28,11 +28,9 @@ class ZenWebSocket {
   ///
   /// Useful for tests or when a channel is created externally and should be injected.
   @visibleForTesting
-  ZenWebSocket.withChannel(
-    WebSocketChannel channel, {
-    ZenTransportFormat? format,
-  }) : _format = format ?? selectDefaultCodec(),
-       _channel = channel;
+  ZenWebSocket.withChannel(WebSocketChannel channel, {ZenTransportFormat? format})
+    : _format = format ?? selectDefaultCodec(),
+      _channel = channel;
 
   final ZenTransportFormat _format;
   final WebSocketChannel _channel;
@@ -44,9 +42,7 @@ class ZenWebSocket {
   ///
   /// [createEmpty] is the message constructor tear-off (e.g. `HealthStatus.new`).
   Stream<T> responses<T extends GeneratedMessage>(T Function() createEmpty) =>
-      _channel.stream.map(
-        (message) => decodeMessage(message, _format, createEmpty),
-      );
+      _channel.stream.map((message) => decodeMessage(message, _format, createEmpty));
 
   /// Decodes a single WebSocket [message] into a message of type [T].
   ///
@@ -61,18 +57,13 @@ class ZenWebSocket {
       return ZenProtoCodec.decode(message, format, createEmpty);
     }
     if (message is List<int>) {
-      return ZenProtoCodec.decode(
-        Uint8List.fromList(message),
-        format,
-        createEmpty,
-      );
+      return ZenProtoCodec.decode(Uint8List.fromList(message), format, createEmpty);
     }
     throw FormatException('Unexpected message type: ${message.runtimeType}');
   }
 
   /// Sends a typed proto [message] through the WebSocket.
-  void send(GeneratedMessage message) =>
-      _channel.sink.add(ZenProtoCodec.encode(message, _format));
+  void send(GeneratedMessage message) => _channel.sink.add(ZenProtoCodec.encode(message, _format));
 
   /// Closes the WebSocket connection.
   Future<void> close([int? closeCode, String? closeReason]) =>

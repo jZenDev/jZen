@@ -66,10 +66,7 @@ void main() {
 
   group('ZenError', () {
     test('ZenValidationError holds data', () {
-      const err = ZenValidationError(
-        'Invalid input',
-        internalData: {'field': 'email'},
-      );
+      const err = ZenValidationError('Invalid input', internalData: {'field': 'email'});
       expect(err.message, 'Invalid input');
       expect(err.internalData?['field'], 'email');
     });
@@ -81,28 +78,19 @@ void main() {
     });
 
     test('ZenUnauthorizedError holds data', () {
-      const err = ZenUnauthorizedError(
-        'Access denied',
-        internalData: {'userId': '123'},
-      );
+      const err = ZenUnauthorizedError('Access denied', internalData: {'userId': '123'});
       expect(err.message, 'Access denied');
       expect(err.internalData?['userId'], '123');
     });
 
     test('ZenConflictError holds data', () {
-      const err = ZenConflictError(
-        'Duplicate entry',
-        internalData: {'key': 'email'},
-      );
+      const err = ZenConflictError('Duplicate entry', internalData: {'key': 'email'});
       expect(err.message, 'Duplicate entry');
       expect(err.internalData?['key'], 'email');
     });
 
     test('ZenUnknownError holds data', () {
-      const err = ZenUnknownError(
-        'Something went wrong',
-        internalData: {'code': 500},
-      );
+      const err = ZenUnknownError('Something went wrong', internalData: {'code': 500});
       expect(err.message, 'Something went wrong');
       expect(err.internalData?['code'], 500);
     });

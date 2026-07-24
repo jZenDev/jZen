@@ -43,6 +43,5 @@ class ZenTransportError extends ZenError {
       );
 
   @override
-  String toString() =>
-      'ZenTransportError(code: ${zenError.code}, message: ${zenError.message})';
+  String toString() => 'ZenTransportError(code: ${zenError.code}, message: ${zenError.message})';
 }

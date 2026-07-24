@@ -14,11 +14,7 @@ import 'package:zen_transport/zen_transport.dart';
 class DemoRepository {
   DemoRepository({required String baseUrl, required http.Client session})
     : _wsUri = _webSocketUri(baseUrl),
-      _json = ZenClient(
-        baseUrl: baseUrl,
-        format: ZenTransportFormat.json,
-        httpClient: session,
-      ),
+      _json = ZenClient(baseUrl: baseUrl, format: ZenTransportFormat.json, httpClient: session),
       _protobuf = ZenClient(
         baseUrl: baseUrl,
         format: ZenTransportFormat.protobuf,
@@ -35,10 +31,7 @@ class DemoRepository {
 
   /// Pings the server in the given transport [format], localized by [language]. Both modes hit
   /// the same typed endpoint; only the wire format differs.
-  Future<ZenResult<Ping>> ping({
-    required ZenTransportFormat format,
-    required String language,
-  }) {
+  Future<ZenResult<Ping>> ping({required ZenTransportFormat format, required String language}) {
     final client = format == ZenTransportFormat.protobuf ? _protobuf : _json;
     return client.send<Ping>(
       Ping.new,
@@ -58,16 +51,12 @@ class DemoRepository {
 
   /// Loads the authenticated user's demo profile. Returns a ZenError when the session cookie is
   /// missing or rejected (the demo's error path).
-  Future<ZenResult<DemoProfile>> profile() => _json.send<DemoProfile>(
-    DemoProfile.new,
-    method: ZenHttpMethod.get,
-    path: _profilePath,
-  );
+  Future<ZenResult<DemoProfile>> profile() =>
+      _json.send<DemoProfile>(DemoProfile.new, method: ZenHttpMethod.get, path: _profilePath);
 
   /// Opens the demo WebSocket echo. Frames are binary Protobuf on every platform (the server
   /// endpoint is single-format), so the format is forced rather than negotiated.
-  ZenWebSocket connectWebSocket() =>
-      ZenWebSocket(_wsUri, format: ZenTransportFormat.protobuf);
+  ZenWebSocket connectWebSocket() => ZenWebSocket(_wsUri, format: ZenTransportFormat.protobuf);
 
   static Uri _webSocketUri(String baseUrl) {
     final base = Uri.parse(baseUrl);

@@ -224,9 +224,7 @@ void main() {
     test('withLifecycle and withAuthority produce distinct identities', () {
       final id = ok<IdentityId>(IdentityId.create('u4'));
       final identity = Identity.createPending(id: id);
-      final newLifecycle = ok<IdentityLifecycle>(
-        identity.lifecycle.disable('temp'),
-      );
+      final newLifecycle = ok<IdentityLifecycle>(identity.lifecycle.disable('temp'));
       final updated = identity.withLifecycle(newLifecycle);
       expect(updated.lifecycle.state, IdentityState.disabled);
       final newAuth = Authority(roles: {ok<Role>(Role.create('ADMIN'))});

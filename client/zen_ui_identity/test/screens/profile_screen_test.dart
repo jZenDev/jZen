@@ -11,11 +11,9 @@ import '../support/localized_app.dart';
 class _FakeRepo implements IdentityRepository {
   ZenResult<IdentityContract?> current;
   ZenResult<void> logoutResult;
-  _FakeRepo({
-    ZenResult<IdentityContract?>? current,
-    ZenResult<void>? logoutResult,
-  }) : current = current ?? const ZenResult.ok(null),
-       logoutResult = logoutResult ?? const ZenResult.ok(null);
+  _FakeRepo({ZenResult<IdentityContract?>? current, ZenResult<void>? logoutResult})
+    : current = current ?? const ZenResult.ok(null),
+      logoutResult = logoutResult ?? const ZenResult.ok(null);
 
   @override
   Future<ZenResult<IdentityContract?>> getCurrentIdentity() async => current;
@@ -41,16 +39,13 @@ class _FakeRepo implements IdentityRepository {
 }
 
 void main() {
-
   testWidgets('shows not authenticated when no identity', (tester) async {
     final repo = _FakeRepo(current: const ZenResult.ok(null));
 
     await tester.pumpWidget(
       ProviderScope(
         overrides: [identityRepositoryProvider.overrideWithValue(repo)],
-        child: localizedApp(
-          home: ProfileScreen(),
-        ),
+        child: localizedApp(home: ProfileScreen()),
       ),
     );
 
@@ -68,10 +63,7 @@ void main() {
 
     var called = false;
     Identity? logoutIdentity;
-    final repo = _FakeRepo(
-      current: ZenResult.ok(contract),
-      logoutResult: const ZenResult.ok(null),
-    );
+    final repo = _FakeRepo(current: ZenResult.ok(contract), logoutResult: const ZenResult.ok(null));
 
     final semantics = tester.ensureSemantics();
 
@@ -93,14 +85,8 @@ void main() {
     expect(find.text('ADMIN'), findsOneWidget);
 
     // Check Semantics
-    expect(
-      tester.getSemantics(find.byTooltip('Log Out').first).tooltip,
-      contains('Log Out'),
-    );
-    expect(
-      tester.getSemantics(find.byType(CircleAvatar)).label,
-      contains('Profile avatar'),
-    );
+    expect(tester.getSemantics(find.byTooltip('Log Out').first).tooltip, contains('Log Out'));
+    expect(tester.getSemantics(find.byType(CircleAvatar)).label, contains('Profile avatar'));
 
     await tester.tap(find.byIcon(Icons.logout).first);
     await tester.pumpAndSettle();

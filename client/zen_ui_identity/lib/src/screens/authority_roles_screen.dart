@@ -10,7 +10,6 @@ import '../widgets/identity_status_chip.dart';
 
 /// Detailed view of user roles and authorities.
 class AuthorityRolesScreen extends ConsumerWidget {
-
   const AuthorityRolesScreen({super.key});
 
   @override
@@ -18,8 +17,7 @@ class AuthorityRolesScreen extends ConsumerWidget {
     final messages = IdentityLocalizations.of(context);
     final state = ref.watch(identitySessionStoreProvider);
     final theme =
-        Theme.of(context).extension<IdentityThemeExtension>() ??
-        IdentityThemeExtension.fallback();
+        Theme.of(context).extension<IdentityThemeExtension>() ?? IdentityThemeExtension.fallback();
 
     return Scaffold(
       backgroundColor: theme.surfaceColor,
@@ -39,12 +37,7 @@ class AuthorityRolesScreen extends ConsumerWidget {
             padding: theme.containerPadding,
             children: [
               if (identity.authority.roles.isEmpty)
-                Center(
-                  child: Text(
-                    messages.noRolesAssigned,
-                    style: theme.subtitleStyle,
-                  ),
-                ),
+                Center(child: Text(messages.noRolesAssigned, style: theme.subtitleStyle)),
               ...identity.authority.roles.map((role) {
                 return Card(
                   margin: EdgeInsets.only(bottom: theme.spacing),
@@ -64,11 +57,7 @@ class AuthorityRolesScreen extends ConsumerWidget {
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, st) => Center(
-          child: Text(
-            messages.errorText(
-              err is ZenError ? err : ZenUnknownError(err.toString()),
-            ),
-          ),
+          child: Text(messages.errorText(err is ZenError ? err : ZenUnknownError(err.toString()))),
         ),
       ),
     );

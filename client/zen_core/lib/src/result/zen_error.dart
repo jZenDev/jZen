@@ -30,11 +30,7 @@ abstract class ZenError {
 @immutable
 final class ZenValidationError extends ZenError {
   /// Creates a [ZenValidationError].
-  const ZenValidationError(
-    super.message, {
-    super.internalData,
-    super.stackTrace,
-  });
+  const ZenValidationError(super.message, {super.internalData, super.stackTrace});
 }
 
 /// Represents a failure where a requested resource could not be found.
@@ -48,11 +44,7 @@ final class ZenNotFoundError extends ZenError {
 @immutable
 final class ZenUnauthorizedError extends ZenError {
   /// Creates a [ZenUnauthorizedError].
-  const ZenUnauthorizedError(
-    super.message, {
-    super.internalData,
-    super.stackTrace,
-  });
+  const ZenUnauthorizedError(super.message, {super.internalData, super.stackTrace});
 }
 
 /// Represents a conflict state, such as trying to create a duplicate record.

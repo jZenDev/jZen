@@ -4,9 +4,7 @@ import 'package:zen_core/zen_core.dart';
 void main() {
   group('BaseResponse', () {
     test('success factory produces success response', () {
-      final r = BaseResponse<Map<String, int>>.success(const {
-        'a': 1,
-      }, message: 'OK');
+      final r = BaseResponse<Map<String, int>>.success(const {'a': 1}, message: 'OK');
       expect(r.success, isTrue);
       expect(r.data, {'a': 1});
       expect(r.message, 'OK');

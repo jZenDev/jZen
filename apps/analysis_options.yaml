@@ -1,0 +1,27 @@
+# Analysis options for the jZen apps pub workspace. Applies to every application package under
+# apps/ unless a package overrides it — the mirror of client/analysis_options.yaml, which does the
+# same job for the framework libraries.
+#
+# This file did not exist before, so apps/ inherited nothing: client/analysis_options.yaml is a
+# sibling, not a parent, and the analyzer only ever walks *up*. Every app added here now starts
+# with the same lints, the same generated-code exclusions, and the same formatter width as the
+# libraries it assembles.
+include: package:flutter_lints/flutter.yaml
+
+# Must match client/analysis_options.yaml — see the fuller note there. jZen's chosen width is 100;
+# `dart format` defaults to 80, so this is a declared choice rather than the tool's default, and a
+# framework and its applications disagreeing about it would mean `task format` rewrapping whichever
+# side it touched last.
+formatter:
+  page_width: 100
+
+analyzer:
+  exclude:
+    # Generated Dart is committed or built, never hand-authored, so do not lint it. Covers the
+    # typed localizations under **/l10n/generated/ (built, gitignored — ADR-009) as well as any
+    # protobuf output an application generates for itself.
+    - "**/generated/**"
+    - "**/*.pb.dart"
+    - "**/*.pbenum.dart"
+    - "**/*.pbjson.dart"
+    - "**/*.pbserver.dart"

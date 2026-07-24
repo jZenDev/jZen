@@ -78,11 +78,12 @@ class ZenNavigation extends StatelessWidget {
 }
 
 /// typedef for platform factory
-typedef PlatformNavigationBuilder = Widget Function({
-  required BuildContext context,
-  required int selectedIndex,
-  required ValueChanged<int> onItemSelected,
-  required List<ZenNavigationItem> items,
-  ValueChanged<String>? onItemSelectedId,
-  String? labelMore,
-});
+typedef PlatformNavigationBuilder =
+    Widget Function({
+      required BuildContext context,
+      required int selectedIndex,
+      required ValueChanged<int> onItemSelected,
+      required List<ZenNavigationItem> items,
+      ValueChanged<String>? onItemSelectedId,
+      String? labelMore,
+    });

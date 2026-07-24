@@ -28,9 +28,7 @@ void main() {
     });
 
     test('callAsync returns ZenFailure for throwing async block', () async {
-      final result = await ZenTry.callAsync(
-        () async => throw Exception('fail async'),
-      );
+      final result = await ZenTry.callAsync(() async => throw Exception('fail async'));
       expect(result, isA<ZenFailure<int>>());
       expect(result.isFailure, isTrue);
       expect(result.errorOrNull, isA<ZenUnknownError>());

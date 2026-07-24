@@ -62,15 +62,9 @@ class _DefaultZenLogger implements ZenLogger {
     _log(sb.toString(), isError: true, internalData: internalData);
   }
 
-  void _log(
-    String line, {
-    bool isError = false,
-    Map<String, dynamic>? internalData,
-  }) {
+  void _log(String line, {bool isError = false, Map<String, dynamic>? internalData}) {
     // For now, we just append the data to the line if present
-    final finalMessage = internalData != null
-        ? '$line\nData: $internalData'
-        : line;
+    final finalMessage = internalData != null ? '$line\nData: $internalData' : line;
     _strategy.log(finalMessage, isError: isError);
   }
 }

@@ -14,6 +14,4 @@ Widget _widget({
   required List<ZenNavigationItem> items,
   ValueChanged<String>? onItemSelectedId,
   String? labelMore,
-}) =>
-    const Text(
-        'Navigation not implemented for this platform'); // fallback skeleton
+}) => const Text('Navigation not implemented for this platform'); // fallback skeleton

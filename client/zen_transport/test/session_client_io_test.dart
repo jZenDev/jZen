@@ -23,9 +23,7 @@ void main() {
       switch (request.uri.path) {
         case '/login':
           // Set an httpOnly session cookie, like the Quarkus AuthResource does.
-          request.response.cookies.add(
-            Cookie('zen_access_token', 'access-jwt')..httpOnly = true,
-          );
+          request.response.cookies.add(Cookie('zen_access_token', 'access-jwt')..httpOnly = true);
           request.response
             ..statusCode = HttpStatus.ok
             ..write('ok');
@@ -63,8 +61,11 @@ void main() {
 
     final who = await client.get(baseUri.resolve('/whoami'));
     expect(who.statusCode, 200);
-    expect(jsonDecode(who.body)['token'], 'access-jwt',
-        reason: 'the jar must resend the cookie captured at /login');
+    expect(
+      jsonDecode(who.body)['token'],
+      'access-jwt',
+      reason: 'the jar must resend the cookie captured at /login',
+    );
   });
 
   test('a fresh client without the cookie sends nothing', () async {

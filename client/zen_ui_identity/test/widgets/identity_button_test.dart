@@ -23,11 +23,7 @@ void main() {
                 onPressed: () {},
                 variant: IdentityButtonVariant.secondary,
               ),
-              IdentityButton(
-                text: 'Text',
-                onPressed: () {},
-                variant: IdentityButtonVariant.text,
-              ),
+              IdentityButton(text: 'Text', onPressed: () {}, variant: IdentityButtonVariant.text),
             ],
           ),
         ),
@@ -39,17 +35,13 @@ void main() {
     expect(find.text('Text'), findsOneWidget);
   });
 
-  testWidgets('IdentityButton shows loading indicator when isLoading', (
-    tester,
-  ) async {
+  testWidgets('IdentityButton shows loading indicator when isLoading', (tester) async {
     final theme = IdentityThemeExtension.fallback();
 
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData().copyWith(extensions: [theme]),
-        home: const Scaffold(
-          body: IdentityButton(text: 'Load', isLoading: true),
-        ),
+        home: const Scaffold(body: IdentityButton(text: 'Load', isLoading: true)),
       ),
     );
 

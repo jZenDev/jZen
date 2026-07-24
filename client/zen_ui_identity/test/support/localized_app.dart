@@ -9,17 +9,14 @@ import 'package:zen_ui_identity/zen_ui_identity.dart';
 /// screens now resolve their wording from the ambient `Localizations`, so a test asserts the
 /// package's *real* strings, and pumping the same tree with a different [locale] is exactly
 /// what a user switching language does.
-Widget localizedApp({
-  required Widget home,
-  String locale = ZenLocales.en,
-  ThemeData? theme,
-}) => MaterialApp(
-  locale: Locale(locale),
-  localizationsDelegates: IdentityLocalizations.localizationsDelegates,
-  supportedLocales: IdentityLocalizations.supportedLocales,
-  theme: theme ?? ThemeData(extensions: [IdentityThemeExtension.fallback()]),
-  home: home,
-);
+Widget localizedApp({required Widget home, String locale = ZenLocales.en, ThemeData? theme}) =>
+    MaterialApp(
+      locale: Locale(locale),
+      localizationsDelegates: IdentityLocalizations.localizationsDelegates,
+      supportedLocales: IdentityLocalizations.supportedLocales,
+      theme: theme ?? ThemeData(extensions: [IdentityThemeExtension.fallback()]),
+      home: home,
+    );
 
 /// The identity strings for [locale], for tests that need an expected value without pumping
 /// a widget (or that assert one language against the other).

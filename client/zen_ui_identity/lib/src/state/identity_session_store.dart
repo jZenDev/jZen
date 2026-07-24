@@ -7,10 +7,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'identity_repository.dart';
 
 /// Providers for accessing the session store and state.
-final identitySessionStoreProvider =
-    AsyncNotifierProvider<IdentitySessionStore, Identity?>(
-      IdentitySessionStore.new,
-    );
+final identitySessionStoreProvider = AsyncNotifierProvider<IdentitySessionStore, Identity?>(
+  IdentitySessionStore.new,
+);
 
 /// Manages the current user session state.
 class IdentitySessionStore extends AsyncNotifier<Identity?> {
@@ -27,10 +26,7 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
   /// Signs in with email and password.
   Future<ZenResult<Identity>> login(String email, String password) async {
     state = const AsyncValue.loading();
-    final result = await _repository.loginWithEmail(
-      email: email,
-      password: password,
-    );
+    final result = await _repository.loginWithEmail(email: email, password: password);
 
     return result.fold(
       (model) {
@@ -48,10 +44,7 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
   /// Registers and optionally logs in.
   Future<ZenResult<Identity>> register(String email, String password) async {
     state = const AsyncValue.loading();
-    final result = await _repository.registerWithEmail(
-      email: email,
-      password: password,
-    );
+    final result = await _repository.registerWithEmail(email: email, password: password);
 
     return result.fold(
       (model) {

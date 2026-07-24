@@ -5,8 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 
 void main() {
-  testWidgets('buildDesktopNavigation renders NavigationRail and selected body',
-      (WidgetTester tester) async {
+  testWidgets('buildDesktopNavigation renders NavigationRail and selected body', (
+    WidgetTester tester,
+  ) async {
     // Only run desktop-specific assertions when the platform is desktop.
     if (!zenIsDesktop) return;
 
@@ -31,17 +32,20 @@ void main() {
       ),
     ];
 
-    await tester.pumpWidget(MaterialApp(
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-      supportedLocales: NavigationLocalizations.supportedLocales,
-      home: Builder(
+    await tester.pumpWidget(
+      MaterialApp(
+        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        supportedLocales: NavigationLocalizations.supportedLocales,
+        home: Builder(
           builder: (context) => buildDesktopNavigation(
-                context: context,
-                selectedIndex: 1,
-                onItemSelected: (_) {},
-                items: items,
-              )),
-    ));
+            context: context,
+            selectedIndex: 1,
+            onItemSelected: (_) {},
+            items: items,
+          ),
+        ),
+      ),
+    );
 
     await tester.pumpAndSettle();
 

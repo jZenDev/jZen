@@ -14,14 +14,14 @@ void main() {
         test('HealthStatus survives encode -> decode', () {
           final original = HealthStatus(
             status: 'ok',
-            service: 'zen-app',
+            service: 'zen-demo-server',
             timestampMs: Int64(1752800000000),
           );
           final bytes = ZenProtoCodec.encode(original, format);
           final decoded = ZenProtoCodec.decode(bytes, format, HealthStatus.new);
 
           expect(decoded.status, 'ok');
-          expect(decoded.service, 'zen-app');
+          expect(decoded.service, 'zen-demo-server');
           expect(decoded.timestampMs, Int64(1752800000000));
           expect(decoded, original);
         });
@@ -57,7 +57,7 @@ void main() {
     test('json mode emits canonical proto3 JSON (camelCase field names)', () {
       final status = HealthStatus(
         status: 'ok',
-        service: 'zen-app',
+        service: 'zen-demo-server',
         timestampMs: Int64(1752800000000),
       );
       final bytes = ZenProtoCodec.encode(status, ZenTransportFormat.json);
@@ -65,12 +65,12 @@ void main() {
 
       // proto3 JSON uses camelCase field names; int64 is a string.
       expect(json['status'], 'ok');
-      expect(json['service'], 'zen-app');
+      expect(json['service'], 'zen-demo-server');
       expect(json['timestampMs'], '1752800000000');
     });
 
     test('binary and json encodings differ but decode to the same message', () {
-      final status = HealthStatus(status: 'ok', service: 'zen-app');
+      final status = HealthStatus(status: 'ok', service: 'zen-demo-server');
       final binary = ZenProtoCodec.encode(status, ZenTransportFormat.protobuf);
       final json = ZenProtoCodec.encode(status, ZenTransportFormat.json);
 

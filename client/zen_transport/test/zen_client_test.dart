@@ -48,7 +48,7 @@ void main() {
           expect(request.headers[zenTransportHeaderName], format.value);
           expect(request.headers[requestIdHeaderName], matches(r'^req-\d+-\d+$'));
           return _encodedResponse(
-            HealthStatus(status: 'ok', service: 'zen-app'),
+            HealthStatus(status: 'ok', service: 'zen-demo-server'),
             format,
             200,
           );
@@ -62,7 +62,7 @@ void main() {
         final result = await client.get(HealthStatus.new, '/api/v1/health');
         expect(result.isSuccess, isTrue);
         expect(result.dataOrNull?.status, 'ok');
-        expect(result.dataOrNull?.service, 'zen-app');
+        expect(result.dataOrNull?.service, 'zen-demo-server');
       });
     }
 
@@ -72,7 +72,7 @@ void main() {
         expect(request.method, 'POST');
         sentBytes = request.bodyBytes;
         return _encodedResponse(
-          HealthStatus(status: 'ok', service: 'zen-app'),
+          HealthStatus(status: 'ok', service: 'zen-demo-server'),
           ZenTransportFormat.protobuf,
           200,
         );
@@ -100,7 +100,7 @@ void main() {
       // Client speaks protobuf, but the server answers in json (and says so).
       final mock = MockClient((request) async {
         return _encodedResponse(
-          HealthStatus(status: 'ok', service: 'zen-app'),
+          HealthStatus(status: 'ok', service: 'zen-demo-server'),
           ZenTransportFormat.json,
           200,
         );
@@ -113,7 +113,7 @@ void main() {
 
       final result = await client.get(HealthStatus.new, '/api/v1/health');
       expect(result.isSuccess, isTrue);
-      expect(result.dataOrNull?.service, 'zen-app');
+      expect(result.dataOrNull?.service, 'zen-demo-server');
     });
 
     test('empty 204 body yields an empty message', () async {
@@ -130,7 +130,7 @@ void main() {
         expect(request.headers['authorization'], 'Bearer token');
         expect(request.headers['x-custom'], 'yes');
         return _encodedResponse(
-          HealthStatus(status: 'ok', service: 'zen-app'),
+          HealthStatus(status: 'ok', service: 'zen-demo-server'),
           ZenTransportFormat.json,
           200,
         );
@@ -160,7 +160,7 @@ void main() {
       final mock = MockClient((request) async {
         capture(request);
         return _encodedResponse(
-          HealthStatus(status: 'ok', service: 'zen-app'),
+          HealthStatus(status: 'ok', service: 'zen-demo-server'),
           ZenTransportFormat.json,
           200,
         );
@@ -187,7 +187,7 @@ void main() {
       final mock = MockClient((request) async {
         seen = request;
         return _encodedResponse(
-          HealthStatus(status: 'ok', service: 'zen-app'),
+          HealthStatus(status: 'ok', service: 'zen-demo-server'),
           ZenTransportFormat.json,
           200,
         );

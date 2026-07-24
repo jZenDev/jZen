@@ -40,7 +40,7 @@ Delivered.
 - **Verified:** a `@QuarkusTest` (`HealthResourceTest`, Dev Services Postgres) asserts
   both modes green; a live server confirmed the exit test —
   `curl -H "X-Zen-Transport: protobuf"` returns 20 bytes of parseable protobuf,
-  `-H "X-Zen-Transport: json"` returns `{"status":"ok","service":"zen-app",...}` canonical
+  `-H "X-Zen-Transport: json"` returns `{"status":"ok","service":"zen-demo-server",...}` canonical
   proto3 JSON, both echoing the negotiated `X-Zen-Transport` header; no header defaults to
   JSON.
 

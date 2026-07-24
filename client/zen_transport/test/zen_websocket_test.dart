@@ -105,7 +105,7 @@ void main() {
         format: ZenTransportFormat.protobuf,
       );
 
-      ws.send(HealthStatus(status: 'ok', service: 'zen-app'));
+      ws.send(HealthStatus(status: 'ok', service: 'zen-demo-server'));
 
       final sent = channel.sink as _FakeSink;
       expect(sent.added, hasLength(1));
@@ -114,12 +114,12 @@ void main() {
         ZenTransportFormat.protobuf,
         HealthStatus.new,
       );
-      expect(decoded.service, 'zen-app');
+      expect(decoded.service, 'zen-demo-server');
     });
 
     test('responses decodes incoming frames into typed messages', () async {
       final incoming = ZenProtoCodec.encode(
-        HealthStatus(status: 'ok', service: 'zen-app'),
+        HealthStatus(status: 'ok', service: 'zen-demo-server'),
         ZenTransportFormat.protobuf,
       );
       final channel = _FakeChannel(Stream<dynamic>.value(incoming));
@@ -130,7 +130,7 @@ void main() {
 
       final first = await ws.responses(HealthStatus.new).first;
       expect(first.status, 'ok');
-      expect(first.service, 'zen-app');
+      expect(first.service, 'zen-demo-server');
     });
 
     test('close delegates the code and reason to the sink', () async {

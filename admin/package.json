@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "Apache-2.0",
+  "packageManager": "pnpm@10.30.3",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

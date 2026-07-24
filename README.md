@@ -81,12 +81,31 @@ and `deploy:cloudrun` is **release**. The `desc` in `task --list` tells you whic
 
 ## Quick start — running it
 
-Prerequisites: JDK 25, Dart, Flutter, pnpm, the Supabase CLI, Docker (running), and gcloud.
-Verify them in one shot:
+Prerequisites: the Supabase CLI, Docker (running), and gcloud. Everything the build itself
+consumes is **version-pinned**, and each pin lives in the file its own ecosystem already reads —
+there is no universal version manager over the top, for the same reason the orchestrator does not
+replace `mvnw`/`dart pub`/`pnpm` ([`DECISIONS.md`](docs/architecture/DECISIONS.md) ADR-014):
+
+| Pin | File | Applied by |
+|---|---|---|
+| JDK (GraalVM CE 25) | [`.sdkmanrc`](.sdkmanrc) | [SDKMAN](https://sdkman.io) — `sdk env` (`sdk env install` first time) |
+| Flutter — **and Dart with it** | [`.fvmrc`](.fvmrc) | [FVM](https://fvm.app) — `fvm use` |
+| Node | [`.nvmrc`](.nvmrc) | [nvm](https://github.com/nvm-sh/nvm) — `nvm use` |
+| pnpm | `packageManager` in `package.json` | [corepack](https://nodejs.org/api/corepack.html) — `corepack enable`, then it is automatic |
 
 ```bash
 task doctor
 ```
+
+`doctor` reads each expected version out of those same files rather than restating it, so a pin
+has exactly one home and the check cannot drift from what the tools enforce. It reports `DRIFT`
+and exits non-zero on a mismatch, naming the command that fixes it — rather than letting you find
+out later as a confusing build failure, or as output that silently differs from everyone else's.
+`task format` is the concrete case: the committed Dart layout is what Dart 3.12.2 produces.
+
+The switchers are optional. A matching version installed any other way still passes; they are
+only what makes fixing a drift a one-liner. Note SDKMAN ships `sdkman_auto_env=false`, so
+`.sdkmanrc` applies when you run `sdk env`, not on `cd`.
 
 Then bring up the backend against a local Supabase stack:
 

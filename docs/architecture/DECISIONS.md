@@ -15,6 +15,80 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-013 — Completing the roadmap is not being production-ready: the remaining work is named, not implied
+
+**Date:** 2026-07-23. **Status:** accepted. **Follows:** ADR-012 / ROADMAP Step 9.
+
+### Decision
+
+Step 9 finished the last numbered step, and the documents it produced read as though the project
+were finished. Reviewing them showed it is not, and that the gap had never been written down
+anywhere. This entry records the gap and where it is tracked.
+
+**1. The distinction is stated explicitly, in three places.** "The roadmap's planned steps are
+complete" and "a product can ship on this" are different claims, and only the first is true. The
+ROADMAP now says so where it closes, the root README carries a **Status** section a newcomer meets
+before anything else, and ADR-012's consequence stops short of claiming production-readiness.
+Documents that read as finished when the work is not are a defect of the same kind as a silent
+failure: they remove the signal that something still needs doing.
+
+**2. The remaining work is an appendix, not Steps 10-11-12.** It is recorded in ROADMAP's
+"Beyond the roadmap" appendix. *Why an appendix:* these items were never planned work that
+slipped, and numbering them would misrepresent both their history and their nature — a numbered
+step is a commitment with an order, whereas these are a boundary the project has not yet crossed,
+each independently triggered. It also keeps the nine-step sequence readable as the historical
+record it is. The appendix states, for each gap, where it stands today and what "done" means.
+
+**3. The gaps, as measured.**
+
+- **The packages are unpublished** — everything `0.1.0`, Dart `publish_to: none`, npm `private`,
+  Java installed to a local repository; consumption is by local path only. **This is the largest
+  gap**, because it is the framework's whole distribution claim: until the packages are in
+  registries, "build your app on jZen" means "check out this repository", and the lockstep-version
+  contract has nothing to bite on. STANDARDS "Code generation" already names publishing as the
+  exit condition for tracking generated code, so it is a promise the documents made and the
+  project has not kept.
+- **The web app and the admin panel have no deploy path** — both build to a bundle nothing ships;
+  the backend container serves the API only. Not an exclusion by design, which is what the first
+  draft of the README wrongly said; simply unbuilt.
+- **Native app pipelines do not exist** — the one item genuinely left to each application.
+- **The backend deploy path is unproven** — `deploy:cloudrun` has never run end to end.
+
+**4. One latent defect was found by writing the documentation, and it is the argument for this
+entry.** `Dockerfile.native-micro` still copied `zen-app/target/*-runner`, a path left behind when
+ADR-001 relocated that module. Relative to the build context the deploy task actually uses, the
+directory does not exist, so `task deploy:cloudrun` **failed at the `COPY`** — proven by building
+the old and new Dockerfiles against a stub runner (`lstat /zen-app/target: no such file or
+directory` versus a clean build). It survived because **nothing exercises it**: no test, no gate,
+and no deployment has ever run. A stale rename inside an unexercised path is exactly what an
+honest backlog is for, and the sweep that found it also cleared the same rot from five source
+comments, a versioning example in STANDARDS, and the Cloud Run `SERVICE_NAME` default.
+
+### What this supersedes, and why
+
+- **ROADMAP Step 9's "This closes the ROADMAP … there is no Step 10", and ADR-012's consequence
+  as first written** → **narrowed to the *planned steps*.** *Why:* the sequence really is
+  finished, but the sentence was read — including by its author — as "nothing remains", which is
+  false. The claim now names what it covers.
+- **The root `README.md`'s deploy section, "the Flutter client and the admin panel have no jZen
+  deploy task, **by design**"** → **corrected to "not yet built".** *Why:* it was not a decision,
+  it was undone work, and describing an omission as a design choice is how a gap becomes
+  permanent.
+
+### Consequence
+
+The roadmap is closed and the backlog is open, and no document now implies otherwise. **No
+behaviour changed by this entry**; the one functional change in its scope is the `Dockerfile`
+`COPY` fix, which repairs a path that could not have worked. Lockstep versioning is unchanged at
+`0.1.0`, no Flyway band is claimed (200-299 remains free), and no dependency was added.
+
+The next thing jZen does is not a roadmap step. It is either **publishing the packages** — which
+converts the framework claim from an arrangement of folders into something an outside application
+can depend on — or **a second application**, which is what ADR-001 says actually tests the claim.
+Both are now written down as choices rather than assumed to be already handled.
+
+---
+
 ## ADR-012 — READMEs are the front door; a documentation drift gate, and the licence propagated to every module
 
 **Date:** 2026-07-23. **Status:** accepted. **Discharges:** ROADMAP Step 9, and closes the ROADMAP.

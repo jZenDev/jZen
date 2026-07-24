@@ -126,7 +126,7 @@
       </plugin>
       <!-- Generates META-INF/jandex.idx so Quarkus discovers this module's CDI beans and the
            RoleAugmentor (a SecurityIdentityAugmentor) and the User @Entity from the jar when
-           it is a dependency of zen-app. Without an index they are silently ignored.
+           it is a dependency of an app server. Without an index they are silently ignored.
            zen-transport is the reference for this. -->
       <plugin>
         <groupId>io.smallrye</groupId>

@@ -19,6 +19,23 @@ the architecture as built is in
 honest are in [`docs/architecture/STANDARDS.md`](docs/architecture/STANDARDS.md). **Read those
 before non-trivial work — they are the source of truth, and this README only points at them.**
 
+## Status — what works, and what does not yet
+
+**The framework is complete and gated; it is not yet production-ready, and the difference is
+deliberate.** Everything described below runs today: the transport seam, auth, jobs, email, the
+admin surface, the reference app, and the full test and contract-drift gates. What is *not* done
+is the last mile to shipping a product:
+
+- **The packages are unpublished.** Everything is `0.1.0` and consumed by **local path** — there
+  is no pub.dev, Maven, or npm release yet, so an app outside this repository cannot depend on
+  jZen by version.
+- **Only the backend has a deploy path**, and it has never actually been run against real GCP.
+  The web app and admin panel have no deploy task yet.
+
+The full list, with what "done" means for each, is the appendix in
+[`ROADMAP.md`](docs/architecture/ROADMAP.md). Nothing there is a hidden defect — they are stated
+boundaries, and this note exists so you meet them here rather than discover them later.
+
 ## See it run
 
 The fastest way to watch the whole product work end to end is the reference app:

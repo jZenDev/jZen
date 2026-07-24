@@ -512,10 +512,39 @@ anything a reader needs is explained on jZen's own terms.
   invariants; and `task build` / `task test` / `task sync:contracts` stay green with every test count
   identical to the pre-Step-9 baseline (ADR-012).
 
-**This closes the ROADMAP.** There is no Step 10. The next horizon is not a numbered step but the
-triggers already recorded: a second application under `apps/` (which is what actually exercises the
-framework claim of ADR-001), and the capability triggers in [`DECISIONS.md`](./DECISIONS.md) ADR-010
-— none of whose conditions is met today.
+**This closes the ROADMAP's planned steps.** There is no Step 10, and no numbered step is
+outstanding. Two different things follow from here, and they are deliberately kept apart:
+
+- **Optional directions**, gated on evidence rather than scheduled: a second application under
+  `apps/` (which is what actually exercises the framework claim of ADR-001), and the capability
+  triggers in [`DECISIONS.md`](./DECISIONS.md) ADR-010 — none of whose conditions is met today.
+- **Required work before anything ships**, in the appendix below. Completing the roadmap is not
+  the same as being production-ready, and the appendix is where that difference is written down.
+
+## Appendix — beyond the roadmap: what is not yet production-ready
+
+The nine steps built a framework that composes end to end, proved it with a reference app, and
+gated it. **None of that makes a product shippable on it yet.** The items below were never
+numbered steps that slipped — they are the boundary between "the framework is built" and "a
+product runs on it in production", and they surfaced while Step 9 documented the system. They are
+recorded here rather than left to be rediscovered. See [`DECISIONS.md`](./DECISIONS.md) ADR-013.
+
+| Gap | Where it stands today | What "done" means |
+|---|---|---|
+| **The packages are unpublished** | Everything is `0.1.0`; the Dart packages are `publish_to: none`, the npm packages `private`, and the Java modules are installed to a local repository. An application consumes the framework by **local path** only. | `zen_*` on pub.dev, the Java modules in a Maven registry, `@jzen/*` on npm — so an app depends on a **version** and upgrades by bumping it. |
+| **The web app has no deploy path** | `flutter build web` produces a bundle nothing ships. The backend container serves the API only, and in local dev the web app runs on its own origin behind CORS. | A deploy task that puts the bundle on GCP — its own container on Cloud Run, or static hosting — and a documented origin/CORS story for it. |
+| **The admin panel has no deploy path** | `task build:admin` produces a Vite bundle nothing ships; same situation as the web app. | The same: a deploy task and a hosting target. |
+| **Native app pipelines do not exist** | No store or notarization automation for mobile/desktop. | Per-application release pipelines. This is the one item genuinely left to each app rather than the framework. |
+| **The backend deploy path is unproven** | `task deploy:cloudrun` has never run end to end; jZen has never been deployed. Step 9 found its `Dockerfile` `COPY` was in fact broken by an earlier module rename, which no gate could have caught. | One successful deploy to a real Cloud Run service, with the secrets and the Cloud Scheduler entry in place. |
+
+**Publishing is the largest of these**, because it is the framework's whole distribution claim:
+until the packages are in registries, "build your app on jZen" means "check out this repository",
+and the lockstep-versioning contract in [`STANDARDS.md`](./STANDARDS.md) has nothing to bite on.
+STANDARDS "Code generation" already names publishing as the exit condition for tracking generated
+code, so this is a promise the documents have made and the project has not yet kept.
+
+**Nothing here is a hidden defect.** Each is a known, stated boundary; the only thing that was
+wrong was a set of documents that read as finished. That is what this appendix fixes.
 
 ## Explicitly out of scope
 

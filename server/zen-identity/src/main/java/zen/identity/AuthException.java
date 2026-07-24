@@ -2,11 +2,13 @@ package zen.identity;
 
 /**
  * A domain-level authentication failure. Carries a stable machine-readable {@code code} and
- * an HTTP status; {@code AuthExceptionMapper} (in zen-app) renders it as a {@code ZenError}
- * proto body in whichever transport format the caller negotiated.
+ * an HTTP status; {@code AuthExceptionMapper} (in {@code zen.identity.auth}) renders it as a
+ * {@code ZenError} proto body in whichever transport format the caller negotiated.
  *
- * <p>This keeps zen-identity free of JAX-RS {@code Response} building: the service throws a
- * plain exception, and the app module owns the wire mapping.
+ * <p>This keeps the identity <em>service</em> free of JAX-RS {@code Response} building: it throws
+ * a plain exception, and the mapper beside it owns the wire mapping. Both ship in this library
+ * rather than in an application, so every jZen app inherits the auth surface by depending on it
+ * (see docs/architecture/DECISIONS.md ADR-001).
  */
 public class AuthException extends RuntimeException {
 

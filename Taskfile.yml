@@ -30,7 +30,7 @@ vars:
   # Cloud Run coordinates, overridable via the environment.
   GCP_PROJECT: '{{.GCP_PROJECT | default "CHANGEME-jzen"}}'
   GCP_REGION: '{{.GCP_REGION | default "europe-central2"}}'
-  SERVICE_NAME: '{{.SERVICE_NAME | default "zen-app"}}'
+  SERVICE_NAME: '{{.SERVICE_NAME | default "zen-demo-server"}}'
   AR_REPO: '{{.AR_REPO | default "jzen"}}'
 
 tasks:

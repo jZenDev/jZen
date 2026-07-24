@@ -532,19 +532,81 @@ recorded here rather than left to be rediscovered. See [`DECISIONS.md`](./DECISI
 | Gap | Where it stands today | What "done" means |
 |---|---|---|
 | **The packages are unpublished** | Everything is `0.1.0`; the Dart packages are `publish_to: none`, the npm packages `private`, and the Java modules are installed to a local repository. An application consumes the framework by **local path** only. | `zen_*` on pub.dev, the Java modules in a Maven registry, `@jzen/*` on npm — so an app depends on a **version** and upgrades by bumping it. |
-| **The web app has no deploy path** | `flutter build web` produces a bundle nothing ships. The backend container serves the API only, and in local dev the web app runs on its own origin behind CORS. | A deploy task that puts the bundle on GCP — its own container on Cloud Run, or static hosting — and a documented origin/CORS story for it. |
-| **The admin panel has no deploy path** | `task build:admin` produces a Vite bundle nothing ships; same situation as the web app. | The same: a deploy task and a hosting target. |
+| **The web app has no deploy path** | `flutter build web` produces a bundle nothing ships. The backend container serves the API only, and in local dev the web app runs on its own origin behind CORS. | A deploy task that ships the bundle **same-origin with the API** — served by the backend container itself. See the note below: this is constrained, not open. |
+| **The admin panel has no deploy path** | `task build:admin` produces a Vite bundle nothing ships; same situation as the web app. | The same, under the same constraint — and it binds harder here, the panel being admin-role gated on the same cookie. |
 | **Native app pipelines do not exist** | No store or notarization automation for mobile/desktop. | Per-application release pipelines. This is the one item genuinely left to each app rather than the framework. |
 | **The backend deploy path is unproven** | `task deploy:cloudrun` has never run end to end; jZen has never been deployed. Step 9 found its `Dockerfile` `COPY` was in fact broken by an earlier module rename, which no gate could have caught. | One successful deploy to a real Cloud Run service, with the secrets and the Cloud Scheduler entry in place. |
+
+**The two frontend rows are constrained by an existing rule, and this appendix first stated them as
+though they were open.** Its original wording offered "its own container on Cloud Run, or static
+hosting" plus "a documented origin/CORS story", which reads as a free choice. It is not, and the
+correction is recorded here rather than left to be discovered during the deploy — two independent
+constraints converge on **same-origin**:
+
+- **An edge that proxies the API is forbidden.** [`STANDARDS.md`](./STANDARDS.md) "Deployment model"
+  — *"Nothing sits between the client and Cloud Run"* — and `deploy:cloudrun`'s own summary rules out
+  `firebase deploy` by name. Firebase Hosting forwards only a cookie named `__session` and strips the
+  rest, and jZen sets **three** cookies (`zen_access_token`, `zen_refresh_token`, and the JS-readable
+  `XSRF-TOKEN`). Accepting such an edge means accepting all three costs STANDARDS enumerates: pack
+  the tokens into the one surviving cookie, add a filter to unpack them, and disable proactive auth.
+- **A separate origin that does *not* proxy the API avoids that rule and hits the other one.**
+  `SessionService` sets all three cookies `SameSite=LAX`, and `run.app` is on the Public Suffix List,
+  so two default Cloud Run URLs are *cross-site* and the browser never attaches the cookie. Login
+  would return 200 and every subsequent request would arrive anonymous. The CORS configuration
+  already present (`access-control-allow-credentials=true`) does not help: CORS admits the request,
+  `SameSite` decides whether the cookie rides along, and both must pass.
+
+Serving the bundles from the backend container satisfies both, needs no second service, no domain
+mapping, and no cookie change — and it makes the "origin/CORS story" the original wording asked for
+moot rather than documented. A custom domain across two services also works (same registrable
+domain, so `Lax` holds); it is simply more moving parts for no gain. What is **not** available is
+any option that puts a cookie-stripping edge in front of the API.
 
 **Publishing is the largest of these**, because it is the framework's whole distribution claim:
 until the packages are in registries, "build your app on jZen" means "check out this repository",
 and the lockstep-versioning contract in [`STANDARDS.md`](./STANDARDS.md) has nothing to bite on.
 STANDARDS "Code generation" already names publishing as the exit condition for tracking generated
-code, so this is a promise the documents have made and the project has not yet kept.
+code, so this is a promise the documents have made and the project has not yet kept. It is the
+largest **gap**; it is not the most urgent **task**, for the reason the delivery order below gives.
 
 **Nothing here is a hidden defect.** Each is a known, stated boundary; the only thing that was
 wrong was a set of documents that read as finished. That is what this appendix fixes.
+
+### The delivery order, and where it comes from
+
+The table above is a census, and a census has no order. This section adds one, because an objective
+is now named: **get a demonstrable POC deployed** — a running stack a person can be shown, rather
+than a framework that composes on a laptop. See [`DECISIONS.md`](./DECISIONS.md) ADR-015.
+
+**The order is a property of that goal, not of the items.** They remain independently triggered, and
+none of them becomes a numbered step; if the objective changes, this sequence is rewritten and
+nothing above it moves. That distinction is what keeps this an appendix rather than Steps 10-11-12.
+
+| | Item | Why here |
+|---|---|---|
+| 1 | **Fix `format:`'s `\|\| true`** | A live violation of STANDARDS "Orchestration", in the tasks CI will later automate. Wire the pipeline first and it inherits the blind spot. Minutes of work. |
+| 2 | **Pin the toolchain** | `task doctor` checks tool *presence*, not version, and no `.tool-versions` / `mise.toml` / devcontainer exists — so "JDK 25" is documentation, not enforcement. Native-image builds are sensitive to JDK/GraalVM drift, which makes this direct risk reduction for the next item. |
+| 3 | **Deploy the backend to Cloud Run** | The hard prerequisite — every visible surface needs a live API. Also the item that makes GDPR retention actually run: the cycle is proven (7a), but it fires only when a Cloud Scheduler entry calls `POST /api/v1/jobs/trigger`, and no such entry exists because nothing has been deployed. **Until this is done, ROADMAP 7a's "the GDPR obligation is now discharged in production" describes the mechanism, not the deployment.** |
+| 4 | **Deploy the Flutter web app** | Same-origin, per the constraint above. The POC's user-facing surface. Blocked by 3. |
+| 5 | **Deploy the admin panel** | Same container, same origin. Part of the POC, not after it — see below. |
+| 6 | **CI** | Sustains quality; it does not produce the first deploy. |
+| 7 | **Publish the packages** | Serves *other developers adopting the framework* — a different audience from the one a POC is for. Also gated on 6: a published version is not retractable the way a branch is. |
+
+**Why the admin panel is inside the POC.** It is the only surface that exercises the *third* language
+binding: the contract-first claim is proto → Java **and** Dart **and** TypeScript, the Flutter client
+demonstrates the first two, and only the panel drives `schema.generated.ts`, the `Content-Range`
+pagination convention, and the JSON transport mode against generated types. A POC without it
+demonstrates two thirds of the headline claim, and leaves `@jzen/admin-core` — framework code, per
+ADR-005 — unexercised. It is also the *cheaper* of the two frontends here: its dev setup already
+proxies `/api` same-origin so the session cookie flows, so deploying it same-origin makes production
+match dev, whereas the web app currently runs cross-origin locally.
+
+**Two items are declarations, not queue.** *Native release pipelines* are per-application: signing
+identities, store accounts and notarization credentials belong to whoever ships a product, not to
+the libraries it is built on — filed against an app when an app ships, blocking nothing. And
+*`task`'s `sources:`/`generates:` fingerprinting is refused rather than merely unused*, because it
+would defeat `sync:contracts`; that is now a STANDARDS "Orchestration" rule, since the hazard is
+invisible from the feature's description.
 
 ## Explicitly out of scope
 

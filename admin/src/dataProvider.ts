@@ -1,6 +1,12 @@
 import simpleRestProvider from "ra-data-simple-rest";
 import type { DataProvider } from "react-admin";
-import { CSRF_COOKIE, HttpHeader, HttpMethod, MediaType, Transport } from "./http";
+import {
+  CSRF_COOKIE,
+  HttpHeader,
+  HttpMethod,
+  MediaType,
+  Transport,
+} from "./http";
 
 /**
  * react-admin data provider factory for the jZen REST API.

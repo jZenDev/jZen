@@ -1,0 +1,6 @@
+# Generated AND tracked (STANDARDS "Code generation"). `openapi-typescript` emits this file, and
+# `task sync:contracts` fails if it differs from what is committed. Formatting it would break that
+# gate on every `task format`, and committing the formatted version would not help — the next
+# regeneration re-emits the generator's own layout and the gate fails again. A tracked generated
+# file is never hand-edited, and a formatter is a hand-edit with extra steps.
+src/api/schema.generated.ts

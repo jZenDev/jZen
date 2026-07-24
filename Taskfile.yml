@@ -704,6 +704,161 @@ tasks:
   # ---------------------------------------------------------------------------
   # Deploy
   # ---------------------------------------------------------------------------
+  test:native:
+    desc: Build the native image and smoke it IN DOCKER — the long check before a deploy
+    summary: |
+      The last gate before shipping. Builds the linux/amd64 native image, runs it in Docker
+      against a throwaway Postgres, and asserts both wire formats answer. Slow (the native
+      build dominates) and entirely local, so it costs nothing but time.
+
+      WHY IN DOCKER RATHER THAN ON THE HOST. The image is built for linux/amd64 so it matches
+      Cloud Run (STANDARDS "Deployment model"). On an arm64 developer machine that binary
+      cannot be executed directly — it is an x86-64 Linux ELF — which rules out Quarkus's
+      @QuarkusIntegrationTest, since that launches the runner as a host process. Running the
+      container has no such problem and tests the exact artifact that will be deployed.
+
+      WHY PLAIN POSTGRES AND NOT SUPABASE. The app migrates at startup, so it needs a
+      database, but not Supabase specifically: V2__row_level_security.sql is guarded on
+      `to_regprocedure('auth.uid()')` precisely so it is a no-op off Supabase. A disposable
+      container is therefore enough, it cannot collide with a Supabase stack another project
+      left running, and it keeps this gate free of network dependencies.
+
+      WHY BOTH TRANSPORT MODES. The first deployed revision served protobuf perfectly and
+      500'd on every JSON response — binary serialisation uses generated code, while
+      canonical proto3 JSON resolves accessors reflectively and needs them registered for
+      native (zen.transport.ZenProtoReflection). Half a seam looks entirely healthy if you
+      only probe one format, and JSON is the default and what both frontends speak.
+    cmds:
+      - task: build:server:native
+      - |
+        set -eu
+        IMG=zen-native-smoke:local
+        NET=zen-smoke-net
+        cleanup() {
+          docker rm -f zen-smoke-app zen-smoke-db >/dev/null 2>&1 || true
+          docker network rm "$NET" >/dev/null 2>&1 || true
+        }
+        trap cleanup EXIT
+        cleanup
+
+        docker build --platform=linux/amd64 -q \
+          -f {{.DEMO_SERVER_DIR}}/src/main/docker/Dockerfile.native-micro \
+          -t "$IMG" {{.DEMO_SERVER_DIR}} >/dev/null
+        docker network create "$NET" >/dev/null
+
+        docker run -d --name zen-smoke-db --network "$NET" \
+          -e POSTGRES_PASSWORD=smoke -e POSTGRES_DB=postgres postgres:17-alpine >/dev/null
+        for _ in $(seq 1 30); do
+          docker exec zen-smoke-db pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1
+        done
+
+        # Config values are deliberately fake except the datasource: this gate proves the
+        # image boots, migrates and serialises. Anything needing real Supabase or SMTP is
+        # covered by test:e2e on the JVM and by verify:deploy against the real environment.
+        docker run -d --name zen-smoke-app --network "$NET" -p 18080:8080 --platform=linux/amd64 \
+          -e DB_URL=jdbc:postgresql://zen-smoke-db:5432/postgres \
+          -e DB_USERNAME=postgres -e DB_PASSWORD=smoke \
+          -e SUPABASE_URL=http://localhost:54321 -e SUPABASE_KEY=smoke \
+          -e SITE_URL=http://localhost:18080 \
+          -e AUTH_REDIRECT_URI=http://localhost:18080/auth/callback \
+          -e CORS_ORIGINS=http://localhost:18080 \
+          -e SMTP_HOST=localhost -e SMTP_PORT=1025 -e SMTP_USERNAME=x -e SMTP_PASSWORD=x \
+          -e SMTP_FROM=x@example.com -e ZEN_JOBS_TRIGGER_TOKEN=smoke-token \
+          "$IMG" >/dev/null
+
+        up=0
+        for _ in $(seq 1 60); do
+          curl -sf -H 'X-Zen-Transport: protobuf' http://localhost:18080/api/v1/health >/dev/null 2>&1 \
+            && { up=1; break; }
+          sleep 1
+        done
+        if [ "$up" -ne 1 ]; then
+          echo "Native image never became healthy. Container log:"
+          docker logs zen-smoke-app 2>&1 | tail -40
+          exit 1
+        fi
+
+        SERVICE_URL=http://localhost:18080 task verify:endpoints
+
+  verify:deploy:
+    desc: Smoke the DEPLOYED service — both transport modes must answer, not just one
+    summary: |
+      Resolves the live Cloud Run URL and runs the same assertions test:native runs against a
+      local container, so a deployment is held to exactly the standard the pre-deploy gate
+      enforces. Override with `SERVICE_URL=https://... task verify:deploy` for any environment.
+
+      Run it after every deploy. To keep a bad revision from serving traffic at all, deploy
+      with `--no-traffic --tag=candidate`, verify the tagged URL, then shift traffic.
+    cmds:
+      - |
+        set -eu
+        URL="${SERVICE_URL:-}"
+        if [ -z "$URL" ]; then
+          URL=$(gcloud run services describe {{.SERVICE_NAME}} --project={{.GCP_PROJECT}} \
+                  --region={{.GCP_REGION}} --format='value(status.url)' 2>/dev/null || true)
+        fi
+        [ -n "$URL" ] || { echo "No service URL. Set SERVICE_URL=... or GCP_PROJECT=..."; exit 1; }
+        SERVICE_URL="$URL" task verify:endpoints
+
+  verify:endpoints:
+    desc: Assert a running jZen backend serves BOTH transport modes (SERVICE_URL required)
+    silent: true
+    summary: |
+      The shared assertion set, used by test:native against a local container and by
+      verify:deploy against a real environment. One definition, so the gate before shipping
+      and the check after it cannot drift apart.
+
+      WHY BOTH MODES, ALWAYS. The first deployed revision served protobuf perfectly and 500'd
+      on every JSON response: binary serialisation uses generated code, while canonical proto3
+      JSON resolves field accessors reflectively and needs them registered for native
+      (zen.transport.ZenProtoReflection). A single-format smoke test would have passed on a
+      build that served no web client at all — and JSON is the default, and what both the
+      Flutter web app and the admin panel speak.
+    cmds:
+      - |
+        set -eu
+        URL="${SERVICE_URL:?set SERVICE_URL}"
+        echo "Verifying $URL"
+        fail=0
+        probe() {
+          path=$1
+          for spec in "nohdr:$2:" "json:$3:X-Zen-Transport: json" "protobuf:$4:X-Zen-Transport: protobuf"; do
+            mode=${spec%%:*}; rest=${spec#*:}; want=${rest%%:*}; hdr=${rest#*:}
+            if [ -n "$hdr" ]; then
+              code=$(curl -s -o /dev/null -w '%{http_code}' -H "$hdr" "$URL$path")
+            else
+              code=$(curl -s -o /dev/null -w '%{http_code}' "$URL$path")
+            fi
+            if [ "$code" = "$want" ]; then
+              printf '  \033[32mok\033[0m   %-24s %-9s %s\n' "$path" "$mode" "$code"
+            else
+              printf '  \033[31mFAIL\033[0m %-24s %-9s %s (want %s)\n' "$path" "$mode" "$code" "$want"
+              fail=1
+            fi
+          done
+        }
+        # A 500 in any row means a proto message could not be serialised in that format.
+        probe /api/v1/health       200 200 200
+        probe /api/v1/demo/ping    200 200 200
+        probe /api/v1/demo/terms   200 200 200
+        # Rejections must serialise too: ZenError is itself a proto message, so an auth
+        # failure returning 500 instead of 401 is the same bug wearing a hat.
+        probe /api/v1/demo/profile 401 401 401
+        # The admin surface is JSON-only by design (bare array + Content-Range, ADR-005), so
+        # protobuf is correctly Not Acceptable rather than an error.
+        probe /api/v1/admin/users  401 401 406
+        # Body-level: the default must be canonical proto3 JSON, not merely a 200.
+        body=$(curl -s "$URL/api/v1/health")
+        case "$body" in
+          *'"status":"ok"'*) printf '  \033[32mok\033[0m   %-24s %-9s %s\n' /api/v1/health body "canonical proto3 JSON" ;;
+          *) printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /api/v1/health body "$body"; fail=1 ;;
+        esac
+        echo
+        if [ "$fail" -eq 0 ]; then echo "Serves both transport modes."; else
+          echo "NOT healthy. A 500 usually means a proto message is not registered for native reflection."
+          exit 1
+        fi
+
   deploy:cloudrun:
     desc: Build native, push to Artifact Registry, deploy to Cloud Run
     summary: |
@@ -721,11 +876,78 @@ tasks:
           POST /api/v1/jobs/trigger and one Cloud Scheduler entry calls it. One entry, one
           container start, N jobs: N entries would mean N cold starts.
 
-      Requires: gcloud auth, and the secrets below present in Secret Manager.
+      Requires: gcloud auth, GCP_PROJECT set, and everything under ONE-TIME SETUP below.
+      Run it as `GCP_PROJECT=my-project task deploy:cloudrun` — this task never changes your
+      global gcloud config, so it cannot leave your shell pointed somewhere unexpected.
 
-      ONE-TIME SETUP for scheduled work (jobs do not run until this exists):
+      Deploy is deliberately manual and stays that way. Nothing triggers it but a person:
+      CI runs the cheap gates, `task test:native` is the long local check before shipping,
+      and this command is the act of shipping. Each application on jZen decides its own
+      release process — ROADMAP's appendix leaves per-application pipelines to each app.
 
-        1. Mint and store the trigger secret. The service is deployed
+      ═══════════════════════════════════════════════════════════════════════════════════
+      ONE-TIME SETUP — per environment, not per deploy. All of it is required; the deploy
+      fails or the service 500s without it. Substitute PROJECT and REGION throughout.
+      ═══════════════════════════════════════════════════════════════════════════════════
+
+        0. Project, billing, APIs, registry. Cloud Run and Artifact Registry both refuse to
+           enable without an open billing account attached.
+
+             gcloud projects create PROJECT --name="..."
+             gcloud billing projects link PROJECT --billing-account=BILLING_ACCOUNT_ID
+             gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
+               secretmanager.googleapis.com cloudscheduler.googleapis.com --project=PROJECT
+             gcloud artifacts repositories create jzen --repository-format=docker \
+               --location=REGION --project=PROJECT
+             gcloud auth configure-docker REGION-docker.pkg.dev
+
+        1. The thirteen configuration secrets. `--set-secrets` below fails the deploy if any
+           is absent, so create them all before the first run.
+
+             mk() { printf '%s' "$2" | gcloud secrets create "$1" --data-file=- --project=PROJECT; }
+
+             mk SUPABASE_URL      "https://<ref>.supabase.co"
+             mk SUPABASE_KEY      "<publishable/anon key>"
+             mk DB_URL            "jdbc:postgresql://<pooler-host>:5432/postgres"
+             mk DB_USERNAME       "postgres.<ref>"
+             mk DB_PASSWORD       "<database password>"
+             mk SITE_URL          "https://<service-url>"
+             mk AUTH_REDIRECT_URI "https://<service-url>/auth/callback"
+             mk CORS_ORIGINS      "https://<service-url>"
+             mk SMTP_HOST         "smtp-relay.brevo.com"
+             mk SMTP_PORT         "587"
+             mk SMTP_USERNAME     "<smtp login>"
+             mk SMTP_PASSWORD     "<smtp api key>"
+             mk SMTP_FROM         "noreply@<domain>"
+
+           DB_URL must be the SESSION POOLER, not the direct connection and not the
+           transaction pooler. Three constraints force this, and each fails differently:
+             - the transaction pooler (:6543) has no advisory locks or prepared statements,
+               so Flyway cannot take its migration lock and the app never finishes booting;
+             - the direct host (db.<ref>.supabase.co) resolves to IPv6 only, while Cloud Run
+               egress is IPv4 — the connection simply never establishes;
+             - the pooler's username is `postgres.<ref>`, NOT the plain `postgres` the direct
+               connection uses. Wrong form gives "tenant/user not found", which reads like a
+               credential problem and is not one.
+
+           SMTP may hold placeholders on a first deploy. EmailService.send() never throws by
+           design (ADR-007), so unreachable mail degrades registration to a missing welcome
+           email rather than a failure — real credentials can land later.
+
+           SUPABASE_URL must be exact: mp.jwt.verify.issuer is derived as ${SUPABASE_URL}/auth/v1,
+           and a mismatch fails JWT verification with no obvious clue.
+
+        2. Let the runtime service account read those secrets. Without this the revision is
+           created and then fails to start, because --set-secrets is resolved at boot.
+
+             gcloud projects add-iam-policy-binding PROJECT --condition=None \
+               --member="serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+               --role="roles/secretmanager.secretAccessor"
+
+        3. Scheduled work. Jobs do not run until this exists, which means GDPR retention
+           does not run either — the mechanism is proven (ADR-008) but nothing calls it.
+
+        3a. Mint and store the trigger secret. The service is deployed
            allow-unauthenticated, so this header secret is what stands between the
            internet and the job that erases dormant personal data. The endpoint fails
            closed: with no secret configured it rejects every call.
@@ -733,7 +955,7 @@ tasks:
              openssl rand -base64 32 | tr -d '\n' | \
                gcloud secrets create ZEN_JOBS_TRIGGER_TOKEN --data-file=- --project=PROJECT
 
-        2. Create the single scheduler entry. Hourly is ample: due-ness is computed from
+        3b. Create the single scheduler entry. Hourly is ample: due-ness is computed from
            each job's own last_run_at, so the tick rate only bounds how soon a due job is
            noticed, never how often it runs.
 
@@ -742,7 +964,13 @@ tasks:
                --schedule="0 * * * *" \
                --uri="https://SERVICE_URL/api/v1/jobs/trigger" \
                --http-method=POST \
-               --update-headers="X-Zen-Job-Token=THE_SECRET_FROM_STEP_1"
+               --headers="X-Zen-Job-Token=$(gcloud secrets versions access latest \
+                 --secret=ZEN_JOBS_TRIGGER_TOKEN --project=PROJECT)"
+
+           The flag is --headers on `create` and --update-headers on `update`; using the
+           wrong one makes gcloud echo the token in its error message, which is how a
+           secret ends up in a shell history or a terminal log. Reading it from Secret
+           Manager inline, as above, keeps it off the command line either way.
 
         A missed tick is not a lost run: the next one sees a stale last_run_at and catches
         up. That is what makes GDPR retention a guarantee here rather than a hope.

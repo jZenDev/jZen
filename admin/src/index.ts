@@ -8,4 +8,12 @@
 export { createDataProvider } from "./dataProvider";
 export { createAuthProvider } from "./authProvider";
 export { LoginPage } from "./LoginPage";
-export { CSRF_COOKIE, HttpHeader, HttpMethod, HttpStatus, MediaType, Role, Transport } from "./http";
+export {
+  CSRF_COOKIE,
+  HttpHeader,
+  HttpMethod,
+  HttpStatus,
+  MediaType,
+  Role,
+  Transport,
+} from "./http";

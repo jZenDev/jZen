@@ -19,7 +19,12 @@ import type { components } from "../api/schema.generated";
 export type AdminUser = components["schemas"]["AdminUser"];
 
 // Role choices derived from the generated field type, so the enum stays in lockstep with proto.
-const roles: NonNullable<AdminUser["role"]>[] = ["user", "admin", "reviewer", "b2b_admin"];
+const roles: NonNullable<AdminUser["role"]>[] = [
+  "user",
+  "admin",
+  "reviewer",
+  "b2b_admin",
+];
 const roleChoices = roles.map((role) => ({ id: role, name: role }));
 
 export function UserList() {

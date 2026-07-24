@@ -1,4 +1,8 @@
-import { createAuthProvider, createDataProvider, LoginPage } from "@jzen/admin-core";
+import {
+  createAuthProvider,
+  createDataProvider,
+  LoginPage,
+} from "@jzen/admin-core";
 import { Admin, Resource } from "react-admin";
 import { adminApiBase, authApiBase } from "./config";
 import { UserEdit, UserList, UserShow } from "./resources/User";
@@ -14,7 +18,11 @@ const authProvider = createAuthProvider(authApiBase);
 
 export function App() {
   return (
-    <Admin dataProvider={dataProvider} authProvider={authProvider} loginPage={LoginPage}>
+    <Admin
+      dataProvider={dataProvider}
+      authProvider={authProvider}
+      loginPage={LoginPage}
+    >
       <Resource name="users" list={UserList} show={UserShow} edit={UserEdit} />
     </Admin>
   );

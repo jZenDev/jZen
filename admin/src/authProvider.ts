@@ -1,5 +1,12 @@
 import type { AuthProvider } from "react-admin";
-import { HttpHeader, HttpMethod, HttpStatus, MediaType, Role, Transport } from "./http";
+import {
+  HttpHeader,
+  HttpMethod,
+  HttpStatus,
+  MediaType,
+  Role,
+  Transport,
+} from "./http";
 
 /**
  * react-admin auth provider factory backed by the jZen framework auth surface (Supabase session).
@@ -22,14 +29,22 @@ export function createAuthProvider(authBase: string): AuthProvider {
 
   async function fetchIdentity(): Promise<ZenIdentity | null> {
     const res = await fetch(`${authBase}/identity`, {
-      headers: { [HttpHeader.Accept]: MediaType.Json, [Transport.header]: Transport.json },
+      headers: {
+        [HttpHeader.Accept]: MediaType.Json,
+        [Transport.header]: Transport.json,
+      },
       credentials: "include",
     });
-    return res.status === HttpStatus.Ok ? ((await res.json()) as ZenIdentity) : null;
+    return res.status === HttpStatus.Ok
+      ? ((await res.json()) as ZenIdentity)
+      : null;
   }
 
   async function clearSession(): Promise<void> {
-    await fetch(`${authBase}/logout`, { method: HttpMethod.Post, credentials: "include" });
+    await fetch(`${authBase}/logout`, {
+      method: HttpMethod.Post,
+      credentials: "include",
+    });
   }
 
   return {
@@ -63,7 +78,10 @@ export function createAuthProvider(authBase: string): AuthProvider {
 
     async checkError(error) {
       const status = (error as { status?: number })?.status;
-      if (status === HttpStatus.Unauthorized || status === HttpStatus.Forbidden) {
+      if (
+        status === HttpStatus.Unauthorized ||
+        status === HttpStatus.Forbidden
+      ) {
         throw new Error("Session expired");
       }
     },

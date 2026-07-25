@@ -993,6 +993,116 @@ tasks:
           --allow-unauthenticated \
           --set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,DB_URL=DB_URL:latest,DB_USERNAME=DB_USERNAME:latest,DB_PASSWORD=DB_PASSWORD:latest,CORS_ORIGINS=CORS_ORIGINS:latest,AUTH_REDIRECT_URI=AUTH_REDIRECT_URI:latest,SITE_URL=SITE_URL:latest,SMTP_HOST=SMTP_HOST:latest,SMTP_PORT=SMTP_PORT:latest,SMTP_USERNAME=SMTP_USERNAME:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,SMTP_FROM=SMTP_FROM:latest,ZEN_JOBS_TRIGGER_TOKEN=ZEN_JOBS_TRIGGER_TOKEN:latest
 
+  destroy:cloudrun:
+    desc: Tear down EVERYTHING the deploy created — GCP project, Supabase, local images. No leftovers.
+    summary: |
+      The complete inverse of deploy:cloudrun. It leaves nothing behind — not because a
+      leftover costs money, but because cleaning up after yourself is the discipline. A
+      teardown that leaves an empty project, a stale image, or a live Supabase project is the
+      same defect as a swallowed failure: it looks done and is not.
+
+      It removes THREE systems the deploy touched, and refuses to report success if it could
+      not finish all three:
+
+      1. THE ENTIRE GCP PROJECT — `gcloud projects delete`, not a resource-by-resource sweep.
+         Deleting the project removes the Cloud Run service, the scheduler job, all fourteen
+         secrets, the Artifact Registry repo, every IAM binding and enabled API, AND unlinks
+         billing, in one atomic operation. An empty project left behind is exactly the "$0 so
+         leave it" leftover this task exists to reject. It is recoverable for 30 days, which
+         is the safety net.
+
+      2. THE SUPABASE PROJECT — deleted via the Management API. This needs a credential the
+         deploy never stored, so export SUPABASE_ACCESS_TOKEN (Supabase dashboard → Account →
+         Access Tokens). The project ref is read from the SUPABASE_URL secret before the GCP
+         project is deleted; pass SUPABASE_REF to override, or SKIP_SUPABASE=1 only if it was
+         already removed. Without the token the task deletes GCP and Docker, then FAILS,
+         telling you Supabase is still live — it never claims a clean teardown it did not do.
+
+      3. LOCAL DOCKER — the jZen images this workflow built or pulled (the Artifact Registry
+         image and the test:native smoke image) and any smoke containers/networks. Shared
+         public base images (postgres:17-alpine) are left, and named as left, because they are
+         not ours to remove.
+
+      MANUAL AND GUARDED. It refuses unless CONFIRM equals GCP_PROJECT, so a stray invocation
+      or a wrong GCP_PROJECT deletes nothing:
+
+        CONFIRM=my-project GCP_PROJECT=my-project SUPABASE_ACCESS_TOKEN=sbp_... task destroy:cloudrun
+
+      NOT touched, and correctly so: the shared billing account (unlinked, not deleted — it
+      bills other projects) and the gcloud docker credential helper entry in ~/.docker/config.json
+      (keyed by the shared REGION-docker.pkg.dev host, used by every GCP project, not this one).
+    cmds:
+      - |
+        set -eu
+        : "${GCP_PROJECT:?set GCP_PROJECT}"
+        if [ "${CONFIRM:-}" != "${GCP_PROJECT}" ]; then
+          echo "Refusing to destroy. Re-run with CONFIRM set to the project name:"
+          echo "  CONFIRM=${GCP_PROJECT} GCP_PROJECT=${GCP_PROJECT} task destroy:cloudrun"
+          exit 1
+        fi
+        incomplete=0
+        echo "Tearing down EVERYTHING for ${GCP_PROJECT}. Nothing is meant to remain."
+
+        # --- Supabase ref must be read BEFORE the GCP project (and its secrets) are deleted.
+        ref="${SUPABASE_REF:-}"
+        if [ -z "$ref" ] && [ "${SKIP_SUPABASE:-0}" != "1" ]; then
+          url=$(gcloud secrets versions access latest --secret=SUPABASE_URL \
+                  --project="${GCP_PROJECT}" 2>/dev/null || true)
+          # https://<ref>.supabase.co -> <ref>
+          ref=$(printf '%s' "$url" | sed -n 's#https\{0,1\}://\([^.]*\)\.supabase\.co.*#\1#p')
+        fi
+
+        # --- 1. Supabase project (while its ref/token are still available).
+        if [ "${SKIP_SUPABASE:-0}" = "1" ]; then
+          echo "  Supabase: SKIP_SUPABASE=1, assuming already removed."
+        elif [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+          echo "  Supabase: NO SUPABASE_ACCESS_TOKEN — cannot delete project '${ref:-?}'. Still live."
+          incomplete=1
+        elif [ -z "$ref" ]; then
+          echo "  Supabase: could not determine project ref. Pass SUPABASE_REF=... Still live."
+          incomplete=1
+        else
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X DELETE \
+                   -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+                   "https://api.supabase.com/v1/projects/${ref}")
+          case "$code" in
+            2*) echo "  deleted Supabase project ${ref}" ;;
+            404) echo "  Supabase project ${ref} already gone" ;;
+            *)  echo "  Supabase: DELETE ${ref} returned HTTP ${code}. Still live."; incomplete=1 ;;
+          esac
+        fi
+
+        # --- 2. The whole GCP project: one atomic delete, takes everything with it.
+        if gcloud projects describe "${GCP_PROJECT}" >/dev/null 2>&1; then
+          gcloud projects delete "${GCP_PROJECT}" --quiet \
+            && echo "  deleted GCP project ${GCP_PROJECT} (service, scheduler, 14 secrets, registry, IAM, APIs; billing unlinked)" \
+            || { echo "  FAILED to delete GCP project ${GCP_PROJECT}."; incomplete=1; }
+        else
+          echo "  GCP project ${GCP_PROJECT} already gone."
+        fi
+
+        # --- 3. Local Docker: our images, plus any smoke leftovers. Not shared base images.
+        img="{{.GCP_REGION}}-docker.pkg.dev/${GCP_PROJECT}/{{.AR_REPO}}/{{.SERVICE_NAME}}"
+        docker rm -f zen-smoke-app zen-smoke-db >/dev/null 2>&1 || true
+        docker network rm zen-smoke-net zen-smoke >/dev/null 2>&1 || true
+        removed=$(docker images --format '{{"{{"}}.Repository{{"}}"}}:{{"{{"}}.Tag{{"}}"}}' \
+                    | grep -E "^(${img}|zen-native-smoke):" || true)
+        if [ -n "$removed" ]; then
+          echo "$removed" | xargs -r docker rmi -f >/dev/null 2>&1 || true
+          echo "  removed local images:"; echo "$removed" | sed 's/^/    /'
+        else
+          echo "  no local jZen images to remove."
+        fi
+        echo "  left in place (shared base image, not ours): postgres:17-alpine"
+
+        echo
+        if [ "$incomplete" -eq 0 ]; then
+          echo "Teardown complete. GCP project, Supabase project, and local images all removed."
+        else
+          echo "TEARDOWN INCOMPLETE — see the lines above. Something is still live; finish it, then re-run."
+          exit 1
+        fi
+
   # ---------------------------------------------------------------------------
   # Housekeeping
   # ---------------------------------------------------------------------------

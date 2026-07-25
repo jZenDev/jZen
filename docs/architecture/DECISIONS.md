@@ -86,6 +86,15 @@ The web app jZen serves is WebAssembly, and the architecture docs say so. Three 
   not cross-origin isolated, so the Wasm app runs without them. That is deliberate: COOP/COEP would
   fight the same-origin cookie setup ADR-015 depends on, so jZen accepts single-threaded skwasm
   rather than add isolation headers.
+- **The Wasm delivery uncovered and fixed a framework bug — exactly what "test the artifact you
+  ship" is for.** The compile-time platform selectors guarded their web branch on
+  `if (dart.library.html)`, which dart2js defines and dart2wasm does not, so under Wasm all three
+  (`zen_transport`'s codec selector and session client, `zen_ui_navigation`'s widget selector) fell
+  through to their stub and threw `Unsupported operation: Platform not supported` at startup — a
+  bundle that compiled, served, and passed every curl check, then rendered a blank page in the
+  browser. Every guard now keys on `dart.library.js_interop` (STANDARDS "Client config is
+  compile-time"). This is the same shape as the native-JSON bug: green on one artifact, broken on
+  the one actually shipped, caught only by driving the real thing — here a browser, not curl.
 
 ## ADR-015 — The appendix gains a delivery order, because a goal was named: a deployed POC
 

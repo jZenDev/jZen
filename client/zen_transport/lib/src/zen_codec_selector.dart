@@ -3,8 +3,10 @@
 // "Client config is compile-time").
 import 'package:zen_core/zen_core.dart';
 
+// Web keys on `dart.library.js_interop` (every web compiler, dart2js AND dart2wasm), not
+// `dart.library.html` (dart2js only) which would miss under Wasm and fall through to the stub.
 import 'zen_codec_selector_stub.dart'
-    if (dart.library.html) 'zen_codec_selector_web.dart'
+    if (dart.library.js_interop) 'zen_codec_selector_web.dart'
     if (dart.library.io) 'zen_codec_selector_io.dart';
 import 'zen_transport_header.dart';
 

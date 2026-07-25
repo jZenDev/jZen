@@ -1,0 +1,9 @@
+# `task build:web` copies the built Flutter web bundle here so Quarkus serves it same-origin
+# with the API, and the native build bakes it into the image. The bundle is a build artifact,
+# not source — it is rebuilt from apps/zen_demo/zen_demo_client — so none of it is tracked.
+#
+# Only openapi.yaml is tracked: it is the hand-authored static OpenAPI schema that the SmallRye
+# merge reads (STANDARDS "OpenAPI and the REST surface"), not something a build produces.
+*
+!.gitignore
+!openapi.yaml

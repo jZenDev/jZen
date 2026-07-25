@@ -95,3 +95,7 @@ does take is sufficient. Reopening any of them takes a decision that supersedes 
 - **Not runtime-configured on the client.** Compile-time selectors are what let the toolchain
   tree-shake per platform; runtime config would defeat that (STANDARDS "Client config is
   compile-time"). This is the one client/server asymmetry the architecture mandates on purpose.
+- **The web is delivered as WebAssembly.** The Flutter web target compiles with `--wasm`
+  (dart2wasm + skwasm), so what ships to the browser is `main.dart.wasm`, not JavaScript — a
+  build-time choice, the same kind the rule above depends on. See [`DECISIONS.md`](./DECISIONS.md)
+  ADR-016; the browser floor it accepts (WasmGC) is stated there.

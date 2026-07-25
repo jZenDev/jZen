@@ -42,6 +42,10 @@ vars:
   SERVICE_NAME: '{{.SERVICE_NAME | default "zen-demo-server"}}'
   AR_REPO: '{{.AR_REPO | default "jzen"}}'
 
+  # Where build:web stages the Flutter bundle so the native build bakes it in and Quarkus
+  # serves the web app same-origin with the API. Gitignored (see the .gitignore there).
+  WEB_RESOURCES: apps/zen_demo/zen_demo_server/src/main/resources/META-INF/resources
+
 tasks:
   default:
     desc: List available tasks
@@ -414,6 +418,50 @@ tasks:
     cmds:
       - pnpm build
 
+  build:web:
+    desc: Build the Flutter web app and stage it so the backend serves it SAME-ORIGIN
+    summary: |
+      Builds the zen_demo web bundle and stages it under the app server's static resources,
+      so `build:server:native` bakes it into the image and Quarkus serves it at / on the same
+      origin as the API. Same-origin is not a preference here — it is what lets the session
+      cookie flow: the backend sets zen_access_token SameSite=Lax, and *.run.app is on the
+      Public Suffix List, so a page and an API on two different Cloud Run URLs are cross-site
+      and the browser would never send the cookie. See BLUEPRINT "Deployment model".
+
+      Because of that, the API URL is baked into the bundle at BUILD time (client config is
+      compile-time, STANDARDS) and MUST equal the origin the page is served from. WEB_API_URL
+      sets it; unset, it is read from the deployed service. On a first-ever deploy the service
+      does not exist yet — pass WEB_API_URL explicitly that once.
+
+      The bundle is staged, never committed: WEB_RESOURCES is gitignored, and rsync --delete
+      keeps it in sync with the latest build while preserving the tracked openapi.yaml.
+    vars:
+      URL:
+        sh: |
+          if [ -n "${WEB_API_URL:-}" ]; then printf '%s' "$WEB_API_URL"; else
+            gcloud run services describe {{.SERVICE_NAME}} --project={{.GCP_PROJECT}} \
+              --region={{.GCP_REGION}} --format='value(status.url)' 2>/dev/null || true
+          fi
+    cmds:
+      - |
+        set -eu
+        URL='{{.URL}}'
+        if [ -z "$URL" ]; then
+          echo "No API URL. The service does not exist yet, so set it explicitly for the"
+          echo "first deploy (it must equal the URL the app will be served from):"
+          echo "  WEB_API_URL=https://<service-url> task build:web"
+          exit 1
+        fi
+        echo "Building web bundle (WebAssembly) against $URL"
+        ( cd {{.DEMO_CLIENT_DIR}} && flutter build web --wasm --release \
+            --dart-define=ZEN_ENV=prd --dart-define=ZEN_PLATFORM=web \
+            --dart-define=ZEN_API_URL="$URL" )
+        # Stage into the (gitignored) resources dir, replacing any stale bundle but keeping
+        # the tracked openapi.yaml and the .gitignore itself.
+        rsync -a --delete --exclude=openapi.yaml --exclude=.gitignore \
+          {{.DEMO_CLIENT_DIR}}/build/web/ {{.WEB_RESOURCES}}/
+        echo "Staged web bundle -> {{.WEB_RESOURCES}} ($(du -sh {{.WEB_RESOURCES}} | cut -f1))"
+
   test:
     desc: Run every test suite (test:e2e is the release gate - it hits the live stack)
     cmds:
@@ -729,6 +777,8 @@ tasks:
       native (zen.transport.ZenProtoReflection). Half a seam looks entirely healthy if you
       only probe one format, and JSON is the default and what both frontends speak.
     cmds:
+      # Stage the web bundle first so the native build bakes it in and the smoke can assert /.
+      - task: build:web
       - task: build:server:native
       - |
         set -eu
@@ -853,9 +903,33 @@ tasks:
           *'"status":"ok"'*) printf '  \033[32mok\033[0m   %-24s %-9s %s\n' /api/v1/health body "canonical proto3 JSON" ;;
           *) printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /api/v1/health body "$body"; fail=1 ;;
         esac
+        # The web app is served SAME-ORIGIN from the backend: / must return the Flutter shell.
+        # Key on flutter_bootstrap.js, which BOTH compilations emit — main.dart.js is only the
+        # dart2js fallback and is absent from the Wasm view (ADR-016).
+        root=$(curl -s "$URL/")
+        case "$root" in
+          *flutter_bootstrap.js*) printf '  \033[32mok\033[0m   %-24s %-9s %s\n' / web "Flutter app shell" ;;
+          *) printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' / web "root did not serve the app"; fail=1 ;;
+        esac
+        boot=$(curl -s -o /dev/null -w '%{http_code}' "$URL/flutter_bootstrap.js")
+        [ "$boot" = "200" ] && printf '  \033[32mok\033[0m   %-24s %-9s %s\n' /flutter_bootstrap.js web 200 \
+          || { printf '  \033[31mFAIL\033[0m %-24s %-9s %s (want 200)\n' /flutter_bootstrap.js web "$boot"; fail=1; }
+        # WASM-specific: the app binary must be served AND carry Content-Type application/wasm,
+        # or the browser cannot stream-compile it. This is the JS-vs-Wasm analogue of the
+        # native-reflection trap — a detail only the real served artifact reveals.
+        wcode=$(curl -s -o /dev/null -w '%{http_code}' "$URL/main.dart.wasm")
+        wtype=$(curl -s -o /dev/null -w '%{content_type}' "$URL/main.dart.wasm")
+        if [ "$wcode" = "200" ] && [ "${wtype%%;*}" = "application/wasm" ]; then
+          printf '  \033[32mok\033[0m   %-24s %-9s %s\n' /main.dart.wasm web "200 application/wasm"
+        else
+          printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /main.dart.wasm web "HTTP $wcode, type '${wtype:-none}' (want 200 application/wasm)"
+          fail=1
+        fi
         echo
-        if [ "$fail" -eq 0 ]; then echo "Serves both transport modes."; else
-          echo "NOT healthy. A 500 usually means a proto message is not registered for native reflection."
+        if [ "$fail" -eq 0 ]; then echo "Serves both transport modes AND the WebAssembly web app, same origin."; else
+          echo "NOT healthy. A 500 usually means a proto message is not registered for native reflection;"
+          echo "a missing / means build:web did not stage the bundle; a wrong .wasm content-type means"
+          echo "the static handler needs an application/wasm MIME mapping."
           exit 1
         fi
 
@@ -975,6 +1049,8 @@ tasks:
         A missed tick is not a lost run: the next one sees a stale last_run_at and catches
         up. That is what makes GDPR retention a guarantee here rather than a hope.
     cmds:
+      # Stage the web bundle so the native image serves the app same-origin with the API.
+      - task: build:web
       - task: build:server:native
       - |
         set -e

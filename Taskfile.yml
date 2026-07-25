@@ -457,10 +457,31 @@ tasks:
             --dart-define=ZEN_ENV=prd --dart-define=ZEN_PLATFORM=web \
             --dart-define=ZEN_API_URL="$URL" )
         # Stage into the (gitignored) resources dir, replacing any stale bundle but keeping
-        # the tracked openapi.yaml and the .gitignore itself.
-        rsync -a --delete --exclude=openapi.yaml --exclude=.gitignore \
+        # the tracked openapi.yaml, the .gitignore, and the admin/ subtree (staged by
+        # build:web:admin, which --delete would otherwise wipe when only build:web runs).
+        rsync -a --delete --exclude=openapi.yaml --exclude=.gitignore --exclude=admin \
           {{.DEMO_CLIENT_DIR}}/build/web/ {{.WEB_RESOURCES}}/
         echo "Staged web bundle -> {{.WEB_RESOURCES}} ($(du -sh {{.WEB_RESOURCES}} | cut -f1))"
+
+  build:web:admin:
+    desc: Build the admin panel and stage it at /admin/ for same-origin serving
+    summary: |
+      Builds the react-admin panel with Vite base=/admin/ (set in vite.config for `build`) and
+      stages it under the app server's static resources at admin/, so the native image serves it
+      at /admin/ on the same origin as the API — the same cookie-flow reason as build:web.
+
+      The admin needs no baked API URL: its data provider calls /api/v1 relative (config.ts), so
+      it hits whatever origin served the page. react-admin uses a hash router, so /admin/#/...
+      routes are all served by /admin/index.html and need no SPA fallback. Vite hashes its asset
+      filenames, so those are safe to cache long; only /admin/index.html should not be (see the
+      immutable-cache follow-up).
+    cmds:
+      - cd {{.DEMO_ADMIN_DIR}} && pnpm build
+      - |
+        set -eu
+        mkdir -p {{.WEB_RESOURCES}}/admin
+        rsync -a --delete {{.DEMO_ADMIN_DIR}}/dist/ {{.WEB_RESOURCES}}/admin/
+        echo "Staged admin panel -> {{.WEB_RESOURCES}}/admin ($(du -sh {{.WEB_RESOURCES}}/admin | cut -f1))"
 
   test:
     desc: Run every test suite (test:e2e is the release gate - it hits the live stack)
@@ -777,8 +798,10 @@ tasks:
       native (zen.transport.ZenProtoReflection). Half a seam looks entirely healthy if you
       only probe one format, and JSON is the default and what both frontends speak.
     cmds:
-      # Stage the web bundle first so the native build bakes it in and the smoke can assert /.
+      # Stage both frontends first so the native build bakes them in and the smoke can assert
+      # both / (Flutter web app) and /admin/ (react-admin panel).
       - task: build:web
+      - task: build:web:admin
       - task: build:server:native
       - |
         set -eu
@@ -925,11 +948,27 @@ tasks:
           printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /main.dart.wasm web "HTTP $wcode, type '${wtype:-none}' (want 200 application/wasm)"
           fail=1
         fi
+        # The admin panel is served same-origin at /admin/ (react-admin, hash router). Assert the
+        # directory serves its index and the hashed entry script loads. Its data provider calls
+        # /api/v1 relative, so it shares this origin's session cookie — the whole point of /admin/.
+        admin=$(curl -s "$URL/admin/")
+        case "$admin" in
+          *'/admin/assets/'*) printf '  \033[32mok\033[0m   %-24s %-9s %s\n' /admin/ admin "react-admin shell" ;;
+          *) printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /admin/ admin "did not serve the panel index"; fail=1 ;;
+        esac
+        ajs=$(printf '%s' "$admin" | grep -oE '/admin/assets/[^"]+\.js' | head -1)
+        if [ -n "$ajs" ]; then
+          ac=$(curl -s -o /dev/null -w '%{http_code}' "$URL$ajs")
+          [ "$ac" = "200" ] && printf '  \033[32mok\033[0m   %-24s %-9s %s\n' "$ajs" admin 200 \
+            || { printf '  \033[31mFAIL\033[0m %-24s %-9s %s (want 200)\n' "$ajs" admin "$ac"; fail=1; }
+        else
+          printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /admin/ admin "no entry script referenced"; fail=1
+        fi
         echo
-        if [ "$fail" -eq 0 ]; then echo "Serves both transport modes AND the WebAssembly web app, same origin."; else
+        if [ "$fail" -eq 0 ]; then echo "Serves both transport modes, the WebAssembly web app, AND the admin panel — all same origin."; else
           echo "NOT healthy. A 500 usually means a proto message is not registered for native reflection;"
-          echo "a missing / means build:web did not stage the bundle; a wrong .wasm content-type means"
-          echo "the static handler needs an application/wasm MIME mapping."
+          echo "a missing / or /admin/ means build:web / build:web:admin did not stage the bundle;"
+          echo "a wrong .wasm content-type means the static handler needs an application/wasm MIME mapping."
           exit 1
         fi
 
@@ -1049,8 +1088,10 @@ tasks:
         A missed tick is not a lost run: the next one sees a stale last_run_at and catches
         up. That is what makes GDPR retention a guarantee here rather than a hope.
     cmds:
-      # Stage the web bundle so the native image serves the app same-origin with the API.
+      # Stage both frontends so the native image serves them same-origin with the API:
+      # the Flutter web app at / and the react-admin panel at /admin/.
       - task: build:web
+      - task: build:web:admin
       - task: build:server:native
       - |
         set -e

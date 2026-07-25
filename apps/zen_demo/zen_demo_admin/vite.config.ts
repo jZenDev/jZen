@@ -14,7 +14,12 @@ const repoRoot = resolve(here, "../../..");
 // dodges a leftover :8080 Supabase stack); defaults to Quarkus dev's :8080.
 const backend = `http://localhost:${process.env.ZEN_APP_PORT ?? "8080"}`;
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // Served at /admin/ same-origin with the API in production (the backend bakes the built bundle
+  // under META-INF/resources/admin), so asset URLs must be /admin/-relative. Dev keeps base "/"
+  // so the dev server and its /api proxy stay at http://localhost:5173. react-admin uses a hash
+  // router, so /admin/#/... routes need no server-side SPA fallback — /admin/index.html is enough.
+  base: command === "build" ? "/admin/" : "/",
   plugins: [react()],
   resolve: {
     alias: {
@@ -32,4 +37,4 @@ export default defineConfig({
       "/openapi": backend,
     },
   },
-});
+}));

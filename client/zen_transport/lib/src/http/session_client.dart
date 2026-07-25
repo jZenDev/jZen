@@ -1,7 +1,11 @@
 // The compile-time platform seam for session persistence, structured exactly like
 // zen_codec_selector.dart (docs/architecture/STANDARDS.md): a default library that
-// imports the stub, with `dart.library.io` / `dart.library.html` swapping in the native or
+// imports the stub, with `dart.library.io` / `dart.library.js_interop` swapping in the native or
 // web implementation so the toolchain tree-shakes the wrong platform's code out of each bundle.
+// The web branch keys on `dart.library.js_interop`, not `dart.library.html`: the latter is defined
+// only by dart2js, so under dart2wasm it would miss and fall through to the stub, which throws.
+// `js_interop` is defined by every web compiler (dart2js AND dart2wasm) and by none of the native
+// ones, so it is the portable "this is a web build" signal.
 //
 // The gap this closes (ROADMAP step 4): the Supabase session lives in httpOnly cookies the
 // server sets; SupabaseIdentityRepository relies on them being resent on later requests. On
@@ -12,7 +16,7 @@
 import 'package:http/http.dart' as http;
 
 import 'session_client_stub.dart'
-    if (dart.library.html) 'session_client_web.dart'
+    if (dart.library.js_interop) 'session_client_web.dart'
     if (dart.library.io) 'session_client_io.dart';
 
 /// Returns an [http.Client] that persists and resends the session cookies for the current

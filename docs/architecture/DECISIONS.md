@@ -15,6 +15,87 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-016 — jZen delivers the web app as WebAssembly
+
+**Date:** 2026-07-25. **Status:** accepted. **Follows:** ADR-015 / ROADMAP POC delivery order.
+
+### Decision
+
+The reference app's web target is compiled to **WebAssembly** and that is what jZen ships to the
+browser: `flutter build web --wasm` (dart2wasm + the **skwasm** renderer), not the default
+`dart2js` output. `task build:web` carries `--wasm`, and the web deploy is not considered done
+until the served bundle is Wasm.
+
+The moving parts, stated honestly rather than as a slogan:
+
+- **Two axes, and this decision is about the app-code axis.** Flutter web has always shipped Wasm
+  in the form of the CanvasKit/Skia renderer (~40 MB of the bundle); that was never the *app*. This
+  decision is about how jZen's own Dart compiles: **dart2wasm → `main.dart.wasm`**, replacing
+  **dart2js → `main.dart.js`** as the delivered form. The renderer follows suit — skwasm rather
+  than the JS-driven CanvasKit path.
+- **WasmGC is the floor.** dart2wasm requires the browser's WebAssembly Garbage Collection
+  proposal: Chrome/Edge 119+, Firefox 120+, and **Safari 18.2+** (December 2024). Below that floor
+  a browser cannot run the Wasm bundle.
+- **The JS build remains, as Flutter's automatic fallback — not as a second jZen target.** A
+  `--wasm` build emits *both* the Wasm bundle and a dart2js fallback, and `flutter_bootstrap.js`
+  selects at load time by probing WasmGC support. So "jZen delivers Wasm" means Wasm-first with a
+  transparent fallback that Flutter owns, not that the JS output is deleted. jZen does not maintain
+  the fallback; it is a property of the build, and the day the WasmGC floor is universal it
+  disappears on its own.
+
+### What this supersedes, and why
+
+- **"tree-shake native-only code … out of the JS/Wasm web bundle"** (STANDARDS "Client config is
+  compile-time") → **refined.** *Why:* that wording treated JS and Wasm as interchangeable names
+  for "the web bundle." They are not interchangeable outputs, and jZen now commits to one:
+  `--wasm`. The compile-time-config rule is *reinforced*, not weakened — `--wasm` is one more
+  build-time selector, exactly the kind the rule exists to enable, and runtime config would defeat
+  it here as everywhere.
+- **The default `flutter build web` (dart2js)** → **replaced by `--wasm` from the first web
+  deploy, not deferred to a later step.** *Why:* an earlier draft of this entry proved the
+  same-origin serving path with the dart2js default and made Wasm a separate final step. That
+  repeats the exact error [ADR-013 / the native-JSON bug](#) taught: proving one artifact on the
+  JVM and shipping another as a native image is how the reflection 500 reached production. Proving
+  dart2js serving and then shipping dart2wasm is the same substitution. **Test the artifact you
+  ship.** So `build:web` carries `--wasm` from the outset, and `test:native` — which already
+  exercises the real native image — asserts the real Wasm bundle: `main.dart.wasm` served with
+  `Content-Type: application/wasm`. `verify:endpoints` keys its web-shell assertion on
+  `flutter_bootstrap.js` (both compilations emit it), not `main.dart.js` (the fallback, absent from
+  the Wasm view).
+- **BLUEPRINT "Deployment"** and **STANDARDS "Frontend split"**, which described the web target
+  without naming its compiled form → **extended** to state it is Wasm.
+
+### Consequence
+
+The web app jZen serves is WebAssembly, and the architecture docs say so. Three things follow:
+
+- **A browser floor is now part of the product's contract:** WasmGC-capable browsers
+  (Safari ≥ 18.2). This is a deliberate trade for the runtime speed and smaller-JS payload of the
+  Wasm compilation, and it is stated so it is a decision rather than a surprise.
+- **The same-origin delivery is unchanged.** Wasm vs JS is the *compilation* of the app that the
+  backend serves at `/`; it does not touch ADR-015's requirement that the bundle be served
+  same-origin with the API so the session cookie flows. The Dockerfile bakes whichever bundle
+  `build:web` staged.
+- **The `.wasm` MIME type is now a checked concern.** A browser stream-compiles WebAssembly only
+  when the server sends `Content-Type: application/wasm`; the wrong type is a Wasm-specific failure
+  invisible to a dart2js build. `verify:endpoints` asserts it, in the local `test:native` smoke and
+  against the deployed service, so it is caught the way the native-reflection bug should have been —
+  before production, not in it.
+- **skwasm needs no cross-origin isolation here.** Multi-threaded skwasm would want COOP/COEP
+  headers (for `SharedArrayBuffer`), but Flutter degrades to single-threaded skwasm when the page is
+  not cross-origin isolated, so the Wasm app runs without them. That is deliberate: COOP/COEP would
+  fight the same-origin cookie setup ADR-015 depends on, so jZen accepts single-threaded skwasm
+  rather than add isolation headers.
+- **The Wasm delivery uncovered and fixed a framework bug — exactly what "test the artifact you
+  ship" is for.** The compile-time platform selectors guarded their web branch on
+  `if (dart.library.html)`, which dart2js defines and dart2wasm does not, so under Wasm all three
+  (`zen_transport`'s codec selector and session client, `zen_ui_navigation`'s widget selector) fell
+  through to their stub and threw `Unsupported operation: Platform not supported` at startup — a
+  bundle that compiled, served, and passed every curl check, then rendered a blank page in the
+  browser. Every guard now keys on `dart.library.js_interop` (STANDARDS "Client config is
+  compile-time"). This is the same shape as the native-JSON bug: green on one artifact, broken on
+  the one actually shipped, caught only by driving the real thing — here a browser, not curl.
+
 ## ADR-015 — The appendix gains a delivery order, because a goal was named: a deployed POC
 
 **Date:** 2026-07-24. **Status:** accepted. **Follows:** ADR-013, ADR-014.

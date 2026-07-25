@@ -246,11 +246,24 @@ declared dependency, never as an edit somewhere else on the machine.
 ## Client config is compile-time (non-negotiable)
 
 - The Dart/Flutter client **keeps compile-time config** (`String.fromEnvironment`) and the
-  `if (dart.library.io)` / `if (dart.library.html)` conditional-import selectors. This is
+  `if (dart.library.io)` / `if (dart.library.js_interop)` conditional-import selectors. This is
   what lets the toolchain tree-shake native-only code (e.g. the Protobuf binary path) out
-  of the JS/Wasm web bundle and web-only code out of the AOT-native binary. No native code
+  of the Wasm web bundle and web-only code out of the AOT-native binary. No native code
   in a web bundle, and vice versa. Runtime config on the client is forbidden — it defeats
   tree-shaking. This is the one client/server asymmetry the architecture mandates on purpose.
+- **The web branch keys on `dart.library.js_interop`, never `dart.library.html`.** `html` is
+  defined only by dart2js; under dart2wasm it is absent, so a web branch guarded on it silently
+  falls through to the stub and throws `Unsupported operation: Platform not supported` at
+  startup — a blank page that compiles and serves cleanly and only fails when the Wasm actually
+  runs. `js_interop` is defined by every web compiler (dart2js and dart2wasm) and by no native
+  one, so it is the portable "this is a web build" signal. (The Flutter-only logger seam may use
+  `dart.library.ui`, which is likewise defined on Flutter web under both compilers.)
+- **The web target is built as WebAssembly** (`flutter build web --wasm`, dart2wasm + skwasm),
+  so the delivered app is `main.dart.wasm`, not `main.dart.js`. `--wasm` is one more compile-time
+  selector, so this follows from the rule above rather than qualifying it. The accepted browser
+  floor (WasmGC) and Flutter's automatic dart2js fallback are in [`DECISIONS.md`](./DECISIONS.md)
+  ADR-016. A web-serving check keys on `flutter_bootstrap.js`, which both compilations emit, not
+  on `main.dart.js`, which the Wasm view does not use.
 - The **server** uses runtime config (MicroProfile / `application.properties`): one binary
   serves both native and web clients, and it has no bundle to shrink.
 
@@ -297,7 +310,8 @@ declared dependency, never as an edit somewhere else on the machine.
 
 ## Frontend split
 
-- **Product UI:** the `zen_ui_*` Flutter packages, for mobile / desktop / web.
+- **Product UI:** the `zen_ui_*` Flutter packages, for mobile / desktop / web. The web build is
+  WebAssembly (ADR-016), served same-origin with the API (ADR-015).
 - **Admin UI:** a `react-admin` framework scaffold (`@jzen/admin-core` in `admin/`:
   data provider, auth provider, login page) that each app assembles into its own panel
   under `apps/<app>/<app>_admin` (ADR-005), consuming the same OpenAPI-documented REST

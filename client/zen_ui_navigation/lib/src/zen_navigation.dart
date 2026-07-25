@@ -2,8 +2,10 @@
 import 'package:zen_core/zen_core.dart';
 import 'package:flutter/widgets.dart';
 
+// Web keys on `dart.library.js_interop` (dart2js AND dart2wasm), not `dart.library.html`
+// (dart2js only), which under Wasm would miss and fall through to the stub.
 import './widgets/navigation_stub.dart'
-    if (dart.library.html) './widgets/navigation_web.dart'
+    if (dart.library.js_interop) './widgets/navigation_web.dart'
     if (dart.library.io) './widgets/navigation_native.dart';
 import 'zen_navigation_item.dart';
 

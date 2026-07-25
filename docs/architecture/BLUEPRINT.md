@@ -288,3 +288,9 @@ Cloud Run, native image, via `task deploy:cloudrun` and `Dockerfile.native-micro
 target load on one instance, and scale-to-zero means no warm instance to pay for. See
 [`STANDARDS.md`](./STANDARDS.md) → "Deployment model" for why one instance also makes
 in-process state valid.
+
+The **web app is delivered as WebAssembly** and served by the same container, same-origin with
+the API: `task build:web` compiles the Flutter target with `--wasm` (dart2wasm + skwasm) and
+stages the bundle under the app server's `META-INF/resources`, so the native build bakes it in and
+Quarkus serves it at `/`. Same-origin is load-bearing, not cosmetic — it is what lets the session
+cookie flow ("Deployment model", and ADR-015); the compiled form being Wasm is ADR-016.

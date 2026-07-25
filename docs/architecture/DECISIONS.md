@@ -15,6 +15,72 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-017 — RBAC: the framework owns the mechanism, the application owns the policy
+
+**Date:** 2026-07-25. **Status:** accepted. **Follows:** ADR-001, ADR-005, ADR-010.
+
+### Decision
+
+jZen provides role-based access control through the **platform's** authorization mechanism, not a
+bespoke one, and draws the framework/application line the same way ADR-010 drew it for capabilities:
+the framework ships the *enforcement mechanism*; each application defines its *policy* (which roles
+exist beyond the base set, who has many, what fine-grained permissions or tenant scoping mean).
+
+**What the framework provides today, and it is complete as a mechanism:**
+
+- **A role model** — `UserRole` in `zen-identity` (`USER`, `ADMIN`, `REVIEWER`, `B2B_ADMIN`), with
+  `UserRole.Names.*` string constants because `@RolesAllowed` needs a compile-time constant (the
+  ADR-003 pattern).
+- **Roles stored in the database, never in the JWT** — a single `users.role` column, defaulted to
+  `USER` at registration. This is deliberate and load-bearing: a role change or revocation takes
+  effect on the **next request**, with no token refresh, no re-login, and no token bloat. The JWT
+  establishes *who*; the database establishes *what they may do*.
+- **`RoleAugmentor`** (a `SecurityIdentityAugmentor`) loads the role from the `users` table per
+  request and adds it to the Quarkus `SecurityIdentity`.
+- **Enforcement via standard Jakarta annotations** — `@RolesAllowed(UserRole.Names.ADMIN)`,
+  `@PermitAll`, and `@Authenticated`, enforced by Quarkus proactive auth. `AdminUserResource` is the
+  reference; role assignment itself runs through it (`@RolesAllowed(ADMIN)`), so admins grant roles.
+
+**Two rules this entry fixes in place, because they are latent traps:**
+
+1. **"Any logged-in user" is `@Authenticated`, never `@RolesAllowed(Names.USER)`.** Roles are single
+   and `@RolesAllowed` has no hierarchy, so an `ADMIN` is *not* also a `USER`. `@RolesAllowed(USER)`
+   would therefore 403 an admin. Nothing requires `USER` today (public is `@PermitAll`), so it does
+   not bite yet — this rule ensures it never starts to.
+2. **Row-Level Security is not the application's authorization.** The `V2` owner policy
+   (`id = auth.uid()`) is active only on Supabase and guards *direct Supabase-side* access; the
+   Quarkus app connects through the pooler as `postgres`, which bypasses RLS. For jZen's backend,
+   `@RolesAllowed` is the only authorization layer — do not assume RLS is a safety net beneath it.
+
+**What is application policy, not framework** (per ADR-010's second-consumer bar): multiple roles
+per user (the `users.role` single column and the augmentor's single `addRole` are the current
+limit; multi-role needs a `user_roles` join table and an augmentor loop), fine-grained permissions
+or attribute/ownership checks ("edit your *own* order"), and tenant scoping (`B2B_ADMIN` anticipates
+multitenancy — "admin of *their* org" needs a `tenant_id` dimension and tenant-scoped queries).
+None is built; each belongs to an application until a **second** one needs the same shape, then it
+promotes to the framework.
+
+**Two framework gaps are committed to the plan** (ROADMAP "RBAC"), because they are general, small,
+and awkward to retrofit: documenting the `@Authenticated` convention (rule 1 above), and multi-role
+support. Everything past those stays application-side under the ADR-010 bar.
+
+### What this supersedes, and why
+
+- **Nothing is reversed.** This entry *names and records* a mechanism that already exists
+  (`UserRole`, `RoleAugmentor`, `@RolesAllowed`) but was never stated as jZen's RBAC position, and
+  it draws the same framework/policy line ADR-010 established so future requests ("add permissions",
+  "add tenancy") have a decided answer instead of an open one.
+- **BLUEPRINT "Persistence"/auth** and **STANDARDS** are *extended* with the two rules above; no
+  prior rule changes.
+
+### Consequence
+
+RBAC has a written position: the framework's mechanism is the platform's (Jakarta Security +
+DB-sourced roles), and role/permission/tenancy *policy* is application-owned until a second consumer
+promotes it. The `@Authenticated` rule and the RLS clarification are now explicit, so neither trap
+is discovered in production. No behaviour changed; the diff is this entry plus the two doc rules and
+the ROADMAP item. `verify:docs` green.
+
 ## ADR-016 — jZen delivers the web app as WebAssembly
 
 **Date:** 2026-07-25. **Status:** accepted. **Follows:** ADR-015 / ROADMAP POC delivery order.

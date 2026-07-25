@@ -140,7 +140,10 @@ Supabase owns authentication. Landed in ROADMAP step 3.
   trip it.
 - JWT verified against Supabase JWKS with ES256.
 - **Role loaded from the `users` table by a `SecurityIdentityAugmentor`, not from the JWT.**
-  Roles are application data, so revoking one must not wait for a token to expire.
+  Roles are application data, so revoking one must not wait for a token to expire. This is jZen's
+  RBAC: the `UserRole` enum + `RoleAugmentor` + Jakarta `@RolesAllowed` — the platform's mechanism,
+  with role/permission/tenancy *policy* left to applications ([`DECISIONS.md`](./DECISIONS.md)
+  ADR-017).
 - The `User` entity is the application profile only (see **Persistence** for the
   cross-cutting columns it carries).
 

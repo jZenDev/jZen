@@ -317,3 +317,19 @@ declared dependency, never as an edit somewhere else on the machine.
   under `apps/<app>/<app>_admin` (ADR-005), consuming the same OpenAPI-documented REST
   API via generated `openapi-typescript` types.
 - Admin always speaks `X-Zen-Transport: json`; Protobuf binary is for native apps only.
+
+## Authorization (RBAC)
+
+The mechanism is the platform's (Jakarta Security), not a bespoke one — see
+[`DECISIONS.md`](./DECISIONS.md) ADR-017. Roles are the `UserRole` enum, stored in the `users.role`
+column and **never in the JWT**, loaded per request by `RoleAugmentor` so a role change takes effect
+on the next request. Enforce with standard `@RolesAllowed(UserRole.Names.…)` / `@PermitAll` /
+`@Authenticated`; Quarkus proactive auth applies them. Two rules keep it honest:
+
+- **"Any logged-in user" is `@Authenticated`, never `@RolesAllowed(UserRole.Names.USER)`.** Roles are
+  single and `@RolesAllowed` has no hierarchy, so an `ADMIN` is not also a `USER` — gating on `USER`
+  would 403 an admin.
+- **RLS is not the app's authorization.** The `V2` owner policy guards direct Supabase-side access;
+  the Quarkus app connects as `postgres` and bypasses it, so `@RolesAllowed` is the only authz layer
+  for backend queries. Multi-role, fine-grained permissions, and tenant scoping are application
+  policy until a second app needs them (ADR-017, ADR-010).

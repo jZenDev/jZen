@@ -513,11 +513,22 @@ anything a reader needs is explained on jZen's own terms.
   identical to the pre-Step-9 baseline (ADR-012).
 
 **This closes the ROADMAP's planned steps.** There is no Step 10, and no numbered step is
-outstanding. Two different things follow from here, and they are deliberately kept apart:
+outstanding. Three different things follow from here, and they are deliberately kept apart:
 
 - **Optional directions**, gated on evidence rather than scheduled: a second application under
   `apps/` (which is what actually exercises the framework claim of ADR-001), and the capability
   triggers in [`DECISIONS.md`](./DECISIONS.md) ADR-010 — none of whose conditions is met today.
+- **Committed framework improvements**, decided and planned but not yet built:
+  - **RBAC — two gaps** ([`DECISIONS.md`](./DECISIONS.md) ADR-017). The RBAC *mechanism* is shipped
+    and complete — `UserRole`, DB-sourced roles via `RoleAugmentor`, Jakarta `@RolesAllowed` — so
+    these are hardenings, not new capability, and both are awkward to retrofit later: (1) adopt and
+    document the `@Authenticated` convention, since roles are single and have no hierarchy so
+    `@RolesAllowed(UserRole.Names.USER)` would 403 an admin — a rule plus a pinning test, not a
+    change to existing endpoints; (2) multi-role support — a `user_roles` join table (its own Flyway
+    version in the `zen-identity` band) and an augmentor loop, since the single `users.role` column
+    is the one limit hard to add after applications depend on the shape. Fine-grained permissions,
+    ownership checks, and tenant scoping (the `B2B_ADMIN` hint) stay **application** policy under the
+    ADR-010 second-consumer bar.
 - **Required work before anything ships**, in the appendix below. Completing the roadmap is not
   the same as being production-ready, and the appendix is where that difference is written down.
 

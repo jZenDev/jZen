@@ -1,0 +1,126 @@
+# jZen CI — enforces the gates the docs have always said to wire in (STANDARDS "Code generation",
+# ROADMAP). It runs the SAME `task` targets a developer runs, never a reimplementation.
+#
+# Deliberately NOT here, and why:
+#   - build:server:native / test:native — the native build is slow and stays LOCAL (the developer's
+#     "long build before deploy"); CI on shared runners is the wrong place for it, and prod ships
+#     from a local build. The JVM tests below cover the code; native-only faults are caught by
+#     test:native locally and verify:deploy against the real service.
+#   - deploy:cloudrun — deploy is manual, by a person. CI verifies; it never ships.
+#
+# Toolchain is pinned to match `task doctor` (.fvmrc / .nvmrc / packageManager / .sdkmanrc). JDK is
+# Temurin rather than GraalVM: only the native build needs GraalVM, and that is not run here.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# One run per ref; a new push cancels the previous in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Contract drift, docs drift, the Dart/Flutter libraries, and the admin typecheck. Needs the full
+  # toolchain because sync:contracts regenerates across all three languages.
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Flutter 3.44.2 (brings Dart)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.2"
+          channel: stable
+
+      - name: Node (pinned by .nvmrc) + pnpm via corepack
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+
+      # sync:contracts generates the Dart messages with protoc + protoc-gen-dart. Pin protoc_plugin
+      # to the version that produced the committed .pb.dart (25.0.0), or the drift gate false-fails
+      # on codegen-format differences. (Java DTOs and the admin schema are hermetic — Maven and pnpm
+      # resolve their own tools — so only the Dart path needs a system protoc here.)
+      - uses: arduino/setup-protoc@v3
+        with:
+          version: "29.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: dart pub global activate protoc_plugin 25.0.0
+      - run: echo "$HOME/.pub-cache/bin" >> "$GITHUB_PATH"
+
+      - name: go-task
+        uses: arduino/setup-task@v2
+        with:
+          version: "3.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - run: task deps
+      - name: Contract drift gate
+        run: task sync:contracts
+      - name: Docs drift gate
+        run: task verify:docs
+      - run: task test:client
+      - run: task test:admin
+
+  # The backend @QuarkusTest suite. Uses Quarkus Dev Services, which starts Postgres in Docker —
+  # available on ubuntu-latest by default, so no extra service setup.
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: go-task
+        uses: arduino/setup-task@v2
+        with:
+          version: "3.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: task test:apps:server
+
+  # The end-to-end release gate: boots real Supabase + Quarkus and runs zen_demo's integration
+  # suite with no mocks. The heaviest job and the one most likely to need iteration on first run
+  # (Supabase CLI start, ports); if it is flaky in CI, that is a setup issue to fix here, not a
+  # reason to drop the gate the docs call the release gate.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: Flutter 3.44.2
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.2"
+          channel: stable
+      - name: Node + pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - name: Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: go-task
+        uses: arduino/setup-task@v2
+        with:
+          version: "3.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: task test:e2e

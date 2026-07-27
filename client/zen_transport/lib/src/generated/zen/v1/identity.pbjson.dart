@@ -25,6 +25,7 @@ const Identity$json = {
     {'1': 'roles', '3': 4, '4': 3, '5': 9, '10': 'roles'},
     {'1': 'capabilities', '3': 5, '4': 3, '5': 9, '10': 'capabilities'},
     {'1': 'created_at_ms', '3': 6, '4': 1, '5': 3, '10': 'createdAtMs'},
+    {'1': 'email_verified', '3': 7, '4': 1, '5': 8, '10': 'emailVerified'},
   ],
 };
 
@@ -33,7 +34,8 @@ final $typed_data.Uint8List identityDescriptor = $convert.base64Decode(
     'CghJZGVudGl0eRIOCgJpZBgBIAEoCVICaWQSJwoPbGlmZWN5Y2xlX3N0YXRlGAIgASgJUg5saW'
     'ZlY3ljbGVTdGF0ZRIpChBsaWZlY3ljbGVfcmVhc29uGAMgASgJUg9saWZlY3ljbGVSZWFzb24S'
     'FAoFcm9sZXMYBCADKAlSBXJvbGVzEiIKDGNhcGFiaWxpdGllcxgFIAMoCVIMY2FwYWJpbGl0aW'
-    'VzEiIKDWNyZWF0ZWRfYXRfbXMYBiABKANSC2NyZWF0ZWRBdE1z');
+    'VzEiIKDWNyZWF0ZWRfYXRfbXMYBiABKANSC2NyZWF0ZWRBdE1zEiUKDmVtYWlsX3ZlcmlmaWVk'
+    'GAcgASgIUg1lbWFpbFZlcmlmaWVk');
 
 @$core.Deprecated('Use loginRequestDescriptor instead')
 const LoginRequest$json = {

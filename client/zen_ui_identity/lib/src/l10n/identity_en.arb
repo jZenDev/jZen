@@ -11,6 +11,8 @@
 
   "loginButton": "Log In",
   "registerButton": "Create Account",
+  "confirmEmailTitle": "Check your email",
+  "confirmEmailBody": "We sent a confirmation link to your email. Confirm it, then sign in.",
   "sendResetLinkButton": "Send Link",
   "logoutButton": "Log Out",
 

@@ -1050,6 +1050,20 @@ tasks:
            SUPABASE_URL must be exact: mp.jwt.verify.issuer is derived as ${SUPABASE_URL}/auth/v1,
            and a mismatch fails JWT verification with no obvious clue.
 
+        1b. CONFIGURE SUPABASE AUTH FOR PRODUCTION (in the Supabase dashboard, not a secret).
+            Registration with email confirmation depends on this, and the defaults are for local
+            dev:
+              - Auth -> URL Configuration: set Site URL and add the deployed URL to Redirect URLs.
+                Otherwise confirmation and recovery email links redirect to http://localhost — the
+                dev default — which is dead in production. (The backend handles a confirm-required
+                signup: registration returns 202 and a "check your email" state rather than a
+                session; but the link in that email must point at the deployed app.)
+              - Auth -> SMTP Settings: configure a real SMTP sender. Supabase's built-in email is
+                rate-limited to a few messages per hour on the free tier, so without custom SMTP,
+                signups intermittently fail with a rate-limit error once that cap is hit. This is
+                separate from the backend's own SMTP_* (which zen-email uses for welcome/retention
+                mail); this one is Supabase sending the confirmation email itself.
+
         2. Let the runtime service account read those secrets. Without this the revision is
            created and then fails to start, because --set-secrets is resolved at boot.
 

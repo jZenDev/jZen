@@ -29,6 +29,7 @@ class Identity extends $pb.GeneratedMessage {
     $core.Iterable<$core.String>? roles,
     $core.Iterable<$core.String>? capabilities,
     $fixnum.Int64? createdAtMs,
+    $core.bool? emailVerified,
   }) {
     final result = create();
     if (id != null) result.id = id;
@@ -37,6 +38,7 @@ class Identity extends $pb.GeneratedMessage {
     if (roles != null) result.roles.addAll(roles);
     if (capabilities != null) result.capabilities.addAll(capabilities);
     if (createdAtMs != null) result.createdAtMs = createdAtMs;
+    if (emailVerified != null) result.emailVerified = emailVerified;
     return result;
   }
 
@@ -59,6 +61,7 @@ class Identity extends $pb.GeneratedMessage {
     ..pPS(4, _omitFieldNames ? '' : 'roles')
     ..pPS(5, _omitFieldNames ? '' : 'capabilities')
     ..aInt64(6, _omitFieldNames ? '' : 'createdAtMs')
+    ..aOB(7, _omitFieldNames ? '' : 'emailVerified')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -126,6 +129,18 @@ class Identity extends $pb.GeneratedMessage {
   $core.bool hasCreatedAtMs() => $_has(5);
   @$pb.TagNumber(6)
   void clearCreatedAtMs() => $_clearField(6);
+
+  /// Whether the account's email has been confirmed. False on a registration that requires
+  /// email confirmation (the account exists but has no session yet); the caller shows a
+  /// "check your email" state rather than treating the identity as signed in.
+  @$pb.TagNumber(7)
+  $core.bool get emailVerified => $_getBF(6);
+  @$pb.TagNumber(7)
+  set emailVerified($core.bool value) => $_setBool(6, value);
+  @$pb.TagNumber(7)
+  $core.bool hasEmailVerified() => $_has(6);
+  @$pb.TagNumber(7)
+  void clearEmailVerified() => $_clearField(7);
 }
 
 /// POST /api/v1/auth/login request body.

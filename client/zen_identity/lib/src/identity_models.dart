@@ -242,12 +242,17 @@ final class Identity {
   /// Domain-level metadata.
   final ZenTimestamp createdAt;
 
+  /// Whether the account's email is confirmed. False right after a registration that requires
+  /// email confirmation — the account exists but is not yet signed in.
+  final bool emailVerified;
+
   /// Creates an [Identity] aggregate.
   const Identity({
     required this.id,
     required this.lifecycle,
     required this.authority,
     required this.createdAt,
+    this.emailVerified = false,
   });
 
   /// Factory for creating a new, pending identity.

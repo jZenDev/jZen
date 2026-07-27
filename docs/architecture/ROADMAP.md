@@ -542,11 +542,11 @@ recorded here rather than left to be rediscovered. See [`DECISIONS.md`](./DECISI
 
 | Gap | Where it stands today | What "done" means |
 |---|---|---|
-| **The packages are unpublished** | Everything is `0.1.0`; the Dart packages are `publish_to: none`, the npm packages `private`, and the Java modules are installed to a local repository. An application consumes the framework by **local path** only. | `zen_*` on pub.dev, the Java modules in a Maven registry, `@jzen/*` on npm — so an app depends on a **version** and upgrades by bumping it. |
-| **The web app has no deploy path** | `flutter build web` produces a bundle nothing ships. The backend container serves the API only, and in local dev the web app runs on its own origin behind CORS. | A deploy task that ships the bundle **same-origin with the API** — served by the backend container itself. See the note below: this is constrained, not open. |
-| **The admin panel has no deploy path** | `task build:admin` produces a Vite bundle nothing ships; same situation as the web app. | The same, under the same constraint — and it binds harder here, the panel being admin-role gated on the same cookie. |
+| **The packages are unpublished** | **POSTPONED (deliberately).** Everything is `0.1.0`; the Dart packages are `publish_to: none`, the npm packages `private`, the Java modules install to a local repository. An application consumes the framework by **local path** only. Now *unblocked* by CI, but deprioritized behind fixing the defects the real deployment surfaced. | `zen_*` on pub.dev, the Java modules in a Maven registry, `@jzen/*` on npm — so an app depends on a **version** and upgrades by bumping it. |
+| **The web app has no deploy path** | **✅ DONE.** Shipped as WebAssembly, served same-origin from the backend container (ROADMAP delivery step 4; ADR-015/016). Deployed and verified rendering live. | Achieved: the bundle is baked into the native image and served at `/`. |
+| **The admin panel has no deploy path** | **✅ DONE.** react-admin served same-origin at `/admin/` from the same container; login → users list verified live. | Achieved. |
 | **Native app pipelines do not exist** | No store or notarization automation for mobile/desktop. | Per-application release pipelines. This is the one item genuinely left to each app rather than the framework. |
-| **The backend deploy path is unproven** | `task deploy:cloudrun` has never run end to end; jZen has never been deployed. Step 9 found its `Dockerfile` `COPY` was in fact broken by an earlier module rename, which no gate could have caught. | One successful deploy to a real Cloud Run service, with the secrets and the Cloud Scheduler entry in place. |
+| **The backend deploy path is unproven** | **✅ DONE.** `task deploy:cloudrun` ran end to end to a real Cloud Run service; secrets and the hourly Cloud Scheduler entry are in place, and retention now actually runs. | Achieved: one successful deploy, verified in both transport modes. |
 
 **The two frontend rows are constrained by an existing rule, and this appendix first stated them as
 though they were open.** Its original wording offered "its own container on Cloud Run, or static
@@ -582,6 +582,21 @@ largest **gap**; it is not the most urgent **task**, for the reason the delivery
 
 **Nothing here is a hidden defect.** Each is a known, stated boundary; the only thing that was
 wrong was a set of documents that read as finished. That is what this appendix fixes.
+
+### Defects surfaced by the first real deployment — the bug-fix plan
+
+The gaps above were *known* boundaries. Executing the deploy also surfaced genuine *defects* — the
+kind only a real artifact on real infrastructure reveals, exactly what ADR-013 warned the unproven
+deploy path was hiding. They are recorded here so the plan reflects reality, not just intentions.
+Fixing these is now prioritized **ahead of publishing**.
+
+| Defect | How it surfaced | Status |
+|---|---|---|
+| **JSON transport 500'd in the native image** — protobuf's `JsonFormat` reflects over accessors that native-image had not registered. | `curl` the deployed service: protobuf 200, JSON 500. JVM tests all passed. | **Fixed** — `zen.transport.ZenProtoReflection` (`@RegisterForReflection`); `test:native` now asserts both modes in Docker. |
+| **WebAssembly app rendered a blank page** — the compile-time platform selectors guarded the web branch on `dart.library.html`, which dart2wasm does not define, so they fell through to a stub that threw at startup. | Loading the deployed page in a browser; console showed `Unsupported operation: Platform not supported`. Every curl check and `dart analyze` passed. | **Fixed** — guards moved to `dart.library.js_interop` (STANDARDS "Client config is compile-time"). |
+| **In-app registration is broken against a confirm-required Supabase** — signup returns a user with no session when email confirmation is on, and the register flow expected an immediate session (true only under the local autoconfirm stack). | Registering via the deployed web app returned 401 "Supabase rejected"; a direct GoTrue signup returned 200. | **Fixed (code, tests green).** The proper flow: the backend parses both signup shapes and returns `202` + an unverified identity when confirmation is pending; the client shows a "check your email" dialog and does not sign in; the user confirms via Supabase's email link, then logs in. Live round-trip also needs the operator step in `deploy:cloudrun` (Supabase Site URL/Redirect URLs + custom SMTP), or confirmation links go to localhost and the free-tier email cap throttles signups. |
+| **Every deploy is stale for returning users up to 24h** — Flutter's fixed-named entry files (`main.dart.wasm`, `flutter_bootstrap.js`, `index.html`) are served `cache-control: immutable, max-age=86400`, so a browser will not revalidate them after a new deploy. | Verifying a redeploy kept loading the old bundle until each entry file was force-refreshed. | **Open** — serve entry files `no-cache`; hashed assets (canvaskit, Vite output) may stay immutable. |
+| **Image tags can collide** — `deploy:cloudrun` tags the image with the short commit SHA, so deploying twice from the same commit (e.g. an uncommitted fix) overwrites the tag, and rollback to a specific build is impossible. | A broken and a fixed build both tagged `a4796ed`; the second silently overwrote the first. | **Open** — refuse to deploy from a dirty tree (`ALLOW_DIRTY` override labels the image `-dirty`). |
 
 ### The delivery order, and where it comes from
 

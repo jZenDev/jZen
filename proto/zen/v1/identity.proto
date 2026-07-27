@@ -32,6 +32,10 @@ message Identity {
   repeated string capabilities = 5;
   // Creation time in milliseconds since the Unix epoch.
   int64 created_at_ms = 6;
+  // Whether the account's email has been confirmed. False on a registration that requires
+  // email confirmation (the account exists but has no session yet); the caller shows a
+  // "check your email" state rather than treating the identity as signed in.
+  bool email_verified = 7;
 }
 
 // POST /api/v1/auth/login request body.

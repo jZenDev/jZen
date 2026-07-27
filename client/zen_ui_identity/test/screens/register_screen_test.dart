@@ -10,10 +10,16 @@ import 'package:flutter_test/flutter_test.dart';
 import '../support/localized_app.dart';
 
 // Helper to create a valid Identity instance for tests
-Identity makeTestIdentity() {
+Identity makeTestIdentity({bool emailVerified = true}) {
   final idResult = IdentityId.create('1');
   return idResult.fold(
-    (id) => Identity.createPending(id: id),
+    (id) => Identity(
+      id: id,
+      lifecycle: IdentityLifecycle.initial(),
+      authority: const Authority(),
+      createdAt: ZenTimestamp.now(),
+      emailVerified: emailVerified,
+    ),
     (err) => throw Exception('Invalid IdentityId'),
   );
 }
@@ -115,6 +121,32 @@ void main() {
     await tester.tap(find.text(messages.registerButton));
     await tester.pumpAndSettle();
     expect(called, isTrue);
+  });
+
+  testWidgets('shows confirm-email dialog and does not sign in when confirmation is required', (
+    tester,
+  ) async {
+    bool called = false;
+    testStore.onRegister = (email, password) async {
+      // Registration succeeded but email confirmation is required: unverified identity.
+      return ZenResult.ok(makeTestIdentity(emailVerified: false));
+    };
+    await tester.pumpWidget(
+      buildTestable(
+        onRegisterSuccess: () {
+          called = true;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).at(0), 'user@example.com');
+    await tester.enterText(find.byType(TextFormField).at(1), 'password');
+    await tester.enterText(find.byType(TextFormField).at(2), 'password');
+    await tester.tap(find.text(messages.registerButton));
+    await tester.pumpAndSettle();
+
+    expect(find.text(messages.confirmEmailTitle), findsOneWidget);
+    expect(called, isFalse, reason: 'not signed in until the email is confirmed');
   });
 
   testWidgets('shows error SnackBar on registration failure', (tester) async {

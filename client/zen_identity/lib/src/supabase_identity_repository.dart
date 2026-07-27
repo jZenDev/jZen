@@ -112,5 +112,6 @@ class SupabaseIdentityRepository implements IdentityRepository {
       capabilities: identity.capabilities.toList(),
     ),
     createdAt: identity.createdAtMs.toInt(),
+    emailVerified: identity.emailVerified,
   );
 }

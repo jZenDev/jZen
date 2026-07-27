@@ -82,12 +82,18 @@ final class IdentityContract {
   /// When the identity was created.
   final int createdAt;
 
+  /// Whether the account's email is confirmed. False on a registration that requires email
+  /// confirmation: the account exists but there is no session yet, so the caller shows a
+  /// "check your email" state rather than treating the identity as signed in.
+  final bool emailVerified;
+
   /// Creates an [IdentityContract].
   const IdentityContract({
     required this.id,
     required this.lifecycle,
     required this.authority,
     required this.createdAt,
+    this.emailVerified = false,
   });
 
   /// Maps [Identity] domain aggregate to [IdentityContract].
@@ -96,6 +102,7 @@ final class IdentityContract {
     lifecycle: IdentityLifecycleContract.fromDomain(identity.lifecycle),
     authority: AuthorityContract.fromDomain(identity.authority),
     createdAt: identity.createdAt.millisecondsSinceEpoch,
+    emailVerified: identity.emailVerified,
   );
 
   /// Maps [IdentityContract] to [Identity] domain aggregate.
@@ -104,6 +111,7 @@ final class IdentityContract {
     lifecycle: lifecycle.toDomain(),
     authority: authority.toDomain(),
     createdAt: ZenTimestamp.fromMilliseconds(createdAt),
+    emailVerified: emailVerified,
   );
 
   /// Creates [IdentityContract] from JSON.

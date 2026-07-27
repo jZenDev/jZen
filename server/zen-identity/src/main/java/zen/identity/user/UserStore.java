@@ -53,13 +53,16 @@ public class UserStore {
       user.email = payload.email();
       user.role = UserRole.USER;
       user.language = ZenLocales.resolve(preferredLanguage);
-      user.emailVerified = false;
       user.isPrivate = false;
       user.acceptedTerms = false;
       user.isPremium = false;
       user.createdAt = OffsetDateTime.now();
       user.persist();
     }
+    // Kept in sync from Supabase's confirmation state on every call: a user who confirms after
+    // registering has emailVerified flip true on their next authenticated request, without a
+    // separate reconciliation path.
+    user.emailVerified = payload.emailVerified();
     user.lastLoginAt = OffsetDateTime.now();
     user.deletionWarningSentAt = null;
     user.finalWarningSentAt = null;

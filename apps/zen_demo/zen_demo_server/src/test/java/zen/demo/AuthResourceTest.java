@@ -42,14 +42,28 @@ class AuthResourceTest {
 
   @InjectMock @RestClient SupabaseAuthClient authClient;
 
+  /** An auto-confirm signup / login response: a session with a confirmed nested user. */
   private SupabaseSessionResponse session(String email) {
     return new SupabaseSessionResponse(
         "access-jwt",
         "refresh-jwt",
         new SupabaseSessionResponse.UserPayload(
-            UUID.randomUUID().toString(), email, "authenticated", Map.of()),
+            UUID.randomUUID().toString(), email, "authenticated", "2024-01-01T00:00:00Z", Map.of()),
+        null,
+        null,
+        null,
+        null,
         null,
         null);
+  }
+
+  /**
+   * GoTrue's bare-user signup response when email confirmation is required: the user at the top
+   * level, no session, {@code email_confirmed_at} null (unconfirmed).
+   */
+  private SupabaseSessionResponse pendingConfirmation(String email) {
+    return new SupabaseSessionResponse(
+        null, null, null, null, null, UUID.randomUUID().toString(), email, null, Map.of());
   }
 
   @Test
@@ -136,6 +150,43 @@ class AuthResourceTest {
     Identity.Builder parsed = Identity.newBuilder();
     JsonFormat.parser().merge(resp.getBody().asString(), parsed);
     assertFalse(parsed.getId().isEmpty());
+    assertTrue(parsed.getEmailVerified(), "auto-confirm signup returns a verified identity");
+  }
+
+  @Test
+  void register_emailConfirmationRequired_returns202AndUnverifiedIdentityWithNoSession()
+      throws Exception {
+    // Supabase requires email confirmation: signup creates the account but returns no session.
+    when(authClient.signup(any(), any())).thenReturn(pendingConfirmation("pending@example.com"));
+
+    RegisterRequest body =
+        RegisterRequest.newBuilder()
+            .setEmail("pending@example.com")
+            .setPassword("secret1")
+            .build();
+
+    Response resp =
+        given()
+            .header(HEADER, "json")
+            .contentType("application/json")
+            .body(JsonFormat.printer().print(body))
+            .when()
+            .post("/api/v1/auth/register")
+            .andReturn();
+
+    // 202 Accepted: the account exists, but the user is not signed in until they confirm.
+    assertEquals(202, resp.statusCode());
+    Identity.Builder parsed = Identity.newBuilder();
+    JsonFormat.parser().merge(resp.getBody().asString(), parsed);
+    assertFalse(parsed.getId().isEmpty(), "account created, so the identity id is present");
+    assertFalse(parsed.getEmailVerified(), "confirmation pending: email is not verified");
+
+    // No session cookies: registration did not sign the user in.
+    List<String> setCookies = resp.getHeaders().getValues("Set-Cookie");
+    assertTrue(
+        setCookies == null
+            || setCookies.stream().noneMatch(c -> c.startsWith(SessionService.ACCESS_COOKIE + "=")),
+        "no access cookie is set when email confirmation is pending");
   }
 
   @Test

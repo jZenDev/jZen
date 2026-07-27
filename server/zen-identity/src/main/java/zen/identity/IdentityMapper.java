@@ -29,11 +29,12 @@ import org.mapstruct.Named;
 public abstract class IdentityMapper {
 
   /** Flat view of the wire-relevant {@code User} fields; MapStruct fills it in. */
-  public record IdentityView(String id, String role, long createdAtMs) {}
+  public record IdentityView(String id, String role, long createdAtMs, boolean emailVerified) {}
 
   @Mapping(target = "id", source = "id", qualifiedByName = "uuidToString")
   @Mapping(target = "role", source = "role", qualifiedByName = "roleToString")
   @Mapping(target = "createdAtMs", source = "createdAt", qualifiedByName = "toEpochMillis")
+  @Mapping(target = "emailVerified", source = "emailVerified")
   abstract IdentityView toView(User user);
 
   /** Assembles the immutable {@link Identity} proto from the mapped view. */
@@ -46,7 +47,8 @@ public abstract class IdentityMapper {
         Identity.newBuilder()
             .setId(view.id() != null ? view.id() : "")
             .setLifecycleState("active")
-            .setCreatedAtMs(view.createdAtMs());
+            .setCreatedAtMs(view.createdAtMs())
+            .setEmailVerified(view.emailVerified());
     if (view.role() != null) {
       builder.addRoles(view.role());
     }

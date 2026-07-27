@@ -11,6 +11,8 @@
 
   "loginButton": "Увійти",
   "registerButton": "Створити акаунт",
+  "confirmEmailTitle": "Перевірте пошту",
+  "confirmEmailBody": "Ми надіслали посилання для підтвердження на вашу пошту. Підтвердьте його, потім увійдіть.",
   "sendResetLinkButton": "Надіслати посилання",
   "logoutButton": "Вийти",
 

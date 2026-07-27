@@ -88,7 +88,16 @@ public class AuthResource {
   @RequestBody(content = @Content(schema = @Schema(ref = "RegisterRequest")))
   @APIResponse(
       responseCode = ZenStatus.OK,
-      description = "Registered; session cookies set when Supabase returns a session",
+      description = "Registered and signed in (Supabase auto-confirms); session cookies set",
+      content = {
+        @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(ref = "Identity")),
+        @Content(mediaType = PROTOBUF, schema = @Schema(ref = "Identity"))
+      })
+  @APIResponse(
+      responseCode = ZenStatus.ACCEPTED,
+      description =
+          "Registered, email confirmation required: account created, no session yet. The returned"
+              + " Identity has email_verified=false; the caller shows a \"check your email\" state.",
       content = {
         @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(ref = "Identity")),
         @Content(mediaType = PROTOBUF, schema = @Schema(ref = "Identity"))
@@ -104,6 +113,19 @@ public class AuthResource {
      */
     IdentityService.Session session =
         identityService.register(request.getEmail(), request.getPassword(), acceptLanguage);
+    /*
+     * Whether registration also signs the user in depends on the Supabase project's email settings.
+     * Auto-confirm returns a session (access token) -> 200 with session cookies, like login. Email
+     * confirmation required returns no session -> 202 Accepted with the identity (email_verified is
+     * false) and NO cookies: the account exists, but the user must confirm via the Supabase email
+     * and then log in. sessionResponse omits cookies for a null token, but the status must also say
+     * "not signed in", which a 200 would not.
+     */
+    if (session.accessToken() == null) {
+      return Response.status(Response.Status.ACCEPTED)
+          .entity(identityMapper.toProto(session.user()))
+          .build();
+    }
     return sessionResponse(session);
   }
 

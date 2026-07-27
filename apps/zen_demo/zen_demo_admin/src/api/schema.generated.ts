@@ -369,8 +369,18 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Registered; session cookies set when Supabase returns a session */
+                /** @description Registered and signed in (Supabase auto-confirms); session cookies set */
                 200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Identity"];
+                        "application/x-protobuf": components["schemas"]["Identity"];
+                    };
+                };
+                /** @description Registered, email confirmation required: account created, no session yet. The returned Identity has email_verified=false; the caller shows a "check your email" state. */
+                202: {
                     headers: {
                         [name: string]: unknown;
                     };

@@ -70,10 +70,14 @@ public class IdentityService {
   public Session register(String email, String password, String preferredLanguage) {
     SupabaseSessionResponse response =
         call(() -> authClient.signup(new SupabaseSignupRequest(email, password, null), redirectUri));
-    if (response.user() == null || response.user().id() == null) {
+    // GoTrue returns a session when the project auto-confirms, and a bare user (no session) when
+    // email confirmation is required. effectiveUser() unifies both; the null-token case below is
+    // what AuthResource turns into a "confirm your email" (202) response.
+    SupabaseSessionResponse.UserPayload supabaseUser = response.effectiveUser();
+    if (supabaseUser == null || supabaseUser.id() == null) {
       throw new AuthException(400, "registration_failed", "Registration did not return a user.");
     }
-    UserStore.Upsert upsert = userStore.upsertOnLogin(response.user(), preferredLanguage);
+    UserStore.Upsert upsert = userStore.upsertOnLogin(supabaseUser, preferredLanguage);
     User user = upsert.user();
     if (upsert.created()) {
       registrations.fireAsync(new UserRegistered(user.id, user.email, user.language));

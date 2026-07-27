@@ -145,7 +145,12 @@ class EmailFailureTest {
     return new SupabaseSessionResponse(
         "access-jwt",
         "refresh-jwt",
-        new SupabaseSessionResponse.UserPayload(id.toString(), email, "authenticated", Map.of()),
+        new SupabaseSessionResponse.UserPayload(
+            id.toString(), email, "authenticated", "2024-01-01T00:00:00Z", Map.of()),
+        null,
+        null,
+        null,
+        null,
         null,
         null);
   }

@@ -54,6 +54,25 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     result.fold(
       (identity) {
+        if (!identity.emailVerified) {
+          // The account was created but Supabase requires email confirmation: the user is not
+          // signed in. Tell them to confirm and come back to log in, and do NOT fire the
+          // "registered and in" callbacks.
+          showDialog<void>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: Text(messages.confirmEmailTitle),
+              content: Text(messages.confirmEmailBody),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: Text(MaterialLocalizations.of(context).okButtonLabel),
+                ),
+              ],
+            ),
+          );
+          return;
+        }
         widget.onRegisterSuccess?.call();
         widget.onRegisterSuccessWithIdentity?.call(identity);
       },

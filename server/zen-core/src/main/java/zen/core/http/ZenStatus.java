@@ -36,6 +36,10 @@ public interface ZenStatus {
   /** 201 Created. */
   String CREATED = "201";
 
+  /** 202 Accepted — the request succeeded but processing is not complete (e.g. a registration
+   * awaiting email confirmation: the account exists, but there is no session yet). */
+  String ACCEPTED = "202";
+
   /** 204 No Content. */
   String NO_CONTENT = "204";
 

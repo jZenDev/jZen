@@ -46,11 +46,12 @@ class _FakeRepo implements IdentityRepository {
   Future<ZenResult<void>> logout() async => logoutResult;
 }
 
-IdentityContract _makeContract(String id) => IdentityContract(
+IdentityContract _makeContract(String id, {bool emailVerified = true}) => IdentityContract(
   id: id,
   lifecycle: IdentityLifecycleContract(state: IdentityState.active.name),
   authority: const AuthorityContract(roles: [], capabilities: []),
   createdAt: DateTime.now().millisecondsSinceEpoch,
+  emailVerified: emailVerified,
 );
 
 void main() {
@@ -123,6 +124,29 @@ void main() {
     expect(res.isSuccess, true);
     final current = container.read(identitySessionStoreProvider);
     expect(current.asData?.value?.id.value, 'r1');
+  });
+
+  test('register requiring email confirmation does not authenticate', () async {
+    // An unverified registration (202, no session) must leave the session unauthenticated, so the
+    // app does not navigate to the dashboard before the user confirms and logs in.
+    final contract = _makeContract('r2', emailVerified: false);
+    final fake = _FakeRepo(
+      getCurrentIdentityResult: const ZenResult.ok(null),
+      registerResult: ZenResult.ok(contract),
+    );
+
+    final container = ProviderContainer(
+      overrides: [identityRepositoryProvider.overrideWithValue(fake)],
+    );
+    final notifier = container.read(identitySessionStoreProvider.notifier);
+
+    final res = await notifier.register('x@y.com', 'pw');
+    // The call succeeds and returns the (unverified) identity...
+    expect(res.isSuccess, true);
+    expect(res.fold((i) => i.emailVerified, (_) => true), false);
+    // ...but the session state stays unauthenticated.
+    final current = container.read(identitySessionStoreProvider);
+    expect(current.asData?.value, isNull);
   });
 
   test('restorePassword returns result from repo', () async {

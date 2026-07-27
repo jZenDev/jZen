@@ -49,7 +49,11 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
     return result.fold(
       (model) {
         final identity = model.toDomain();
-        state = AsyncValue.data(identity);
+        // Only a registration that returns a session (auto-confirm) signs the user in. When email
+        // confirmation is required the identity comes back unverified with no session cookie, so
+        // the auth state stays unauthenticated — otherwise the app would navigate to the dashboard
+        // and skip the "confirm your email" step. The register screen reads the returned identity.
+        state = identity.emailVerified ? AsyncValue.data(identity) : const AsyncValue.data(null);
         return ZenResult.ok(identity);
       },
       (failure) {

@@ -32,6 +32,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
+  // Local submit state for the button spinner; the store does not flip the session to loading
+  // during a register attempt (see IdentitySessionStore.register).
+  bool _isSubmitting = false;
+
   @override
   void dispose() {
     _emailController.dispose();
@@ -41,8 +45,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate() || _isSubmitting) return;
 
+    setState(() => _isSubmitting = true);
     final controller = ref.read(identitySessionStoreProvider.notifier);
     final result = await controller.register(
       _emailController.text.trim(),
@@ -50,6 +55,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     );
 
     if (!mounted) return;
+    setState(() => _isSubmitting = false);
     final messages = IdentityLocalizations.of(context);
 
     result.fold(
@@ -90,8 +96,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   @override
   Widget build(BuildContext context) {
     final messages = IdentityLocalizations.of(context);
-    final state = ref.watch(identitySessionStoreProvider);
-    final isLoading = state.isLoading;
+    final isLoading = _isSubmitting;
     final theme =
         Theme.of(context).extension<IdentityThemeExtension>() ?? IdentityThemeExtension.fallback();
 

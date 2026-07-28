@@ -621,6 +621,23 @@ nothing above it moves. That distinction is what keeps this an appendix rather t
 | 6 | **CI** | Sustains quality; it does not produce the first deploy. |
 | 7 | **Publish the packages** | Serves *other developers adopting the framework* — a different audience from the one a POC is for. Also gated on 6: a published version is not retractable the way a branch is. |
 
+#### The order after the POC — the POC is done, the MVP is not
+
+The delivery order above ends at "POC complete", and it got there (deployed, same-origin, all three
+language bindings live). What follows is a *different* goal — an **MVP**: the product actually
+usable, with a mobile and desktop client beside the web one. The order below supersedes the tail of
+the table above, and ADR-020 records why each item sits where it does.
+
+| # | Item | Why here |
+|---|---|---|
+| 1 | **MVP scope, written down** | "MVP" decides everything below it; leaving it implicit means each item gets re-argued. |
+| 2 | **Native deep-linking — backlog item 4's per-platform half** | Simulator and local macOS only. Free, needs no account, and testable from the terminal without sending a single email (see "Item 4 in full"). |
+| 3 | **MVP live and tested on the real stack** | The environment stays up for this. It is what teardown waits for. |
+| 4 | **Start the second product on the framework** | The first *honest* test of the framework/application boundary. `zen_demo` cannot be that test: it was written by the same hands at the same time, so when the framework is awkward both sides change in one commit and nobody feels it. |
+| 5 | **Publish the packages** | After 4, deliberately — see the backlog row. |
+| 6 | **Native release pipelines** | Only if a product is ever *distributed*. Off the critical path entirely, and may never be reached. |
+| 7 | **`destroy:cloudrun`** | Last. Not "after the POC" — see the backlog row. |
+
 **Why the admin panel is inside the POC.** It is the only surface that exercises the *third* language
 binding: the contract-first claim is proto → Java **and** Dart **and** TypeScript, the Flutter client
 demonstrates the first two, and only the panel drives `schema.generated.ts`, the `Content-Range`
@@ -647,12 +664,12 @@ come to mean something else later.
 
 | # | Item | Status | Detail lives in |
 |---|---|---|---|
-| 1 | **Publish the packages** to real registries (pub.dev, a Maven registry, npm) | **Postponed, deliberately** — unblocked by CI, deprioritized behind the deploy defects. Serves adopters, not the POC. | "what is not yet production-ready" gap table; delivery-order item 7 |
+| 1 | **Publish the packages** to real registries (pub.dev, a Maven registry, npm) | **Postponed, and now with a trigger: after the second product exists** (ADR-020). Not idleness — while the framework has one consumer written by its own authors, an awkward API is fixed in a single commit and never felt, so `zen_demo` cannot falsify the framework/application boundary. A second, different product can. Publishing before that freezes an API which is about to be bent, and it is the one irreversible step here: a published version is retractable, never removable. The one thing that would force it earlier is a consumer in a *different repository*, since path dependencies do not reach across repos. | ADR-020; "what is not yet production-ready" gap table |
 | 2 | **Refuse to deploy from a dirty tree** — `deploy:cloudrun` tags the image with the short SHA, so two builds from one commit collide and rollback is impossible. `ALLOW_DIRTY` labels the image `-dirty`. | **Fixed.** The guard is `deploy:cloudrun`'s first command, before any build; `ALLOW_DIRTY=1` is the deliberate override. | "Defects surfaced" table, image-tags row |
 | 3 | **Auto-login after confirmation + password-recovery landing** — consume the fragment token (client reads `#access_token`, exchanges for a cookie session; or Supabase PKCE with a server-side code exchange). Recovery lands on the same route and needs the token to set a new password. | **Fixed.** The implicit fragment flow, not PKCE (ADR-018): `ZenAuthLink` parses the landing URL, the session store exchanges the tokens at `POST /api/v1/auth/session` before the app's first frame, and the backend validates them against Supabase before issuing a cookie. Recovery signs in and holds a set-a-new-password gate up until `POST /api/v1/auth/password` succeeds. | ADR-018; `AuthCallbackResource` javadoc |
-| 4 | **Native (mobile/desktop) deep-linking for the auth flow** — per-platform App Links / Universal Links / custom scheme + token exchange, so the confirmation/recovery link re-enters a Flutter native build. Shares fragment-token consumption with item 3. | **Framework half done and tested (ADR-018, ADR-019). Per-platform half open; needs runners and a device.** Not POC scope — the POC is backend + Wasm web app + admin panel, and that is unchanged. Web is unaffected either way. | **"Item 4 in full" below** — the inventory of what exists and the step-by-step plan |
-| 5 | **Run `destroy:cloudrun` after the POC** — tear down the GCP project + Supabase + Docker artifacts, leaving no orphans (even at $0). | **Open (final step).** The proving run's cleanup; run once the POC has been shown. | `Taskfile.yml` `destroy:cloudrun` |
-| 6 | **Native release pipelines** (signing, store accounts, notarization) | **Declaration, not queue** — per-application, filed against an app when one ships. Blocks nothing here. | "Two items are declarations" above |
+| 4 | **Native (mobile/desktop) deep-linking for the auth flow** — per-platform App Links / Universal Links / custom scheme + token exchange, so the confirmation/recovery link re-enters a Flutter native build. Shares fragment-token consumption with item 3. | **Framework half done and tested (ADR-018, ADR-019). Per-platform half open: generate runners, register a scheme, deliver the URL.** Verified on a **simulator, emulator, or local macOS run** — free, no developer account, no signing (ADR-020). Not POC scope; it is step 2 of the post-POC order. Web is unaffected either way. | **"Item 4 in full" below** — the inventory of what exists and the step-by-step plan |
+| 5 | **Run `destroy:cloudrun`** — tear down the GCP project + Supabase + Docker artifacts, leaving no orphans (even at $0). | **Open, and its trigger has moved (ADR-020): not "after the POC" but "when this environment is genuinely superseded".** The MVP is built on the same stack, so tearing down after the POC would demolish the thing the next milestone runs on. Two conditions before it fires: nothing is being tested on it, and no data on it still matters — once real users exist, teardown carries deletion obligations a POC teardown never did. It is safe to run at that point *because* the environment is reproducible from this repo (Flyway owns the schema, the `deploy:cloudrun` summary documents the one-time setup and every secret); what is not reproducible is data and the Supabase project ref. **Teardown is never a prerequisite to testing** — testing needs the environment that teardown removes. | ADR-020; `Taskfile.yml` `destroy:cloudrun` |
+| 6 | **Native release pipelines** (signing, store accounts, notarization) | **Declaration, not queue — and off the critical path** (ADR-020). Running on a simulator, an emulator, or locally on macOS needs no paid account and no signing identity, so a mobile/desktop MVP does not touch this item at all. It begins only if a product is *distributed* to someone else's machine (TestFlight, a store, a notarized download), which may never happen. | "Two items are declarations" above; ADR-020 |
 | 7 | **`task` `sources:`/`generates:` fingerprinting** | **Refused, not open** — it would defeat `sync:contracts`; now a STANDARDS "Orchestration" rule. Listed for completeness. | STANDARDS "Orchestration"; ADR-014 |
 
 ### Item 4 in full — native deep-linking: what exists, and the plan for the rest
@@ -711,16 +728,29 @@ prefix or host check would admit; a refused address sending no signup and no rec
    - the build define `--dart-define=ZEN_AUTH_REDIRECT_URI=zendemo://auth-callback`,
    - the same string in the server's `AUTH_REDIRECT_URIS` (exact match; it is refused otherwise),
    - and the same string in the Supabase project's Redirect URLs, or GoTrue drops it.
-5. **Verify on a simulator, then a device**, and cover all four paths, not just the happy one:
-   confirmation link, recovery link (must land on `SetPasswordScreen` and not the dashboard), an
-   expired link (must land on the login screen saying so), and cold start versus warm.
-   A simulator needs no signing; a physical device does, which is where item 6 starts.
+5. **Verify on a simulator, an emulator, or a local macOS run**, and cover all four paths, not just
+   the happy one: confirmation link, recovery link (must land on `SetPasswordScreen`, not the
+   dashboard), an expired link (must land on the login screen saying so), and cold start versus
+   warm. **None of this needs a paid account or a signing identity** — that is item 6, and it
+   begins only if something is distributed to someone else's machine.
+
+   No email is needed either. Take one real token from a confirmation mail, then replay every case
+   from the terminal:
+
+   ```bash
+   xcrun simctl openurl booted "zendemo://auth-callback#access_token=…&type=recovery"  # iOS sim
+   adb shell am start -a android.intent.action.VIEW -d "zendemo://auth-callback#…"     # Android
+   open "zendemo://auth-callback#access_token=…&type=signup"                           # macOS
+   ```
+
+   This is also why step 2 prefers a custom scheme: it makes the whole flow provable in seconds,
+   with no domain, no verification file, and no inbox rate limit in the way.
 
 **Acceptance:** tapping a confirmation link on a native build opens the app already signed in;
 tapping a recovery link opens it on the set-a-new-password screen; both work whether or not the app
-was already running; and the web flow is unchanged. Until that has been seen on a real device or
-simulator, item 4 is not done — no amount of green unit tests substitutes, because the part that is
-left is precisely the part unit tests cannot reach.
+was already running; and the web flow is unchanged. Until that has been seen running, item 4 is not
+done — no amount of green unit tests substitutes, because the part that is left is precisely the
+part unit tests cannot reach.
 
 ## Explicitly out of scope
 

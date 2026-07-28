@@ -31,11 +31,13 @@ public class AuthCallbackResource {
   @GET
   @PermitAll
   public Response landing() {
-    // 303 See Other to the app root. The Location is set relative ("/") rather than via
+    // 303 See Other to the app root, tagged so the login screen can greet the user ("your email is
+    // confirmed, please sign in"). The Location is set relative rather than via
     // Response.seeOther(URI), which JAX-RS would resolve to an absolute URL bound to the request's
-    // host — wrong behind the deployed URL. A relative "/" resolves against whatever origin served
-    // the link. The browser carries the original fragment (the token) to "/", where the app
-    // ignores it and shows the login screen.
-    return Response.status(Response.Status.SEE_OTHER).header("Location", "/").build();
+    // host — wrong behind the deployed URL. A relative path resolves against whatever origin served
+    // the link. The browser carries the original fragment (the token) along, which the app ignores.
+    return Response.status(Response.Status.SEE_OTHER)
+        .header("Location", "/?auth=email-confirmed")
+        .build();
   }
 }

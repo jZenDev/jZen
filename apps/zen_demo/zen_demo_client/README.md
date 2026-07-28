@@ -60,8 +60,16 @@ while the app is running. What a native build would add, in order:
 5. **Deliver the received URL** to `consumeAuthLink` — a deep-link plugin or a platform channel;
    the framework does not care which, and takes a `Uri`.
 
+One thing to get right in step 5: a tap that **starts** the app is not the same as one that arrives
+while it is running. `IdentitySessionStore.build()` only sees the former on the web, because it
+reads `Uri.base` — off the web that is a file path. The initial link has to be fetched from the
+plugin and passed to `consumeAuthLink` as well, or deep links will appear to work only when the app
+is already open.
+
 Steps 1–3 and 5 cannot be verified without a simulator or a device, so they are not claimed as
-done here. Step 4 is enforced and tested (`IdentityServiceTest`).
+done here. Step 4 is enforced and tested (`IdentityServiceTest`). The full plan, and an inventory
+of what is already built, is in [`ROADMAP.md`](../../../docs/architecture/ROADMAP.md) under
+"Item 4 in full".
 
 ## Testing
 

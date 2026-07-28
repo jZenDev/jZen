@@ -650,10 +650,77 @@ come to mean something else later.
 | 1 | **Publish the packages** to real registries (pub.dev, a Maven registry, npm) | **Postponed, deliberately** — unblocked by CI, deprioritized behind the deploy defects. Serves adopters, not the POC. | "what is not yet production-ready" gap table; delivery-order item 7 |
 | 2 | **Refuse to deploy from a dirty tree** — `deploy:cloudrun` tags the image with the short SHA, so two builds from one commit collide and rollback is impossible. `ALLOW_DIRTY` labels the image `-dirty`. | **Fixed.** The guard is `deploy:cloudrun`'s first command, before any build; `ALLOW_DIRTY=1` is the deliberate override. | "Defects surfaced" table, image-tags row |
 | 3 | **Auto-login after confirmation + password-recovery landing** — consume the fragment token (client reads `#access_token`, exchanges for a cookie session; or Supabase PKCE with a server-side code exchange). Recovery lands on the same route and needs the token to set a new password. | **Fixed.** The implicit fragment flow, not PKCE (ADR-018): `ZenAuthLink` parses the landing URL, the session store exchanges the tokens at `POST /api/v1/auth/session` before the app's first frame, and the backend validates them against Supabase before issuing a cookie. Recovery signs in and holds a set-a-new-password gate up until `POST /api/v1/auth/password` succeeds. | ADR-018; `AuthCallbackResource` javadoc |
-| 4 | **Native (mobile/desktop) deep-linking for the auth flow** — per-platform App Links / Universal Links / custom scheme + token exchange, so the confirmation/recovery link re-enters a Flutter native build. Shares fragment-token consumption with item 3. | **Framework half done (ADR-019); the per-platform half is open and needs a device.** Done and tested: client-named return addresses, accepted only on an *exact* match against `auth.redirect-uris` (an unchecked one would have a live session token mailed to an address a stranger chose), the compile-time `ZEN_AUTH_REDIRECT_URI` that names it, and `IdentitySessionStore.consumeAuthLink(uri)` for a link that arrives while the app runs. Open: `zen_demo_client` has **no native runners at all** (only `web/`), so there is no manifest to register a scheme in — generate runners, register the link per platform, deliver the URL. Unverifiable without a simulator or device; steps are in the app's README. Web is unaffected. | "Defects surfaced" table, "confirmation/greeting flow is web-only" row |
+| 4 | **Native (mobile/desktop) deep-linking for the auth flow** — per-platform App Links / Universal Links / custom scheme + token exchange, so the confirmation/recovery link re-enters a Flutter native build. Shares fragment-token consumption with item 3. | **Framework half done and tested (ADR-018, ADR-019). Per-platform half open; needs runners and a device.** Not POC scope — the POC is backend + Wasm web app + admin panel, and that is unchanged. Web is unaffected either way. | **"Item 4 in full" below** — the inventory of what exists and the step-by-step plan |
 | 5 | **Run `destroy:cloudrun` after the POC** — tear down the GCP project + Supabase + Docker artifacts, leaving no orphans (even at $0). | **Open (final step).** The proving run's cleanup; run once the POC has been shown. | `Taskfile.yml` `destroy:cloudrun` |
 | 6 | **Native release pipelines** (signing, store accounts, notarization) | **Declaration, not queue** — per-application, filed against an app when one ships. Blocks nothing here. | "Two items are declarations" above |
 | 7 | **`task` `sources:`/`generates:` fingerprinting** | **Refused, not open** — it would defeat `sync:contracts`; now a STANDARDS "Orchestration" rule. Listed for completeness. | STANDARDS "Orchestration"; ADR-014 |
+
+### Item 4 in full — native deep-linking: what exists, and the plan for the rest
+
+Item 4 is the one open item with work already banked, so it is written out here rather than
+compressed into a table cell: half of it is built and tested, and the half that is left cannot be
+verified on this machine. Whoever picks it up should not have to rediscover either fact.
+
+**Scope note.** This is not part of the POC. The delivery order above still ends at "backend, web
+app (as Wasm), and admin panel, all deployed same-origin", and that is deliberate — native builds
+pull in item 6 (signing, provisioning, store accounts), which is a declaration filed against an
+application when one ships, not queued work.
+
+#### Already built, tested, and platform-neutral — do not rebuild it
+
+Every piece below takes or produces ordinary values (a `Uri`, a token string) and names no
+platform. It was built for the web flow and is reusable as-is.
+
+| Piece | Where | What it does |
+|---|---|---|
+| `ZenAuthLink.parse(Uri)` | `client/zen_identity` | Parses any landing URL into one of five outcomes: nothing, a session, a recovery session, a confirmation with no token, or a link the provider rejected. Takes a `Uri`, so it does not care how the URL arrived. |
+| `ZenAuthLink.current()` / `clearFromUrl()` | same | The web entry point (`Uri.base`) and the address-bar cleanup. Off the web both are inert: `Uri.base` is a file path, so `current()` finds no link and `clearFromUrl()` is a no-op stub. |
+| `POST /api/v1/auth/session` | `zen-identity` `AuthResource` | Exchanges link tokens for the httpOnly cookie session. `@PermitAll` by necessity, guarded by presenting the token to Supabase (`GET /auth/v1/user`) before any cookie is issued. |
+| `POST /api/v1/auth/password` | same | Sets a new password for the current session, using the session's own bearer. No user id is passed, so one session cannot change another's password. |
+| `IdentitySessionStore.consumeAuthLink(Uri)` | `client/zen_ui_identity` | **The native entry point.** Signs in from a link that arrives while the app is running, raises the recovery gate, and leaves the current session alone if the link is spent. |
+| `passwordResetRequiredProvider`, `SetPasswordScreen` | same | The recovery gate and its screen. The gate derives from the startup link and can also be raised by hand, which is what `consumeAuthLink` does. |
+| `RedirectTargets` + `auth.redirect-uris` | `zen-identity` | Exact-match allowlist for client-named return addresses. Empty by default. |
+| `RegisterRequest.redirect_uri`, `RestorePasswordRequest.redirect_uri` | `proto/zen/v1/identity.proto` | How a client asks for a return address. Empty means the server's default, which is what web sends. |
+| `zenAuthRedirectUri` (`ZEN_AUTH_REDIRECT_URI`) | `client/zen_identity` | The compile-time define a native build sets to name its scheme. |
+
+Covered by tests today: the parser's five outcomes; auto-login at startup; a spent link falling
+back to the login screen; the recovery gate raised at startup **and** by `consumeAuthLink`; a spent
+runtime link not signing the current user out; the exact-match allowlist against the shapes a
+prefix or host check would admit; a refused address sending no signup and no recovery email.
+
+#### What is left, in order
+
+1. **Generate the runners.** `cd apps/zen_demo/zen_demo_client && flutter create --platforms=android,ios,macos .`
+   There is no `android/`, `ios/`, or `macos/` directory today — only `web/` — which is why there is
+   currently no manifest to register anything in. Check what `flutter create` writes: it also
+   touches `pubspec.yaml` and may add files that belong in `.gitignore`.
+2. **Choose the link style, and prefer a custom scheme** (`zendemo://auth-callback`) for the first
+   pass. Universal Links / App Links need a verification file (`apple-app-site-association`,
+   `assetlinks.json`) served from the deployed domain, which means a backend route and a domain
+   commitment; a custom scheme needs neither and proves the whole path. Register it per platform:
+   an Android `intent-filter`, an iOS `CFBundleURLTypes` entry, a macOS URL type.
+3. **Deliver the URL to `consumeAuthLink`.** A deep-link plugin (declared as a normal dependency —
+   nothing reaches outside the repo) or a platform channel; the framework takes a `Uri` and does not
+   care which. **Handle both arrival shapes**, because they are genuinely different:
+   - *warm* — the app is running and the OS hands it a URL. This is what `consumeAuthLink` is for.
+   - *cold* — the tap **starts** the app. `IdentitySessionStore.build()` will not see it:
+     `ZenAuthLink.current()` reads `Uri.base`, which off the web is a file path. The initial link
+     must be fetched from the plugin and passed to `consumeAuthLink` too. Forgetting this is the
+     likely first bug, and it will look like "deep links only work when the app is already open".
+4. **Pair the two halves of the return address**, or nothing works and the failure is silent:
+   - the build define `--dart-define=ZEN_AUTH_REDIRECT_URI=zendemo://auth-callback`,
+   - the same string in the server's `AUTH_REDIRECT_URIS` (exact match; it is refused otherwise),
+   - and the same string in the Supabase project's Redirect URLs, or GoTrue drops it.
+5. **Verify on a simulator, then a device**, and cover all four paths, not just the happy one:
+   confirmation link, recovery link (must land on `SetPasswordScreen` and not the dashboard), an
+   expired link (must land on the login screen saying so), and cold start versus warm.
+   A simulator needs no signing; a physical device does, which is where item 6 starts.
+
+**Acceptance:** tapping a confirmation link on a native build opens the app already signed in;
+tapping a recovery link opens it on the set-a-new-password screen; both work whether or not the app
+was already running; and the web flow is unchanged. Until that has been seen on a real device or
+simulator, item 4 is not done — no amount of green unit tests substitutes, because the part that is
+left is precisely the part unit tests cannot reach.
 
 ## Explicitly out of scope
 

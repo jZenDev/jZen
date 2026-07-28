@@ -5,6 +5,7 @@ import zen.identity.auth.SupabaseAuthClient;
 import zen.identity.auth.SupabaseSessionResponse;
 import zen.identity.auth.SupabaseSignupRequest;
 import zen.identity.auth.SupabaseTokenRequest;
+import zen.identity.auth.UserUpdateRequest;
 import zen.identity.event.UserRegistered;
 import zen.identity.user.User;
 import zen.identity.user.UserStore;
@@ -110,6 +111,58 @@ public class IdentityService {
           authClient.recover(new PasswordRecoverRequest(email), redirectUri);
           return null;
         });
+  }
+
+  /**
+   * Turns the tokens a Supabase email link delivered — confirmation, recovery, or invite — into a
+   * jZen session, so that following the link lands the user signed in instead of back at a login
+   * form. Supabase puts those tokens in the URL <em>fragment</em>, which never reaches a server, so
+   * they can only arrive here by the client reading them and posting them back.
+   *
+   * <p>The access token is therefore an <b>untrusted input</b>, and is validated by presenting it
+   * to Supabase ({@code GET /user}) before a single cookie is issued. Supabase is the only party
+   * that can say the token is genuine, unexpired, and not revoked; verifying the signature locally
+   * would accept one it had already invalidated. The upsert then reconciles the local profile, so
+   * a user confirming their email gets the same row login would have created.
+   *
+   * <p>No language is passed to the upsert, for the reason {@link #toSession} gives: this is not
+   * the moment a user chooses a language, and it must not overwrite the one registration recorded.
+   */
+  public Session exchangeLinkTokens(String accessToken, String refreshToken) {
+    if (accessToken == null || accessToken.isBlank()) {
+      throw AuthException.unauthorized("This link is missing its sign-in token.");
+    }
+    SupabaseSessionResponse.UserPayload supabaseUser =
+        call(() -> authClient.getUser(bearer(accessToken)));
+    if (supabaseUser == null || supabaseUser.id() == null) {
+      throw AuthException.unauthorized("This link has expired. Please request a new one.");
+    }
+    return new Session(accessToken, refreshToken, userStore.upsertOnLogin(supabaseUser, null).user());
+  }
+
+  /**
+   * Sets a new password for the identity owning {@code accessToken} — the final step of password
+   * recovery, and the only reason a recovery link needs to establish a session at all.
+   *
+   * <p>The token comes from the caller's own session cookie, which SmallRye JWT has already
+   * verified, so unlike {@link #exchangeLinkTokens} this one is trusted on arrival. Password rules
+   * are Supabase's: a rejected password comes back through {@link #classifySupabaseError} as
+   * {@code weak_password}, and jZen does not restate the rule in a second place where the two
+   * could drift apart.
+   */
+  public void setPassword(String accessToken, String password) {
+    if (password == null || password.isBlank()) {
+      throw new AuthException(400, "weak_password", "Please choose a stronger password.");
+    }
+    call(
+        () -> {
+          authClient.updateUser(bearer(accessToken), new UserUpdateRequest(password));
+          return null;
+        });
+  }
+
+  private static String bearer(String accessToken) {
+    return "Bearer " + accessToken;
   }
 
   /** Silent refresh using the refresh-token cookie. Throws {@link AuthException} (401) if rejected. */

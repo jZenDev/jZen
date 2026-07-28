@@ -55,5 +55,24 @@ message RestorePasswordRequest {
   string email = 1;
 }
 
+// POST /api/v1/auth/session request body. Exchanges the tokens a Supabase email link
+// (confirmation, recovery, invite) delivered in the URL *fragment* for the ordinary httpOnly
+// cookie session. The fragment never reaches a server, so the client is the only party that
+// can read those tokens and must hand them back explicitly; the backend does not take them on
+// faith, it presents the access token to Supabase before issuing any cookie.
+message SessionExchangeRequest {
+  string access_token = 1;
+  // Optional. Supabase sends one with the confirmation/recovery redirect; without it the
+  // session simply cannot be refreshed silently and ends when the access token expires.
+  string refresh_token = 2;
+}
+
+// POST /api/v1/auth/password request body. Sets a new password for the identity in the
+// session cookie - the last step of password recovery, and the reason the recovery link has
+// to establish a session at all.
+message SetPasswordRequest {
+  string password = 1;
+}
+
 // logout, refresh, and the get-current-identity probe take no request body: logout and
 // refresh act on the session cookies, and the probe reads the authenticated SecurityIdentity.

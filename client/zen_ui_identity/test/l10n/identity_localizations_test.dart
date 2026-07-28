@@ -36,6 +36,16 @@ class _IdleRepository implements IdentityRepository {
       const ZenResult.err(ZenUnknownError('not used'));
 
   @override
+  Future<ZenResult<IdentityContract>> exchangeLinkSession({
+    required String accessToken,
+    String? refreshToken,
+  }) async => const ZenResult.err(ZenUnknownError('not implemented'));
+
+  @override
+  Future<ZenResult<void>> setPassword({required String password}) async =>
+      const ZenResult.err(ZenUnknownError('not implemented'));
+
+  @override
   Future<ZenResult<void>> logout() async => const ZenResult.ok(null);
 }
 

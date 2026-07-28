@@ -5,6 +5,7 @@
 /// the zen-identity endpoints.
 library;
 
+export 'src/auth_link.dart';
 export 'src/identity_contracts.dart';
 export 'src/identity_models.dart';
 export 'src/supabase_identity_repository.dart';

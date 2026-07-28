@@ -81,6 +81,23 @@ components:
       properties:
         email:
           type: string
+    SessionExchangeRequest:
+      type: object
+      description: >-
+        Body for POST /api/v1/auth/session. The tokens a Supabase email link left in the URL
+        fragment, posted back by the client so the backend can validate them and set cookies.
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+          description: Optional; without it the session cannot be refreshed silently.
+    SetPasswordRequest:
+      type: object
+      description: Body for POST /api/v1/auth/password; sets a new password for the current session.
+      properties:
+        password:
+          type: string
     Ping:
       type: object
       description: GET /api/v1/demo/ping response; message localized from Accept-Language.

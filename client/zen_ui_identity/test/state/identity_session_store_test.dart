@@ -11,6 +11,12 @@ class _FakeRepo implements IdentityRepository {
   ZenResult<IdentityContract> registerResult;
   ZenResult<void> restoreResult;
   ZenResult<void> logoutResult;
+  ZenResult<IdentityContract> exchangeResult;
+  ZenResult<void> setPasswordResult;
+
+  /// Set when the ordinary session probe runs, so a test can assert it did not.
+  bool probed = false;
+  String? exchangedAccessToken;
 
   _FakeRepo({
     ZenResult<IdentityContract?>? getCurrentIdentityResult,
@@ -18,14 +24,33 @@ class _FakeRepo implements IdentityRepository {
     ZenResult<IdentityContract>? registerResult,
     ZenResult<void>? restoreResult,
     ZenResult<void>? logoutResult,
-  }) : getCurrentIdentityResult = getCurrentIdentityResult ?? const ZenResult.ok(null),
+    ZenResult<IdentityContract>? exchangeResult,
+    ZenResult<void>? setPasswordResult,
+  }) : exchangeResult = exchangeResult ?? const ZenResult.err(ZenUnknownError('not set')),
+       setPasswordResult = setPasswordResult ?? const ZenResult.err(ZenUnknownError('not set')),
+       getCurrentIdentityResult = getCurrentIdentityResult ?? const ZenResult.ok(null),
        loginResult = loginResult ?? const ZenResult.err(ZenUnknownError('not set')),
        registerResult = registerResult ?? const ZenResult.err(ZenUnknownError('not set')),
        restoreResult = restoreResult ?? const ZenResult.err(ZenUnknownError('not set')),
        logoutResult = logoutResult ?? const ZenResult.err(ZenUnknownError('not set'));
 
   @override
-  Future<ZenResult<IdentityContract?>> getCurrentIdentity() async => getCurrentIdentityResult;
+  Future<ZenResult<IdentityContract?>> getCurrentIdentity() async {
+    probed = true;
+    return getCurrentIdentityResult;
+  }
+
+  @override
+  Future<ZenResult<IdentityContract>> exchangeLinkSession({
+    required String accessToken,
+    String? refreshToken,
+  }) async {
+    exchangedAccessToken = accessToken;
+    return exchangeResult;
+  }
+
+  @override
+  Future<ZenResult<void>> setPassword({required String password}) async => setPasswordResult;
 
   @override
   Future<ZenResult<IdentityContract>> loginWithEmail({
@@ -147,6 +172,67 @@ void main() {
     // ...but the session state stays unauthenticated.
     final current = container.read(identitySessionStoreProvider);
     expect(current.asData?.value, isNull);
+  });
+
+  test('a confirmation link signs the user in instead of probing for a session', () async {
+    // The point of the feature: arriving from an email link must not first answer "anonymous".
+    final fake = _FakeRepo(exchangeResult: ZenResult.ok(_makeContract('confirmed')));
+    final container = ProviderContainer(
+      overrides: [
+        identityRepositoryProvider.overrideWithValue(fake),
+        authLinkProvider.overrideWithValue(
+          ZenAuthLink.parse(Uri.parse('https://app/#access_token=at&refresh_token=rt&type=signup')),
+        ),
+      ],
+    );
+
+    final value = await container.read(identitySessionStoreProvider.future);
+    expect(value?.id.value, 'confirmed');
+    expect(fake.exchangedAccessToken, 'at');
+    expect(fake.probed, false, reason: 'the exchange already established the session');
+  });
+
+  test('a spent link falls back to the login screen and is recorded', () async {
+    final fake = _FakeRepo(
+      exchangeResult: const ZenResult.err(ZenUnauthorizedError('expired')),
+      getCurrentIdentityResult: const ZenResult.ok(null),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        identityRepositoryProvider.overrideWithValue(fake),
+        authLinkProvider.overrideWithValue(
+          ZenAuthLink.parse(Uri.parse('https://app/#access_token=stale&type=signup')),
+        ),
+      ],
+    );
+
+    final value = await container.read(identitySessionStoreProvider.future);
+    expect(value, isNull);
+    expect(fake.probed, true, reason: 'a refused link must not skip the normal session probe');
+    expect(container.read(identitySessionStoreProvider.notifier).linkRejected, true);
+  });
+
+  test('a recovery link holds the password gate up until a new password is set', () async {
+    final fake = _FakeRepo(
+      exchangeResult: ZenResult.ok(_makeContract('recovering')),
+      setPasswordResult: const ZenResult.ok(null),
+    );
+    final container = ProviderContainer(
+      overrides: [
+        identityRepositoryProvider.overrideWithValue(fake),
+        authLinkProvider.overrideWithValue(
+          ZenAuthLink.parse(Uri.parse('https://app/#access_token=at&type=recovery')),
+        ),
+      ],
+    );
+
+    final value = await container.read(identitySessionStoreProvider.future);
+    expect(value?.id.value, 'recovering', reason: 'recovery signs in; that is what authorizes it');
+    expect(container.read(passwordResetRequiredProvider), true);
+
+    final res = await container.read(identitySessionStoreProvider.notifier).setPassword('new-pw');
+    expect(res.isSuccess, true);
+    expect(container.read(passwordResetRequiredProvider), false);
   });
 
   test('restorePassword returns result from repo', () async {

@@ -40,5 +40,13 @@
   "errorConflict": "A conflict occurred (e.g., user already exists).",
   "errorInvalidCredentials": "Incorrect email or password.",
   "errorEmailNotConfirmed": "Your email isn't confirmed yet. Check your inbox for the confirmation link.",
-  "emailConfirmedBanner": "Your email is confirmed. Please sign in."
+  "emailConfirmedBanner": "Your email is confirmed. Please sign in.",
+  "emailConfirmedSignedInBanner": "Your email is confirmed. Welcome!",
+  "linkExpiredBanner": "That link has expired or has already been used. Please request a new one.",
+
+  "setPasswordTitle": "Choose a new password",
+  "setPasswordInfo": "Enter a new password for your account. You'll stay signed in.",
+  "newPasswordLabel": "New password",
+  "setPasswordButton": "Save password",
+  "passwordChangedSuccess": "Your password has been changed."
 }

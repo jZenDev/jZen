@@ -69,7 +69,14 @@ class _Root extends ConsumerWidget {
     return session.when(
       loading: () => const _Splash(),
       error: (_, _) => const AuthFlow(),
-      data: (identity) => identity == null ? const AuthFlow() : const HomeShell(),
+      data: (identity) {
+        if (identity == null) return const AuthFlow();
+        // Signed in, but a password-recovery link is only finished once a new password exists —
+        // so that gate comes before the app. It is a framework-supplied condition and screen; the
+        // app decides only where in its routing they belong, which is here, ahead of everything.
+        if (ref.watch(passwordResetRequiredProvider)) return const SetPasswordScreen();
+        return const HomeShell();
+      },
     );
   }
 }

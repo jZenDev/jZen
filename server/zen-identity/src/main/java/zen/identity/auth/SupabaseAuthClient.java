@@ -1,6 +1,7 @@
 package zen.identity.auth;
 
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.PUT;
@@ -68,6 +69,20 @@ public interface SupabaseAuthClient {
   @Retry(maxRetries = 2, delay = 500, abortOn = WebApplicationException.class)
   @Timeout(2000)
   void recover(PasswordRecoverRequest request, @QueryParam("redirect_to") String redirectTo);
+
+  /**
+   * Returns the user a bearer token belongs to, and 401s if the token is not genuine, has
+   * expired, or has been revoked. This is the *validation* step for a token jZen did not issue
+   * itself — the one an email link handed to the browser. Only Supabase can answer it: a local
+   * signature check would happily accept a token Supabase had already invalidated.
+   */
+  @GET
+  @Path("/user")
+  @Produces(MediaType.APPLICATION_JSON)
+  @CircuitBreaker(requestVolumeThreshold = 10, failureRatio = 0.5, delay = 5000, skipOn = WebApplicationException.class)
+  @Retry(maxRetries = 2, delay = 500, abortOn = WebApplicationException.class)
+  @Timeout(2000)
+  SupabaseSessionResponse.UserPayload getUser(@HeaderParam("Authorization") String bearer);
 
   /** Updates the authenticated user (e.g. sets a new password) using their bearer token. */
   @PUT

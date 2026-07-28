@@ -304,6 +304,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set a new password for the current session */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: {
+                    zen_access_token?: string;
+                };
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetPasswordRequest"];
+                    "application/x-protobuf": components["schemas"]["SetPasswordRequest"];
+                };
+            };
+            responses: {
+                /** @description Password changed */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description No active session */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not Allowed */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/refresh": {
         parameters: {
             query?: never;
@@ -437,6 +499,62 @@ export interface paths {
                 };
                 /** @description Bad Request */
                 400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Exchange the tokens from a Supabase email link for a cookie session */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SessionExchangeRequest"];
+                    "application/x-protobuf": components["schemas"]["SessionExchangeRequest"];
+                };
+            };
+            responses: {
+                /** @description Link accepted; session cookies set */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Identity"];
+                        "application/x-protobuf": components["schemas"]["Identity"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description The link is invalid or expired */
+                401: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -739,6 +857,16 @@ export interface components {
         /** @description Body for POST /api/v1/auth/restore-password. */
         RestorePasswordRequest: {
             email?: string;
+        };
+        /** @description Body for POST /api/v1/auth/session. The tokens a Supabase email link left in the URL fragment, posted back by the client so the backend can validate them and set cookies. */
+        SessionExchangeRequest: {
+            accessToken?: string;
+            /** @description Optional; without it the session cannot be refreshed silently. */
+            refreshToken?: string;
+        };
+        /** @description Body for POST /api/v1/auth/password; sets a new password for the current session. */
+        SetPasswordRequest: {
+            password?: string;
         };
         /** @description GET /api/v1/demo/ping response; message localized from Accept-Language. */
         Ping: {

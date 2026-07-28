@@ -594,11 +594,11 @@ Fixing these is now prioritized **ahead of publishing**.
 |---|---|---|
 | **JSON transport 500'd in the native image** — protobuf's `JsonFormat` reflects over accessors that native-image had not registered. | `curl` the deployed service: protobuf 200, JSON 500. JVM tests all passed. | **Fixed** — `zen.transport.ZenProtoReflection` (`@RegisterForReflection`); `test:native` now asserts both modes in Docker. |
 | **WebAssembly app rendered a blank page** — the compile-time platform selectors guarded the web branch on `dart.library.html`, which dart2wasm does not define, so they fell through to a stub that threw at startup. | Loading the deployed page in a browser; console showed `Unsupported operation: Platform not supported`. Every curl check and `dart analyze` passed. | **Fixed** — guards moved to `dart.library.js_interop` (STANDARDS "Client config is compile-time"). |
-| **In-app registration is broken against a confirm-required Supabase** — signup returns a user with no session when email confirmation is on, and the register flow expected an immediate session (true only under the local autoconfirm stack). | Registering via the deployed web app returned 401 "Supabase rejected"; a direct GoTrue signup returned 200. | **Fixed (code, tests green).** The proper flow: the backend parses both signup shapes and returns `202` + an unverified identity when confirmation is pending; the client shows a dedicated "check your email" screen and does not sign in; the user confirms via Supabase's email link (which lands on `/auth/callback` → `/?auth=email-confirmed`, so the login screen greets them), then logs in. Live round-trip also needs the operator step in `deploy:cloudrun` (Supabase Site URL/Redirect URLs + custom SMTP), or confirmation links go to localhost and the free-tier email cap throttles signups. |
+| **In-app registration is broken against a confirm-required Supabase** — signup returns a user with no session when email confirmation is on, and the register flow expected an immediate session (true only under the local autoconfirm stack). | Registering via the deployed web app returned 401 "Supabase rejected"; a direct GoTrue signup returned 200. | **Fixed (code, tests green).** The proper flow: the backend parses both signup shapes and returns `202` + an unverified identity when confirmation is pending; the client shows a dedicated "check your email" screen and does not sign in; the user confirms via Supabase's email link (which lands on `/auth/callback` → the app, carrying the fragment; since ADR-018 that exchange signs them straight in, and `/?auth=email-confirmed` is only the fallback greeting when no token arrives). Live round-trip also needs the operator step in `deploy:cloudrun` (Supabase Site URL/Redirect URLs + custom SMTP), or confirmation links go to localhost and the free-tier email cap throttles signups. |
 | **Every deploy is stale for returning users up to 24h** — Flutter's fixed-named entry files (`main.dart.wasm`, `flutter_bootstrap.js`, `index.html`) are served `cache-control: immutable, max-age=86400`, so a browser will not revalidate them after a new deploy. | Verifying a redeploy kept loading the old bundle until each entry file was force-refreshed; it also masked a client fix (the deployed bundle hash matched, but the browser ran the old code). | **Fixed.** `zen.transport.StaticCacheHeaders` serves the fixed-name entry/index files `no-cache` (ETag → cheap 304s); hashed assets (Vite `/admin/assets`, Flutter `canvaskit`) stay immutable. `verify:endpoints` fails if an entry file is immutable. Verified live. |
-| **Image tags can collide** — `deploy:cloudrun` tags the image with the short commit SHA, so deploying twice from the same commit (e.g. an uncommitted fix) overwrites the tag, and rollback to a specific build is impossible. | A broken and a fixed build both tagged `a4796ed`; the second silently overwrote the first. | **Open** — refuse to deploy from a dirty tree (`ALLOW_DIRTY` override labels the image `-dirty`). |
+| **Image tags can collide** — `deploy:cloudrun` tags the image with the short commit SHA, so deploying twice from the same commit (e.g. an uncommitted fix) overwrites the tag, and rollback to a specific build is impossible. | A broken and a fixed build both tagged `a4796ed`; the second silently overwrote the first. | **Fixed.** `deploy:cloudrun` evaluates the SHA and the dirty flag once, before any build, and refuses outright on a dirty tree (untracked files included; ignored files, so the staged web bundle and `target/`, excluded). The check is the task's first command, so it costs a second rather than a native compile. `ALLOW_DIRTY=1` overrides deliberately and tags `<sha>-dirty`, so the image never impersonates the commit — two dirty builds still collide with each other, which is the point of it being an escape hatch. |
 | **Auth errors leaked internals and weren't business language** — a rejected login rendered "Supabase rejected the request" (names the provider — an information leak — and is meaningless to a user), and every failure flattened to one message. | Live login on the deployed app with wrong credentials. | **Fixed.** The backend classifies the upstream 4xx into a stable, safe `code` + a generic fallback message that never names the provider or echoes raw upstream text; the client maps the code to localized wording (`invalid_credentials`, `email_not_confirmed`). **User enumeration is closed on registration:** an already-registered email returns the *same* neutral `202` "check your email" as a new one (no "email already exists" oracle), belt-and-braces on top of Supabase's own enumeration protection. Tests assert no `supabase`/upstream text leaks and that an existing email does not enumerate. |
-| **The confirmation/greeting flow is web-only** — it chains browser URLs (`redirect_to` → `/auth/callback` → `/?auth=email-confirmed`, read via `Uri.base`) and an httpOnly cookie session. On a native (mobile/desktop) client the *functional* path still works (register → confirm in the system browser → return and log in), but the niceties don't: no post-confirmation greeting, no auto-login, no in-app recovery landing. | Reasoning about running the same flow in a Flutter native build. | **Open (future, native only).** Needs per-platform deep linking (Android App Links / iOS Universal Links / a custom scheme) plus a token exchange, and shares the fragment-token consumption with the auto-login/password-recovery follow-up. Web is unaffected. |
+| **The confirmation/greeting flow is web-only** — it chains browser URLs (`redirect_to` → `/auth/callback` → `/?auth=email-confirmed`, read via `Uri.base`) and an httpOnly cookie session. On a native (mobile/desktop) client the *functional* path still works (register → confirm in the system browser → return and log in), but the niceties don't: no post-confirmation greeting, no auto-login, no in-app recovery landing. | Reasoning about running the same flow in a Flutter native build. | **Open (future, native only).** Needs per-platform deep linking (Android App Links / iOS Universal Links / a custom scheme). The token exchange it would feed now exists and is platform-neutral (`ZenAuthLink` + `POST /api/v1/auth/session`, ADR-018); on native, `Uri.base` is a file path, so the parser simply finds no link and the flow degrades to "confirm in a browser, then sign in". Web is unaffected. |
 
 ### The delivery order, and where it comes from
 
@@ -637,21 +637,90 @@ the libraries it is built on — filed against an app when an app ships, blockin
 would defeat `sync:contracts`; that is now a STANDARDS "Orchestration" rule, since the hazard is
 invisible from the feature's description.
 
-### Open backlog — the seven remaining items
+### Open backlog — the census of what is left
 
 One index of everything still open, so the plan does not live only in a session's task list. The
 detail is in the rows above; this is the census. Nothing here is a numbered step — each is
-independently triggered (the appendix rule).
+independently triggered (the appendix rule). The numbers are stable identifiers, not an order:
+a row keeps its number and stays in the table once it closes, so a reference to "item 2" does not
+come to mean something else later.
 
 | # | Item | Status | Detail lives in |
 |---|---|---|---|
 | 1 | **Publish the packages** to real registries (pub.dev, a Maven registry, npm) | **Postponed, deliberately** — unblocked by CI, deprioritized behind the deploy defects. Serves adopters, not the POC. | "what is not yet production-ready" gap table; delivery-order item 7 |
-| 2 | **Refuse to deploy from a dirty tree** — `deploy:cloudrun` tags the image with the short SHA, so two builds from one commit collide and rollback is impossible. `ALLOW_DIRTY` labels the image `-dirty`. | **Open.** Small, and wanted *before* the next deploy so image tags stay trustworthy. | "Defects surfaced" table, image-tags row |
-| 3 | **Auto-login after confirmation + password-recovery landing** — consume the fragment token (client reads `#access_token`, exchanges for a cookie session; or Supabase PKCE with a server-side code exchange). Recovery lands on the same route and needs the token to set a new password. | **Open.** The remaining user-visible gap in the auth flow (today: confirm → return → log in manually). | `AuthCallbackResource` javadoc ("Not yet done, on purpose") |
-| 4 | **Native (mobile/desktop) deep-linking for the auth flow** — per-platform App Links / Universal Links / custom scheme + token exchange, so the confirmation/recovery link re-enters a Flutter native build. Shares fragment-token consumption with item 3. | **Open (future, native only).** Web is unaffected. | "Defects surfaced" table, "confirmation/greeting flow is web-only" row |
+| 2 | **Refuse to deploy from a dirty tree** — `deploy:cloudrun` tags the image with the short SHA, so two builds from one commit collide and rollback is impossible. `ALLOW_DIRTY` labels the image `-dirty`. | **Fixed.** The guard is `deploy:cloudrun`'s first command, before any build; `ALLOW_DIRTY=1` is the deliberate override. | "Defects surfaced" table, image-tags row |
+| 3 | **Auto-login after confirmation + password-recovery landing** — consume the fragment token (client reads `#access_token`, exchanges for a cookie session; or Supabase PKCE with a server-side code exchange). Recovery lands on the same route and needs the token to set a new password. | **Fixed.** The implicit fragment flow, not PKCE (ADR-018): `ZenAuthLink` parses the landing URL, the session store exchanges the tokens at `POST /api/v1/auth/session` before the app's first frame, and the backend validates them against Supabase before issuing a cookie. Recovery signs in and holds a set-a-new-password gate up until `POST /api/v1/auth/password` succeeds. | ADR-018; `AuthCallbackResource` javadoc |
+| 4 | **Native (mobile/desktop) deep-linking for the auth flow** — per-platform App Links / Universal Links / custom scheme + token exchange, so the confirmation/recovery link re-enters a Flutter native build. Shares fragment-token consumption with item 3. | **Framework half done and tested (ADR-018, ADR-019). Per-platform half open; needs runners and a device.** Not POC scope — the POC is backend + Wasm web app + admin panel, and that is unchanged. Web is unaffected either way. | **"Item 4 in full" below** — the inventory of what exists and the step-by-step plan |
 | 5 | **Run `destroy:cloudrun` after the POC** — tear down the GCP project + Supabase + Docker artifacts, leaving no orphans (even at $0). | **Open (final step).** The proving run's cleanup; run once the POC has been shown. | `Taskfile.yml` `destroy:cloudrun` |
 | 6 | **Native release pipelines** (signing, store accounts, notarization) | **Declaration, not queue** — per-application, filed against an app when one ships. Blocks nothing here. | "Two items are declarations" above |
 | 7 | **`task` `sources:`/`generates:` fingerprinting** | **Refused, not open** — it would defeat `sync:contracts`; now a STANDARDS "Orchestration" rule. Listed for completeness. | STANDARDS "Orchestration"; ADR-014 |
+
+### Item 4 in full — native deep-linking: what exists, and the plan for the rest
+
+Item 4 is the one open item with work already banked, so it is written out here rather than
+compressed into a table cell: half of it is built and tested, and the half that is left cannot be
+verified on this machine. Whoever picks it up should not have to rediscover either fact.
+
+**Scope note.** This is not part of the POC. The delivery order above still ends at "backend, web
+app (as Wasm), and admin panel, all deployed same-origin", and that is deliberate — native builds
+pull in item 6 (signing, provisioning, store accounts), which is a declaration filed against an
+application when one ships, not queued work.
+
+#### Already built, tested, and platform-neutral — do not rebuild it
+
+Every piece below takes or produces ordinary values (a `Uri`, a token string) and names no
+platform. It was built for the web flow and is reusable as-is.
+
+| Piece | Where | What it does |
+|---|---|---|
+| `ZenAuthLink.parse(Uri)` | `client/zen_identity` | Parses any landing URL into one of five outcomes: nothing, a session, a recovery session, a confirmation with no token, or a link the provider rejected. Takes a `Uri`, so it does not care how the URL arrived. |
+| `ZenAuthLink.current()` / `clearFromUrl()` | same | The web entry point (`Uri.base`) and the address-bar cleanup. Off the web both are inert: `Uri.base` is a file path, so `current()` finds no link and `clearFromUrl()` is a no-op stub. |
+| `POST /api/v1/auth/session` | `zen-identity` `AuthResource` | Exchanges link tokens for the httpOnly cookie session. `@PermitAll` by necessity, guarded by presenting the token to Supabase (`GET /auth/v1/user`) before any cookie is issued. |
+| `POST /api/v1/auth/password` | same | Sets a new password for the current session, using the session's own bearer. No user id is passed, so one session cannot change another's password. |
+| `IdentitySessionStore.consumeAuthLink(Uri)` | `client/zen_ui_identity` | **The native entry point.** Signs in from a link that arrives while the app is running, raises the recovery gate, and leaves the current session alone if the link is spent. |
+| `passwordResetRequiredProvider`, `SetPasswordScreen` | same | The recovery gate and its screen. The gate derives from the startup link and can also be raised by hand, which is what `consumeAuthLink` does. |
+| `RedirectTargets` + `auth.redirect-uris` | `zen-identity` | Exact-match allowlist for client-named return addresses. Empty by default. |
+| `RegisterRequest.redirect_uri`, `RestorePasswordRequest.redirect_uri` | `proto/zen/v1/identity.proto` | How a client asks for a return address. Empty means the server's default, which is what web sends. |
+| `zenAuthRedirectUri` (`ZEN_AUTH_REDIRECT_URI`) | `client/zen_identity` | The compile-time define a native build sets to name its scheme. |
+
+Covered by tests today: the parser's five outcomes; auto-login at startup; a spent link falling
+back to the login screen; the recovery gate raised at startup **and** by `consumeAuthLink`; a spent
+runtime link not signing the current user out; the exact-match allowlist against the shapes a
+prefix or host check would admit; a refused address sending no signup and no recovery email.
+
+#### What is left, in order
+
+1. **Generate the runners.** `cd apps/zen_demo/zen_demo_client && flutter create --platforms=android,ios,macos .`
+   There is no `android/`, `ios/`, or `macos/` directory today — only `web/` — which is why there is
+   currently no manifest to register anything in. Check what `flutter create` writes: it also
+   touches `pubspec.yaml` and may add files that belong in `.gitignore`.
+2. **Choose the link style, and prefer a custom scheme** (`zendemo://auth-callback`) for the first
+   pass. Universal Links / App Links need a verification file (`apple-app-site-association`,
+   `assetlinks.json`) served from the deployed domain, which means a backend route and a domain
+   commitment; a custom scheme needs neither and proves the whole path. Register it per platform:
+   an Android `intent-filter`, an iOS `CFBundleURLTypes` entry, a macOS URL type.
+3. **Deliver the URL to `consumeAuthLink`.** A deep-link plugin (declared as a normal dependency —
+   nothing reaches outside the repo) or a platform channel; the framework takes a `Uri` and does not
+   care which. **Handle both arrival shapes**, because they are genuinely different:
+   - *warm* — the app is running and the OS hands it a URL. This is what `consumeAuthLink` is for.
+   - *cold* — the tap **starts** the app. `IdentitySessionStore.build()` will not see it:
+     `ZenAuthLink.current()` reads `Uri.base`, which off the web is a file path. The initial link
+     must be fetched from the plugin and passed to `consumeAuthLink` too. Forgetting this is the
+     likely first bug, and it will look like "deep links only work when the app is already open".
+4. **Pair the two halves of the return address**, or nothing works and the failure is silent:
+   - the build define `--dart-define=ZEN_AUTH_REDIRECT_URI=zendemo://auth-callback`,
+   - the same string in the server's `AUTH_REDIRECT_URIS` (exact match; it is refused otherwise),
+   - and the same string in the Supabase project's Redirect URLs, or GoTrue drops it.
+5. **Verify on a simulator, then a device**, and cover all four paths, not just the happy one:
+   confirmation link, recovery link (must land on `SetPasswordScreen` and not the dashboard), an
+   expired link (must land on the login screen saying so), and cold start versus warm.
+   A simulator needs no signing; a physical device does, which is where item 6 starts.
+
+**Acceptance:** tapping a confirmation link on a native build opens the app already signed in;
+tapping a recovery link opens it on the set-a-new-password screen; both work whether or not the app
+was already running; and the web flow is unchanged. Until that has been seen on a real device or
+simulator, item 4 is not done — no amount of green unit tests substitutes, because the part that is
+left is precisely the part unit tests cannot reach.
 
 ## Explicitly out of scope
 

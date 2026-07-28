@@ -26,6 +26,7 @@ export 'src/screens/login_screen.dart';
 export 'src/screens/profile_screen.dart';
 export 'src/screens/register_screen.dart';
 export 'src/screens/restore_password_screen.dart';
+export 'src/screens/set_password_screen.dart';
 // State
 export 'src/state/identity_repository.dart';
 export 'src/state/identity_session_store.dart';

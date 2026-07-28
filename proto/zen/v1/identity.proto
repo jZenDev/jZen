@@ -48,11 +48,40 @@ message LoginRequest {
 message RegisterRequest {
   string email = 1;
   string password = 2;
+  // Optional. Where the confirmation email's link should return the user - the one thing a
+  // native build cannot inherit from the server, because a phone app is not reachable at the
+  // web app's URL. Empty means "the server's own default", which is what every web client
+  // sends. The server accepts it only if it EXACTLY matches one of its configured targets:
+  // the link carries a session token, so an unchecked value here would let anyone have that
+  // token mailed to a destination of their choosing.
+  string redirect_uri = 3;
 }
 
 // POST /api/v1/auth/restore-password request body. Triggers the Supabase recovery email.
 message RestorePasswordRequest {
   string email = 1;
+  // Optional, and validated the same way as RegisterRequest.redirect_uri. A recovery link is
+  // the more sensitive of the two: it can set a password.
+  string redirect_uri = 2;
+}
+
+// POST /api/v1/auth/session request body. Exchanges the tokens a Supabase email link
+// (confirmation, recovery, invite) delivered in the URL *fragment* for the ordinary httpOnly
+// cookie session. The fragment never reaches a server, so the client is the only party that
+// can read those tokens and must hand them back explicitly; the backend does not take them on
+// faith, it presents the access token to Supabase before issuing any cookie.
+message SessionExchangeRequest {
+  string access_token = 1;
+  // Optional. Supabase sends one with the confirmation/recovery redirect; without it the
+  // session simply cannot be refreshed silently and ends when the access token expires.
+  string refresh_token = 2;
+}
+
+// POST /api/v1/auth/password request body. Sets a new password for the identity in the
+// session cookie - the last step of password recovery, and the reason the recovery link has
+// to establish a session at all.
+message SetPasswordRequest {
+  string password = 1;
 }
 
 // logout, refresh, and the get-current-identity probe take no request body: logout and

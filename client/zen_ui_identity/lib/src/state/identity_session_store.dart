@@ -11,6 +11,38 @@ final identitySessionStoreProvider = AsyncNotifierProvider<IdentitySessionStore,
   IdentitySessionStore.new,
 );
 
+/// The auth link the app was opened with, parsed once and then fixed for the rest of the run.
+///
+/// It is a plain [Provider] on purpose: parsing is pure, and the URL it reads is destroyed
+/// moments later (the tokens are cleared from the address bar once consumed), so a value that
+/// could be recomputed would not survive its own source. First read wins, and
+/// [IdentitySessionStore] makes sure that first read happens before the URL is touched.
+final authLinkProvider = Provider<ZenAuthLink>((ref) => ZenAuthLink.current());
+
+/// Whether the user still has to choose a new password before the app lets them get on with
+/// anything — true from the moment a recovery link signs them in until they set one.
+///
+/// Recovery is the one flow where being signed in is not the end of it: the link's whole purpose
+/// is the password change, and a user dropped straight onto the dashboard would leave the account
+/// with the password they could not remember.
+final passwordResetRequiredProvider =
+    NotifierProvider<PasswordResetRequired, bool>(PasswordResetRequired.new);
+
+/// Notifier behind [passwordResetRequiredProvider].
+class PasswordResetRequired extends Notifier<bool> {
+  /// Derived from the link the app was opened with, so the startup path raises the gate without
+  /// anyone having to remember to. A link that arrives later — the native case — has to say so
+  /// itself through [require], because the URL the app started with knew nothing about it.
+  @override
+  bool build() => ref.watch(authLinkProvider).requiresNewPassword;
+
+  /// Raises the gate for a recovery link received while the app was already running.
+  void require() => state = true;
+
+  /// Lowers it: the new password has been accepted.
+  void complete() => state = false;
+}
+
 /// Manages the current user session state.
 class IdentitySessionStore extends AsyncNotifier<Identity?> {
   late final IdentityRepository _repository;
@@ -18,9 +50,59 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
   @override
   FutureOr<Identity?> build() async {
     _repository = ref.watch(identityRepositoryProvider);
-    // Initial load
+    // An email link is consumed BEFORE the ordinary session probe, and inside the same load the
+    // app already splashes on. That ordering is the whole feature: a user arriving from a
+    // confirmation link has no cookie yet, so probing first would answer "anonymous", show the
+    // login screen, and only then log them in behind it — a visible flicker into a screen they
+    // did not need. Exchanging first means the probe is unnecessary and the app renders once,
+    // already signed in.
+    final identity = await _consumeAuthLink();
+    if (identity != null) return identity;
+
     final result = await _repository.getCurrentIdentity();
     return result.fold((model) => model?.toDomain(), (failure) => null);
+  }
+
+  /// True when an auth link was present but could not be turned into a session (expired, already
+  /// used). Read by the login screen to explain why the user is looking at a login form after
+  /// following a link. It is a field on the store rather than another provider because writing to
+  /// one provider from inside another's initialization is exactly what Riverpod forbids.
+  bool linkRejected = false;
+
+  /// Exchanges an auth link's tokens for a session, if the app was opened with one. Returns the
+  /// signed-in identity, or null when there was no link or it could not be used — in which case
+  /// the caller falls back to the normal probe and the user signs in by hand.
+  Future<Identity?> _consumeAuthLink() async {
+    // Read through the provider, and do it before anything can clear the URL: the provider parses
+    // `Uri.base` on first read and caches it, so this read is what freezes the landing for the
+    // rest of the session. Parsing it again later would see the cleaned-up URL and conclude there
+    // had never been a link.
+    final link = ref.read(authLinkProvider);
+    if (link.kind == ZenAuthLinkKind.failed) {
+      linkRejected = true;
+      return null;
+    }
+    if (!link.hasSession) return null;
+
+    final result = await _repository.exchangeLinkSession(
+      accessToken: link.accessToken!,
+      refreshToken: link.refreshToken,
+    );
+    return result.fold(
+      (model) {
+        // The tokens are in httpOnly cookies now, so strip them from the address bar: they should
+        // not sit in browser history or in a URL the user might copy, and a reload should not
+        // replay a landing that has already happened.
+        ZenAuthLink.clearFromUrl();
+        return model.toDomain();
+      },
+      (failure) {
+        // A refused link is not an app error; it means "sign in normally". The URL is left alone
+        // because nothing was consumed.
+        linkRejected = true;
+        return null;
+      },
+    );
   }
 
   /// Signs in with email and password.
@@ -71,6 +153,54 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
   /// Restores password.
   Future<ZenResult<void>> restorePassword(String email) async {
     return _repository.restorePassword(email: email);
+  }
+
+  /// Signs the user in from a link that arrived while the app was already running, and reports
+  /// what the link was.
+  ///
+  /// The web never needs this: there, the link *is* how the app was opened, and [build] has
+  /// already consumed it. A native build is the opposite — the operating system hands a running
+  /// app the URL that was tapped, at any moment, and this is where that URL goes. Deep-link
+  /// registration is per-platform and belongs to the application; consuming the result is the
+  /// framework's job, and takes a plain [Uri] so it does not care which plugin or channel
+  /// delivered it.
+  ///
+  /// A recovery link raises the same gate it does at startup, so a running app is not left signed
+  /// in with a password its owner still cannot remember.
+  Future<ZenAuthLink> consumeAuthLink(Uri uri) async {
+    final link = ZenAuthLink.parse(uri);
+    if (!link.hasSession) return link;
+
+    final result = await _repository.exchangeLinkSession(
+      accessToken: link.accessToken!,
+      refreshToken: link.refreshToken,
+    );
+    return result.fold(
+      (model) {
+        state = AsyncValue.data(model.toDomain());
+        if (link.requiresNewPassword) {
+          // Unlike the startup path, this raises the gate by hand: passwordResetRequiredProvider
+          // derives from the URL the app was *opened* with, which said nothing about a link that
+          // arrived later.
+          ref.read(passwordResetRequiredProvider.notifier).require();
+        }
+        return link;
+      },
+      // A spent link must not sign anyone out: whoever is using the app now is not the person the
+      // stale link was for, and taking their session away would be a worse answer than ignoring it.
+      (failure) => const ZenAuthLink.rejected(),
+    );
+  }
+
+  /// Sets a new password for the current session, and — when this is the end of a recovery — takes
+  /// the gate down. The session is unchanged either way: the user stays signed in, as they already
+  /// were when they typed the new password.
+  Future<ZenResult<void>> setPassword(String password) async {
+    final result = await _repository.setPassword(password: password);
+    return result.fold((_) {
+      ref.read(passwordResetRequiredProvider.notifier).complete();
+      return const ZenResult<void>.ok(null);
+    }, ZenResult<void>.err);
   }
 
   /// Logs out.

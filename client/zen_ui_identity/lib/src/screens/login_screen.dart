@@ -9,6 +9,10 @@ import '../theme/identity_theme_extension.dart';
 import '../widgets/identity_button.dart';
 import '../widgets/identity_text_field.dart';
 
+/// What an email link left the user with by the time they reached the login screen. Only the two
+/// cases that need saying: the ones that end signed in never render this screen at all.
+enum _Landing { expired, confirmed }
+
 /// Screen for user login with email and password.
 class LoginScreen extends ConsumerStatefulWidget {
   final VoidCallback? onLoginSuccess;
@@ -48,16 +52,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   void initState() {
     super.initState();
-    // Supabase's confirmation link lands the user here via /auth/callback -> /?auth=email-confirmed.
-    // Greet them so they know the confirmation worked and it is now their turn to sign in.
-    // Uri.base carries the query on web; on other platforms it simply has no such parameter.
-    if (Uri.base.queryParameters['auth'] == 'email-confirmed') {
+    // Reaching the login screen after following an email link means the link did not sign the
+    // user in — either it carried no session to exchange, or the exchange was refused. Both are
+    // worth saying out loud: without a word here the user is looking at a login form with no idea
+    // whether their confirmation worked. The link itself was parsed and consumed during the
+    // session load, so this reads the outcome rather than the URL, which by now has been cleaned.
+    final link = ref.read(authLinkProvider);
+    final _Landing? landing = switch (link.kind) {
+      ZenAuthLinkKind.failed => _Landing.expired,
+      ZenAuthLinkKind.confirmedWithoutSession => _Landing.confirmed,
+      _ =>
+        ref.read(identitySessionStoreProvider.notifier).linkRejected ? _Landing.expired : null,
+    };
+
+    if (landing != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         final messages = IdentityLocalizations.of(context);
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(messages.emailConfirmedBanner)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              switch (landing) {
+                _Landing.expired => messages.linkExpiredBanner,
+                _Landing.confirmed => messages.emailConfirmedBanner,
+              },
+            ),
+          ),
+        );
       });
     }
   }

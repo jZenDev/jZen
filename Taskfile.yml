@@ -982,8 +982,22 @@ tasks:
 
   deploy:cloudrun:
     desc: Build native, push to Artifact Registry, deploy to Cloud Run
+    vars:
+      GIT_SHA:
+        sh: git rev-parse --short HEAD
+      # Untracked files count as dirty: a new uncommitted source file changes what the image
+      # contains just as much as a modified one does. Ignored files do not, which is what keeps
+      # the staged web bundle and target/ from tripping this on every deploy.
+      GIT_DIRTY:
+        sh: test -z "$(git status --porcelain)" || printf '%s' -dirty
     summary: |
       Cloud Run deploy. Notable choices:
+        - It refuses to run from a dirty working tree. The image tag IS the short commit
+          SHA, so it is only an identity while the commit fully describes the build;
+          deploying uncommitted changes makes a tag that names bits no commit can restore.
+          ALLOW_DIRTY=1 overrides deliberately and tags `<sha>-dirty` so the image never
+          impersonates the commit. That escape hatch is for a throwaway experiment only:
+          two dirty builds still collide with each other, by design and not by accident.
         - No `firebase deploy`: jZen serves Cloud Run directly with no Firebase Hosting
           edge, which is what lets it use normal cookie names and proactive auth.
         - --max-instances=1, --min-instances=0: a deliberate cost floor. The native-image
@@ -1110,6 +1124,29 @@ tasks:
         A missed tick is not a lost run: the next one sees a stale last_run_at and catches
         up. That is what makes GDPR retention a guarantee here rather than a hope.
     cmds:
+      # First, before any build: a dirty tree makes the image tag a lie. This is cmd #1 so it
+      # costs a second, not a native compile, to find out.
+      - |
+        set -eu
+        if [ -z "{{.GIT_DIRTY}}" ]; then
+          echo "Working tree clean; image will be tagged {{.GIT_SHA}}."
+          exit 0
+        fi
+        if [ -z "${ALLOW_DIRTY:-}" ]; then
+          echo "Refusing to deploy from a dirty working tree:"
+          git status --short
+          echo
+          echo "The image is tagged with the short commit SHA ({{.GIT_SHA}}). Building from"
+          echo "uncommitted changes would overwrite the image that tag already names, and a"
+          echo "later rollback to {{.GIT_SHA}} would then ship bits no commit describes."
+          echo
+          echo "Commit or stash, or override deliberately with:"
+          echo "    ALLOW_DIRTY=1 GCP_PROJECT={{.GCP_PROJECT}} task deploy:cloudrun"
+          echo "which tags {{.GIT_SHA}}-dirty so the image never claims to be the commit."
+          exit 1
+        fi
+        echo "ALLOW_DIRTY set: deploying uncommitted changes as {{.GIT_SHA}}{{.GIT_DIRTY}}."
+        git status --short
       # Stage both frontends so the native image serves them same-origin with the API:
       # the Flutter web app at / and the react-admin panel at /admin/.
       - task: build:web
@@ -1117,7 +1154,7 @@ tasks:
       - task: build:server:native
       - |
         set -e
-        IMAGE="{{.GCP_REGION}}-docker.pkg.dev/{{.GCP_PROJECT}}/{{.AR_REPO}}/{{.SERVICE_NAME}}:$(git rev-parse --short HEAD)"
+        IMAGE="{{.GCP_REGION}}-docker.pkg.dev/{{.GCP_PROJECT}}/{{.AR_REPO}}/{{.SERVICE_NAME}}:{{.GIT_SHA}}{{.GIT_DIRTY}}"
         docker buildx build --platform linux/amd64 \
           -f {{.DEMO_SERVER_DIR}}/src/main/docker/Dockerfile.native-micro \
           -t "$IMAGE" {{.DEMO_SERVER_DIR}}

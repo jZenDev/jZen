@@ -57,23 +57,54 @@ const RegisterRequest$json = {
   '2': [
     {'1': 'email', '3': 1, '4': 1, '5': 9, '10': 'email'},
     {'1': 'password', '3': 2, '4': 1, '5': 9, '10': 'password'},
+    {'1': 'redirect_uri', '3': 3, '4': 1, '5': 9, '10': 'redirectUri'},
   ],
 };
 
 /// Descriptor for `RegisterRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List registerRequestDescriptor = $convert.base64Decode(
     'Cg9SZWdpc3RlclJlcXVlc3QSFAoFZW1haWwYASABKAlSBWVtYWlsEhoKCHBhc3N3b3JkGAIgAS'
-    'gJUghwYXNzd29yZA==');
+    'gJUghwYXNzd29yZBIhCgxyZWRpcmVjdF91cmkYAyABKAlSC3JlZGlyZWN0VXJp');
 
 @$core.Deprecated('Use restorePasswordRequestDescriptor instead')
 const RestorePasswordRequest$json = {
   '1': 'RestorePasswordRequest',
   '2': [
     {'1': 'email', '3': 1, '4': 1, '5': 9, '10': 'email'},
+    {'1': 'redirect_uri', '3': 2, '4': 1, '5': 9, '10': 'redirectUri'},
   ],
 };
 
 /// Descriptor for `RestorePasswordRequest`. Decode as a `google.protobuf.DescriptorProto`.
 final $typed_data.Uint8List restorePasswordRequestDescriptor =
     $convert.base64Decode(
-        'ChZSZXN0b3JlUGFzc3dvcmRSZXF1ZXN0EhQKBWVtYWlsGAEgASgJUgVlbWFpbA==');
+        'ChZSZXN0b3JlUGFzc3dvcmRSZXF1ZXN0EhQKBWVtYWlsGAEgASgJUgVlbWFpbBIhCgxyZWRpcm'
+        'VjdF91cmkYAiABKAlSC3JlZGlyZWN0VXJp');
+
+@$core.Deprecated('Use sessionExchangeRequestDescriptor instead')
+const SessionExchangeRequest$json = {
+  '1': 'SessionExchangeRequest',
+  '2': [
+    {'1': 'access_token', '3': 1, '4': 1, '5': 9, '10': 'accessToken'},
+    {'1': 'refresh_token', '3': 2, '4': 1, '5': 9, '10': 'refreshToken'},
+  ],
+};
+
+/// Descriptor for `SessionExchangeRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List sessionExchangeRequestDescriptor =
+    $convert.base64Decode(
+        'ChZTZXNzaW9uRXhjaGFuZ2VSZXF1ZXN0EiEKDGFjY2Vzc190b2tlbhgBIAEoCVILYWNjZXNzVG'
+        '9rZW4SIwoNcmVmcmVzaF90b2tlbhgCIAEoCVIMcmVmcmVzaFRva2Vu');
+
+@$core.Deprecated('Use setPasswordRequestDescriptor instead')
+const SetPasswordRequest$json = {
+  '1': 'SetPasswordRequest',
+  '2': [
+    {'1': 'password', '3': 1, '4': 1, '5': 9, '10': 'password'},
+  ],
+};
+
+/// Descriptor for `SetPasswordRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List setPasswordRequestDescriptor =
+    $convert.base64Decode(
+        'ChJTZXRQYXNzd29yZFJlcXVlc3QSGgoIcGFzc3dvcmQYASABKAlSCHBhc3N3b3Jk');

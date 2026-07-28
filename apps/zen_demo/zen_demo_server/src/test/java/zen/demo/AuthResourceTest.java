@@ -7,15 +7,21 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.google.protobuf.util.JsonFormat;
 import zen.identity.auth.SessionService;
 import zen.identity.auth.SupabaseAuthClient;
+import zen.identity.auth.RedirectTargets;
 import zen.identity.auth.SupabaseSessionResponse;
 import zen.proto.v1.Identity;
 import zen.proto.v1.LoginRequest;
 import zen.proto.v1.RegisterRequest;
+import zen.proto.v1.RestorePasswordRequest;
+import zen.proto.v1.SessionExchangeRequest;
+import zen.proto.v1.SetPasswordRequest;
 import zen.proto.v1.ZenError;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
@@ -41,6 +47,9 @@ class AuthResourceTest {
   private static final String HEADER = "X-Zen-Transport";
 
   @InjectMock @RestClient SupabaseAuthClient authClient;
+
+  /** The real bean: the tests assert against whatever this deployment actually permits. */
+  @jakarta.inject.Inject RedirectTargets redirectTargets;
 
   /** An auto-confirm signup / login response: a session with a confirmed nested user. */
   private SupabaseSessionResponse session(String email) {
@@ -231,12 +240,217 @@ class AuthResourceTest {
   }
 
   @Test
+  void register_unconfiguredRedirect_isRefusedAndSendsNoEmail() throws Exception {
+    // The attack this closes: a stranger registers (or triggers recovery) naming a return address
+    // they control, and Supabase mails a link carrying a live session token straight to them.
+    RegisterRequest body =
+        RegisterRequest.newBuilder()
+            .setEmail("victim@example.com")
+            .setPassword("secret1")
+            .setRedirectUri("https://evil.example/steal")
+            .build();
+
+    Response resp =
+        given()
+            .header(HEADER, "json")
+            .contentType("application/json")
+            .body(JsonFormat.printer().print(body))
+            .when()
+            .post("/api/v1/auth/register")
+            .andReturn();
+
+    assertEquals(400, resp.statusCode());
+    ZenError.Builder err = ZenError.newBuilder();
+    JsonFormat.parser().merge(resp.getBody().asString(), err);
+    assertEquals("invalid_redirect", err.getCode());
+    // Rejected before Supabase is involved, so no email is sent and nothing is created.
+    verify(authClient, never()).signup(any(), any());
+    // The refused address is not echoed back into the response.
+    assertFalse(resp.getBody().asString().contains("evil.example"));
+  }
+
+  @Test
+  void register_noRedirect_usesTheServersOwnDefault() throws Exception {
+    when(authClient.signup(any(), any())).thenReturn(session("default@example.com"));
+
+    RegisterRequest body =
+        RegisterRequest.newBuilder()
+            .setEmail("default@example.com")
+            .setPassword("secret1")
+            .build();
+
+    given()
+        .header(HEADER, "json")
+        .contentType("application/json")
+        .body(JsonFormat.printer().print(body))
+        .when()
+        .post("/api/v1/auth/register")
+        .then()
+        .statusCode(200);
+
+    // A web client names nothing and gets the configured callback — the behaviour that existed
+    // before redirect targets were configurable, unchanged.
+    verify(authClient).signup(any(), eq(redirectTargets.allowed().get(0)));
+  }
+
+  @Test
+  void register_configuredRedirect_isPassedThrough() throws Exception {
+    when(authClient.signup(any(), any())).thenReturn(session("native@example.com"));
+    String configured = redirectTargets.allowed().get(0);
+
+    RegisterRequest body =
+        RegisterRequest.newBuilder()
+            .setEmail("native@example.com")
+            .setPassword("secret1")
+            .setRedirectUri(configured)
+            .build();
+
+    given()
+        .header(HEADER, "json")
+        .contentType("application/json")
+        .body(JsonFormat.printer().print(body))
+        .when()
+        .post("/api/v1/auth/register")
+        .then()
+        .statusCode(200);
+
+    // Naming a permitted target explicitly is allowed: it is what a native build does, and the
+    // default is a member of its own allowlist.
+    verify(authClient).signup(any(), eq(configured));
+  }
+
+  @Test
+  void restorePassword_unconfiguredRedirect_isRefused() throws Exception {
+    // Sharper than registration: a recovery link can set a password, so a stranger's return
+    // address would be an account takeover rather than a leak.
+    RestorePasswordRequest body =
+        RestorePasswordRequest.newBuilder()
+            .setEmail("victim@example.com")
+            .setRedirectUri("zen-evil://callback")
+            .build();
+
+    given()
+        .header(HEADER, "json")
+        .contentType("application/json")
+        .body(JsonFormat.printer().print(body))
+        .when()
+        .post("/api/v1/auth/restore-password")
+        .then()
+        .statusCode(400);
+
+    verify(authClient, never()).recover(any(), any());
+  }
+
+  @Test
   void authCallback_landsOnAppRoot() {
     // The Supabase email-confirmation link redirects here; it must not 404, it must send the
     // browser to the app so the confirmed user can sign in.
     Response resp = given().redirects().follow(false).when().get("/auth/callback").andReturn();
     assertEquals(303, resp.statusCode());
     assertEquals("/?auth=email-confirmed", resp.getHeader("Location"));
+  }
+
+  @Test
+  void sessionExchange_validLinkToken_signsInAndSetsCookies() throws Exception {
+    // The tokens an email link left in the URL fragment, handed back by the client. Supabase
+    // vouches for the access token; only then does a session exist.
+    when(authClient.getUser("Bearer link-jwt"))
+        .thenReturn(
+            new SupabaseSessionResponse.UserPayload(
+                UUID.randomUUID().toString(),
+                "confirmed@example.com",
+                "authenticated",
+                "2024-01-01T00:00:00Z",
+                Map.of()));
+
+    SessionExchangeRequest body =
+        SessionExchangeRequest.newBuilder()
+            .setAccessToken("link-jwt")
+            .setRefreshToken("link-refresh")
+            .build();
+
+    Response resp =
+        given()
+            .header(HEADER, "json")
+            .contentType("application/json")
+            .body(JsonFormat.printer().print(body))
+            .when()
+            .post("/api/v1/auth/session")
+            .andReturn();
+
+    assertEquals(200, resp.statusCode());
+    Identity.Builder parsed = Identity.newBuilder();
+    JsonFormat.parser().merge(resp.getBody().asString(), parsed);
+    assertFalse(parsed.getId().isEmpty(), "the confirmed user gets a profile row like any login");
+    assertEquals(List.of("user"), parsed.getRolesList());
+
+    // The whole point: the token stops being a URL parameter and becomes an httpOnly cookie.
+    List<String> setCookies = resp.getHeaders().getValues("Set-Cookie");
+    assertTrue(
+        setCookies.stream().anyMatch(c -> c.startsWith(SessionService.ACCESS_COOKIE + "=link-jwt")));
+    assertTrue(
+        setCookies.stream()
+            .anyMatch(c -> c.startsWith(SessionService.REFRESH_COOKIE + "=link-refresh")));
+    assertTrue(
+        setCookies.stream()
+            .anyMatch(c -> c.startsWith(SessionService.ACCESS_COOKIE + "=") && c.contains("HttpOnly")),
+        "the exchanged token must not be readable by page scripts");
+  }
+
+  @Test
+  void sessionExchange_rejectedToken_returns401WithNoSession() throws Exception {
+    // A forged or expired token: Supabase refuses it, so no cookie is issued. This is what stops
+    // the endpoint being an open door despite being @PermitAll.
+    when(authClient.getUser(any())).thenThrow(new WebApplicationException(401));
+
+    SessionExchangeRequest body =
+        SessionExchangeRequest.newBuilder().setAccessToken("forged").build();
+
+    Response resp =
+        given()
+            .header(HEADER, "json")
+            .contentType("application/json")
+            .body(JsonFormat.printer().print(body))
+            .when()
+            .post("/api/v1/auth/session")
+            .andReturn();
+
+    assertEquals(401, resp.statusCode());
+    assertTrue(
+        resp.getHeaders().getValues("Set-Cookie").stream()
+            .noneMatch(c -> c.startsWith(SessionService.ACCESS_COOKIE + "=forged")),
+        "a refused token must never reach a cookie");
+    ZenError.Builder err = ZenError.newBuilder();
+    JsonFormat.parser().merge(resp.getBody().asString(), err);
+    assertFalse(err.getMessage().toLowerCase().contains("supabase"));
+  }
+
+  @Test
+  void sessionExchange_missingToken_returns401() throws Exception {
+    SessionExchangeRequest body = SessionExchangeRequest.newBuilder().build();
+
+    given()
+        .header(HEADER, "json")
+        .contentType("application/json")
+        .body(JsonFormat.printer().print(body))
+        .when()
+        .post("/api/v1/auth/session")
+        .then()
+        .statusCode(401);
+  }
+
+  @Test
+  void setPassword_withoutSession_is401() throws Exception {
+    SetPasswordRequest body = SetPasswordRequest.newBuilder().setPassword("a-new-secret").build();
+
+    given()
+        .header(HEADER, "json")
+        .contentType("application/json")
+        .body(JsonFormat.printer().print(body))
+        .when()
+        .post("/api/v1/auth/password")
+        .then()
+        .statusCode(401);
   }
 
   @Test

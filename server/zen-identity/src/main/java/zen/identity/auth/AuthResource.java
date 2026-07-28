@@ -8,6 +8,9 @@ import zen.proto.v1.Identity;
 import zen.proto.v1.LoginRequest;
 import zen.proto.v1.RegisterRequest;
 import zen.proto.v1.RestorePasswordRequest;
+import zen.proto.v1.SessionExchangeRequest;
+import zen.proto.v1.SetPasswordRequest;
+import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
@@ -112,7 +115,11 @@ public class AuthResource {
      * of the proto leaves the wire contract untouched.
      */
     IdentityService.Session session =
-        identityService.register(request.getEmail(), request.getPassword(), acceptLanguage);
+        identityService.register(
+            request.getEmail(),
+            request.getPassword(),
+            acceptLanguage,
+            request.getRedirectUri());
     /*
      * Whether registration also signs the user in depends on the Supabase project's email settings.
      * Auto-confirm returns a session (access token) -> 200 with session cookies, like login. Email
@@ -137,7 +144,59 @@ public class AuthResource {
   @RequestBody(content = @Content(schema = @Schema(ref = "RestorePasswordRequest")))
   @APIResponse(responseCode = ZenStatus.NO_CONTENT, description = "Recovery email dispatched if the address exists")
   public Response restorePassword(RestorePasswordRequest request) {
-    identityService.restorePassword(request.getEmail());
+    identityService.restorePassword(request.getEmail(), request.getRedirectUri());
+    return Response.noContent().build();
+  }
+
+  @POST
+  @Path("/session")
+  @PermitAll
+  @Consumes({MediaType.APPLICATION_JSON, PROTOBUF})
+  @Produces({MediaType.APPLICATION_JSON, PROTOBUF})
+  @Operation(summary = "Exchange the tokens from a Supabase email link for a cookie session")
+  @RequestBody(content = @Content(schema = @Schema(ref = "SessionExchangeRequest")))
+  @APIResponse(
+      responseCode = ZenStatus.OK,
+      description = "Link accepted; session cookies set",
+      content = {
+        @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(ref = "Identity")),
+        @Content(mediaType = PROTOBUF, schema = @Schema(ref = "Identity"))
+      })
+  @APIResponse(responseCode = ZenStatus.UNAUTHORIZED, description = "The link is invalid or expired")
+  public Response exchangeSession(SessionExchangeRequest request) {
+    /*
+     * PermitAll by necessity: the caller has no session yet - acquiring one is the point. The
+     * endpoint is not therefore unguarded. The token it receives is validated against Supabase
+     * before any cookie is issued (see IdentityService.exchangeLinkTokens), so possession of a
+     * genuine, live Supabase token is the credential, exactly as possession of the right password
+     * is on /login. What this endpoint deliberately does NOT do is hand the token back out: it goes
+     * into an httpOnly cookie, so a link opened once leaves no token readable by page scripts.
+     */
+    IdentityService.Session session =
+        identityService.exchangeLinkTokens(request.getAccessToken(), request.getRefreshToken());
+    return sessionResponse(session);
+  }
+
+  @POST
+  @Path("/password")
+  @Authenticated
+  @Consumes({MediaType.APPLICATION_JSON, PROTOBUF})
+  @Operation(summary = "Set a new password for the current session")
+  @RequestBody(content = @Content(schema = @Schema(ref = "SetPasswordRequest")))
+  @APIResponse(responseCode = ZenStatus.NO_CONTENT, description = "Password changed")
+  @APIResponse(responseCode = ZenStatus.UNAUTHORIZED, description = "No active session")
+  public Response setPassword(
+      SetPasswordRequest request, @CookieParam(SessionService.ACCESS_COOKIE) String accessToken) {
+    /*
+     * @Authenticated is what proves the session: SmallRye JWT has verified the cookie's signature
+     * and expiry before this method runs. The raw cookie is read again here only because Supabase
+     * wants the original bearer token, which the parsed SecurityIdentity no longer carries.
+     *
+     * This is the endpoint password recovery finishes on. It is not recovery-specific, though -
+     * an ordinary signed-in user changing their password uses the same call, which is why it takes
+     * no recovery token and asks nothing about how the session was obtained.
+     */
+    identityService.setPassword(accessToken, request.getPassword());
     return Response.noContent().build();
   }
 

@@ -151,6 +151,20 @@ abstract class IdentityRepository {
   /// Triggers a password recovery flow.
   Future<ZenResult<void>> restorePassword({required String email});
 
+  /// Exchanges the tokens a confirmation or recovery email link delivered for a real session.
+  ///
+  /// The tokens arrive in the URL fragment, which no server can see, so handing them back is the
+  /// client's job — see `ZenAuthLink`. The implementation must not trust them itself: it posts
+  /// them and lets the backend validate them with the identity provider before a session exists.
+  Future<ZenResult<IdentityContract>> exchangeLinkSession({
+    required String accessToken,
+    String? refreshToken,
+  });
+
+  /// Sets a new password for the current session — the last step of password recovery, and the
+  /// same call an already signed-in user makes to change their password.
+  Future<ZenResult<void>> setPassword({required String password});
+
   /// Terminates the current session.
   Future<ZenResult<void>> logout();
 }

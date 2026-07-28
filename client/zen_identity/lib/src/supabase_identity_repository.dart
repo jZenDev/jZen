@@ -28,6 +28,8 @@ class SupabaseIdentityRepository implements IdentityRepository {
   static const String _login = '/api/v1/auth/login';
   static const String _register = '/api/v1/auth/register';
   static const String _restorePassword = '/api/v1/auth/restore-password';
+  static const String _session = '/api/v1/auth/session';
+  static const String _password = '/api/v1/auth/password';
   static const String _logout = '/api/v1/auth/logout';
   static const String _identity = '/api/v1/auth/identity';
 
@@ -61,7 +63,14 @@ class SupabaseIdentityRepository implements IdentityRepository {
     return _authenticate(
       email: email,
       path: _register,
-      body: pb.RegisterRequest(email: email, password: password),
+      // The build says where its confirmation link should come back to. Empty (every web build)
+      // leaves the choice to the server, which is the only sensible default: a web client is
+      // reachable at the origin that served it, and the server already knows that address.
+      body: pb.RegisterRequest(
+        email: email,
+        password: password,
+        redirectUri: zenAuthRedirectUri,
+      ),
     );
   }
 
@@ -73,7 +82,40 @@ class SupabaseIdentityRepository implements IdentityRepository {
     final result = await _client.post(
       pb.Identity.new,
       _restorePassword,
-      body: pb.RestorePasswordRequest(email: email),
+      body: pb.RestorePasswordRequest(email: email, redirectUri: zenAuthRedirectUri),
+    );
+    return result.fold((_) => const ZenResult<void>.ok(null), ZenResult<void>.err);
+  }
+
+  @override
+  Future<ZenResult<IdentityContract>> exchangeLinkSession({
+    required String accessToken,
+    String? refreshToken,
+  }) async {
+    // No local inspection of the token: this repository does not decode it, check its expiry, or
+    // decide whether it looks plausible. It came from a URL, so only the backend's check against
+    // the identity provider means anything, and a second opinion here would only be one more place
+    // to be wrong.
+    final result = await _client.post(
+      pb.Identity.new,
+      _session,
+      body: pb.SessionExchangeRequest(
+        accessToken: accessToken,
+        refreshToken: refreshToken ?? '',
+      ),
+    );
+    return result.fold(
+      (identity) => ZenResult.ok(_toContract(identity)),
+      (error) => ZenResult.err(error),
+    );
+  }
+
+  @override
+  Future<ZenResult<void>> setPassword({required String password}) async {
+    final result = await _client.post(
+      pb.Identity.new,
+      _password,
+      body: pb.SetPasswordRequest(password: password),
     );
     return result.fold((_) => const ZenResult<void>.ok(null), ZenResult<void>.err);
   }

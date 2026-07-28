@@ -15,6 +15,151 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-019 — A client may name where its email link returns to, and the server permits it only by exact match
+
+**Date:** 2026-07-28. **Status:** accepted. **Follows:** ADR-018.
+
+### Decision
+
+One backend serves every client an application has. A web client is reachable at the origin that
+served it — which is exactly the address the server already holds in `auth.redirect-uri` — but a
+native build is reachable only through its own scheme, and no server-side default can name it. So
+the client may **ask** for a return address, and the server decides:
+
+- `RegisterRequest.redirect_uri` and `RestorePasswordRequest.redirect_uri` (both optional). Empty
+  means "the server's default", which is what every web build sends.
+- `RedirectTargets` (`zen-identity`) resolves the request against `auth.redirect-uri` plus the
+  comma-separated `auth.redirect-uris`, **empty by default**. The default is a member of its own
+  allowlist, so naming it explicitly is permitted.
+- **Exact match, and nothing else.** Not a prefix, not a host check. `zen://auth` as a prefix also
+  admits `zen://auth.evil.example`; a host check on `app.example.com` says nothing about the path
+  a token lands on. Exact match has no such edges — a new client is one configuration entry, added
+  by a person, once.
+- A rejection is a 400 `invalid_redirect` that **does not echo the refused value**: it is untrusted
+  text on its way into logs and a client-facing message, and the caller already knows what it sent.
+- The check runs **before** Supabase is called, so a refused address sends no email at all.
+- Client side, the request is compile-time: `ZEN_AUTH_REDIRECT_URI` (empty by default), matching
+  every other client setting. `IdentitySessionStore.consumeAuthLink(Uri)` handles a link that
+  arrives while the app is already running — the native case, where the OS hands a URL to a live
+  app rather than starting it with one.
+
+**Why the allowlist and not simply trusting the client:** the email Supabase sends carries a live
+session token in the link's fragment. A return address taken on trust would let anyone request a
+token for *someone else's* account and have it delivered to a destination they control — the victim
+need only click a genuine email from their real provider. For recovery it is worse than a leak: a
+recovery link can set a password, so it is an account takeover. This is the single most dangerous
+input in the auth surface, which is why it gets the strictest possible check.
+
+### What this supersedes, and why
+
+- **`auth.redirect-uri` as the only return address** (`application.properties`; ADR-018's
+  description of the flow) → **refined, not replaced.** *Why:* it remains the default and the only
+  address in use until an application configures another. What changes is that it is no longer the
+  *sole possibility*, because a native client cannot be served by it.
+- **"what is left is per-platform link registration and handing the received URL to
+  `ZenAuthLink.parse`"** (ROADMAP item 4, as written after ADR-018) → **corrected.** *Why:* that
+  under-described the work. Handing over the URL needed an entry point that did not exist
+  (`consumeAuthLink`), and the return address needed a server-side decision that did not exist
+  either. Both are now built; what remains is genuinely per-platform.
+
+### Consequence
+
+- `zen_demo_client` **has no native runners** (`web/` only), so the remaining half of ROADMAP item 4
+  has nowhere to be configured yet. The steps are recorded in that app's README, and are explicitly
+  **not claimed as done**: they cannot be verified without a simulator or a device.
+- New config: `auth.redirect-uris`, empty by default. Each entry must also be registered in the
+  Supabase project's Redirect URLs, or GoTrue drops it — both halves or neither.
+- **Verified green:** `task test:apps:server` — 66 tests. New `IdentityServiceTest` asserts the
+  exact-match rule against the shapes a prefix or host check would have admitted
+  (`…/../evil`, `….evil.example`, `…@evil.example`), that a rejection does not echo the address,
+  and that a password change is made with the session's own bearer and no user id.
+  `AuthResourceTest` asserts a refused address returns 400 with **no signup and no recovery email
+  sent**. `task test:client` green (new: the return address travels on both email-sending calls; a
+  link received while running signs in and raises the recovery gate; a spent one does not sign the
+  current user out).
+- One test was **removed rather than fixed**: an HTTP-level authenticated password change that
+  paired `@TestSecurity` with a fabricated session cookie. It passed alone and failed after any
+  test that set real cookies — a statement about how convincing the fake was, not about the code.
+  Its two claims are now split between `AuthResourceTest` (an unauthenticated caller is refused)
+  and `IdentityServiceTest` (the bearer used is the session's own).
+
+---
+
+## ADR-018 — Email links sign the user in: the implicit fragment flow, exchanged for a cookie, and not PKCE
+
+**Date:** 2026-07-28. **Status:** accepted. **Follows:** ADR-007, ADR-016.
+
+### Decision
+
+Following a Supabase email link — confirmation, recovery, or invite — now **ends signed in**,
+instead of returning the user to a login form. The mechanism is the **implicit fragment flow**:
+
+- **`/auth/callback` still only redirects.** Supabase puts the session it minted in the URL
+  *fragment* (`#access_token=…&type=…`), which by definition never reaches a server. The endpoint's
+  job is to bounce the browser to the app with the fragment intact, and it stays that way.
+- **The client is the only party that can read the fragment**, so it does. `ZenAuthLink`
+  (`zen_identity`, pure Dart) parses the landing URL into one of five outcomes: nothing, a session,
+  a recovery session, a confirmation with no token, or a link the provider rejected.
+- **`POST /api/v1/auth/session` exchanges those tokens for the ordinary httpOnly cookie session.**
+  It is `@PermitAll` by necessity — the caller has no session yet — and is *not* thereby unguarded:
+  the access token is presented to Supabase (`GET /auth/v1/user`) and a cookie is issued only if
+  Supabase vouches for it. Possession of a live provider token is the credential, exactly as
+  possession of the right password is on `/login`.
+- **The exchange happens before the app's first frame**, inside the session load that already
+  splashes: `IdentitySessionStore.build()` consumes the link *before* probing for a cookie. Probing
+  first would answer "anonymous", render the login screen, and only then sign the user in behind it.
+- **Recovery signs in and then holds a gate up.** Being signed in is not the end of a recovery: the
+  link exists to change a password nobody remembers. `passwordResetRequiredProvider` stays true
+  until `POST /api/v1/auth/password` (authenticated; changes the password of whoever the session's
+  own token belongs to) succeeds, and the app routes to `SetPasswordScreen` while it is.
+- **Consumed tokens are erased from the URL** (`history.replaceState`, web-only by conditional
+  import on `dart.library.js_interop`), so they do not linger in history or in a copied link.
+
+**PKCE was considered and rejected.** Its `code_verifier` must be created by whoever *starts* the
+sign-up and held until the link is followed. In jZen sign-up is a backend call
+(`IdentityService.register` → GoTrue `/signup`), so the verifier would have to be minted on one
+request, stored server-side, and matched to a different browser on a later one — inventing
+cross-request state on a deployment whose whole premise is that in-process state is fine *because*
+there is one instance. The implicit flow needs no such state, and the token it exposes is exposed to
+the browser either way.
+
+### What this supersedes, and why
+
+- **"Not yet done, on purpose: consuming the fragment token to sign the user in automatically after
+  they confirm … or Supabase's PKCE flow with a server-side code exchange"** (`AuthCallbackResource`
+  javadoc; ROADMAP open-backlog item 3) → **done, and the alternative closed.** *Why:* the deferral
+  was about sequencing, not doubt; and the parenthesised PKCE option is now ruled out for the
+  reason above, so that it is not reopened as an equivalent choice later.
+- **"the user confirms via Supabase's email link (which lands on `/auth/callback` →
+  `/?auth=email-confirmed`, so the login screen greets them), then logs in"** (ROADMAP, "Defects
+  surfaced by the first real deployment") → **refined.** *Why:* the greeting is now the *fallback*
+  for a landing with no usable token, not the normal path. The normal path renders the app already
+  signed in and never shows the login screen at all.
+- **Item 4, native deep-linking** (ROADMAP open backlog) → **narrowed, not resolved.** *Why:* the
+  consumption half is platform-neutral — `ZenAuthLink.parse` takes a `Uri` — so what remains is
+  per-platform link registration. Off the web `Uri.base` is a file path, the parser finds no link,
+  and the flow degrades to today's "confirm in a browser, then sign in" rather than breaking.
+
+### Consequence
+
+- New contract: `SessionExchangeRequest` and `SetPasswordRequest` in `proto/zen/v1/identity.proto`,
+  with their OpenAPI component schemas in the app's static `META-INF/openapi.yaml`. Generated Dart
+  messages and the admin `schema.generated.ts` regenerated through `task sync:contracts`.
+- New framework surface, inherited by every jZen app: `ZenAuthLink` + `authLinkProvider`,
+  `passwordResetRequiredProvider`, and `SetPasswordScreen`. An app decides only *where* the gate
+  sits in its routing — `zen_demo` puts it ahead of everything, which is the intended shape.
+- A token that reaches jZen from a URL is never trusted locally. Signature-checking it here would
+  accept one Supabase had already revoked, so the provider is asked. That is one outbound call on a
+  rare path, and it is the reason `@PermitAll` on `/session` is safe.
+- **Verified green:** `task test:apps:server` — 59 tests, including a valid exchange setting
+  httpOnly cookies, a forged token refused with no cookie issued, a missing token, `setPassword`
+  updating with the session's own bearer, and `setPassword` rejected without a session.
+  `task test:client` passes every workspace member (new: 7 `ZenAuthLink` parser cases, and 3 store
+  cases covering auto-login, a spent link falling back to the probe, and the recovery gate).
+  `task test:admin` typechecks. `flutter analyze` clean in `zen_ui_identity` and `zen_demo_client`.
+
+---
+
 ## ADR-017 — RBAC: the framework owns the mechanism, the application owns the policy
 
 **Date:** 2026-07-25. **Status:** accepted. **Follows:** ADR-001, ADR-005, ADR-010.

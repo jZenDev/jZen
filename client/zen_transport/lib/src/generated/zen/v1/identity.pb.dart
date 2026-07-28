@@ -215,10 +215,12 @@ class RegisterRequest extends $pb.GeneratedMessage {
   factory RegisterRequest({
     $core.String? email,
     $core.String? password,
+    $core.String? redirectUri,
   }) {
     final result = create();
     if (email != null) result.email = email;
     if (password != null) result.password = password;
+    if (redirectUri != null) result.redirectUri = redirectUri;
     return result;
   }
 
@@ -237,6 +239,7 @@ class RegisterRequest extends $pb.GeneratedMessage {
       createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'email')
     ..aOS(2, _omitFieldNames ? '' : 'password')
+    ..aOS(3, _omitFieldNames ? '' : 'redirectUri')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -275,15 +278,32 @@ class RegisterRequest extends $pb.GeneratedMessage {
   $core.bool hasPassword() => $_has(1);
   @$pb.TagNumber(2)
   void clearPassword() => $_clearField(2);
+
+  /// Optional. Where the confirmation email's link should return the user - the one thing a
+  /// native build cannot inherit from the server, because a phone app is not reachable at the
+  /// web app's URL. Empty means "the server's own default", which is what every web client
+  /// sends. The server accepts it only if it EXACTLY matches one of its configured targets:
+  /// the link carries a session token, so an unchecked value here would let anyone have that
+  /// token mailed to a destination of their choosing.
+  @$pb.TagNumber(3)
+  $core.String get redirectUri => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set redirectUri($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasRedirectUri() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearRedirectUri() => $_clearField(3);
 }
 
 /// POST /api/v1/auth/restore-password request body. Triggers the Supabase recovery email.
 class RestorePasswordRequest extends $pb.GeneratedMessage {
   factory RestorePasswordRequest({
     $core.String? email,
+    $core.String? redirectUri,
   }) {
     final result = create();
     if (email != null) result.email = email;
+    if (redirectUri != null) result.redirectUri = redirectUri;
     return result;
   }
 
@@ -301,6 +321,7 @@ class RestorePasswordRequest extends $pb.GeneratedMessage {
       package: const $pb.PackageName(_omitMessageNames ? '' : 'zen.v1'),
       createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'email')
+    ..aOS(2, _omitFieldNames ? '' : 'redirectUri')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -331,6 +352,148 @@ class RestorePasswordRequest extends $pb.GeneratedMessage {
   $core.bool hasEmail() => $_has(0);
   @$pb.TagNumber(1)
   void clearEmail() => $_clearField(1);
+
+  /// Optional, and validated the same way as RegisterRequest.redirect_uri. A recovery link is
+  /// the more sensitive of the two: it can set a password.
+  @$pb.TagNumber(2)
+  $core.String get redirectUri => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set redirectUri($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasRedirectUri() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearRedirectUri() => $_clearField(2);
+}
+
+/// POST /api/v1/auth/session request body. Exchanges the tokens a Supabase email link
+/// (confirmation, recovery, invite) delivered in the URL *fragment* for the ordinary httpOnly
+/// cookie session. The fragment never reaches a server, so the client is the only party that
+/// can read those tokens and must hand them back explicitly; the backend does not take them on
+/// faith, it presents the access token to Supabase before issuing any cookie.
+class SessionExchangeRequest extends $pb.GeneratedMessage {
+  factory SessionExchangeRequest({
+    $core.String? accessToken,
+    $core.String? refreshToken,
+  }) {
+    final result = create();
+    if (accessToken != null) result.accessToken = accessToken;
+    if (refreshToken != null) result.refreshToken = refreshToken;
+    return result;
+  }
+
+  SessionExchangeRequest._();
+
+  factory SessionExchangeRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SessionExchangeRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SessionExchangeRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'zen.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'accessToken')
+    ..aOS(2, _omitFieldNames ? '' : 'refreshToken')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SessionExchangeRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SessionExchangeRequest copyWith(
+          void Function(SessionExchangeRequest) updates) =>
+      super.copyWith((message) => updates(message as SessionExchangeRequest))
+          as SessionExchangeRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SessionExchangeRequest create() => SessionExchangeRequest._();
+  @$core.override
+  SessionExchangeRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SessionExchangeRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SessionExchangeRequest>(create);
+  static SessionExchangeRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get accessToken => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set accessToken($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasAccessToken() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearAccessToken() => $_clearField(1);
+
+  /// Optional. Supabase sends one with the confirmation/recovery redirect; without it the
+  /// session simply cannot be refreshed silently and ends when the access token expires.
+  @$pb.TagNumber(2)
+  $core.String get refreshToken => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set refreshToken($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasRefreshToken() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearRefreshToken() => $_clearField(2);
+}
+
+/// POST /api/v1/auth/password request body. Sets a new password for the identity in the
+/// session cookie - the last step of password recovery, and the reason the recovery link has
+/// to establish a session at all.
+class SetPasswordRequest extends $pb.GeneratedMessage {
+  factory SetPasswordRequest({
+    $core.String? password,
+  }) {
+    final result = create();
+    if (password != null) result.password = password;
+    return result;
+  }
+
+  SetPasswordRequest._();
+
+  factory SetPasswordRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SetPasswordRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SetPasswordRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'zen.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'password')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SetPasswordRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SetPasswordRequest copyWith(void Function(SetPasswordRequest) updates) =>
+      super.copyWith((message) => updates(message as SetPasswordRequest))
+          as SetPasswordRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SetPasswordRequest create() => SetPasswordRequest._();
+  @$core.override
+  SetPasswordRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SetPasswordRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SetPasswordRequest>(create);
+  static SetPasswordRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get password => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set password($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasPassword() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearPassword() => $_clearField(1);
 }
 
 const $core.bool _omitFieldNames =

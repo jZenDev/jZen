@@ -15,6 +15,70 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-020 — The POC is done and the MVP is not: the order after the POC, and three triggers that move
+
+**Date:** 2026-07-28. **Status:** accepted. **Follows:** ADR-015.
+
+### Decision
+
+The POC named in ADR-015 is delivered and live (backend, Wasm web app, admin panel, same-origin,
+image `bc488f0`). The next goal is an **MVP** — the product actually usable, with mobile and
+desktop clients beside the web one — and it runs on the same infrastructure. Three consequences,
+each of which contradicts something already written down:
+
+1. **Teardown waits for the MVP, not the POC.** Two conditions, both required: nothing is being
+   tested on the environment, and no data on it still matters. Once real users exist the second
+   condition acquires legal weight a POC teardown never had.
+2. **Publishing waits for the second product.** Not for CI, and not for a date.
+3. **Native release pipelines leave the critical path.** "Mobile and desktop" here means a
+   simulator, an emulator, and a local macOS run — none of which needs a paid developer account or
+   a signing identity. Item 6 begins only if something is distributed to another machine.
+
+### What this supersedes, and why
+
+- **"Run `destroy:cloudrun` after the POC … run once the POC has been shown"** (ROADMAP, open
+  backlog item 5) → **trigger reversed.** *Why:* the MVP is built on the same stack, so tearing
+  down after the POC demolishes what the next milestone runs on. The reason teardown was scheduled
+  early — that a proving run should not outlive its proof — still holds; it is simply the MVP that
+  is now the proof. Worth stating plainly because the inverse is tempting and wrong: **teardown is
+  never a prerequisite to testing.** Testing needs the environment teardown removes. What makes
+  teardown safe when it does come is that the environment is reproducible from this repo — Flyway
+  owns the schema, `deploy:cloudrun`'s summary documents the one-time setup and every secret — and
+  what is *not* reproducible is data and the Supabase project ref.
+- **"Publish the packages … Also gated on 6 [CI]"** (ROADMAP, delivery order item 7; backlog
+  item 1) → **regated.** *Why:* CI was never the real constraint. While the framework's only
+  consumer is a reference app written by its own authors, an awkward API is fixed in one commit
+  across both sides and never felt — so `zen_demo` cannot falsify the framework/application
+  boundary that ADR-001 draws. A second, different product can, and will want the API changed.
+  Publishing first freezes an API about to be bent, and it is the only irreversible step in the
+  plan: a published version is retractable, never removable. The one condition that would force it
+  earlier is a consumer in a *different repository*, since path dependencies do not reach across
+  repos.
+- **"Native release pipelines … filed against an app when one ships"** (ROADMAP, "Two items are
+  declarations") → **refined, and moved further out.** *Why:* the wording implied that a native
+  client implies the pipeline. It does not. Running on a simulator or locally needs nothing paid;
+  only distribution does. An earlier reading of this — that a mobile MVP means starting developer
+  enrolment now — was wrong and is corrected here rather than left in the conversation.
+
+### Consequence
+
+- The post-POC order, recorded in ROADMAP: MVP scope written down → native deep-linking (backlog
+  item 4's per-platform half, on simulator/local) → MVP live and tested → **second product** →
+  publish → native pipelines *if ever* → teardown last.
+- Backlog item 4 is verifiable **without a paid account and without email**: a token from one real
+  confirmation mail can be replayed through `simctl openurl` / `adb` / `open`, which also confirms
+  the custom-scheme choice over Universal/App Links for the first pass.
+- Two known checks that belong to the MVP, not to the framework as it stands: the auth path assumes
+  *"jZen serves Cloud Run directly, same-origin, browser cookies"* (STANDARDS "Deployment model"),
+  and a native client is a different HTTP client — cookie persistence, `CORS_ORIGINS`, and
+  `SameSite` need verifying on a running native build rather than assumed. And `--max-instances=1`
+  stays valid for the MVP, with the documented trigger unchanged: raising it above 1 is what
+  forces in-process state (rate limiting, caches) out to Postgres or Redis.
+- Nothing in this ADR changes what the POC was. ADR-015's delivery order stands as the record of
+  how it was reached; this supersedes only its tail.
+
+---
+
 ## ADR-019 — A client may name where its email link returns to, and the server permits it only by exact match
 
 **Date:** 2026-07-28. **Status:** accepted. **Follows:** ADR-018.

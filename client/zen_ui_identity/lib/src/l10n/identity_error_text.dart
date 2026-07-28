@@ -23,10 +23,12 @@ extension IdentityErrorText on IdentityLocalizations {
   String errorText(ZenError error) {
     final code = error.internalData?['code'];
     if (code is String) {
+      // No 'email_taken' case on purpose: the server never surfaces it. Registering an existing
+      // email returns the same neutral "check your email" outcome as a new one (no enumeration),
+      // so there is no "email already exists" wording for the client to show.
       final mapped = switch (code) {
         'invalid_credentials' => errorInvalidCredentials,
         'email_not_confirmed' => errorEmailNotConfirmed,
-        'email_taken' => errorEmailTaken,
         'unauthorized' => errorUnauthorized,
         _ => null,
       };

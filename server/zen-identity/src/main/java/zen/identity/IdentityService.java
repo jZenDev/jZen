@@ -68,8 +68,26 @@ public class IdentityService {
    * fail or delay this method.
    */
   public Session register(String email, String password, String preferredLanguage) {
-    SupabaseSessionResponse response =
-        call(() -> authClient.signup(new SupabaseSignupRequest(email, password, null), redirectUri));
+    SupabaseSessionResponse response;
+    try {
+      response =
+          authClient.signup(new SupabaseSignupRequest(email, password, null), redirectUri);
+    } catch (WebApplicationException e) {
+      AuthException classified = classifySupabaseError(e);
+      /*
+       * No user enumeration on registration: an email that already exists must be indistinguishable
+       * from a brand-new one. Surfacing "an account with this email already exists" would confirm a
+       * registered address to an attacker (an enumeration oracle) and can leak a real email to a
+       * spammer. So instead of throwing email_taken, return the same no-session outcome a genuine
+       * pending confirmation produces - AuthResource renders both as the identical 202 "check your
+       * email" response. Supabase's own enumeration protection normally returns 200 here (making
+       * this branch unreachable), so this is defense-in-depth for a project that has it turned off.
+       */
+      if ("email_taken".equals(classified.code())) {
+        return new Session(null, null, null);
+      }
+      throw classified;
+    }
     // GoTrue returns a session when the project auto-confirms, and a bare user (no session) when
     // email confirmation is required. effectiveUser() unifies both; the null-token case below is
     // what AuthResource turns into a "confirm your email" (202) response.
@@ -154,6 +172,8 @@ public class IdentityService {
       return new AuthException(401, "email_not_confirmed", "Your email is not confirmed yet.");
     }
     if (contains(b, "already registered", "user_already_exists", "email_exists")) {
+      // register() intercepts this code and turns it into the neutral 202 outcome, so it never
+      // reaches the client; login/refresh cannot produce it. The message is a safe fallback only.
       return new AuthException(409, "email_taken", "An account with this email already exists.");
     }
     if (contains(b, "weak_password", "password should", "password is too")) {

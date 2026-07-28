@@ -40,6 +40,5 @@
   "errorConflict": "A conflict occurred (e.g., user already exists).",
   "errorInvalidCredentials": "Incorrect email or password.",
   "errorEmailNotConfirmed": "Your email isn't confirmed yet. Check your inbox for the confirmation link.",
-  "errorEmailTaken": "An account with this email already exists.",
   "emailConfirmedBanner": "Your email is confirmed. Please sign in."
 }

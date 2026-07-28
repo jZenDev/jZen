@@ -235,6 +235,52 @@ void main() {
     expect(container.read(passwordResetRequiredProvider), false);
   });
 
+  test('a link received while running signs the user in', () async {
+    // The native case: the app is already open and the operating system hands it a tapped URL.
+    // Nothing about the URL the app *started* with is relevant, so this path cannot lean on it.
+    final fake = _FakeRepo(exchangeResult: ZenResult.ok(_makeContract('later')));
+    final container = ProviderContainer(
+      overrides: [identityRepositoryProvider.overrideWithValue(fake)],
+    );
+    final notifier = container.read(identitySessionStoreProvider.notifier);
+    await container.read(identitySessionStoreProvider.future);
+
+    final link = await notifier.consumeAuthLink(
+      Uri.parse('zendemo://auth-callback#access_token=at&type=recovery'),
+    );
+
+    expect(link.kind, ZenAuthLinkKind.recovery);
+    expect(container.read(identitySessionStoreProvider).asData?.value?.id.value, 'later');
+    expect(
+      container.read(passwordResetRequiredProvider),
+      true,
+      reason: 'a recovery link raises the gate whenever it arrives, not only at startup',
+    );
+  });
+
+  test('a spent link received while running does not sign the current user out', () async {
+    final fake = _FakeRepo(
+      getCurrentIdentityResult: ZenResult.ok(_makeContract('already-here')),
+      exchangeResult: const ZenResult.err(ZenUnauthorizedError('expired')),
+    );
+    final container = ProviderContainer(
+      overrides: [identityRepositoryProvider.overrideWithValue(fake)],
+    );
+    final notifier = container.read(identitySessionStoreProvider.notifier);
+    await container.read(identitySessionStoreProvider.future);
+
+    final link = await notifier.consumeAuthLink(
+      Uri.parse('zendemo://auth-callback#access_token=stale&type=signup'),
+    );
+
+    expect(link.kind, ZenAuthLinkKind.failed);
+    expect(
+      container.read(identitySessionStoreProvider).asData?.value?.id.value,
+      'already-here',
+      reason: 'whoever is using the app now is not the person the stale link was for',
+    );
+  });
+
   test('restorePassword returns result from repo', () async {
     final fakeOk = _FakeRepo(restoreResult: const ZenResult.ok(null));
     final containerOk = ProviderContainer(

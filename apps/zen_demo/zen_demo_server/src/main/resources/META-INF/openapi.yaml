@@ -75,12 +75,20 @@ components:
           type: string
         password:
           type: string
+        redirectUri:
+          type: string
+          description: >-
+            Optional. Where the confirmation link returns the user; empty means the server's
+            default. Accepted only on an exact match with a configured target.
     RestorePasswordRequest:
       type: object
       description: Body for POST /api/v1/auth/restore-password.
       properties:
         email:
           type: string
+        redirectUri:
+          type: string
+          description: Optional; validated exactly as RegisterRequest.redirectUri.
     SessionExchangeRequest:
       type: object
       description: >-

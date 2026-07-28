@@ -853,10 +853,14 @@ export interface components {
         RegisterRequest: {
             email?: string;
             password?: string;
+            /** @description Optional. Where the confirmation link returns the user; empty means the server's default. Accepted only on an exact match with a configured target. */
+            redirectUri?: string;
         };
         /** @description Body for POST /api/v1/auth/restore-password. */
         RestorePasswordRequest: {
             email?: string;
+            /** @description Optional; validated exactly as RegisterRequest.redirectUri. */
+            redirectUri?: string;
         };
         /** @description Body for POST /api/v1/auth/session. The tokens a Supabase email link left in the URL fragment, posted back by the client so the backend can validate them and set cookies. */
         SessionExchangeRequest: {

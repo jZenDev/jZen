@@ -63,7 +63,14 @@ class SupabaseIdentityRepository implements IdentityRepository {
     return _authenticate(
       email: email,
       path: _register,
-      body: pb.RegisterRequest(email: email, password: password),
+      // The build says where its confirmation link should come back to. Empty (every web build)
+      // leaves the choice to the server, which is the only sensible default: a web client is
+      // reachable at the origin that served it, and the server already knows that address.
+      body: pb.RegisterRequest(
+        email: email,
+        password: password,
+        redirectUri: zenAuthRedirectUri,
+      ),
     );
   }
 
@@ -75,7 +82,7 @@ class SupabaseIdentityRepository implements IdentityRepository {
     final result = await _client.post(
       pb.Identity.new,
       _restorePassword,
-      body: pb.RestorePasswordRequest(email: email),
+      body: pb.RestorePasswordRequest(email: email, redirectUri: zenAuthRedirectUri),
     );
     return result.fold((_) => const ZenResult<void>.ok(null), ZenResult<void>.err);
   }

@@ -115,7 +115,11 @@ public class AuthResource {
      * of the proto leaves the wire contract untouched.
      */
     IdentityService.Session session =
-        identityService.register(request.getEmail(), request.getPassword(), acceptLanguage);
+        identityService.register(
+            request.getEmail(),
+            request.getPassword(),
+            acceptLanguage,
+            request.getRedirectUri());
     /*
      * Whether registration also signs the user in depends on the Supabase project's email settings.
      * Auto-confirm returns a session (access token) -> 200 with session cookies, like login. Email
@@ -140,7 +144,7 @@ public class AuthResource {
   @RequestBody(content = @Content(schema = @Schema(ref = "RestorePasswordRequest")))
   @APIResponse(responseCode = ZenStatus.NO_CONTENT, description = "Recovery email dispatched if the address exists")
   public Response restorePassword(RestorePasswordRequest request) {
-    identityService.restorePassword(request.getEmail());
+    identityService.restorePassword(request.getEmail(), request.getRedirectUri());
     return Response.noContent().build();
   }
 

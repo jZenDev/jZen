@@ -36,6 +36,33 @@ flutter run -d chrome \
   --dart-define=ZEN_API_URL=http://localhost:8085
 ```
 
+## Email links, and what a native build would still need
+
+On the web this works today and needs nothing from you: a confirmation or recovery link lands on
+`/auth/callback`, the app reads the tokens out of the URL fragment, exchanges them for a session,
+and renders already signed in (ADR-018).
+
+**This app has no native runners** — there is no `android/`, `ios/`, or `macos/` directory, only
+`web/`. So the native half of the flow is not "switched off", it has nowhere to be switched on.
+Everything that is *not* platform-specific is already in place and shared: `ZenAuthLink.parse`
+takes a plain `Uri`, and `IdentitySessionStore.consumeAuthLink(uri)` exchanges a link that arrives
+while the app is running. What a native build would add, in order:
+
+1. **Generate the runners** — `flutter create --platforms=android,ios,macos .` from this directory.
+2. **Pick a scheme and register it** per platform: an Android `intent-filter`, an iOS
+   `CFBundleURLTypes` entry (or Universal Links with an associated domain), a macOS URL type.
+3. **Build with the matching define** so the backend is told where the link should return to:
+   `--dart-define=ZEN_AUTH_REDIRECT_URI=zendemo://auth-callback`.
+4. **Configure the same address server-side**, in `AUTH_REDIRECT_URIS` *and* in the Supabase
+   project's Redirect URLs. The server accepts a client-named return address only on an **exact**
+   match with a configured one, because that address is where a live session token gets mailed.
+   Both halves or neither: registration fails loudly rather than silently mailing the wrong place.
+5. **Deliver the received URL** to `consumeAuthLink` — a deep-link plugin or a platform channel;
+   the framework does not care which, and takes a `Uri`.
+
+Steps 1–3 and 5 cannot be verified without a simulator or a device, so they are not claimed as
+done here. Step 4 is enforced and tested (`IdentityServiceTest`).
+
 ## Testing
 
 Two suites, deliberately kept apart:

@@ -24,24 +24,23 @@ final authLinkProvider = Provider<ZenAuthLink>((ref) => ZenAuthLink.current());
 ///
 /// Recovery is the one flow where being signed in is not the end of it: the link's whole purpose
 /// is the password change, and a user dropped straight onto the dashboard would leave the account
-/// with the password they could not remember. Derived rather than assigned, so nothing has to
-/// remember to raise it.
-final passwordResetRequiredProvider = Provider<bool>((ref) {
-  final link = ref.watch(authLinkProvider);
-  return link.requiresNewPassword && !ref.watch(passwordResetCompletedProvider);
-});
+/// with the password they could not remember.
+final passwordResetRequiredProvider =
+    NotifierProvider<PasswordResetRequired, bool>(PasswordResetRequired.new);
 
-/// Set once the new password is accepted, which lowers [passwordResetRequiredProvider].
-final passwordResetCompletedProvider =
-    NotifierProvider<PasswordResetCompleted, bool>(PasswordResetCompleted.new);
-
-/// Notifier behind [passwordResetCompletedProvider].
-class PasswordResetCompleted extends Notifier<bool> {
+/// Notifier behind [passwordResetRequiredProvider].
+class PasswordResetRequired extends Notifier<bool> {
+  /// Derived from the link the app was opened with, so the startup path raises the gate without
+  /// anyone having to remember to. A link that arrives later — the native case — has to say so
+  /// itself through [require], because the URL the app started with knew nothing about it.
   @override
-  bool build() => false;
+  bool build() => ref.watch(authLinkProvider).requiresNewPassword;
 
-  /// Marks the recovery flow finished.
-  void complete() => state = true;
+  /// Raises the gate for a recovery link received while the app was already running.
+  void require() => state = true;
+
+  /// Lowers it: the new password has been accepted.
+  void complete() => state = false;
 }
 
 /// Manages the current user session state.
@@ -156,13 +155,50 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
     return _repository.restorePassword(email: email);
   }
 
+  /// Signs the user in from a link that arrived while the app was already running, and reports
+  /// what the link was.
+  ///
+  /// The web never needs this: there, the link *is* how the app was opened, and [build] has
+  /// already consumed it. A native build is the opposite — the operating system hands a running
+  /// app the URL that was tapped, at any moment, and this is where that URL goes. Deep-link
+  /// registration is per-platform and belongs to the application; consuming the result is the
+  /// framework's job, and takes a plain [Uri] so it does not care which plugin or channel
+  /// delivered it.
+  ///
+  /// A recovery link raises the same gate it does at startup, so a running app is not left signed
+  /// in with a password its owner still cannot remember.
+  Future<ZenAuthLink> consumeAuthLink(Uri uri) async {
+    final link = ZenAuthLink.parse(uri);
+    if (!link.hasSession) return link;
+
+    final result = await _repository.exchangeLinkSession(
+      accessToken: link.accessToken!,
+      refreshToken: link.refreshToken,
+    );
+    return result.fold(
+      (model) {
+        state = AsyncValue.data(model.toDomain());
+        if (link.requiresNewPassword) {
+          // Unlike the startup path, this raises the gate by hand: passwordResetRequiredProvider
+          // derives from the URL the app was *opened* with, which said nothing about a link that
+          // arrived later.
+          ref.read(passwordResetRequiredProvider.notifier).require();
+        }
+        return link;
+      },
+      // A spent link must not sign anyone out: whoever is using the app now is not the person the
+      // stale link was for, and taking their session away would be a worse answer than ignoring it.
+      (failure) => const ZenAuthLink.rejected(),
+    );
+  }
+
   /// Sets a new password for the current session, and — when this is the end of a recovery — takes
   /// the gate down. The session is unchanged either way: the user stays signed in, as they already
   /// were when they typed the new password.
   Future<ZenResult<void>> setPassword(String password) async {
     final result = await _repository.setPassword(password: password);
     return result.fold((_) {
-      ref.read(passwordResetCompletedProvider.notifier).complete();
+      ref.read(passwordResetRequiredProvider.notifier).complete();
       return const ZenResult<void>.ok(null);
     }, ZenResult<void>.err);
   }

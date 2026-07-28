@@ -152,6 +152,38 @@ void main() {
     });
   });
 
+  group('return address', () {
+    // Both email-sending calls tell the server where this build wants its link to come back to.
+    // The value is compile-time (empty for a web build, a scheme for a native one), so what is
+    // asserted here is the wiring: whatever this build was compiled with is what goes on the wire,
+    // and the server decides whether to honour it.
+    test('registration carries the build-time redirect target', () async {
+      Map<String, dynamic>? sent;
+      final repo = repoReturning((req) {
+        sent = jsonDecode(req.body) as Map<String, dynamic>;
+        return jsonResponse(identityJson(id: 'u1'));
+      });
+
+      await repo.registerWithEmail(email: 'a@b.com', password: 'secret1');
+
+      expect(sent, isNotNull);
+      expect(sent!['redirectUri'] ?? '', zenAuthRedirectUri);
+    });
+
+    test('password recovery carries it too', () async {
+      Map<String, dynamic>? sent;
+      final repo = repoReturning((req) {
+        sent = jsonDecode(req.body) as Map<String, dynamic>;
+        return http.Response('', 204, headers: {'x-zen-transport': 'json'});
+      });
+
+      await repo.restorePassword(email: 'a@b.com');
+
+      expect(sent, isNotNull);
+      expect(sent!['redirectUri'] ?? '', zenAuthRedirectUri);
+    });
+  });
+
   group('logout', () {
     test('returns ok on a 204', () async {
       final repo = repoReturning((req) {

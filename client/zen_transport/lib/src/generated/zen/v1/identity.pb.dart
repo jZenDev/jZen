@@ -215,10 +215,12 @@ class RegisterRequest extends $pb.GeneratedMessage {
   factory RegisterRequest({
     $core.String? email,
     $core.String? password,
+    $core.String? redirectUri,
   }) {
     final result = create();
     if (email != null) result.email = email;
     if (password != null) result.password = password;
+    if (redirectUri != null) result.redirectUri = redirectUri;
     return result;
   }
 
@@ -237,6 +239,7 @@ class RegisterRequest extends $pb.GeneratedMessage {
       createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'email')
     ..aOS(2, _omitFieldNames ? '' : 'password')
+    ..aOS(3, _omitFieldNames ? '' : 'redirectUri')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -275,15 +278,32 @@ class RegisterRequest extends $pb.GeneratedMessage {
   $core.bool hasPassword() => $_has(1);
   @$pb.TagNumber(2)
   void clearPassword() => $_clearField(2);
+
+  /// Optional. Where the confirmation email's link should return the user - the one thing a
+  /// native build cannot inherit from the server, because a phone app is not reachable at the
+  /// web app's URL. Empty means "the server's own default", which is what every web client
+  /// sends. The server accepts it only if it EXACTLY matches one of its configured targets:
+  /// the link carries a session token, so an unchecked value here would let anyone have that
+  /// token mailed to a destination of their choosing.
+  @$pb.TagNumber(3)
+  $core.String get redirectUri => $_getSZ(2);
+  @$pb.TagNumber(3)
+  set redirectUri($core.String value) => $_setString(2, value);
+  @$pb.TagNumber(3)
+  $core.bool hasRedirectUri() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearRedirectUri() => $_clearField(3);
 }
 
 /// POST /api/v1/auth/restore-password request body. Triggers the Supabase recovery email.
 class RestorePasswordRequest extends $pb.GeneratedMessage {
   factory RestorePasswordRequest({
     $core.String? email,
+    $core.String? redirectUri,
   }) {
     final result = create();
     if (email != null) result.email = email;
+    if (redirectUri != null) result.redirectUri = redirectUri;
     return result;
   }
 
@@ -301,6 +321,7 @@ class RestorePasswordRequest extends $pb.GeneratedMessage {
       package: const $pb.PackageName(_omitMessageNames ? '' : 'zen.v1'),
       createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'email')
+    ..aOS(2, _omitFieldNames ? '' : 'redirectUri')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -331,6 +352,17 @@ class RestorePasswordRequest extends $pb.GeneratedMessage {
   $core.bool hasEmail() => $_has(0);
   @$pb.TagNumber(1)
   void clearEmail() => $_clearField(1);
+
+  /// Optional, and validated the same way as RegisterRequest.redirect_uri. A recovery link is
+  /// the more sensitive of the two: it can set a password.
+  @$pb.TagNumber(2)
+  $core.String get redirectUri => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set redirectUri($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasRedirectUri() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearRedirectUri() => $_clearField(2);
 }
 
 /// POST /api/v1/auth/session request body. Exchanges the tokens a Supabase email link

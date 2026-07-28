@@ -1,6 +1,7 @@
 package zen.identity;
 
 import zen.identity.auth.PasswordRecoverRequest;
+import zen.identity.auth.RedirectTargets;
 import zen.identity.auth.SupabaseAuthClient;
 import zen.identity.auth.SupabaseSessionResponse;
 import zen.identity.auth.SupabaseSignupRequest;
@@ -14,7 +15,6 @@ import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
 import java.util.UUID;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 
 /**
@@ -31,18 +31,18 @@ public class IdentityService {
   private final SupabaseAuthClient authClient;
   private final UserStore userStore;
   private final Event<UserRegistered> registrations;
-  private final String redirectUri;
+  private final RedirectTargets redirectTargets;
 
   @Inject
   public IdentityService(
       @RestClient SupabaseAuthClient authClient,
       UserStore userStore,
       Event<UserRegistered> registrations,
-      @ConfigProperty(name = "auth.redirect-uri") String redirectUri) {
+      RedirectTargets redirectTargets) {
     this.authClient = authClient;
     this.userStore = userStore;
     this.registrations = registrations;
-    this.redirectUri = redirectUri;
+    this.redirectTargets = redirectTargets;
   }
 
   /** The tokens plus the reconciled local user, returned from every session-issuing flow. */
@@ -59,6 +59,11 @@ public class IdentityService {
    * Registration. Depending on Supabase email-confirmation settings the response may carry no
    * session; the local user row is still created so the profile exists once confirmed.
    *
+   * <p>{@code requestedRedirectUri} is where the confirmation link should return the user. It is
+   * resolved through {@link RedirectTargets} before it goes anywhere near Supabase — blank means
+   * the server's own default, and anything else must be a configured target. The check happens
+   * first, so a rejected value never causes an email to be sent at all.
+   *
    * <p>{@code preferredLanguage} is the raw tag of the registering request; it seeds
    * {@code users.language}, which is from then on the only locale source the framework has for
    * this user outside a request (localized email).
@@ -68,7 +73,9 @@ public class IdentityService {
    * when it returns. Applications observe the event to greet the user; nothing they do there can
    * fail or delay this method.
    */
-  public Session register(String email, String password, String preferredLanguage) {
+  public Session register(
+      String email, String password, String preferredLanguage, String requestedRedirectUri) {
+    String redirectUri = redirectTargets.resolve(requestedRedirectUri);
     SupabaseSessionResponse response;
     try {
       response =
@@ -104,8 +111,15 @@ public class IdentityService {
     return new Session(response.accessToken(), response.refreshToken(), user);
   }
 
-  /** Triggers the Supabase recovery email. Best-effort; never leaks whether the email exists. */
-  public void restorePassword(String email) {
+  /**
+   * Triggers the Supabase recovery email. Best-effort; never leaks whether the email exists.
+   *
+   * <p>{@code requestedRedirectUri} is validated exactly as on registration, and for a sharper
+   * reason: a recovery link can set a password, so a return address chosen by a stranger would be
+   * an account takeover rather than merely a leak.
+   */
+  public void restorePassword(String email, String requestedRedirectUri) {
+    String redirectUri = redirectTargets.resolve(requestedRedirectUri);
     call(
         () -> {
           authClient.recover(new PasswordRecoverRequest(email), redirectUri);

@@ -68,8 +68,26 @@ public class IdentityService {
    * fail or delay this method.
    */
   public Session register(String email, String password, String preferredLanguage) {
-    SupabaseSessionResponse response =
-        call(() -> authClient.signup(new SupabaseSignupRequest(email, password, null), redirectUri));
+    SupabaseSessionResponse response;
+    try {
+      response =
+          authClient.signup(new SupabaseSignupRequest(email, password, null), redirectUri);
+    } catch (WebApplicationException e) {
+      AuthException classified = classifySupabaseError(e);
+      /*
+       * No user enumeration on registration: an email that already exists must be indistinguishable
+       * from a brand-new one. Surfacing "an account with this email already exists" would confirm a
+       * registered address to an attacker (an enumeration oracle) and can leak a real email to a
+       * spammer. So instead of throwing email_taken, return the same no-session outcome a genuine
+       * pending confirmation produces - AuthResource renders both as the identical 202 "check your
+       * email" response. Supabase's own enumeration protection normally returns 200 here (making
+       * this branch unreachable), so this is defense-in-depth for a project that has it turned off.
+       */
+      if ("email_taken".equals(classified.code())) {
+        return new Session(null, null, null);
+      }
+      throw classified;
+    }
     // GoTrue returns a session when the project auto-confirms, and a bare user (no session) when
     // email confirmation is required. effectiveUser() unifies both; the null-token case below is
     // what AuthResource turns into a "confirm your email" (202) response.
@@ -124,12 +142,63 @@ public class IdentityService {
     return new Session(response.accessToken(), response.refreshToken(), user);
   }
 
-  /** Translates a Supabase 4xx (a real client error) into a 401 {@link AuthException}. */
+  /**
+   * Runs a Supabase call and, on a 4xx, translates it into a domain {@link AuthException} with a
+   * stable code and a <em>user-safe</em> message. Two things this must never do: name the provider
+   * ("Supabase rejected the request." is an internal detail and a small information leak), and hand
+   * a raw upstream message to the client. The client keys on the {@code code} to show localized
+   * wording; the message here is only a safe fallback.
+   */
   private <T> T call(java.util.function.Supplier<T> supabaseCall) {
     try {
       return supabaseCall.get();
     } catch (WebApplicationException e) {
-      throw AuthException.unauthorized("Supabase rejected the request.");
+      throw classifySupabaseError(e);
     }
+  }
+
+  private AuthException classifySupabaseError(WebApplicationException e) {
+    String body = "";
+    try {
+      jakarta.ws.rs.core.Response resp = e.getResponse();
+      if (resp != null && resp.hasEntity()) {
+        body = resp.readEntity(String.class);
+      }
+    } catch (RuntimeException ignore) {
+      // No readable body; fall through to the generic case.
+    }
+    String b = body == null ? "" : body.toLowerCase(java.util.Locale.ROOT);
+    if (contains(b, "email_not_confirmed", "email not confirmed", "not confirmed")) {
+      return new AuthException(401, "email_not_confirmed", "Your email is not confirmed yet.");
+    }
+    if (contains(b, "already registered", "user_already_exists", "email_exists")) {
+      // register() intercepts this code and turns it into the neutral 202 outcome, so it never
+      // reaches the client; login/refresh cannot produce it. The message is a safe fallback only.
+      return new AuthException(409, "email_taken", "An account with this email already exists.");
+    }
+    if (contains(b, "weak_password", "password should", "password is too")) {
+      return new AuthException(400, "weak_password", "Please choose a stronger password.");
+    }
+    if (contains(b, "email_address_invalid", "unable to validate email", "invalid format")) {
+      return new AuthException(400, "invalid_email", "That email address looks invalid.");
+    }
+    if (contains(b, "over_email_send_rate_limit", "rate limit", "too many requests")) {
+      return new AuthException(
+          429, "rate_limited", "Too many attempts. Please wait a moment and try again.");
+    }
+    if (contains(b, "invalid_credentials", "invalid_grant", "invalid login")) {
+      return new AuthException(401, "invalid_credentials", "Incorrect email or password.");
+    }
+    // Unknown 4xx: a safe, generic message. Never the upstream text.
+    return new AuthException(401, "unauthorized", "We could not complete your request.");
+  }
+
+  private static boolean contains(String haystack, String... needles) {
+    for (String n : needles) {
+      if (haystack.contains(n)) {
+        return true;
+      }
+    }
+    return false;
   }
 }

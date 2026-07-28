@@ -36,6 +36,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
   // during a register attempt (see IdentitySessionStore.register).
   bool _isSubmitting = false;
 
+  // Set to the registered email once a registration requires email confirmation. When non-null the
+  // screen renders a dedicated "check your email" view instead of the form.
+  String? _emailForConfirmation;
+
   @override
   void dispose() {
     _emailController.dispose();
@@ -62,21 +66,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       (identity) {
         if (!identity.emailVerified) {
           // The account was created but Supabase requires email confirmation: the user is not
-          // signed in. Tell them to confirm and come back to log in, and do NOT fire the
-          // "registered and in" callbacks.
-          showDialog<void>(
-            context: context,
-            builder: (dialogContext) => AlertDialog(
-              title: Text(messages.confirmEmailTitle),
-              content: Text(messages.confirmEmailBody),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: Text(MaterialLocalizations.of(context).okButtonLabel),
-                ),
-              ],
-            ),
-          );
+          // signed in. Show a dedicated "check your email" screen (not a popup) and do NOT fire
+          // the "registered and in" callbacks.
+          setState(() => _emailForConfirmation = _emailController.text.trim());
           return;
         }
         widget.onRegisterSuccess?.call();
@@ -99,6 +91,15 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
     final isLoading = _isSubmitting;
     final theme =
         Theme.of(context).extension<IdentityThemeExtension>() ?? IdentityThemeExtension.fallback();
+
+    if (_emailForConfirmation != null) {
+      return _ConfirmEmailView(
+        email: _emailForConfirmation!,
+        theme: theme,
+        messages: messages,
+        onBackToLogin: widget.onLoginClick,
+      );
+    }
 
     return Scaffold(
       backgroundColor: theme.surfaceColor,
@@ -186,6 +187,70 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   ),
                 ],
               ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The dedicated "check your email" screen shown after a registration that requires email
+/// confirmation — a full screen rather than a popup, because the user has left the form behind
+/// and their next action is in their inbox, not on this page.
+class _ConfirmEmailView extends StatelessWidget {
+  const _ConfirmEmailView({
+    required this.email,
+    required this.theme,
+    required this.messages,
+    required this.onBackToLogin,
+  });
+
+  final String email;
+  final IdentityThemeExtension theme;
+  final IdentityLocalizations messages;
+  final VoidCallback? onBackToLogin;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Scaffold(
+      backgroundColor: theme.surfaceColor,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        foregroundColor: theme.brandColor,
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          padding: theme.containerPadding,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 400),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Icon(Icons.mark_email_unread_outlined, size: 64, color: theme.brandColor),
+                const SizedBox(height: 24),
+                Text(
+                  messages.confirmEmailTitle,
+                  textAlign: TextAlign.center,
+                  style: textTheme.headlineSmall?.copyWith(
+                    color: theme.brandColor,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(messages.confirmEmailBody, textAlign: TextAlign.center),
+                const SizedBox(height: 8),
+                Text(
+                  email,
+                  textAlign: TextAlign.center,
+                  style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 32),
+                IdentityButton(text: messages.loginButton, onPressed: onBackToLogin),
+              ],
             ),
           ),
         ),

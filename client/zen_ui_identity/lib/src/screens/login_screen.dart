@@ -46,6 +46,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   bool _isSubmitting = false;
 
   @override
+  void initState() {
+    super.initState();
+    // Supabase's confirmation link lands the user here via /auth/callback -> /?auth=email-confirmed.
+    // Greet them so they know the confirmation worked and it is now their turn to sign in.
+    // Uri.base carries the query on web; on other platforms it simply has no such parameter.
+    if (Uri.base.queryParameters['auth'] == 'email-confirmed') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final messages = IdentityLocalizations.of(context);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(messages.emailConfirmedBanner)));
+      });
+    }
+  }
+
+  @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();

@@ -37,5 +37,8 @@
   "errorUnauthorized": "Invalid credentials or unauthorized access.",
   "errorNotFound": "Requested resource not found.",
   "errorValidation": "Validation failed. Please check your input.",
-  "errorConflict": "A conflict occurred (e.g., user already exists)."
+  "errorConflict": "A conflict occurred (e.g., user already exists).",
+  "errorInvalidCredentials": "Incorrect email or password.",
+  "errorEmailNotConfirmed": "Your email isn't confirmed yet. Check your inbox for the confirmation link.",
+  "emailConfirmedBanner": "Your email is confirmed. Please sign in."
 }

@@ -190,12 +190,53 @@ class AuthResourceTest {
   }
 
   @Test
+  void register_existingEmail_returnsNeutral202AndDoesNotEnumerate() throws Exception {
+    // Supabase (enumeration protection off) rejects a re-registration with an "email exists" 4xx.
+    // The framework must NOT surface that: registering an existing address has to look identical to
+    // a fresh registration (a 202 with no session), so a caller cannot tell that the account exists.
+    when(authClient.signup(any(), any()))
+        .thenThrow(
+            new WebApplicationException(
+                jakarta.ws.rs.core.Response.status(422)
+                    .entity("{\"error_code\":\"email_exists\",\"msg\":\"A user with this email address has already been registered\"}")
+                    .build()));
+
+    RegisterRequest body =
+        RegisterRequest.newBuilder().setEmail("taken@example.com").setPassword("secret1").build();
+
+    Response resp =
+        given()
+            .header(HEADER, "json")
+            .contentType("application/json")
+            .body(JsonFormat.printer().print(body))
+            .when()
+            .post("/api/v1/auth/register")
+            .andReturn();
+
+    // Same shape as a genuine pending confirmation: 202, unverified identity, no session cookies.
+    assertEquals(202, resp.statusCode(), "an existing email must return the neutral 202, not a 409");
+    Identity.Builder parsed = Identity.newBuilder();
+    JsonFormat.parser().merge(resp.getBody().asString(), parsed);
+    assertFalse(parsed.getEmailVerified(), "confirmation-pending shape: email is not verified");
+
+    List<String> setCookies = resp.getHeaders().getValues("Set-Cookie");
+    assertTrue(
+        setCookies == null
+            || setCookies.stream().noneMatch(c -> c.startsWith(SessionService.ACCESS_COOKIE + "=")),
+        "no session is issued for an existing-email registration");
+    // No enumeration and no upstream leak anywhere in the response body.
+    String lower = resp.getBody().asString().toLowerCase();
+    assertFalse(lower.contains("already"), "must not reveal the account already exists");
+    assertFalse(lower.contains("supabase"), "must not name the auth provider");
+  }
+
+  @Test
   void authCallback_landsOnAppRoot() {
     // The Supabase email-confirmation link redirects here; it must not 404, it must send the
     // browser to the app so the confirmed user can sign in.
     Response resp = given().redirects().follow(false).when().get("/auth/callback").andReturn();
     assertEquals(303, resp.statusCode());
-    assertEquals("/", resp.getHeader("Location"));
+    assertEquals("/?auth=email-confirmed", resp.getHeader("Location"));
   }
 
   @Test
@@ -221,9 +262,8 @@ class AuthResourceTest {
 
   @Test
   void login_badCredentials_returnsZenError() throws Exception {
-    // Supabase 4xx surfaces as a WebApplicationException; IdentityService maps it to 401.
-    when(authClient.token(eq("password"), any()))
-        .thenThrow(new WebApplicationException(400));
+    // A Supabase 4xx with no readable body maps to a safe, generic 401 — never the provider name.
+    when(authClient.token(eq("password"), any())).thenThrow(new WebApplicationException(400));
 
     LoginRequest body =
         LoginRequest.newBuilder().setEmail("bad@example.com").setPassword("wrong1").build();
@@ -242,6 +282,38 @@ class AuthResourceTest {
     JsonFormat.parser().merge(resp.getBody().asString(), err);
     assertEquals("unauthorized", err.getCode());
     assertNotNull(err.getMessage());
+    // Security: the client-facing message must never leak the auth provider or a raw upstream text.
+    assertFalse(err.getMessage().toLowerCase().contains("supabase"));
+  }
+
+  @Test
+  void login_invalidCredentialsBody_isClassifiedAndDoesNotLeak() throws Exception {
+    // A Supabase 4xx whose body identifies the cause: classify it to a specific, safe code.
+    when(authClient.token(eq("password"), any()))
+        .thenThrow(
+            new WebApplicationException(
+                jakarta.ws.rs.core.Response.status(400)
+                    .entity("{\"error_code\":\"invalid_credentials\",\"msg\":\"Invalid login credentials\"}")
+                    .build()));
+
+    LoginRequest body =
+        LoginRequest.newBuilder().setEmail("bad@example.com").setPassword("wrong1").build();
+
+    Response resp =
+        given()
+            .header(HEADER, "json")
+            .contentType("application/json")
+            .body(JsonFormat.printer().print(body))
+            .when()
+            .post("/api/v1/auth/login")
+            .andReturn();
+
+    assertEquals(401, resp.statusCode());
+    ZenError.Builder err = ZenError.newBuilder();
+    JsonFormat.parser().merge(resp.getBody().asString(), err);
+    assertEquals("invalid_credentials", err.getCode());
+    assertFalse(err.getMessage().toLowerCase().contains("supabase"));
+    assertFalse(err.getMessage().toLowerCase().contains("invalid login credentials"));
   }
 
   private static Identity assertDoesNotThrowParse(byte[] bytes) {

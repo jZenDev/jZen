@@ -948,6 +948,14 @@ tasks:
           printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /main.dart.wasm web "HTTP $wcode, type '${wtype:-none}' (want 200 application/wasm)"
           fail=1
         fi
+        # Entry files (fixed names, not content-hashed) must NOT be immutable, or a redeploy is
+        # invisible to returning browsers for a day. They must revalidate (StaticCacheHeaders).
+        wcache=$(curl -s -o /dev/null -D- "$URL/main.dart.wasm" | tr -d '\r' | awk -F': ' 'tolower($1)=="cache-control"{print $2}')
+        case "$wcache" in
+          *immutable*) printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /main.dart.wasm cache "'$wcache' — must revalidate, not immutable"; fail=1 ;;
+          *no-cache*|*no-store*|*max-age=0*) printf '  \033[32mok\033[0m   %-24s %-9s %s\n' /main.dart.wasm cache "$wcache" ;;
+          *) printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /main.dart.wasm cache "'${wcache:-none}' — expected no-cache"; fail=1 ;;
+        esac
         # The admin panel is served same-origin at /admin/ (react-admin, hash router). Assert the
         # directory serves its index and the hashed entry script loads. Its data provider calls
         # /api/v1 relative, so it shares this origin's session cookie — the whole point of /admin/.

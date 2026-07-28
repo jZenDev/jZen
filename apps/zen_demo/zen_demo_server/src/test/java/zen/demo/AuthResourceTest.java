@@ -190,6 +190,15 @@ class AuthResourceTest {
   }
 
   @Test
+  void authCallback_landsOnAppRoot() {
+    // The Supabase email-confirmation link redirects here; it must not 404, it must send the
+    // browser to the app so the confirmed user can sign in.
+    Response resp = given().redirects().follow(false).when().get("/auth/callback").andReturn();
+    assertEquals(303, resp.statusCode());
+    assertEquals("/", resp.getHeader("Location"));
+  }
+
+  @Test
   void logout_clearsCookies() {
     Response resp = given().header(HEADER, "json").when().post("/api/v1/auth/logout").andReturn();
 

@@ -40,9 +40,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
-  // Local loading state to coordinate with provider if needed,
-  // though provider has its own async state.
-  // We use provider state for the button loading indicator.
+  // Local submit state drives the button spinner. The session store deliberately does not flip to
+  // loading during a login attempt (that would splash the app and dispose this screen), so the
+  // in-progress state is tracked here instead of read from the provider.
+  bool _isSubmitting = false;
 
   @override
   void dispose() {
@@ -52,12 +53,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate() || _isSubmitting) return;
 
+    setState(() => _isSubmitting = true);
     final controller = ref.read(identitySessionStoreProvider.notifier);
     final result = await controller.login(_emailController.text.trim(), _passwordController.text);
 
     if (!mounted) return;
+    setState(() => _isSubmitting = false);
     final messages = IdentityLocalizations.of(context);
 
     result.fold(
@@ -81,8 +84,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final messages = IdentityLocalizations.of(context);
-    final state = ref.watch(identitySessionStoreProvider);
-    final isLoading = state.isLoading;
+    final isLoading = _isSubmitting;
     final theme =
         Theme.of(context).extension<IdentityThemeExtension>() ?? IdentityThemeExtension.fallback();
 

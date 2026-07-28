@@ -25,7 +25,11 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
 
   /// Signs in with email and password.
   Future<ZenResult<Identity>> login(String email, String password) async {
-    state = const AsyncValue.loading();
+    // Do NOT flip the session to loading: a login *attempt* is an operation, not a session-state
+    // transition. The app splashes on `loading` (for the initial identity fetch), and doing so
+    // here would tear down the login screen mid-submit — so its post-result snackbar, guarded by
+    // `mounted`, would never show, and the splash flash would read as a page reload. The screen
+    // shows its own submit spinner locally.
     final result = await _repository.loginWithEmail(email: email, password: password);
 
     return result.fold(
@@ -43,13 +47,18 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
 
   /// Registers and optionally logs in.
   Future<ZenResult<Identity>> register(String email, String password) async {
-    state = const AsyncValue.loading();
+    // See login(): a register attempt must not flip the session to loading, or the app splash
+    // tears down the register screen and its "check your email" dialog / error snackbar never show.
     final result = await _repository.registerWithEmail(email: email, password: password);
 
     return result.fold(
       (model) {
         final identity = model.toDomain();
-        state = AsyncValue.data(identity);
+        // Only a registration that returns a session (auto-confirm) signs the user in. When email
+        // confirmation is required the identity comes back unverified with no session cookie, so
+        // the auth state stays unauthenticated — otherwise the app would navigate to the dashboard
+        // and skip the "confirm your email" step. The register screen reads the returned identity.
+        state = identity.emailVerified ? AsyncValue.data(identity) : const AsyncValue.data(null);
         return ZenResult.ok(identity);
       },
       (failure) {

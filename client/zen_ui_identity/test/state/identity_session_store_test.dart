@@ -17,6 +17,7 @@ class _FakeRepo implements IdentityRepository {
   /// Set when the ordinary session probe runs, so a test can assert it did not.
   bool probed = false;
   String? exchangedAccessToken;
+  void Function()? onExchange;
 
   _FakeRepo({
     ZenResult<IdentityContract?>? getCurrentIdentityResult,
@@ -46,6 +47,7 @@ class _FakeRepo implements IdentityRepository {
     String? refreshToken,
   }) async {
     exchangedAccessToken = accessToken;
+    onExchange?.call();
     return exchangeResult;
   }
 
@@ -256,6 +258,27 @@ void main() {
       true,
       reason: 'a recovery link raises the gate whenever it arrives, not only at startup',
     );
+  });
+
+  test('one link is one exchange, however often the platform announces it', () async {
+    // iOS delivers a launch URL as the initial link and replays it on the stream; macOS delivers
+    // it once. Without this guard a cold start spent the same token three times.
+    var exchanges = 0;
+    final fake = _FakeRepo(exchangeResult: ZenResult.ok(_makeContract('once')))
+      ..onExchange = () => exchanges++;
+    final container = ProviderContainer(
+      overrides: [identityRepositoryProvider.overrideWithValue(fake)],
+    );
+    final notifier = container.read(identitySessionStoreProvider.notifier);
+    await container.read(identitySessionStoreProvider.future);
+
+    final uri = Uri.parse('zendemo://auth-callback#access_token=same&type=signup');
+    await notifier.consumeAuthLink(uri);
+    await notifier.consumeAuthLink(uri);
+    await notifier.consumeAuthLink(uri);
+
+    expect(exchanges, 1);
+    expect(container.read(identitySessionStoreProvider).asData?.value?.id.value, 'once');
   });
 
   test('a spent link received while running does not sign the current user out', () async {

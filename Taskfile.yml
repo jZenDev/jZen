@@ -463,6 +463,86 @@ tasks:
           {{.DEMO_CLIENT_DIR}}/build/web/ {{.WEB_RESOURCES}}/
         echo "Staged web bundle -> {{.WEB_RESOURCES}} ($(du -sh {{.WEB_RESOURCES}} | cut -f1))"
 
+  run:demo:native:
+    desc: Run zen_demo on a native target (macOS, an iOS simulator, an Android emulator)
+    summary: |
+      The native counterpart of `run:demo`, which runs the web build in Chrome. Same app, same
+      backend; what differs is the two defines a native build cannot do without.
+
+      ZEN_AUTH_REDIRECT_URI is the first. A confirmation or recovery email has to come back to
+      *this* app, and a phone cannot be reached at the web app's URL, so a native build names a
+      custom scheme instead. The value must match three places or the flow breaks silently: the
+      scheme registered in the platform manifests, this define, and the server's
+      AUTH_REDIRECT_URIS (which accepts it only on an exact match). See ADR-019.
+
+      The Android JDK is the second, and it is a check rather than a fix, because the fix is not
+      the repository's to make. Two facts collide:
+
+        - Android's Gradle plugin cannot build on a GraalVM JDK: its jdkImage transform shells
+          out to `jlink`, which fails there at 17, 21 and 25 alike. The DISTRIBUTION is the
+          cause, not the version - a standard Java 25 builds cleanly, so the product keeps one
+          Java version everywhere and only the distribution differs.
+        - Flutter takes its JDK from `flutter config --jdk-dir`, a MACHINE-WIDE setting that
+          outranks JAVA_HOME, GRADLE_OPTS, and even org.gradle.java.home. All three were tried;
+          only changing that setting worked.
+
+      So no task can pin this from inside the repo, and one that appeared to would be lying.
+      What this task does instead is fail early and say exactly what to run, rather than let
+      Gradle produce a jlink stack trace that names nothing useful.
+
+      Usage:
+        task run:demo:native                     # macOS, against the deployed backend
+        ZEN_TARGET=<device-id> task run:demo:native
+        ZEN_API_URL=http://localhost:8085 task run:demo:native
+    vars:
+      TARGET: '{{.ZEN_TARGET | default "macos"}}'
+      API: '{{.ZEN_API_URL | default "https://zen-demo-server-tovqpjhspa-lm.a.run.app"}}'
+      SCHEME: '{{.ZEN_AUTH_REDIRECT_URI | default "zendemo://auth-callback"}}'
+      # What Flutter will actually hand Gradle. Read, not set: this is the machine-wide setting,
+      # and the point is to check it before a build wastes minutes failing on it.
+      FLUTTER_JDK:
+        # A block scalar, not an inline one: the sed script contains ": ", which YAML would
+        # otherwise read as a mapping and refuse to parse.
+        sh: |
+          flutter config --list 2>/dev/null | sed -nE 's/^ *jdk-dir: *(.*)$/\1/p' | head -1
+    cmds:
+      - |
+        set -eu
+        PLATFORM='{{.TARGET}}'
+        case "$PLATFORM" in macos|ios|android) ;; *) PLATFORM=ios ;; esac
+        echo "Running zen_demo on '{{.TARGET}}' against {{.API}} (links return to {{.SCHEME}})"
+        cd {{.DEMO_CLIENT_DIR}}
+        # Check the JDK Flutter will use BEFORE building, because the failure it produces is a
+        # jlink stack trace that names neither the JDK nor the reason.
+        if [ "$PLATFORM" = "android" ]; then
+          JDK='{{.FLUTTER_JDK}}'
+          BAD=""
+          case "$JDK" in *graal*|*Graal*|*GRAAL*) BAD="GraalVM (its jlink cannot run AGP's jdkImage transform)" ;; esac
+          if [ -z "$BAD" ] && [ -n "$JDK" ]; then
+            V=$("$JDK/bin/java" -version 2>&1 | head -1)
+            case "$V" in *GraalVM*) BAD="GraalVM (its jlink cannot run AGP's jdkImage transform)" ;; esac
+          fi
+          if [ -n "$BAD" ]; then
+            echo "The Android build cannot use this JDK: $BAD"
+            echo "  flutter's jdk-dir = ${JDK:-<unset>}"
+            echo
+            echo "Install a standard (non-GraalVM) JDK and point Flutter at it. Java 25 is fine:"
+            echo "  sdk install java 25.0.3-tem"
+            echo "  flutter config --jdk-dir \"\$HOME/.sdkman/candidates/java/25.0.3-tem\""
+            echo
+            echo "It is a machine-wide setting, not a repository one: Flutter's jdk-dir outranks"
+            echo "JAVA_HOME, GRADLE_OPTS and org.gradle.java.home, all of which were tried."
+            exit 1
+          fi
+          # A daemon started under a different JDK survives the change and keeps using the old one.
+          pkill -f GradleDaemon 2>/dev/null || true
+        fi
+        flutter run -d '{{.TARGET}}' \
+          --dart-define=ZEN_ENV=dev \
+          --dart-define=ZEN_PLATFORM="$PLATFORM" \
+          --dart-define=ZEN_API_URL='{{.API}}' \
+          --dart-define=ZEN_AUTH_REDIRECT_URI='{{.SCHEME}}'
+
   build:web:admin:
     desc: Build the admin panel and stage it at /admin/ for same-origin serving
     summary: |

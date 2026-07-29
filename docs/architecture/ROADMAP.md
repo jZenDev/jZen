@@ -630,13 +630,41 @@ the table above, and ADR-020 records why each item sits where it does.
 
 | # | Item | Why here |
 |---|---|---|
-| 1 | **MVP scope, written down** | "MVP" decides everything below it; leaving it implicit means each item gets re-argued. |
-| 2 | **Native deep-linking — backlog item 4's per-platform half** | Simulator and local macOS only. Free, needs no account, and testable from the terminal without sending a single email (see "Item 4 in full"). |
+| 1 | **MVP scope, written down** | Done — see "What the MVP is" below. |
+| 2 | **Native deep-linking — backlog item 4's per-platform half** | **Done and verified** on macOS, the iOS Simulator and the Android emulator: runners generated, a `zendemo://` scheme registered per platform, and links consumed cold *and* warm. No paid account was needed, and no email — links were replayed from the terminal. |
 | 3 | **MVP live and tested on the real stack** | The environment stays up for this. It is what teardown waits for. |
 | 4 | **Start the second product on the framework** | The first *honest* test of the framework/application boundary. `zen_demo` cannot be that test: it was written by the same hands at the same time, so when the framework is awkward both sides change in one commit and nobody feels it. |
 | 5 | **Publish the packages** | After 4, deliberately — see the backlog row. |
 | 6 | **Native release pipelines** | Only if a product is ever *distributed*. Off the critical path entirely, and may never be reached. |
 | 7 | **`destroy:cloudrun`** | Last. Not "after the POC" — see the backlog row. |
+
+#### What the MVP is
+
+**`zen_demo`, running everywhere.** The same reference app on the web (deployed, done), on the iOS
+Simulator, on the Android emulator, and locally on macOS. Not a new product — jZen's headline claim
+is one domain model across every surface, and the honest demonstration of that claim is the *same*
+app compiled for all of them, not a second app written to suit.
+
+In scope:
+
+- Native runner projects for `zen_demo_client`, and the app running on each target.
+- The auth flow complete on native: deep-linked confirmation and recovery (backlog item 4).
+- Whatever the native targets break that the web never exercised. The session is httpOnly cookies
+  set by the server, and a native HTTP client is not a browser — cookie persistence, `CORS_ORIGINS`
+  and `SameSite` are assumptions the web flow never had to test (ADR-020).
+
+Out of scope, and deliberately:
+
+- **Distribution of any kind** — no TestFlight, no stores, no notarized downloads. Simulator,
+  emulator and local runs need no paid account and no signing identity, and that is the boundary.
+  Crossing it is backlog item 6, which the MVP does not touch.
+- A second product. That comes after the MVP and is what finally tests the framework/application
+  boundary (ADR-020).
+- Publishing the packages, for the same reason.
+
+**Done when:** one commit builds and runs `zen_demo` on web, iOS Simulator, Android emulator and
+macOS, and on each of them a confirmation link signs the user in and a recovery link lands on the
+set-a-new-password screen.
 
 **Why the admin panel is inside the POC.** It is the only surface that exercises the *third* language
 binding: the contract-first claim is proto → Java **and** Dart **and** TypeScript, the Flutter client
@@ -745,6 +773,25 @@ prefix or host check would admit; a refused address sending no signup and no rec
 
    This is also why step 2 prefers a custom scheme: it makes the whole flow provable in seconds,
    with no domain, no verification file, and no inbox rate limit in the way.
+
+**What running it actually cost, recorded because none of it was in the plan.** The code was the
+easy half; four defects only a real run could show:
+
+- **A sandboxed macOS app cannot reach the network.** `flutter create` grants
+  `com.apple.security.network.server` but not `network.client`, so every request failed *silently*
+  and the app merely looked logged out. Added to both entitlement files.
+- **One link, three sign-ins.** iOS delivers a launch URL as the initial link *and* replays it on
+  the stream, so a cold start spent the same token three times; macOS delivered it once. The
+  framework now treats the token as the identity of the attempt (`consumeAuthLink`).
+- **Android cannot build on GraalVM, at any version.** AGP's jdkImage transform shells out to
+  `jlink`, which fails on GraalVM 17, 21 and 25 alike. The *distribution* is the cause, not the
+  version — a standard Java 25 builds cleanly, so the product keeps one Java version everywhere
+  (ADR-021). Flutter's machine-wide `jdk-dir` outranks `JAVA_HOME`, `GRADLE_OPTS` and
+  `org.gradle.java.home`, all three of which were tried, so `run:demo:native` checks it and fails
+  early rather than letting Gradle produce a stack trace that names nothing.
+- **The toolchain itself was broken in two places:** Xcode had no eligible simulator destination
+  (the iOS 26.5 runtime was missing), and the `android-36` system image was truncated — no
+  `system.img` — which no emulator version would have fixed.
 
 **Acceptance:** tapping a confirmation link on a native build opens the app already signed in;
 tapping a recovery link opens it on the set-a-new-password screen; both work whether or not the app

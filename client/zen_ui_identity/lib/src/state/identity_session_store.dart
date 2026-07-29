@@ -69,6 +69,10 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
   /// one provider from inside another's initialization is exactly what Riverpod forbids.
   bool linkRejected = false;
 
+  /// The last link token handed to [consumeAuthLink], so a platform that announces one launch URL
+  /// several times does not spend it several times.
+  String? _consumedToken;
+
   /// Exchanges an auth link's tokens for a session, if the app was opened with one. Returns the
   /// signed-in identity, or null when there was no link or it could not be used — in which case
   /// the caller falls back to the normal probe and the user signs in by hand.
@@ -170,6 +174,14 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
   Future<ZenAuthLink> consumeAuthLink(Uri uri) async {
     final link = ZenAuthLink.parse(uri);
     if (!link.hasSession) return link;
+
+    // One link is one sign-in, however many times the platform announces it. Platforms disagree
+    // about this: iOS delivers a launch URL as the initial link *and* replays it on the stream,
+    // so the same token arrived three times in one cold start, while macOS delivered it once.
+    // Rather than make every application discover that, the token itself is the identity of the
+    // attempt — a second delivery of one already handled is dropped here.
+    if (_consumedToken == link.accessToken) return link;
+    _consumedToken = link.accessToken;
 
     final result = await _repository.exchangeLinkSession(
       accessToken: link.accessToken!,

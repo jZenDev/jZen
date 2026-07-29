@@ -93,6 +93,21 @@ replace `mvnw`/`dart pub`/`pnpm` ([`DECISIONS.md`](docs/architecture/DECISIONS.m
 | Node | [`.nvmrc`](.nvmrc) | [nvm](https://github.com/nvm-sh/nvm) — `nvm use` |
 | pnpm | `packageManager` in `package.json` | [corepack](https://nodejs.org/api/corepack.html) — `corepack enable`, then it is automatic |
 
+**Building for Android needs a JDK too — same version, different distribution.** Android's Gradle
+plugin cannot build on a **GraalVM** JDK: its `jdkImage` transform shells out to `jlink`, which
+fails there at *every* version (17, 21 and 25 alike). A standard build of the same Java 25 works,
+so the version stays aligned across the whole product and only the distribution differs:
+
+```bash
+sdk install java 25.0.3-tem
+flutter config --jdk-dir "$HOME/.sdkman/candidates/java/25.0.3-tem"
+```
+
+`--jdk-dir` is a machine-wide Flutter setting and outranks `JAVA_HOME`, `GRADLE_OPTS` and
+`org.gradle.java.home`, so it is the only place worth setting it. Per-target requirements — Xcode,
+simulator runtimes, emulator images — are in
+[`apps/zen_demo/zen_demo_client/README.md`](apps/zen_demo/zen_demo_client/README.md).
+
 ```bash
 task doctor
 ```

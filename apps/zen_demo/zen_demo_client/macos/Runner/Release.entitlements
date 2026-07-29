@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<!-- Same reason as DebugProfile.entitlements: without network.client a sandboxed macOS app
+	     cannot call its backend at all. Needed in release too, and more easily missed here —
+	     debug happens to carry network.server, so a release-only omission would look like "it
+	     worked yesterday". -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

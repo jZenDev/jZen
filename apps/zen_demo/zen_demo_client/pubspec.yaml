@@ -32,6 +32,7 @@ dependencies:
     path: ../../../client/zen_ui_identity
   zen_ui_navigation:
     path: ../../../client/zen_ui_navigation
+  app_links: ^7.2.1
 
 dev_dependencies:
   flutter_test:

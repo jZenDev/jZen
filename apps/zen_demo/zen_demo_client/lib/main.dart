@@ -6,6 +6,7 @@ import 'package:zen_transport/zen_transport.dart';
 import 'package:zen_ui_identity/zen_ui_identity.dart';
 
 import 'src/app.dart';
+import 'src/auth_deep_links.dart';
 import 'src/demo_repository.dart';
 import 'src/providers.dart';
 
@@ -45,5 +46,14 @@ void main() {
     ],
   );
 
-  runApp(UncontrolledProviderScope(container: container, child: const DemoApp()));
+  // AuthDeepLinks wraps the app rather than sitting inside it: it must outlive every screen, since
+  // a confirmation link can arrive at any moment and must be handled the same way wherever the
+  // user happens to be. It is inert on the web (conditional import), where links arrive as
+  // navigations and the session store has already read them.
+  runApp(
+    UncontrolledProviderScope(
+      container: container,
+      child: const AuthDeepLinks(child: DemoApp()),
+    ),
+  );
 }

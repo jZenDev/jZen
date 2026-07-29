@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.cs.allow-jit</key>
+	<true/>
+	<!-- Outgoing network. `flutter create` grants network.server (which lets the debug tooling
+	     connect IN) but not network.client, so a sandboxed macOS app silently cannot reach any
+	     backend: every request fails and the app just looks logged out. jZen's client is nothing
+	     but calls to its server, so this is not optional. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>com.apple.security.network.server</key>
+	<true/>
+</dict>
+</plist>

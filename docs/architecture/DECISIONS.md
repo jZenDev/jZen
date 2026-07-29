@@ -15,6 +15,66 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-021 — zen_demo runs natively: a custom scheme, and one Java version across the product
+
+**Date:** 2026-07-29. **Status:** accepted. **Follows:** ADR-018, ADR-019, ADR-020.
+
+### Decision
+
+`zen_demo` now builds and runs on **macOS, the iOS Simulator and the Android emulator** as well as
+the web, and an email link signs the user in on all of them. What that required, and what was
+decided along the way:
+
+- **A custom scheme, `zendemo://auth-callback`,** registered in `CFBundleURLTypes` (iOS, macOS) and
+  a `BROWSABLE` `intent-filter` (Android). Not Universal Links or App Links: those need a domain
+  serving a verification file plus a Team ID, which is a paid account and a domain commitment, and
+  they prove nothing the scheme does not. Revisit only if a link must survive being opened by a
+  browser that refuses custom schemes.
+- **Delivery belongs to the application, consumption to the framework.** `AuthDeepLinks` (in the
+  app, `app_links` behind a conditional import so the web bundle never sees it) hands a `Uri` to
+  `IdentitySessionStore.consumeAuthLink`. The framework names no plugin and no platform.
+- **A cold start is not a warm arrival**, and both are handled. Off the web `Uri.base` is a file
+  path, so the launch URL is invisible to the startup path and must be fetched and replayed.
+- **One link is one sign-in.** iOS delivers a launch URL as the initial link *and* replays it on
+  the stream; a cold start spent the same token three times before this was fixed in the framework.
+- **The Java version stays aligned across the product; only the Android distribution differs.**
+  AGP's `jdkImage` transform shells out to `jlink`, which fails on **GraalVM at every version**
+  (17, 21 and 25 alike). A standard Java 25 (Temurin) builds Android cleanly, so jZen does not
+  split its Java version: server and Android are both 25.
+
+### What this supersedes, and why
+
+- **"`zen_demo_client` has no native runners at all (only `web/`), so there is no manifest to
+  register a scheme in"** (ROADMAP item 4; ADR-019 Consequence) → **resolved.** *Why:* the runners
+  now exist, the scheme is registered, and the flow is verified cold and warm on three targets.
+- **"Native release pipelines … a mobile MVP does not touch this item"** (ADR-020) → **confirmed by
+  doing it.** *Why:* worth recording as evidence rather than prediction — the whole native surface
+  was built and verified with no developer account, no signing identity, and no store.
+- **An earlier claim of mine that "AGP does not support Java 22+"** (written into `run:demo:native`
+  and the READMEs before it was tested) → **withdrawn.** *Why:* it was inference from the GraalVM
+  failures, not a result. Temurin 25 was then tried and built Android in 28 seconds. The guard now
+  rejects GraalVM only, which is what the evidence supports.
+
+### Consequence
+
+- Four defects that only a real run could surface, each now fixed and documented in ROADMAP: the
+  missing macOS `network.client` entitlement (a sandboxed app silently cannot reach any backend),
+  the triple sign-in, the GraalVM/`jlink` collision, and two broken toolchain installs (a missing
+  iOS simulator runtime; a truncated `android-36` system image with no `system.img`).
+- `task run:demo:native` runs the app on any native target and refuses a GraalVM JDK up front.
+  It cannot *fix* the JDK: Flutter's `--jdk-dir` is machine-wide and outranks `JAVA_HOME`,
+  `GRADLE_OPTS` and `org.gradle.java.home`, all of which were tried. A task that pretended
+  otherwise would be lying, so it checks and explains instead.
+- Icons and copyright are the product's, not `flutter create`'s defaults: every launcher icon is
+  generated from `jZenLogo*.svg`, and `PRODUCT_COPYRIGHT` names **jLogic Software**. `dev.jzen`
+  remains what it always was — the identifier namespace, not the copyright holder.
+- **Verified green:** `task test:apps:server` 66 tests, `task test:client`, `task test:admin`,
+  `task sync:contracts` ("Contracts in sync"), `task verify:docs`. Deep links proven on all three
+  native targets, cold and warm, with one exchange per link. `task test:e2e` was *not* run — the
+  local Supabase stack's port is held by an unrelated project.
+
+---
+
 ## ADR-020 — The POC is done and the MVP is not: the order after the POC, and three triggers that move
 
 **Date:** 2026-07-28. **Status:** accepted. **Follows:** ADR-015.

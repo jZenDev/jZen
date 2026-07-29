@@ -36,40 +36,67 @@ flutter run -d chrome \
   --dart-define=ZEN_API_URL=http://localhost:8085
 ```
 
-## Email links, and what a native build would still need
+## What each target needs installed
 
-On the web this works today and needs nothing from you: a confirmation or recovery link lands on
-`/auth/callback`, the app reads the tokens out of the URL fragment, exchanges them for a session,
-and renders already signed in (ADR-018).
+The web build needs only Flutter. Every other target adds something, and each of these was found
+by a build failing in a way that did not name the cause — so they are written down here.
 
-**This app has no native runners** — there is no `android/`, `ios/`, or `macos/` directory, only
-`web/`. So the native half of the flow is not "switched off", it has nowhere to be switched on.
-Everything that is *not* platform-specific is already in place and shared: `ZenAuthLink.parse`
-takes a plain `Uri`, and `IdentitySessionStore.consumeAuthLink(uri)` exchanges a link that arrives
-while the app is running. What a native build would add, in order:
+| Target | Needs | Failure if missing |
+|---|---|---|
+| **Web** | Flutter | — |
+| **macOS** | Xcode | — |
+| **iOS Simulator** | Xcode **and a simulator runtime matching its SDK** (`xcodebuild -downloadPlatform iOS`) | Xcode reports *zero* eligible destinations and the build says only "Unable to find a destination"; it never mentions the runtime |
+| **Android** | A **non-GraalVM** JDK selected with `flutter config --jdk-dir` — Java 25 is fine, so the version matches the server; the emulator, and a **complete** system image | A `jlink` stack trace from AGP's `jdkImage` transform that names neither the JDK nor the reason |
 
-1. **Generate the runners** — `flutter create --platforms=android,ios,macos .` from this directory.
-2. **Pick a scheme and register it** per platform: an Android `intent-filter`, an iOS
-   `CFBundleURLTypes` entry (or Universal Links with an associated domain), a macOS URL type.
-3. **Build with the matching define** so the backend is told where the link should return to:
-   `--dart-define=ZEN_AUTH_REDIRECT_URI=zendemo://auth-callback`.
-4. **Configure the same address server-side**, in `AUTH_REDIRECT_URIS` *and* in the Supabase
-   project's Redirect URLs. The server accepts a client-named return address only on an **exact**
-   match with a configured one, because that address is where a live session token gets mailed.
-   Both halves or neither: registration fails loudly rather than silently mailing the wrong place.
-5. **Deliver the received URL** to `consumeAuthLink` — a deep-link plugin or a platform channel;
-   the framework does not care which, and takes a `Uri`.
+```bash
+# Android, once per machine. The setting is machine-wide and outranks JAVA_HOME,
+# GRADLE_OPTS and org.gradle.java.home — all three were tried and ignored.
+sdk install java 25.0.3-tem
+flutter config --jdk-dir "$HOME/.sdkman/candidates/java/25.0.3-tem"
+```
 
-One thing to get right in step 5: a tap that **starts** the app is not the same as one that arrives
-while it is running. `IdentitySessionStore.build()` only sees the former on the web, because it
-reads `Uri.base` — off the web that is a file path. The initial link has to be fetched from the
-plugin and passed to `consumeAuthLink` as well, or deep links will appear to work only when the app
-is already open.
+It is the **distribution** that matters, not the version: GraalVM fails at 17, 21 and 25 alike,
+and a standard Java 25 builds cleanly. So the whole product stays on one Java version, and the
+repo's pinned GraalVM CE 25 still builds the server. `task run:demo:native` checks this before
+building and prints the commands rather than letting Gradle fail obscurely.
 
-Steps 1–3 and 5 cannot be verified without a simulator or a device, so they are not claimed as
-done here. Step 4 is enforced and tested (`IdentityServiceTest`). The full plan, and an inventory
-of what is already built, is in [`ROADMAP.md`](../../../docs/architecture/ROADMAP.md) under
-"Item 4 in full".
+Two traps worth knowing, both of which cost real time here:
+
+- An **incomplete Android system image** presents exactly like an out-of-date emulator ("No initial
+  system image for this configuration"). Check for `system.img` in
+  `$ANDROID_HOME/system-images/<api>/<tag>/<abi>/`; if it is absent, reinstall the image — updating
+  the emulator will not help.
+- A **sandboxed macOS app cannot make outgoing requests** without
+  `com.apple.security.network.client` in its entitlements. `flutter create` does not add it, and
+  the failure is silent: the app simply looks permanently logged out. jZen's runner has it in both
+  `DebugProfile` and `Release` entitlements — do not remove it.
+
+## Email links on every platform
+
+A confirmation or recovery link signs the user in wherever the app runs. On the web it lands on
+`/auth/callback` and the app reads the tokens out of the URL fragment (ADR-018). On native the
+operating system hands the app a `zendemo://auth-callback` URL, `AuthDeepLinks` passes it to
+`IdentitySessionStore.consumeAuthLink`, and the rest of the path is identical (ADR-021).
+
+Verified on macOS, the iOS Simulator and the Android emulator, for links that arrive **cold** (the
+tap launches the app) and **warm** (it was already running). Three things make it work, and each is
+a place it breaks if changed:
+
+- **The scheme is registered in three manifests** - `ios/Runner/Info.plist`,
+  `macos/Runner/Info.plist` (`CFBundleURLTypes`) and `android/.../AndroidManifest.xml` (an
+  `intent-filter` with `BROWSABLE`). A custom scheme, not Universal/App Links: those need a domain
+  serving a verification file and a paid Team ID, and prove nothing extra here.
+- **The same string appears in three places or the flow fails silently**: the manifests, the build
+  define `--dart-define=ZEN_AUTH_REDIRECT_URI=zendemo://auth-callback`, and the server's
+  `AUTH_REDIRECT_URIS` - which accepts a client-named return address only on an *exact* match,
+  because that address is where a live session token gets mailed (ADR-019).
+- **A cold start is not a warm arrival.** `IdentitySessionStore.build()` only sees the launch URL
+  on the web, since off the web `Uri.base` is a file path. The initial link is fetched from the
+  plugin and replayed - `lib/src/auth_deep_links_native.dart`.
+
+You do not need email to test it. Take one real token, then replay every case with
+`xcrun simctl openurl booted`, `adb shell am start -a android.intent.action.VIEW -d`, or `open`
+on macOS.
 
 ## Testing
 

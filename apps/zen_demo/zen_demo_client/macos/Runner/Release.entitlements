@@ -10,5 +10,9 @@
 	     worked yesterday". -->
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- No keychain-access-groups, for the reason spelled out in DebugProfile.entitlements: it
+	     requires a development signing certificate, and a local unsigned run is the MVP's stated
+	     boundary. A distributed build (backlog item 6) is signed anyway, and that is the point at
+	     which adding a group costs nothing. -->
 </dict>
 </plist>

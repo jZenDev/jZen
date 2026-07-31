@@ -632,7 +632,7 @@ the table above, and ADR-020 records why each item sits where it does.
 |---|---|---|
 | 1 | **MVP scope, written down** | Done — see "What the MVP is" below. |
 | 2 | **Native deep-linking — backlog item 4's per-platform half** | **Done and verified** on macOS, the iOS Simulator and the Android emulator: runners generated, a `zendemo://` scheme registered per platform, and links consumed cold *and* warm. No paid account was needed, and no email — links were replayed from the terminal. |
-| 3 | **MVP live and tested on the real stack** | **In progress.** The environment stays up for this; it is what teardown waits for. The release gate `test:e2e` now runs green (10/10, real Supabase + Quarkus) for the first time across the native work. Testing the *deployed* stack immediately found what a local run structurally cannot: the service refuses `zendemo://auth-callback` with 400, because `deploy:cloudrun` never provisioned `AUTH_REDIRECT_URIS` — every native client locked out while the web app looks perfect. Fixed in the deployment contract and now asserted by `verify:deploy` (ADR-022); **the live environment is not yet fixed** — creating the secret and redeploying are operator actions. |
+| 3 | **MVP live and tested on the real stack** | **In progress.** The environment stays up for this; it is what teardown waits for. The release gate `test:e2e` now runs green (10/10, real Supabase + Quarkus) for the first time across the native work. Testing the *deployed* stack immediately found what a local run structurally cannot: the service refuses `zendemo://auth-callback` with 400, because `deploy:cloudrun` never provisioned `AUTH_REDIRECT_URIS` — every native client locked out while the web app looks perfect. Fixed in the deployment contract and now asserted by `verify:deploy` (ADR-022); **the live environment is not yet fixed** — creating the secret and redeploying are operator actions. Native session persistence landed alongside it (ADR-023), verified on device rather than only in tests. |
 | 4 | **Start the second product on the framework** | The first *honest* test of the framework/application boundary. `zen_demo` cannot be that test: it was written by the same hands at the same time, so when the framework is awkward both sides change in one commit and nobody feels it. |
 | 5 | **Publish the packages** | After 4, deliberately — see the backlog row. |
 | 6 | **Native release pipelines** | Only if a product is ever *distributed*. Off the critical path entirely, and may never be reached. |
@@ -654,6 +654,17 @@ In scope:
 - Whatever the native targets break that the web never exercised. The session is httpOnly cookies
   set by the server, and a native HTTP client is not a browser — cookie persistence, `CORS_ORIGINS`
   and `SameSite` are assumptions the web flow never had to test (ADR-020).
+  - **Cookie persistence: done** (ADR-023). The refresh token now lives in the platform keystore
+    and the session survives a restart on the **iOS Simulator and the Android emulator**, verified
+    by launching the app twice and watching `POST /api/v1/auth/refresh` in the server's access log.
+    **macOS is the exception**: the Keychain needs an entitlement that only signs with a
+    development certificate, and no-signing is this MVP's stated boundary — so it signs in again
+    each launch, exactly as before, and nothing else is affected.
+  - **`SameSite` is a non-issue on native**, and worth writing down so it is not re-investigated:
+    it is a browser policy. A `dart:io` client sends no `Origin`, triggers no preflight, and
+    applies no same-site rule; it sends the cookies its jar holds. `CORS_ORIGINS` likewise governs
+    browsers only — a native client is unaffected by it, and a CORS preflight from a custom-scheme
+    origin returning 403 is correct rather than a fault.
 
 Out of scope, and deliberately:
 
@@ -701,6 +712,63 @@ come to mean something else later.
 | 5 | **Run `destroy:cloudrun`** — tear down the GCP project + Supabase + Docker artifacts, leaving no orphans (even at $0). | **Open, and its trigger has moved (ADR-020): not "after the POC" but "when this environment is genuinely superseded".** The MVP is built on the same stack, so tearing down after the POC would demolish the thing the next milestone runs on. Two conditions before it fires: nothing is being tested on it, and no data on it still matters — once real users exist, teardown carries deletion obligations a POC teardown never did. It is safe to run at that point *because* the environment is reproducible from this repo (Flyway owns the schema, the `deploy:cloudrun` summary documents the one-time setup and every secret); what is not reproducible is data and the Supabase project ref. **Teardown is never a prerequisite to testing** — testing needs the environment that teardown removes. | ADR-020; `Taskfile.yml` `destroy:cloudrun` |
 | 6 | **Native release pipelines** (signing, store accounts, notarization) | **Declaration, not queue — and off the critical path** (ADR-020). Running on a simulator, an emulator, or locally on macOS needs no paid account and no signing identity, so a mobile/desktop MVP does not touch this item at all. It begins only if a product is *distributed* to someone else's machine (TestFlight, a store, a notarized download), which may never happen. | "Two items are declarations" above; ADR-020 |
 | 7 | **`task` `sources:`/`generates:` fingerprinting** | **Refused, not open** — it would defeat `sync:contracts`; now a STANDARDS "Orchestration" rule. Listed for completeness. | STANDARDS "Orchestration"; ADR-014 |
+| 8 | **Custom-scheme hijacking: move the email link to App Links / Universal Links** | **Open, and it is a real vulnerability, not hardening.** Any app on the device may register `zendemo://`, and an email link carries a live access **and** refresh token in its fragment — so an attacker who wins the scheme receives a working session for someone else's account, from an entirely genuine email the victim was right to trust. The server's exact-match allowlist (ADR-019) does not help: the attacker uses the *permitted* scheme. Blocked on signing identities, so it sits with item 6 and outside the MVP. | **"Item 8 in full" below**; ADR-023; RFC 8252 §8.6 |
+
+### Item 8 in full — why a custom scheme is not safe to keep, and what replaces it
+
+**The problem.** `zendemo://auth-callback` is a *private-use URI scheme*. Nothing owns it. On
+Android any app may declare the same intent filter; on macOS LaunchServices picks among
+registrants; on iOS since iOS 11 the first installed app wins, which is better and still not a
+guarantee. RFC 8252 §8.6 permits such schemes for native OAuth and says plainly that they cannot
+be claimed exclusively.
+
+That would be a minor concern if the link carried a one-time code. It does not. Per ADR-018 jZen
+uses the implicit fragment flow, so the URL contains a live `access_token` **and**
+`refresh_token` — a seven-day credential for the account. An app that wins the scheme race
+receives them and has the account, and **every visible signal tells the victim they are safe**:
+they asked for the email, it came from the right sender, they clicked their own link.
+
+Three things that look like mitigations and are not:
+
+- **The server allowlist (ADR-019)** checks that the *requested return address* is one this
+  deployment permits. The attacker asks for nothing; they receive what the real app asked for.
+- **Exact matching** is about which addresses are permitted, not about who is listening.
+- **PKCE** would help against interception generally, but ADR-018 chose the fragment flow for
+  reasons that still hold. Changing that is a larger decision, and not the cheapest fix here.
+
+**What actually fixes it: bind the link to a domain.** App Links (Android) and Universal Links
+(iOS) are `https://` links that only open in an app the *operating system has cryptographically
+verified* belongs to that domain. A hostile app cannot register them, because it cannot serve
+files from the domain. jZen already has the origin to serve them from — the Cloud Run service the
+web app and admin panel are on.
+
+**How to implement**, once signing identities exist (item 6):
+
+1. **Serve two association files** from the deployed origin, same-origin like everything else:
+   - `/.well-known/assetlinks.json` — Android. Lists the package name and the **SHA-256
+     fingerprint of the signing certificate**. Must be `application/json` over HTTPS with no
+     redirect.
+   - `/.well-known/apple-app-site-association` — iOS. JSON, **no file extension**, served as
+     `application/json`, no redirect. Lists `appID` as `<TeamID>.<bundleID>`.
+   Both must be reachable unauthenticated — add them beside the static web bundle, and assert
+   them in `verify:deploy`, which is the gate that already catches config-only faults (ADR-022).
+2. **Declare the association in each app**: Android an `<intent-filter>` with
+   `android:autoVerify="true"` for `https://<host>/auth/callback`; iOS the **Associated Domains**
+   entitlement `applinks:<host>`.
+3. **Point the email at the HTTPS URL**: add it to `AUTH_REDIRECT_URIS` and to the Supabase
+   dashboard's Redirect URLs — both gates, per ADR-022 — and pass it as `ZEN_AUTH_REDIRECT_URI`.
+4. **Keep a fallback path**: a verified link that opens in a browser (association not yet
+   verified, or a desktop) must still land somewhere sensible. `/auth/callback` already serves the
+   web app, so this costs nothing — which is also what makes the migration safe to do gradually.
+5. **Then retire `zendemo://`** from `AUTH_REDIRECT_URIS` in deployed environments. Keeping it
+   for local development is fine; leaving it in production would leave the hijack path open beside
+   the fixed one, which is no fix at all.
+
+**Why it is not MVP work.** Both halves need a signing identity — Android needs the certificate
+fingerprint, iOS needs a Team ID — and the MVP's boundary is explicitly a simulator, emulator, or
+local run with no paid account and no signing. The custom scheme is the correct choice *for that
+boundary*, on machines the developer controls. It stops being correct the moment a build reaches
+someone else's device, which is precisely when item 6 begins.
 
 ### Item 4 in full — native deep-linking: what exists, and the plan for the rest
 

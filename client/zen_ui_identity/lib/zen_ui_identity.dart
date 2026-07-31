@@ -30,6 +30,7 @@ export 'src/screens/set_password_screen.dart';
 // State
 export 'src/state/identity_repository.dart';
 export 'src/state/identity_session_store.dart';
+export 'src/state/session_client_provider.dart';
 // Theme
 export 'src/theme/identity_theme_extension.dart';
 // Widgets

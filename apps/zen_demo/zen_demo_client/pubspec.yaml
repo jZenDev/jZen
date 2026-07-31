@@ -26,6 +26,8 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   intl: ^0.20.2
+  zen_secure_store:
+    path: ../../../client/zen_secure_store
   zen_transport:
     path: ../../../client/zen_transport
   zen_ui_identity:

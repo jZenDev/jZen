@@ -29,6 +29,7 @@ workspace:
   - zen_core
   - zen_transport
   - zen_identity
+  - zen_secure_store
   - zen_ui_navigation
   - zen_ui_navigation/example
   - zen_ui_identity

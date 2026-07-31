@@ -18,6 +18,10 @@ dependencies:
     path: ../zen_core
   zen_identity:
     path: ../zen_identity
+  # Direct since sessionClientProvider names ZenSessionClient. It arrived transitively through
+  # zen_identity before, which the analyzer rightly refuses to rely on.
+  zen_transport:
+    path: ../zen_transport
   zen_ui_navigation:
     path: ../zen_ui_navigation
   flutter:

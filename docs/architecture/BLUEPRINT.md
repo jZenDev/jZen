@@ -133,6 +133,14 @@ committed generated file changed — the gate that blocks out-of-sync bugs.
 
 Supabase owns authentication. Landed in ROADMAP step 3.
 
+**Supabase is reached only from here — the server.** No client ever calls it, and no client holds
+its URL or key; a client's single destination is the jZen backend at `zenApiUrl`. That is a
+non-negotiable rule rather than an accident of how it was built, because breaking it fails
+silently: the app would still authenticate and every suite would still pass, while sessions,
+roles and rate limiting quietly stopped being the backend's to decide. It is enforced by
+`task verify:boundaries` and spelled out in [`STANDARDS.md`](./STANDARDS.md) "The client talks to
+one server".
+
 - `SupabaseAuthClient` — a `@RegisterRestClient` interface with `@CircuitBreaker`/
   `@Retry`/`@Timeout` per call, against Supabase Auth (GoTrue) REST: `POST /token` (login
   and refresh, by `grant_type`), `/signup`, `/recover`, `PUT /user`. A Supabase 4xx skips the

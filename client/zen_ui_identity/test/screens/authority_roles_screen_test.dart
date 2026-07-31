@@ -43,6 +43,12 @@ class _FakeRepo implements IdentityRepository {
       const ZenResult.err(ZenUnknownError('not implemented'));
 
   @override
+  // No fake here resumes a persisted session: sessionClientProvider defaults to null, so the
+  // store returns before it would ever call this. Failing loudly beats a silent empty success.
+  Future<ZenResult<IdentityContract>> refreshSession() async =>
+      const ZenResult.err(ZenUnknownError('refreshSession not stubbed'));
+
+  @override
   Future<ZenResult<void>> logout() async => const ZenResult.err(ZenUnknownError('no'));
 }
 

@@ -566,6 +566,9 @@ tasks:
   test:
     desc: Run every test suite (test:e2e is the release gate - it hits the live stack)
     cmds:
+      # First, and cheap: an architectural rule no unit test can catch, because the violation it
+      # looks for makes every other suite pass. See STANDARDS "The client talks to one server".
+      - task: verify:boundaries
       - task: test:server
       - task: test:client
       - task: test:apps
@@ -1437,6 +1440,94 @@ tasks:
       - rm -rf {{.ADMIN_DIR}}/dist {{.ADMIN_DIR}}/node_modules/.vite
       - rm -rf {{.DEMO_ADMIN_DIR}}/dist {{.DEMO_ADMIN_DIR}}/node_modules/.vite
       - find . -name .dart_tool -type d -prune -exec rm -rf {} +
+
+  verify:boundaries:
+    desc: Fail if a client package reaches past the jZen backend (e.g. straight to Supabase)
+    silent: true
+    summary: |
+      Enforces the rule in STANDARDS "The client talks to one server": every client request goes
+      to the jZen backend, and NOTHING on the client speaks to the identity provider directly.
+
+      WHY THIS IS A GATE AND NOT A CONVENTION. Adding `supabase_flutter` to a Flutter app is the
+      single most natural thing a developer can do here, every tutorial does it, and it would
+      work — the app would authenticate, and every test would still pass. What it would quietly
+      destroy is the property the whole backend depends on: that the server is the only place a
+      session is minted, the only holder of the provider's credentials, and the only enforcement
+      point for roles (which are read from the `users` table, not the JWT). A second door into
+      the identity provider does not fail loudly; it just means half the rules stop applying to
+      whoever walks through it.
+
+      The naming makes it likelier, not less: `SupabaseIdentityRepository` is named for the
+      provider standing behind the backend, and reads like a class that ought to call it.
+
+      Three checks, deliberately textual so they cost nothing and cannot themselves break:
+
+        A. No client or app package may depend on a provider SDK (supabase, gotrue, postgrest,
+           realtime/storage/functions clients).
+        B. No client library source may name a provider host or credential (`supabase.co`, the
+           local `:54321`, `apikey`, `anon_key`, `service_role`, `SUPABASE_URL`, `SUPABASE_KEY`).
+           The anon key is public by design, which is exactly why its absence has to be checked:
+           shipping it is harmless-looking and is how the second door gets built.
+        C. No absolute URL literal in client library code, except the one compile-time base URL
+           (`zen_identity_config.dart`). Comments and generated code are exempt; tests are too,
+           since a test server's URL is not a call the product makes.
+
+      Scope is `client/*/lib` and `apps/*/*/lib`. The SERVER is where the provider is reached —
+      `SupabaseAuthClient`, `@RegisterRestClient(configKey = "supabase-auth")` — and it is meant
+      to be the only place.
+    cmds:
+      - |
+        set -eu
+        fail=0
+        say_fail() { printf '  \033[31mFAIL\033[0m %s\n' "$1"; fail=1; }
+        say_ok()   { printf '  \033[32mok\033[0m   %s\n' "$1"; }
+
+        echo "Checking the client/server boundary..."
+
+        # A. A provider SDK in a client or app package.
+        hits=$(grep -rnE "^[[:space:]]{2}(supabase|gotrue|postgrest|realtime_client|storage_client|functions_client)[a-z_]*[[:space:]]*:" \
+                 --include="pubspec.yaml" client apps 2>/dev/null || true)
+        if [ -n "$hits" ]; then
+          say_fail "a client package depends on an identity-provider SDK:"
+          printf '%s\n' "$hits" | sed 's/^/         /'
+        else
+          say_ok "no client package depends on a provider SDK"
+        fi
+
+        # B. Provider hosts or credentials named in client library code.
+        hits=$(grep -rniE "supabase\.co|:54321|apikey|anon_key|service_role|SUPABASE_(URL|KEY)" \
+                 --include="*.dart" client/*/lib apps/*/*/lib 2>/dev/null | grep -v "/generated/" || true)
+        if [ -n "$hits" ]; then
+          say_fail "client code names a provider host or credential:"
+          printf '%s\n' "$hits" | sed 's/^/         /'
+        else
+          say_ok "no provider host or credential in client code"
+        fi
+
+        # C. Absolute URLs in client library code, other than the one configured base URL.
+        # Comments are stripped first: a doc example showing `ZenClient(baseUrl: 'http://...')`
+        # is documentation, not a call.
+        hits=$(grep -rnE "['\"]https?://" --include="*.dart" client/*/lib apps/*/*/lib 2>/dev/null \
+                 | grep -v "/generated/" \
+                 | grep -v "zen_identity_config.dart" \
+                 | awk -F: '{ line=$0; sub(/^[^:]*:[^:]*:/,"",line); gsub(/^[ \t]+/,"",line);
+                              if (line !~ /^\/\//) print }' || true)
+        if [ -n "$hits" ]; then
+          say_fail "client code hard-codes an absolute URL (the base URL is zenApiUrl):"
+          printf '%s\n' "$hits" | sed 's/^/         /'
+        else
+          say_ok "the only base URL in client code is the compile-time zenApiUrl"
+        fi
+
+        echo
+        if [ "$fail" -eq 0 ]; then
+          echo "Boundary intact: the client talks to the jZen backend and nothing else."
+        else
+          echo "The client/server boundary is broken. The jZen backend is the ONLY thing a client"
+          echo "may call: it is where a session is minted, where the provider's credentials live,"
+          echo "and where roles are resolved. See STANDARDS 'The client talks to one server'."
+          exit 1
+        fi
 
   verify:docs:
     desc: Fail if a README names a non-existent task, or a module LICENSE drifted from root

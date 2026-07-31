@@ -3,5 +3,12 @@
 // consumer on an exotic platform still functions (just without cookie persistence).
 import 'package:http/http.dart' as http;
 
+import 'token_store.dart';
+import 'zen_session_client.dart';
+
 /// Fallback: a plain [http.Client] with no cookie handling.
-http.Client createPlatformSessionClient() => http.Client();
+///
+/// [store] is accepted for signature parity across the seam and ignored, because a client that
+/// cannot hold a cookie for the length of one session has nothing worth holding between two.
+ZenSessionClient createPlatformSessionClient({TokenStore? store}) =>
+    PassthroughSessionClient(http.Client());

@@ -15,7 +15,68 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
-## ADR-023 — The native session survives a restart: the refresh token in the platform keystore, behind a port `zen_transport` cannot import
+## ADR-024 — A Flutter plugin must be Wasm-clean, because the web bundle cannot refuse one
+
+**Date:** 2026-07-31. **Status:** accepted. **Refines:** ADR-016, ADR-023.
+
+### Context
+
+Adding `flutter_secure_storage` for native session persistence (ADR-023) **broke the web build
+entirely**, and nothing found it until `deploy:cloudrun` ran `build:web`:
+
+```
+Target dart2wasm failed:
+  flutter_secure_storage_web-1.2.1/lib/flutter_secure_storage_web.dart:5:8:
+  Error: Dart library 'dart:html' is not available on this platform.
+  main.dart => web_plugin_registrant.dart => package:flutter_secure_storage_web => dart:html
+```
+
+Two facts collide. jZen delivers the web app as **WebAssembly** (ADR-016), and dart2wasm has no
+`dart:html`, `dart:js_util` or `package:js`. And a Flutter web build compiles a **generated
+`web_plugin_registrant.dart` that imports every web plugin in the dependency graph**, whether the
+application calls it or not.
+
+The consequence is worth stating plainly, because it defeated a guard that looked sufficient:
+**`zenIsWeb ? null : SecureTokenStore()` does not help.** The value is never constructed on web,
+the constant folds away, and the build still fails — the plugin is reached through the registrant,
+not through jZen's code. The same is true of any conditional import. A pubspec dependency is
+unconditional, and plugin registration is downstream of every mechanism jZen has for saying
+"not on this platform".
+
+### Decision
+
+- **Any Flutter plugin entering a client or app package must be Wasm-clean**: its web
+  implementation may not import `dart:html`, `dart:js_util` or `package:js`. `package:web` and
+  `dart:js_interop` are the Wasm-compatible equivalents.
+- **`flutter_secure_storage` is pinned to `^10.3.1` as a floor, not a preference.** 9.x is the
+  `dart:html` implementation. The bound carries a comment saying so, because "upgrade blocked, pin
+  it back" is an entirely reasonable-looking change that would silently un-ship the web app.
+- **The Android `encryptedSharedPreferences` option is dropped** — deprecated in 10.x (Google
+  deprecated the Jetpack Security library behind it), ignored when passed, and removed in 11. The
+  plugin encrypts with its own ciphers and migrates existing data on first access.
+
+### What this supersedes, and why
+
+- **"Null on web is not a gap … the web session client ignores the store for exactly that
+  reason"** (ADR-023's `main.dart` reasoning) → **refined.** The runtime reasoning was correct and
+  is unchanged; what it did not cover is that a plugin costs something at *compile* time no
+  runtime guard can refund. ADR-023 called the web dependency "dead weight on a bundle you
+  deliberately optimize" — that was too generous. It is not weight, it is a build failure.
+- **STANDARDS "Client config is compile-time"** → **extended**, not altered. Conditional imports
+  and compile-time constants select jZen's *own* code. They have no authority over a plugin's
+  generated registration, which is the gap this ADR names.
+
+### Consequence
+
+Verified: `flutter build web --wasm` compiles and stages the bundle (45M) after the upgrade, and
+`task test:e2e`, `test:client`, `test:apps` and the native suites stay green — the keystore path on
+iOS and Android is unaffected by the version change.
+
+The lesson is the same shape as ADR-022's, one layer down: **the checks that pass are not evidence
+about the thing they do not compile.** `task test` never builds the web bundle, so every suite was
+green on a commit that could not produce a web app at all. The deploy caught it, which is the gate
+working — but the cheap habit is to run `task build:web` after adding any Flutter dependency,
+rather than to discover it while shipping.: the refresh token in the platform keystore, behind a port `zen_transport` cannot import
 
 **Date:** 2026-07-31. **Status:** accepted. **Refines:** ADR-018, ADR-020, ADR-021.
 

@@ -5,6 +5,7 @@ import 'package:zen_identity/zen_identity.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'identity_repository.dart';
+import 'session_client_provider.dart';
 
 /// Providers for accessing the session store and state.
 final identitySessionStoreProvider = AsyncNotifierProvider<IdentitySessionStore, Identity?>(
@@ -59,8 +60,37 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
     final identity = await _consumeAuthLink();
     if (identity != null) return identity;
 
+    // A persisted session is resumed BEFORE the probe, for the same reason the link is: the probe
+    // asks "is there an access token?", and on a native launch there is not — only a refresh
+    // token, restored from the keystore. Probing first would answer "anonymous" and show a login
+    // screen to someone who never signed out.
+    final resumed = await _resumePersistedSession();
+    if (resumed != null) return resumed;
+
     final result = await _repository.getCurrentIdentity();
     return result.fold((model) => model?.toDomain(), (failure) => null);
+  }
+
+  /// Restores a stored refresh token and exchanges it for a live session.
+  ///
+  /// Returns null whenever there is nothing to resume, which is the ordinary case on the web (no
+  /// session client is provided), on a first launch, and after a seven-day token finally expires.
+  /// A refusal is not an error worth surfacing: it means "sign in again", and the login screen is
+  /// already where the user is headed.
+  Future<Identity?> _resumePersistedSession() async {
+    final session = ref.read(sessionClientProvider);
+    if (session == null) return null;
+
+    if (!await session.restore()) return null;
+
+    final result = await _repository.refreshSession();
+    final identity = result.fold<Identity?>((model) => model.toDomain(), (_) => null);
+    if (identity == null) {
+      // The stored token was rejected — expired, revoked, or already rotated by another install.
+      // Drop it rather than present the same dead credential on every future launch.
+      await session.clear();
+    }
+    return identity;
   }
 
   /// True when an auth link was present but could not be turned into a session (expired, already

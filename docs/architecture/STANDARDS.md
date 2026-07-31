@@ -243,6 +243,51 @@ All work happens inside `jZen/`. Nothing in a build, a task, or a tool run reach
 repository root to modify, move, or reformat a file. Anything jZen depends on comes in as a
 declared dependency, never as an edit somewhere else on the machine.
 
+## The client talks to one server (non-negotiable)
+
+- **Every request a jZen client makes goes to the jZen backend.** No client package — Dart,
+  Flutter, or the admin panel — may call the identity provider, the database, or any third-party
+  service directly. There is exactly one base URL, the compile-time `zenApiUrl`, and exactly one
+  outbound destination behind it.
+- **Supabase is reached only by the server**, through `SupabaseAuthClient`
+  (`@RegisterRestClient(configKey = "supabase-auth")`). The provider is an implementation detail
+  of `zen-identity`, not a party the client knows about. `SUPABASE_URL` and `SUPABASE_KEY` are
+  server-side runtime config and are never shipped to a client.
+
+**Why this is a rule and not a preference.** Three properties depend on it, and all three fail
+quietly rather than loudly if it is broken:
+
+1. **The server is the only place a session is minted.** It validates provider tokens before
+   issuing the `zen_access_token` cookie, so there is one definition of "signed in" and one place
+   that can refuse. A client holding a provider session directly has a session the backend never
+   agreed to.
+2. **Roles are read from the `users` table by `RoleAugmentor`, not from the JWT** (see
+   "Authorization (RBAC)"). A client that authenticates straight against the provider gets a token
+   whose claims no one has augmented — so it is authenticated but its authority is unresolved, and
+   whatever it presents that token to has to guess.
+3. **One audit and enforcement point.** Rate limiting, lifecycle state, retention and logging all
+   live on the path through the backend. A second path is not a second implementation of those
+   rules; it is their absence.
+
+**Why it needs a gate.** Adding `supabase_flutter` to a Flutter app is the most natural move a
+developer can make here — every tutorial does it, the anon key is published on purpose, and it
+*works*. The app authenticates, the screens render, and **every existing suite still passes**,
+because nothing in a unit test can observe that the request went somewhere else. The naming makes
+it likelier still: `SupabaseIdentityRepository` is named for the provider standing behind the
+backend and reads like a class that ought to call it (it does not; it calls `/api/v1/auth/*`).
+
+So the rule is enforced by **`task verify:boundaries`**, which runs first in `task test`. It
+fails on a provider SDK in any client package, on a provider host or credential named in client
+library code, and on any absolute URL literal outside the one configured base URL. Comments,
+generated code and tests are exempt.
+
+**The one thing that legitimately crosses.** Provider-minted tokens arrive at the client in an
+email link's fragment (the implicit flow, [`DECISIONS.md`](./DECISIONS.md) ADR-018). That is not a
+call *to* the provider: the client does not decode, validate or trust them, it posts them to
+`POST /api/v1/auth/session` and the **server** checks them with the provider before any session
+exists. This is the exception that shows the shape of the rule — even material that comes from the
+provider is only made meaningful by the backend.
+
 ## Client config is compile-time (non-negotiable)
 
 - The Dart/Flutter client **keeps compile-time config** (`String.fromEnvironment`) and the

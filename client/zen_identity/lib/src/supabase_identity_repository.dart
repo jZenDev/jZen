@@ -30,6 +30,7 @@ class SupabaseIdentityRepository implements IdentityRepository {
   static const String _restorePassword = '/api/v1/auth/restore-password';
   static const String _session = '/api/v1/auth/session';
   static const String _password = '/api/v1/auth/password';
+  static const String _refresh = '/api/v1/auth/refresh';
   static const String _logout = '/api/v1/auth/logout';
   static const String _identity = '/api/v1/auth/identity';
 
@@ -118,6 +119,15 @@ class SupabaseIdentityRepository implements IdentityRepository {
       body: pb.SetPasswordRequest(password: password),
     );
     return result.fold((_) => const ZenResult<void>.ok(null), ZenResult<void>.err);
+  }
+
+  @override
+  Future<ZenResult<IdentityContract>> refreshSession() async {
+    final result = await _client.post(pb.Identity.new, _refresh);
+    return result.fold(
+      (identity) => ZenResult.ok(_toContract(identity)),
+      (error) => ZenResult.err(error),
+    );
   }
 
   @override

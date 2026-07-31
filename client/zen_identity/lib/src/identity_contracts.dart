@@ -165,6 +165,13 @@ abstract class IdentityRepository {
   /// same call an already signed-in user makes to change their password.
   Future<ZenResult<void>> setPassword({required String password});
 
+  /// Rebuilds a session from the refresh token the client already holds.
+  ///
+  /// Sends no body: the refresh token travels as a cookie, so the caller's business is only to
+  /// have that cookie attached — on native that means restoring it from secure storage first.
+  /// A refusal is the normal end of a seven-day token and means "sign in again", not a fault.
+  Future<ZenResult<IdentityContract>> refreshSession();
+
   /// Terminates the current session.
   Future<ZenResult<void>> logout();
 }

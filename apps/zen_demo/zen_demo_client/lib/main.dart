@@ -1,7 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
+import 'package:zen_core/zen_core.dart';
 import 'package:zen_identity/zen_identity.dart';
+import 'package:zen_secure_store/zen_secure_store.dart';
 import 'package:zen_transport/zen_transport.dart';
 import 'package:zen_ui_identity/zen_ui_identity.dart';
 
@@ -17,8 +18,24 @@ import 'src/providers.dart';
 /// the round trip that fails off-web without the jar.
 ///
 /// The base URL is the compile-time [zenApiUrl] (ZEN_API_URL); config stays compile-time.
+///
+/// The session is also made to survive the app being closed, on the platforms where that does not
+/// happen by itself. A browser persists its own cookies; a native process loses everything, so
+/// before this a user signed in again on every launch. [SecureTokenStore] keeps the refresh token
+/// in the platform keystore and [IdentitySessionStore] spends it on the next start.
 void main() {
-  final http.Client session = createSessionClient();
+  // Plugins are reached over platform channels, and the keystore is a plugin, so the binding has
+  // to exist before the store is constructed.
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // `zenIsWeb` is a const, so this whole branch folds away at compile time: a web build carries
+  // no keystore code, and a native build carries no dead check. This is the same compile-time
+  // platform selection the codec and session seams use (STANDARDS "Client configuration").
+  //
+  // Null on web is not a gap: the browser already persists the session cookies itself, and the
+  // web session client ignores the store for exactly that reason.
+  final TokenStore? tokens = zenIsWeb ? null : SecureTokenStore();
+  final ZenSessionClient session = createSessionClient(store: tokens);
 
   // The container is built below, but ZenClient only calls this closure when it sends a
   // request - by which time it is assigned. Reading the notifier per request (rather than
@@ -43,6 +60,9 @@ void main() {
     overrides: [
       identityRepositoryProvider.overrideWithValue(identityRepository),
       demoRepositoryProvider.overrideWithValue(demoRepository),
+      // The SAME client the repositories use, not another one: the store restores the refresh
+      // cookie into this jar, and a second client would restore it into a jar nobody sends from.
+      sessionClientProvider.overrideWithValue(session),
     ],
   );
 

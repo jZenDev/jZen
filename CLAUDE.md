@@ -151,6 +151,16 @@ Admin always speaks `X-Zen-Transport: json`; list endpoints return a bare JSON a
 
 ## Persistence & auth
 
+**The client talks to one server, and it is ours.** No client package may call Supabase (or any
+third party) directly — not with `supabase_flutter`, not with a hand-rolled call. Supabase is
+reached only by the server, via `SupabaseAuthClient`; `SUPABASE_URL`/`SUPABASE_KEY` are
+server-side config and are never shipped to a client. This fails *silently* if broken — the app
+would authenticate and every suite would still pass, while the backend stopped being the only
+place a session is minted and the only place roles are resolved. `task verify:boundaries` (first
+in `task test`) enforces it; STANDARDS "The client talks to one server" explains it. Note
+`SupabaseIdentityRepository` is named for the provider *behind* the backend and calls
+`/api/v1/auth/*` — do not "fix" it by adding the SDK.
+
 PostgreSQL via Hibernate Panache (active-record; no repository classes). **Flyway is the single
 migration authority** (`zen-identity/db/migration/`), so `supabase/migrations/` stays empty — never
 two migration systems on one DB. Local DB is the Supabase stack on port 54322. Supabase owns

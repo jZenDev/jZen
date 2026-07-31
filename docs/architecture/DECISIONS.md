@@ -15,7 +15,96 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
-## ADR-022 — A safe default is a deployment trap when its absence is silent: the native return address joins the deployment contract
+## ADR-023 — The native session survives a restart: the refresh token in the platform keystore, behind a port `zen_transport` cannot import
+
+**Date:** 2026-07-31. **Status:** accepted. **Refines:** ADR-018, ADR-020, ADR-021.
+
+### Context
+
+A browser persists session cookies to disk for their `Max-Age`. Nothing did that on native, so
+the jar was in-memory and **a native user signed in again on every launch** — a defect the web
+flow could never surface, and one ADR-020 named in advance as MVP work ("cookie persistence").
+
+Devices have exactly the right facility for this: Keychain on iOS/macOS, Keystore-backed storage
+on Android. The reason it was not simply used is mechanical. Reaching it means a Flutter plugin,
+which imports `package:flutter/services.dart`, which imports `dart:ui` — and **a `dart:ui` import
+anywhere in the graph cannot be compiled by the Dart VM at all**. `dart test` fails while
+*loading* such a file, called or not. `task test:e2e`, the release gate, is a plain `dart test`
+process that imports `zen_transport`. Putting the keystore there would not degrade the gate, it
+would end it. Verified directly rather than assumed: a probe test importing
+`package:flutter/services.dart` fails to load under `dart test`.
+
+Conditional imports do not solve it. They select *code*; a pubspec dependency is unconditional,
+so a plugin behind `if (dart.library.io)` is still in the graph.
+
+### Decision
+
+- **`zen_transport` declares a `TokenStore` port** (pure Dart, three methods, one value) with an
+  `InMemoryTokenStore` default that touches nothing. `createSessionClient({TokenStore? store})`.
+- **`zen_secure_store`**, a new Flutter package, implements it over `flutter_secure_storage`. The
+  app's `main` wires the two — the composition root is the one place allowed to know both.
+- **Only the refresh token is persisted.** The access token stays in memory: an hour long and
+  re-obtainable, so writing it down widens what sits at rest to save one round trip. This is a
+  defence-in-depth judgement, *not* a rule from a standard, and is recorded as such. What is a
+  rule: **OWASP MASVS-STORAGE-1** requires any persisted token to live in platform secure storage,
+  which is what rules out the tempting app-support file. And because a native app is a public
+  client, the **OAuth 2.0 Security BCP (RFC 9700)** wants refresh tokens rotated — Supabase issues
+  a new one per refresh, and persisting on every arrival keeps the stored copy the live one.
+- **Restore feeds `POST /auth/refresh`**, before the ordinary identity probe. The probe asks "is
+  there an access token?", and on a native launch there is not — only a restored refresh cookie.
+- **Expiry travels with the value**, so a token past its seven days is discarded rather than sent.
+- **A keystore failure degrades to "no session", loudly.** It is a platform service and can
+  refuse; a crash on launch would be the worse trade. Reported through `ZenLogger`, never hidden —
+  "nothing to resume" is a real answer, not a swallowed failure.
+- **`ZenSessionClient`**, a neutral return type, so the app can say `restore()` without naming
+  `CookieJarClient`, which does not exist in a web build.
+
+### macOS is the exception, and the boundary is the reason
+
+**Session persistence does not work on macOS, deliberately.** A sandboxed macOS app reaches the
+Keychain only with the `keychain-access-groups` entitlement, and Xcode refuses to sign that
+without a development certificate: the build fails outright with *"entitlements that require
+signing with a development certificate"*. The MVP's stated boundary is a local run with **no
+signing identity** (ROADMAP "What the MVP is"), so requiring one would trade a session that
+survives a restart for a macOS build that does not happen at all. The entitlement is therefore
+absent and the failure is contained — the store reports nothing to restore and the session ends
+with the process, exactly as before. A *distributed* macOS build is signed anyway (backlog item
+6), which is the point at which this costs nothing.
+
+### What this supersedes, and why
+
+- **"The jar is a simple in-memory map keyed by cookie name, sufficient for a single-origin demo
+  session"** (`session_client_io.dart`) → **reversed for the refresh token, kept for everything
+  else.** "Sufficient for a demo" stopped being true when the demo became the MVP on real
+  devices; a per-launch sign-in is not a rough edge on a phone, it is the product being unusable.
+- **"Whatever the native targets break that the web never exercised … cookie persistence"**
+  (ROADMAP, "What the MVP is") → **resolved**, and with a result the row did not anticipate: two
+  of three native targets, with macOS blocked by a boundary the same document sets.
+- **`zen_transport` as a pure-Dart package** → **reframed.** The value is not package purity, it
+  is that the VM gate stays a plain process. Stated precisely because the imprecise version
+  ("keep it framework-free") suggests the port could be dissolved by relaxing a preference, when
+  in fact the toolchain forbids it.
+
+### Consequence
+
+Verified by running it, not only by testing it — a real dart:io backend, a real device keystore,
+a real process restart, with the server's access log as the evidence:
+
+| Target | Restart behaviour | Evidence |
+|---|---|---|
+| iOS Simulator | **Session survives** | `POST /api/v1/auth/refresh 200` on relaunch |
+| Android emulator | **Session survives** | `POST /api/v1/auth/refresh 200` on relaunch |
+| macOS (sandboxed, unsigned) | Signs in again, as before | `GET /api/v1/auth/identity 204` on relaunch |
+| Web | Unchanged | the browser persists its own cookies; the store is ignored |
+
+Suites: `zen_transport` 58 tests (13 new, covering persistence, rotation, expiry, corruption,
+logout, and a keystore that refuses), `zen_secure_store` 5 (pinning the storage key, whose
+renaming would silently sign every user out), `task test:e2e` 10/10 — the gate still compiles on
+the VM, which is the design's own proof.
+
+A note for whoever reads this next: the macOS row is a *finding*, not a defect to file. The
+interesting part is that it was invisible to every test — the suites pass identically on all four
+targets, and only launching the app twice tells them apart.
 
 **Date:** 2026-07-31. **Status:** accepted. **Refines:** ADR-019, ADR-020, ADR-021.
 

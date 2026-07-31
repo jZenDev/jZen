@@ -14,5 +14,16 @@
 	<true/>
 	<key>com.apple.security.network.server</key>
 	<true/>
+	<!-- NO keychain-access-groups here, deliberately. The keystore that persists the refresh
+	     token (zen_secure_store) is documented as needing it, and adding it does work — but it
+	     is an entitlement Xcode will only sign with a development certificate, so the build
+	     fails outright with "entitlements that require signing with a development certificate"
+	     on a machine that has none. The MVP's boundary is explicitly a local run with no signing
+	     identity (ROADMAP "What the MVP is"), so requiring one here would trade a session that
+	     survives a restart for a macOS build that does not happen at all.
+	     A group is only needed to SHARE a keychain between apps; an app reaching its own items
+	     does not need one. If macOS ever cannot read its own keychain here, the failure is
+	     contained: the store reports nothing to restore and the session ends with the process,
+	     exactly as it did before any of this existed. -->
 </dict>
 </plist>

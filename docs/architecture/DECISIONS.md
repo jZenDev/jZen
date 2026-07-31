@@ -15,7 +15,80 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
-## ADR-021 — zen_demo runs natively: a custom scheme, and one Java version across the product
+## ADR-022 — A safe default is a deployment trap when its absence is silent: the native return address joins the deployment contract
+
+**Date:** 2026-07-31. **Status:** accepted. **Refines:** ADR-019, ADR-020, ADR-021.
+
+### Context
+
+MVP step 3 is "MVP live and tested on the real stack". The first thing testing the real stack found
+was that **no native client can authenticate against it at all**. The deployed service refuses
+`zendemo://auth-callback` with `400 invalid_redirect`:
+
+```
+$ curl -X POST $URL/api/v1/auth/restore-password \
+    -d '{"email":"…","redirectUri":"zendemo://auth-callback"}'
+invalid_redirect;That return address is not configured for this application.  HTTP 400
+```
+
+Nothing was broken. `auth.redirect-uris` is empty by default — deliberately, per ADR-019, because
+an unchecked return address mails a live session token to a destination an attacker names — and
+`deploy:cloudrun` never provisioned it. The native work of ADR-021 was verified locally, where the
+value was passed by hand; the deployment contract was never taught it existed.
+
+### Decision
+
+- **`AUTH_REDIRECT_URIS` is part of the deployment contract**, not an optional extra: a fourteenth
+  configuration secret in `deploy:cloudrun`'s one-time setup, and wired into `--set-secrets` so a
+  deploy *fails* when it is absent rather than succeeding into a half-working environment.
+- **`verify:deploy` asserts it against the real environment.** One `POST /restore-password` with a
+  nonexistent user (the endpoint answers 204 regardless of whether the account exists, so it reads
+  the allowlist and nothing else, and mails no one). A non-204 fails the task and prints the
+  `gcloud secrets create` line that fixes it.
+- **The assertion lives in `verify:deploy`, not the shared `verify:endpoints`.** It needs a real
+  Supabase behind the service, which the `test:native` smoke container deliberately does not have —
+  the same boundary that file already draws for anything needing real Supabase or SMTP.
+- **Both gates are named together in the operator step.** They fail differently and only one is
+  visible: the backend refuses an unlisted target with a 400, while GoTrue *silently drops* a target
+  missing from the Supabase dashboard's Redirect URLs and falls back to the Site URL — the email
+  arrives, the link opens the web app instead of the phone app, and nothing reports an error.
+- **`RedirectTargetsTest` covers the additional-entries path**, which nothing did before.
+
+### What this supersedes, and why
+
+- **"`auth.redirect-uris` — additional permitted targets, comma-separated. Empty until an
+  application ships a client that needs one, which is the safe default"** (`RedirectTargets`
+  javadoc; ADR-019) → **refined, not reversed.** The default stays empty and exact matching stays
+  exact; ADR-019's security reasoning is untouched and remains correct. What was missing is that
+  *an application has now shipped such a client* (ADR-021), so the condition the safe default was
+  waiting on has been met, and the deployment path had no way to express it.
+- **"the thirteen configuration secrets"** and the teardown's **"all fourteen secrets"**
+  (`Taskfile.yml`, `deploy:cloudrun` / `destroy:cloudrun` summaries) → **changed** to fourteen and
+  fifteen. The counts are load-bearing: the setup block is what an operator works through, and the
+  teardown claim is what "no orphans" is checked against.
+- **"Verified on a simulator, emulator, or local macOS run"** (ROADMAP, backlog item 4) → **refined.**
+  A local run verifies the *client*; it cannot verify the environment the client will actually talk
+  to, because the value under test is supplied by hand at the point where it is later supplied by
+  configuration. This is the general shape of the miss, and the reason the gate is a deploy-time
+  assertion rather than another test.
+
+### Consequence
+
+The lesson generalizes past this one secret: **a security control that fails closed is a
+deployment trap when its absence is indistinguishable from correct operation.** The empty allowlist
+was right, the deploy omitting it was wrong, and no suite could see the difference — the image is
+byte-identical either way, the web app is wholly unaffected, and every other assertion in
+`verify:deploy` passed green on exactly the broken environment. The remedy is that the gate now
+asserts *configuration*, not only code, against the real environment.
+
+Verified: `verify:deploy` run against the live service reproduces the failure and exits non-zero,
+with every other assertion green (both transport modes, the Wasm bundle, the admin panel).
+`RedirectTargetsTest` 10/10, `task test:server` green, `task test:apps:server` 66/66,
+`task test:client`, `task test:admin`, `task sync:contracts` and `task verify:docs` green, and
+`task test:e2e` — the release gate, run for the first time across the native work — 10/10 against
+real Supabase + Quarkus. The live environment itself is **still unfixed at the time of writing**:
+creating the secret and redeploying are operator actions, and until they happen the deployed
+service remains web-only in practice.
 
 **Date:** 2026-07-29. **Status:** accepted. **Follows:** ADR-018, ADR-019, ADR-020.
 

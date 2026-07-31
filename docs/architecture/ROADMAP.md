@@ -632,7 +632,7 @@ the table above, and ADR-020 records why each item sits where it does.
 |---|---|---|
 | 1 | **MVP scope, written down** | Done — see "What the MVP is" below. |
 | 2 | **Native deep-linking — backlog item 4's per-platform half** | **Done and verified** on macOS, the iOS Simulator and the Android emulator: runners generated, a `zendemo://` scheme registered per platform, and links consumed cold *and* warm. No paid account was needed, and no email — links were replayed from the terminal. |
-| 3 | **MVP live and tested on the real stack** | The environment stays up for this. It is what teardown waits for. |
+| 3 | **MVP live and tested on the real stack** | **In progress.** The environment stays up for this; it is what teardown waits for. The release gate `test:e2e` now runs green (10/10, real Supabase + Quarkus) for the first time across the native work. Testing the *deployed* stack immediately found what a local run structurally cannot: the service refuses `zendemo://auth-callback` with 400, because `deploy:cloudrun` never provisioned `AUTH_REDIRECT_URIS` — every native client locked out while the web app looks perfect. Fixed in the deployment contract and now asserted by `verify:deploy` (ADR-022); **the live environment is not yet fixed** — creating the secret and redeploying are operator actions. |
 | 4 | **Start the second product on the framework** | The first *honest* test of the framework/application boundary. `zen_demo` cannot be that test: it was written by the same hands at the same time, so when the framework is awkward both sides change in one commit and nobody feels it. |
 | 5 | **Publish the packages** | After 4, deliberately — see the backlog row. |
 | 6 | **Native release pipelines** | Only if a product is ever *distributed*. Off the critical path entirely, and may never be reached. |
@@ -648,7 +648,9 @@ app compiled for all of them, not a second app written to suit.
 In scope:
 
 - Native runner projects for `zen_demo_client`, and the app running on each target.
-- The auth flow complete on native: deep-linked confirmation and recovery (backlog item 4).
+- The auth flow complete on native: deep-linked confirmation and recovery (backlog item 4) —
+  against the **deployed** stack, not only a hand-configured local one. The deployment contract
+  has to carry the native return address or the server refuses every native link (ADR-022).
 - Whatever the native targets break that the web never exercised. The session is httpOnly cookies
   set by the server, and a native HTTP client is not a browser — cookie persistence, `CORS_ORIGINS`
   and `SameSite` are assumptions the web flow never had to test (ADR-020).

@@ -953,6 +953,36 @@ tasks:
         [ -n "$URL" ] || { echo "No service URL. Set SERVICE_URL=... or GCP_PROJECT=..."; exit 1; }
         SERVICE_URL="$URL" task verify:endpoints
 
+        # The NATIVE return address must be configured, or every native client is locked out.
+        # Here and not in verify:endpoints because this needs a REAL Supabase behind the service,
+        # which the test:native smoke container deliberately does not have.
+        #
+        # It is a CONFIG assertion, not a code one: the image is byte-identical either way and the
+        # web app is wholly unaffected, so no other check here can notice. A deployment that omits
+        # the AUTH_REDIRECT_URIS secret refuses every native email link with 400 invalid_redirect —
+        # ADR-019 matches exactly and the allowlist is empty by default. The probe address is
+        # deliberately a nonexistent user: /restore-password answers 204 whether or not the account
+        # exists, so this reads the allowlist and nothing else, and mails no one.
+        want_scheme="${ZEN_AUTH_REDIRECT_URI:-zendemo://auth-callback}"
+        rcode=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/api/v1/auth/restore-password" \
+                  -H 'Content-Type: application/json' -H 'X-Zen-Transport: json' \
+                  -d "{\"email\":\"zen-redirect-probe@example.invalid\",\"redirectUri\":\"$want_scheme\"}")
+        if [ "$rcode" = "204" ]; then
+          printf '  \033[32mok\033[0m   %-24s %-9s %s\n' /api/v1/auth/restore-password native "$want_scheme allowed"
+        else
+          printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /api/v1/auth/restore-password native \
+            "HTTP $rcode for '$want_scheme' (want 204)"
+          echo
+          echo "The deployed service does not allow the native return address, so every native"
+          echo "client is locked out of confirmation and recovery while the web app looks fine."
+          echo "Create the secret and redeploy, and register the same scheme in the Supabase"
+          echo "dashboard under Auth -> URL Configuration -> Redirect URLs:"
+          echo
+          echo "  printf '%s' '$want_scheme' | gcloud secrets create AUTH_REDIRECT_URIS \\"
+          echo "    --data-file=- --project={{.GCP_PROJECT}}"
+          exit 1
+        fi
+
   verify:endpoints:
     desc: Assert a running jZen backend serves BOTH transport modes (SERVICE_URL required)
     silent: true
@@ -1116,24 +1146,34 @@ tasks:
                --location=REGION --project=PROJECT
              gcloud auth configure-docker REGION-docker.pkg.dev
 
-        1. The thirteen configuration secrets. `--set-secrets` below fails the deploy if any
+        1. The fourteen configuration secrets. `--set-secrets` below fails the deploy if any
            is absent, so create them all before the first run.
 
              mk() { printf '%s' "$2" | gcloud secrets create "$1" --data-file=- --project=PROJECT; }
 
-             mk SUPABASE_URL      "https://<ref>.supabase.co"
-             mk SUPABASE_KEY      "<publishable/anon key>"
-             mk DB_URL            "jdbc:postgresql://<pooler-host>:5432/postgres"
-             mk DB_USERNAME       "postgres.<ref>"
-             mk DB_PASSWORD       "<database password>"
-             mk SITE_URL          "https://<service-url>"
-             mk AUTH_REDIRECT_URI "https://<service-url>/auth/callback"
-             mk CORS_ORIGINS      "https://<service-url>"
-             mk SMTP_HOST         "smtp-relay.brevo.com"
-             mk SMTP_PORT         "587"
-             mk SMTP_USERNAME     "<smtp login>"
-             mk SMTP_PASSWORD     "<smtp api key>"
-             mk SMTP_FROM         "noreply@<domain>"
+             mk SUPABASE_URL       "https://<ref>.supabase.co"
+             mk SUPABASE_KEY       "<publishable/anon key>"
+             mk DB_URL             "jdbc:postgresql://<pooler-host>:5432/postgres"
+             mk DB_USERNAME        "postgres.<ref>"
+             mk DB_PASSWORD        "<database password>"
+             mk SITE_URL           "https://<service-url>"
+             mk AUTH_REDIRECT_URI  "https://<service-url>/auth/callback"
+             mk AUTH_REDIRECT_URIS "zendemo://auth-callback"
+             mk CORS_ORIGINS       "https://<service-url>"
+             mk SMTP_HOST          "smtp-relay.brevo.com"
+             mk SMTP_PORT          "587"
+             mk SMTP_USERNAME      "<smtp login>"
+             mk SMTP_PASSWORD      "<smtp api key>"
+             mk SMTP_FROM          "noreply@<domain>"
+
+           AUTH_REDIRECT_URIS is what lets a NATIVE client authenticate at all. One backend
+           serves every client, and a phone is not reachable at the web app's URL, so a native
+           build names its own scheme and the server allows it only by EXACT match (ADR-019).
+           The list is empty by default, which is the safe default but also means a deployment
+           that omits this secret refuses every native email link with 400 invalid_redirect —
+           silently, in that nothing about the web flow looks wrong. It must equal the scheme
+           registered in the platform manifests and passed as ZEN_AUTH_REDIRECT_URI to the
+           native build; three places, one value. Comma-separated for more than one client.
 
            DB_URL must be the SESSION POOLER, not the direct connection and not the
            transaction pooler. Three constraints force this, and each fails differently:
@@ -1160,6 +1200,11 @@ tasks:
                 dev default — which is dead in production. (The backend handles a confirm-required
                 signup: registration returns 202 and a "check your email" state rather than a
                 session; but the link in that email must point at the deployed app.)
+                Add every NATIVE scheme in AUTH_REDIRECT_URIS here too (e.g. zendemo://auth-callback).
+                Both gates must pass and they fail differently: the backend refuses an unlisted
+                target with 400 invalid_redirect, while GoTrue silently DROPS a target missing from
+                this list and falls back to the Site URL — so the email arrives, the link opens the
+                web app instead of the phone app, and nothing reports an error.
               - Auth -> SMTP Settings: configure a real SMTP sender. Supabase's built-in email is
                 rate-limited to a few messages per hour on the free tier, so without custom SMTP,
                 signups intermittently fail with a rate-limit error once that cap is hit. This is
@@ -1247,7 +1292,7 @@ tasks:
           --min-instances=0 --max-instances=1 \
           --timeout=300s --port=8080 --concurrency=200 \
           --allow-unauthenticated \
-          --set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,DB_URL=DB_URL:latest,DB_USERNAME=DB_USERNAME:latest,DB_PASSWORD=DB_PASSWORD:latest,CORS_ORIGINS=CORS_ORIGINS:latest,AUTH_REDIRECT_URI=AUTH_REDIRECT_URI:latest,SITE_URL=SITE_URL:latest,SMTP_HOST=SMTP_HOST:latest,SMTP_PORT=SMTP_PORT:latest,SMTP_USERNAME=SMTP_USERNAME:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,SMTP_FROM=SMTP_FROM:latest,ZEN_JOBS_TRIGGER_TOKEN=ZEN_JOBS_TRIGGER_TOKEN:latest
+          --set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,DB_URL=DB_URL:latest,DB_USERNAME=DB_USERNAME:latest,DB_PASSWORD=DB_PASSWORD:latest,CORS_ORIGINS=CORS_ORIGINS:latest,AUTH_REDIRECT_URI=AUTH_REDIRECT_URI:latest,AUTH_REDIRECT_URIS=AUTH_REDIRECT_URIS:latest,SITE_URL=SITE_URL:latest,SMTP_HOST=SMTP_HOST:latest,SMTP_PORT=SMTP_PORT:latest,SMTP_USERNAME=SMTP_USERNAME:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,SMTP_FROM=SMTP_FROM:latest,ZEN_JOBS_TRIGGER_TOKEN=ZEN_JOBS_TRIGGER_TOKEN:latest
 
   destroy:cloudrun:
     desc: Tear down EVERYTHING the deploy created — GCP project, Supabase, local images. No leftovers.
@@ -1261,7 +1306,7 @@ tasks:
       not finish all three:
 
       1. THE ENTIRE GCP PROJECT — `gcloud projects delete`, not a resource-by-resource sweep.
-         Deleting the project removes the Cloud Run service, the scheduler job, all fourteen
+         Deleting the project removes the Cloud Run service, the scheduler job, all fifteen
          secrets, the Artifact Registry repo, every IAM binding and enabled API, AND unlinks
          billing, in one atomic operation. An empty project left behind is exactly the "$0 so
          leave it" leftover this task exists to reject. It is recoverable for 30 days, which

@@ -30,7 +30,10 @@ class SecureTokenStore implements TokenStore {
               mOptions: MacOsOptions(
                 accessibility: KeychainAccessibility.first_unlock_this_device,
               ),
-              aOptions: AndroidOptions(encryptedSharedPreferences: true),
+              // No AndroidOptions: `encryptedSharedPreferences` is deprecated from 10.x (Google
+              // deprecated the Jetpack Security library behind it) and is ignored when passed.
+              // The plugin now encrypts with its own ciphers by default and migrates existing
+              // data on first access, so the secure default is the one you get by saying nothing.
             ),
         _key = key;
 

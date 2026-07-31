@@ -18,7 +18,15 @@ dependencies:
   # storage (Android) through platform channels, so it imports package:flutter/services.dart and
   # therefore dart:ui -- which the Dart VM cannot compile, which is why zen_transport must not
   # depend on it. See zen_transport's TokenStore.
-  flutter_secure_storage: ^9.2.2
+  #
+  # 10.x IS A FLOOR, NOT A PREFERENCE. The 9.x web implementation imports dart:html and
+  # dart:js_util, which dart2wasm cannot compile -- and jZen delivers the web app as WebAssembly
+  # (ADR-016). It fails the whole `flutter build web --wasm`, and no guard in jZen's own code can
+  # prevent it: Flutter generates web_plugin_registrant.dart, which imports EVERY web plugin in
+  # the dependency graph whether the app calls it or not. A pubspec dependency is unconditional,
+  # so the only fix is a version whose web implementation is Wasm-clean. 10.x uses package:web
+  # and dart:js_interop. Do not relax this bound.
+  flutter_secure_storage: ^10.3.1
   zen_transport:
     path: ../zen_transport
 

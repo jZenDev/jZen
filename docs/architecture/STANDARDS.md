@@ -309,6 +309,16 @@ provider is only made meaningful by the backend.
   floor (WasmGC) and Flutter's automatic dart2js fallback are in [`DECISIONS.md`](./DECISIONS.md)
   ADR-016. A web-serving check keys on `flutter_bootstrap.js`, which both compilations emit, not
   on `main.dart.js`, which the Wasm view does not use.
+- **A Flutter plugin added to any client or app package must be Wasm-clean** — its web
+  implementation may not import `dart:html`, `dart:js_util` or `package:js` (`package:web` and
+  `dart:js_interop` are the compatible equivalents). This does *not* follow from the rules above,
+  and that is the trap: a Flutter web build compiles a generated `web_plugin_registrant.dart` that
+  imports **every** web plugin in the dependency graph, so neither a conditional import nor a
+  `zenIsWeb` guard can keep one out. A pubspec dependency is unconditional. The failure is total —
+  `flutter build web --wasm` does not compile — and invisible to every suite, since `task test`
+  never builds the web bundle. **Run `task build:web` after adding a Flutter dependency.**
+  See [`DECISIONS.md`](./DECISIONS.md) ADR-024; `flutter_secure_storage`'s `^10.3.1` floor is an
+  instance of this rule, not a routine version bump.
 - The **server** uses runtime config (MicroProfile / `application.properties`): one binary
   serves both native and web clients, and it has no bundle to shrink.
 

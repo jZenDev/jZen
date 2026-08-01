@@ -428,6 +428,18 @@ tasks:
       Apple targets need Xcode and are skipped, loudly, off macOS. Android needs a JDK whose
       jlink works, which GraalVM's does not — the same machine-wide `flutter config --jdk-dir`
       constraint `run:demo:native` explains at length (ADR-021).
+
+      It generates the typed localizations first, and that is not a convenience. They are BUILT,
+      NOT COMMITTED (ADR-009) — `**/l10n/generated/` is gitignored and `sync:contracts` fails if
+      any of it is ever tracked — so a clean checkout does not have them and nothing that imports
+      `IdentityLocalizations` can compile. A developer's machine always has them lying around from
+      an earlier build, which is precisely why this was missed here and found by CI: the task
+      passed locally for a reason that does not exist on a fresh clone.
+
+      Resolution before generation, generation before building, in that order — which is why they
+      are sequential `cmds` and not `deps:`, since go-task runs `deps:` in parallel. `gen-l10n`
+      needs each package's `.dart_tool` to exist, and the ARB files live in the FRAMEWORK packages
+      (`client/`) as well as the app, so both workspaces have to be resolved first.
     vars:
       API: '{{.ZEN_API_URL | default "http://localhost:8085"}}'
       SCHEME: '{{.ZEN_AUTH_REDIRECT_URI | default "zendemo://auth-callback"}}'
@@ -435,6 +447,13 @@ tasks:
         sh: |
           flutter config --list 2>/dev/null | sed -nE 's/^ *jdk-dir: *(.*)$/\1/p' | head -1
     cmds:
+      # Both workspaces, with `flutter pub get` rather than `dart pub get`: each holds Flutter
+      # packages, and gen-l10n below needs their .dart_tool to exist.
+      - |
+        set -eu
+        (cd {{.CLIENT_DIR}} && flutter pub get)
+        (cd {{.APPS_DIR}} && flutter pub get)
+      - task: generate:l10n
       - |
         set -eu
         cd {{.DEMO_CLIENT_DIR}}

@@ -35,7 +35,11 @@ class DemoApp extends ConsumerWidget {
       supportedLocales: DemoLocalizations.supportedLocales,
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),
-      home: const _Root(),
+      // INSIDE MaterialApp, unlike AuthDeepLinks which wraps it. The two halves of a warm link sit
+      // at different heights on purpose: the receiver must outlive every screen, while the thing
+      // that reports the outcome needs the ScaffoldMessenger and Localizations that only exist
+      // below here.
+      home: const ZenAuthLinkListener(child: _Root()),
     );
   }
 

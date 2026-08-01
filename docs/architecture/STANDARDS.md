@@ -319,6 +319,14 @@ provider is only made meaningful by the backend.
   never builds the web bundle. **Run `task build:web` after adding a Flutter dependency.**
   See [`DECISIONS.md`](./DECISIONS.md) ADR-024; `flutter_secure_storage`'s `^10.3.1` floor is an
   instance of this rule, not a routine version bump.
+- **A Flutter dependency change is not verified until every delivery target compiles.** A
+  dependency does not enter one platform, it enters all of them, and each build system can reject
+  it on its own terms. No test compiles a runner — unit and widget tests run on the Dart VM and the
+  flutter tester, which never invoke Xcode or Gradle — so a change can leave every suite green and
+  every shippable artifact broken. `task build:apps:runners` (macOS, iOS simulator, Android; part
+  of `task build`) and `task build:web` are what actually answer the question. Apple targets are
+  skipped off macOS, and the skip is announced rather than silent, because "not run here" and
+  "passed" must never look alike.
 - The **server** uses runtime config (MicroProfile / `application.properties`): one binary
   serves both native and web clients, and it has no bundle to shrink.
 
@@ -362,6 +370,22 @@ provider is only made meaningful by the backend.
   matches Cloud Run regardless of the developer's machine. The native image is also what
   makes the single-instance / scale-to-zero cost model work: fast cold start, small
   memory footprint (`--memory=256Mi`, `--cpu=1`).
+- **No deployed environment fact is written into the repository.** Not a service URL, not a
+  revision name, not an image tag — not in a task default, not in a doc. They are resolved when
+  needed (`gcloud run services describe`, the pattern `build:web` and `run:demo:native` share) or
+  passed explicitly (`ZEN_API_URL`, `WEB_API_URL`), and their absence is a **loud failure** naming
+  what to set, never a silent fallback.
+
+  The reason is teardown. `destroy:cloudrun` deletes the GCP project, the Supabase project and the
+  local images, and it cannot edit this repository — so any environment fact committed here
+  outlives the environment it names. A stale doc line is merely wrong; a stale *task default* is
+  worse, because the task keeps working and points every build at a host that no longer exists,
+  which presents as a bug in the application. This is the repo-side half of "teardown leaves no
+  orphans": the cloud resources go, and nothing here is left pointing at their ghosts.
+
+  It follows that a question like "is the deployment healthy?" is answered by running
+  `task verify:deploy`, not by reading a status recorded in a document — a recorded status is true
+  for exactly one deploy.
 
 ## Frontend split
 

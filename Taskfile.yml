@@ -393,6 +393,7 @@ tasks:
     desc: Build the application examples (their Dart clients + Java servers)
     cmds:
       - task: build:apps:client
+      - task: build:apps:runners
       - task: build:apps:server
 
   build:apps:client:
@@ -402,6 +403,70 @@ tasks:
       - flutter pub get
       - task: generate:l10n
       - dart analyze
+
+  build:apps:runners:
+    desc: Compile the app's NATIVE runners (macOS, iOS simulator, Android) — the targets tests never touch
+    summary: |
+      Compiles every delivery target the reference app has, because nothing else does and
+      `dart analyze` is not a build.
+
+      WHY THIS EXISTS. A Flutter dependency does not enter one platform, it enters all of them,
+      and each has its own build system that can reject it on its own terms. Neither `task test`
+      nor `dart analyze` compiles a runner: unit and widget tests run on the Dart VM and the
+      flutter tester, which never invoke Xcode or Gradle. So a change can leave every suite green
+      and every delivery target broken — that is not hypothetical, it happened twice in one day:
+
+        - a plugin whose web implementation imports dart:html, which cannot compile to
+          WebAssembly at all (ADR-024) and was found only by a deploy;
+        - removing the CocoaPods integration after that plugin moved to Swift Package Manager,
+          which could have broken both Apple runners with nothing to say so.
+
+      The artifacts are throwaway; this is a COMPILE check. ZEN_API_URL is a placeholder for that
+      reason — the URL is baked in at compile time, but nothing here is run, and pinning a real
+      environment would put an environment fact back in the repo (STANDARDS "Deployment model").
+
+      Apple targets need Xcode and are skipped, loudly, off macOS. Android needs a JDK whose
+      jlink works, which GraalVM's does not — the same machine-wide `flutter config --jdk-dir`
+      constraint `run:demo:native` explains at length (ADR-021).
+    vars:
+      API: '{{.ZEN_API_URL | default "http://localhost:8085"}}'
+      SCHEME: '{{.ZEN_AUTH_REDIRECT_URI | default "zendemo://auth-callback"}}'
+      FLUTTER_JDK:
+        sh: |
+          flutter config --list 2>/dev/null | sed -nE 's/^ *jdk-dir: *(.*)$/\1/p' | head -1
+    cmds:
+      - |
+        set -eu
+        cd {{.DEMO_CLIENT_DIR}}
+        defines="--dart-define=ZEN_ENV=dev --dart-define=ZEN_API_URL={{.API}} --dart-define=ZEN_AUTH_REDIRECT_URI={{.SCHEME}}"
+
+        if [ "$(uname -s)" = "Darwin" ]; then
+          echo ">> macOS"
+          flutter build macos --debug --dart-define=ZEN_PLATFORM=macos $defines
+          echo ">> iOS (simulator; a device build would need a signing identity, which the MVP does not have)"
+          flutter build ios --simulator --debug --dart-define=ZEN_PLATFORM=ios $defines
+        else
+          echo ">> SKIPPED macOS and iOS: they need Xcode, and this is $(uname -s)."
+          echo "   Said out loud rather than passed silently — on this host they are unverified."
+        fi
+
+        # Android last: it is the one that fails for a reason no error message names.
+        JDK='{{.FLUTTER_JDK}}'
+        BAD=""
+        case "$JDK" in *graal*|*Graal*|*GRAAL*) BAD="yes" ;; esac
+        if [ -z "$BAD" ] && [ -n "$JDK" ] && [ -x "$JDK/bin/java" ]; then
+          case "$("$JDK/bin/java" -version 2>&1 | head -1)" in *GraalVM*) BAD="yes" ;; esac
+        fi
+        if [ -n "$BAD" ]; then
+          echo "The Android build cannot use this JDK: GraalVM (its jlink cannot run AGP's jdkImage transform)."
+          echo "Flutter takes it from a MACHINE-WIDE setting that outranks JAVA_HOME, so no task can fix it here:"
+          echo "  flutter config --jdk-dir /path/to/a/standard/jdk-25"
+          exit 1
+        fi
+        echo ">> Android"
+        flutter build apk --debug --dart-define=ZEN_PLATFORM=android $defines
+        echo
+        echo "Every native runner compiles."
 
   build:apps:server:
     desc: Build the reference backend (resolves framework libs from the local repo)
@@ -491,12 +556,23 @@ tasks:
       Gradle produce a jlink stack trace that names nothing useful.
 
       Usage:
-        task run:demo:native                     # macOS, against the deployed backend
-        ZEN_TARGET=<device-id> task run:demo:native
-        ZEN_API_URL=http://localhost:8085 task run:demo:native
+        GCP_PROJECT=<project> task run:demo:native   # macOS, against the deployed backend
+        ZEN_TARGET=<device-id> GCP_PROJECT=<project> task run:demo:native
+        ZEN_API_URL=http://localhost:8085 task run:demo:native   # a local backend, no GCP
     vars:
       TARGET: '{{.ZEN_TARGET | default "macos"}}'
-      API: '{{.ZEN_API_URL | default "https://zen-demo-server-tovqpjhspa-lm.a.run.app"}}'
+      # Resolved from the live service, never hard-coded, and it fails loudly when there is
+      # nothing to resolve. Exactly how build:web gets the same value, and for the same reason:
+      # a deployed URL written into this file survives the environment it names. `destroy:cloudrun`
+      # deletes the project but cannot edit the repository, so a baked-in URL would outlive
+      # teardown and point every native build at a host that no longer exists — a dead backend
+      # that looks like a bug in the app.
+      API:
+        sh: |
+          if [ -n "${ZEN_API_URL:-}" ]; then printf '%s' "$ZEN_API_URL"; else
+            gcloud run services describe {{.SERVICE_NAME}} --project={{.GCP_PROJECT}} \
+              --region={{.GCP_REGION}} --format='value(status.url)' 2>/dev/null || true
+          fi
       SCHEME: '{{.ZEN_AUTH_REDIRECT_URI | default "zendemo://auth-callback"}}'
       # What Flutter will actually hand Gradle. Read, not set: this is the machine-wide setting,
       # and the point is to check it before a build wastes minutes failing on it.
@@ -510,7 +586,17 @@ tasks:
         set -eu
         PLATFORM='{{.TARGET}}'
         case "$PLATFORM" in macos|ios|android) ;; *) PLATFORM=ios ;; esac
-        echo "Running zen_demo on '{{.TARGET}}' against {{.API}} (links return to {{.SCHEME}})"
+        API='{{.API}}'
+        if [ -z "$API" ]; then
+          echo "No API URL. Nothing answered for service '{{.SERVICE_NAME}}' in project"
+          echo "'{{.GCP_PROJECT}}', so either the environment is gone or GCP_PROJECT is unset."
+          echo "Point the build somewhere explicitly:"
+          echo
+          echo "  ZEN_API_URL=http://localhost:8085 task run:demo:native   # a local backend"
+          echo "  GCP_PROJECT=<project> task run:demo:native               # a deployed one"
+          exit 1
+        fi
+        echo "Running zen_demo on '{{.TARGET}}' against $API (links return to {{.SCHEME}})"
         cd {{.DEMO_CLIENT_DIR}}
         # Check the JDK Flutter will use BEFORE building, because the failure it produces is a
         # jlink stack trace that names neither the JDK nor the reason.
@@ -540,7 +626,7 @@ tasks:
         flutter run -d '{{.TARGET}}' \
           --dart-define=ZEN_ENV=dev \
           --dart-define=ZEN_PLATFORM="$PLATFORM" \
-          --dart-define=ZEN_API_URL='{{.API}}' \
+          --dart-define=ZEN_API_URL="$API" \
           --dart-define=ZEN_AUTH_REDIRECT_URI='{{.SCHEME}}'
 
   build:web:admin:

@@ -148,18 +148,20 @@
 
   <build>
     <plugins>
+      <!--
+        Declared with NO <executions>, deliberately. This module is <packaging>quarkus</packaging>
+        and the parent registers the plugin with <extensions>true</extensions>, so that packaging's
+        own lifecycle already binds generate-code, generate-code-tests and build to their phases.
+
+        The archetype's explicit <execution> listing those three goals is correct for a `jar`
+        module and a DUPLICATE here: it binds `build` a second time, so `mvn package -Dnative`
+        compiles the native image TWICE and the second overwrites the first. That cost ~4.5
+        minutes per extra build on every deploy and every `test:native`, invisibly, because both
+        builds succeed and the output is identical.
+      -->
       <plugin>
         <groupId>${quarkus.platform.group-id}</groupId>
         <artifactId>quarkus-maven-plugin</artifactId>
-        <executions>
-          <execution>
-            <goals>
-              <goal>build</goal>
-              <goal>generate-code</goal>
-              <goal>generate-code-tests</goal>
-            </goals>
-          </execution>
-        </executions>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

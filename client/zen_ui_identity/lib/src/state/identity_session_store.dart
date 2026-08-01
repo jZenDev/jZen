@@ -4,6 +4,7 @@ import 'package:zen_core/zen_core.dart';
 import 'package:zen_identity/zen_identity.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'auth_link_outcome.dart';
 import 'identity_repository.dart';
 import 'session_client_provider.dart';
 
@@ -203,7 +204,12 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
   /// in with a password its owner still cannot remember.
   Future<ZenAuthLink> consumeAuthLink(Uri uri) async {
     final link = ZenAuthLink.parse(uri);
-    if (!link.hasSession) return link;
+    if (!link.hasSession) {
+      // A link with nothing to exchange: refused by Supabase, or confirmed without a token. It
+      // changes no state, so no screen would react to it — say so, or the tap looks ignored.
+      ref.read(authLinkOutcomeProvider.notifier).report(link);
+      return link;
+    }
 
     // One link is one sign-in, however many times the platform announces it. Platforms disagree
     // about this: iOS delivers a launch URL as the initial link *and* replays it on the stream,
@@ -230,7 +236,13 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
       },
       // A spent link must not sign anyone out: whoever is using the app now is not the person the
       // stale link was for, and taking their session away would be a worse answer than ignoring it.
-      (failure) => const ZenAuthLink.rejected(),
+      // But "changes nothing" is exactly why it has to be reported: there is no state change for a
+      // screen to notice, so silence here is silence to the user.
+      (failure) {
+        const rejected = ZenAuthLink.rejected();
+        ref.read(authLinkOutcomeProvider.notifier).report(rejected);
+        return rejected;
+      },
     );
   }
 

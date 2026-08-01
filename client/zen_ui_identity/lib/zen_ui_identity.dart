@@ -29,6 +29,7 @@ export 'src/screens/restore_password_screen.dart';
 export 'src/screens/set_password_screen.dart';
 // State
 export 'src/state/identity_repository.dart';
+export 'src/state/auth_link_outcome.dart';
 export 'src/state/identity_session_store.dart';
 export 'src/state/session_client_provider.dart';
 // Theme
@@ -37,3 +38,4 @@ export 'src/theme/identity_theme_extension.dart';
 export 'src/widgets/identity_button.dart';
 export 'src/widgets/identity_status_chip.dart';
 export 'src/widgets/identity_text_field.dart';
+export 'src/widgets/zen_auth_link_listener.dart';

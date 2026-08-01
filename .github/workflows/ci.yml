@@ -7,6 +7,11 @@
 #     from a local build. The JVM tests below cover the code; native-only faults are caught by
 #     test:native locally and verify:deploy against the real service.
 #   - deploy:cloudrun — deploy is manual, by a person. CI verifies; it never ships.
+#   - verify:deploy — it asserts a LIVE environment (including that the native return address is
+#     configured), so it belongs after a deploy, not before a merge.
+#   - the macOS and iOS runners — they need Xcode, so they would need a `macos-latest` runner at
+#     several times the Linux rate. A cost decision, not an oversight; `build:apps:runners` covers
+#     them locally and announces the skip here rather than passing silently.
 #
 # Toolchain is pinned to match `task doctor` (.fvmrc / .nvmrc / packageManager / .sdkmanrc). JDK is
 # Temurin rather than GraalVM: only the native build needs GraalVM, and that is not run here.
@@ -65,6 +70,12 @@ jobs:
           version: "3.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # First because it is the cheapest thing here and the only one that catches a defect no test
+      # can: a client package calling the identity provider directly still authenticates, still
+      # renders, and still passes every suite. See STANDARDS "The client talks to one server".
+      - name: Client/server boundary gate
+        run: task verify:boundaries
+
       - run: task deps
       - name: Contract drift gate
         run: task sync:contracts
@@ -72,6 +83,45 @@ jobs:
         run: task verify:docs
       - run: task test:client
       - run: task test:admin
+
+      # Compiling the web bundle IS a gate, not a build step. No test compiles it, so a Flutter
+      # dependency whose web implementation is not Wasm-clean leaves every suite green and the web
+      # app unbuildable — which is exactly how it went once, discovered by a deploy (ADR-024).
+      # WEB_API_URL is a placeholder: the artifact is thrown away, and pinning a real environment
+      # would put an environment fact in the repo (STANDARDS "Deployment model").
+      - name: Web bundle compiles (WebAssembly)
+        run: WEB_API_URL=https://ci.invalid task build:web
+
+  # The Android runner. Its own job so a Gradle/manifest fault is reported as itself rather than
+  # buried in the gates job, and so it runs in parallel.
+  #
+  # ANDROID ONLY, and the gap is deliberate. `build:apps:runners` builds macOS and the iOS
+  # simulator too, but both need Xcode, so on Linux they are skipped — announced, never silently.
+  # Covering them would mean a `macos-latest` runner, which bills at several times the Linux rate;
+  # that is a cost decision, not an oversight, and it is the same reasoning that keeps prod on one
+  # Cloud Run instance. Until it is taken, Apple runners are covered by `task build` locally.
+  android-runner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Temurin, not GraalVM: AGP's jdkImage transform shells out to jlink, which GraalVM's cannot
+      # run at any version. Same constraint `run:demo:native` checks for on a developer's machine.
+      - name: JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - name: Flutter 3.44.2
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.2"
+          channel: stable
+      - name: go-task
+        uses: arduino/setup-task@v2
+        with:
+          version: "3.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: task build:apps:runners
 
   # The backend @QuarkusTest suite. Uses Quarkus Dev Services, which starts Postgres in Docker —
   # available on ubuntu-latest by default, so no extra service setup.

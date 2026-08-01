@@ -135,12 +135,77 @@ start on its own. Where each surface comes up:
 |---|---|---|
 | Backend API (Quarkus dev mode) | `task run:all` / `task run:server` | `http://localhost:8080/api/v1` |
 | Reference app (`zen_demo`, in Chrome) | `task run:demo` | backend on `:8085` (see note) |
+| Reference app on a phone or desktop | `task run:demo:native` | see [Running natively](#running-natively-ios-simulator-android-emulator-macos) |
 | Admin panel (react-admin dev server) | `task run:admin` | `http://localhost:5173` (proxies `/api`) |
 | Supabase API / DB / Studio | `task run:supabase` | `54321` / `54322` / `54323` |
 
 Note: `task run:demo` and `task test:e2e` run the backend on `ZEN_APP_PORT` (default `8085`),
 deliberately, so a leftover stack shadowing `:8080` cannot interfere. `task run:server` and
 `task run:all` use the Quarkus dev default `:8080`.
+
+## Running natively (iOS Simulator, Android emulator, macOS)
+
+The same `zen_demo` that runs in Chrome also runs as a real app. No paid developer account and no
+signing identity are needed for any of this — a simulator, an emulator and a local macOS build are
+the boundary, and everything below stays inside it.
+
+Boot whatever you want to run on — an iOS Simulator (Xcode ▸ Open Developer Tool ▸ Simulator), an
+Android emulator, or nothing at all for macOS — then start the backend in one terminal and the app
+in another:
+
+```bash
+task run:all                                              # backend on :8080
+
+ZEN_API_URL=http://localhost:8080 task run:demo:native    # the app
+```
+
+**You are not expected to know any device ids.** If one device is attached it is used; if several
+are, you get a menu:
+
+```
+Several devices are attached:
+  1) sdk gphone16k arm64          android  emulator-5554
+  2) iPhone 17 Pro                ios      A135450C-6ACC-4F69-B08D-0A662E63D1AF
+  3) macOS                        macos    macos
+Which one? [1-3]
+```
+
+Pass `ZEN_TARGET=<id-or-name>` to skip the question — `ZEN_TARGET="iPhone 17 Pro"` works, and so
+does the id. The platform is read from Flutter, not guessed, so nothing needs telling twice.
+
+To run against the **deployed** backend instead of a local one, drop `ZEN_API_URL` and pass your
+project: `GCP_PROJECT=<project> task run:demo:native`. The URL is resolved from Cloud Run at that
+moment rather than written down anywhere, so there is no stale address to trip over; if nothing
+answers, the task says so and names what to set instead of silently building against a dead host.
+
+One wrinkle that is not ours to fix: an **Android emulator** reaches your machine's localhost as
+`10.0.2.2`, so a local backend is `ZEN_API_URL=http://10.0.2.2:8080` there.
+
+**To compile every runner without running anything** — the check worth doing after adding or
+upgrading a Flutter dependency, since no test suite compiles a runner:
+
+```bash
+task build:apps:runners     # macOS + iOS simulator + Android, also part of `task build`
+```
+
+**Testing the email links.** A confirmation or recovery link returns to `zendemo://auth-callback`,
+a custom scheme registered per platform, and you do not need an inbox to exercise it — take one
+real token and replay the link from the terminal:
+
+```bash
+xcrun simctl openurl booted "zendemo://auth-callback#access_token=…&type=recovery"
+adb shell "am start -a android.intent.action.VIEW -d 'zendemo://auth-callback#…'"
+open "zendemo://auth-callback#…"                      # macOS
+```
+
+A native build signs in through the same backend the web app uses; the scheme only decides where
+the link comes *back* to. It must match in three places or the flow fails quietly — the platform
+manifests, `ZEN_AUTH_REDIRECT_URI`, and the server's `AUTH_REDIRECT_URIS` allowlist, which accepts
+it only on an exact match. `task verify:deploy` checks the deployed half of that for you.
+
+> **Android needs a non-GraalVM JDK** — see the note above. `run:demo:native` checks before
+> building and tells you exactly what to run, because the underlying failure is a `jlink` stack
+> trace that names neither the JDK nor the reason.
 
 ## Quick start — developing on it
 

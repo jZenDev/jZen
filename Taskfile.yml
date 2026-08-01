@@ -560,7 +560,6 @@ tasks:
         ZEN_TARGET=<device-id> GCP_PROJECT=<project> task run:demo:native
         ZEN_API_URL=http://localhost:8085 task run:demo:native   # a local backend, no GCP
     vars:
-      TARGET: '{{.ZEN_TARGET | default "macos"}}'
       # Resolved from the live service, never hard-coded, and it fails loudly when there is
       # nothing to resolve. Exactly how build:web gets the same value, and for the same reason:
       # a deployed URL written into this file survives the environment it names. `destroy:cloudrun`
@@ -584,8 +583,22 @@ tasks:
     cmds:
       - |
         set -eu
-        PLATFORM='{{.TARGET}}'
-        case "$PLATFORM" in macos|ios|android) ;; *) PLATFORM=ios ;; esac
+        # Pick the device, and take its platform from Flutter rather than guessing at the id.
+        #
+        # Nobody should have to copy a UUID out of `flutter devices` to run their own app. So:
+        # ZEN_TARGET wins when set, one attached device is used without asking, and several
+        # produce a numbered menu. `flutter devices --machine` reports targetPlatform per device,
+        # which is the authoritative answer to "is this an Android emulator or an iPhone" — an id
+        # is not: `emulator-5554` and a simulator UUID are both just strings, and reading the
+        # family out of their shape was a guess that got Android wrong and silently skipped the
+        # JDK check below.
+        SELECTION=$(scripts/pick-device.py)
+        TARGET=$(printf '%s' "$SELECTION" | cut -f1)
+        PLATFORM=$(printf '%s' "$SELECTION" | cut -f2)
+        case "$PLATFORM" in
+          macos|ios|android) ;;
+          *) echo "ZEN_PLATFORM must be macos, ios or android (got '$PLATFORM')"; exit 1 ;;
+        esac
         API='{{.API}}'
         if [ -z "$API" ]; then
           echo "No API URL. Nothing answered for service '{{.SERVICE_NAME}}' in project"
@@ -596,7 +609,7 @@ tasks:
           echo "  GCP_PROJECT=<project> task run:demo:native               # a deployed one"
           exit 1
         fi
-        echo "Running zen_demo on '{{.TARGET}}' against $API (links return to {{.SCHEME}})"
+        echo "Running zen_demo on '$TARGET' ($PLATFORM) against $API (links return to {{.SCHEME}})"
         cd {{.DEMO_CLIENT_DIR}}
         # Check the JDK Flutter will use BEFORE building, because the failure it produces is a
         # jlink stack trace that names neither the JDK nor the reason.
@@ -623,7 +636,7 @@ tasks:
           # A daemon started under a different JDK survives the change and keeps using the old one.
           pkill -f GradleDaemon 2>/dev/null || true
         fi
-        flutter run -d '{{.TARGET}}' \
+        flutter run -d "$TARGET" \
           --dart-define=ZEN_ENV=dev \
           --dart-define=ZEN_PLATFORM="$PLATFORM" \
           --dart-define=ZEN_API_URL="$API" \

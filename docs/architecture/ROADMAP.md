@@ -632,7 +632,7 @@ the table above, and ADR-020 records why each item sits where it does.
 |---|---|---|
 | 1 | **MVP scope, written down** | Done — see "What the MVP is" below. |
 | 2 | **Native deep-linking — backlog item 4's per-platform half** | **Done and verified** on macOS, the iOS Simulator and the Android emulator: runners generated, a `zendemo://` scheme registered per platform, and links consumed cold *and* warm. No paid account was needed, and no email — links were replayed from the terminal. |
-| 3 | **MVP live and tested on the real stack** | **In progress.** The environment stays up for this; it is what teardown waits for. The release gate `test:e2e` now runs green (10/10, real Supabase + Quarkus) for the first time across the native work. Testing the *deployed* stack immediately found what a local run structurally cannot: the service refuses `zendemo://auth-callback` with 400, because `deploy:cloudrun` never provisioned `AUTH_REDIRECT_URIS` — every native client locked out while the web app looks perfect. Fixed in the deployment contract and now asserted by `verify:deploy` (ADR-022); native session persistence landed alongside it (ADR-023), verified on device rather than only in tests. **The live environment is now fixed**: the `AUTH_REDIRECT_URIS` secret exists, the scheme is registered in Supabase, and `task verify:deploy` passes end to end, including the native return address. (No revision name, image tag or URL is recorded here on purpose — they are true for one deploy, `verify:deploy` answers the question at any time, and teardown removes the environment but cannot edit this file.) Verified against production from an iOS Simulator build: the native client reaches Cloud Run over HTTPS (`Dart/3.12 (dart:io)`, no CORS involvement — a native client sends no `Origin`), restores its keystore token across a reinstall, and on a token prod rightly refuses, clears it and degrades to anonymous without retrying. **Still open:** a *successful* deep-linked sign-in against production, which needs an account on the prod identity provider — the one part that cannot be replayed from a local token. |
+| 3 | **MVP live and tested on the real stack** | **Done** — the MVP is complete; see "What the MVP is" below for the evidence per target. The environment stays up for this; it is what teardown waits for. The release gate `test:e2e` now runs green (10/10, real Supabase + Quarkus) for the first time across the native work. Testing the *deployed* stack immediately found what a local run structurally cannot: the service refuses `zendemo://auth-callback` with 400, because `deploy:cloudrun` never provisioned `AUTH_REDIRECT_URIS` — every native client locked out while the web app looks perfect. Fixed in the deployment contract and now asserted by `verify:deploy` (ADR-022); native session persistence landed alongside it (ADR-023), verified on device rather than only in tests. **The live environment is now fixed**: the `AUTH_REDIRECT_URIS` secret exists, the scheme is registered in Supabase, and `task verify:deploy` passes end to end, including the native return address. (No revision name, image tag or URL is recorded here on purpose — they are true for one deploy, `verify:deploy` answers the question at any time, and teardown removes the environment but cannot edit this file.) Verified against production from an iOS Simulator build: the native client reaches Cloud Run over HTTPS (`Dart/3.12 (dart:io)`, no CORS involvement — a native client sends no `Origin`), restores its keystore token across a reinstall, and on a token prod rightly refuses, clears it and degrades to anonymous without retrying. Closed by a real run on the deployed stack across all four targets. |
 | 4 | **Start the second product on the framework** | The first *honest* test of the framework/application boundary. `zen_demo` cannot be that test: it was written by the same hands at the same time, so when the framework is awkward both sides change in one commit and nobody feels it. |
 | 5 | **Publish the packages** | After 4, deliberately — see the backlog row. |
 | 6 | **Native release pipelines** | Only if a product is ever *distributed*. Off the critical path entirely, and may never be reached. |
@@ -678,6 +678,27 @@ Out of scope, and deliberately:
 **Done when:** one commit builds and runs `zen_demo` on web, iOS Simulator, Android emulator and
 macOS, and on each of them a confirmation link signs the user in and a recovery link lands on the
 set-a-new-password screen.
+
+**Met, against the deployed stack** (2026-08-01). Every row below is a real request to the live
+Cloud Run service, from `Dart/3.12 (dart:io)` or a browser, read back out of Cloud Run's logs —
+not a local stand-in and not a passing test:
+
+| Target | Evidence |
+|---|---|
+| Web | Deployed and served same-origin as WebAssembly; `verify:deploy` green. |
+| macOS | The whole chain by hand on a real inbox: `register 202` → confirmation link `session 200` → authenticated `demo/terms 200` → `restore-password 204` → recovery link `session 200` → `password 204` → `login 200` with the new password. An unconfirmed account is refused (`login 401`), so the confirmation gate is real. |
+| iOS Simulator | Link consumed (`session 200`), and the session survives a restart (`refresh 200`). |
+| Android emulator | Same: `session 200`, then `refresh 200` after a force-stop and relaunch. |
+
+Two things this exercise established that no suite could. The email genuinely arrives and its link
+returns to `zendemo://auth-callback` rather than falling back to the Site URL — the failure mode
+GoTrue produces *silently* when a redirect target is unlisted. And the split of labour is the one
+the design predicted: macOS proves the link's construction and delivery, the two mobile targets
+prove the per-platform consumption and the keystore, and no single platform could have shown both.
+
+**macOS is the one gap, by choice.** It does not keep a session across a restart, because the
+Keychain needs an entitlement Xcode signs only with a development certificate, and no-signing is
+this MVP's stated boundary (ADR-023). Everything else on macOS works; only persistence does not.
 
 **Why the admin panel is inside the POC.** It is the only surface that exercises the *third* language
 binding: the contract-first claim is proto → Java **and** Dart **and** TypeScript, the Flutter client

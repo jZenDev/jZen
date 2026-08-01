@@ -1104,6 +1104,27 @@ tasks:
           exit 1
         fi
 
+        # App Links, when the environment has adopted them. Reported, never fatal: a deployment
+        # that has not adopted them is correct and answers 404, and the custom scheme still works.
+        # What IS worth failing on is a file that exists and is malformed, because the platforms
+        # cache a failed verification — a broken association is worse than an absent one.
+        al=$(curl -s -o /dev/null -w '%{http_code}' "$URL/.well-known/assetlinks.json")
+        if [ "$al" = "404" ]; then
+          printf '  \033[33m--\033[0m   %-24s %-9s %s\n' /.well-known/assetlinks.json applinks \
+            "not adopted (custom scheme only)"
+        else
+          body=$(curl -s "$URL/.well-known/assetlinks.json")
+          type=$(curl -s -o /dev/null -w '%{content_type}' "$URL/.well-known/assetlinks.json")
+          case "$body:${type%%;*}" in
+            *delegate_permission/common.handle_all_urls*:application/json)
+              printf '  \033[32mok\033[0m   %-24s %-9s %s\n' /.well-known/assetlinks.json applinks "served as JSON" ;;
+            *)
+              printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /.well-known/assetlinks.json applinks \
+                "HTTP $al, type '${type:-none}' — Android caches a failed verification"
+              fail=1 ;;
+          esac
+        fi
+
   verify:endpoints:
     desc: Assert a running jZen backend serves BOTH transport modes (SERVICE_URL required)
     silent: true
@@ -1287,6 +1308,30 @@ tasks:
              mk SMTP_PASSWORD      "<smtp api key>"
              mk SMTP_FROM          "noreply@<domain>"
 
+        1a. App Links (optional, and NOT secrets). The association files at /.well-known let the
+           operating system verify that an https:// link belongs to this app, which is what closes
+           the custom-scheme hijack: any app may register `zendemo://`, and the link carries a live
+           refresh token. These values are PUBLIC by definition — the server serves them to anyone
+           who asks, which is the whole mechanism — so they are plain `--set-env-vars`, not Secret
+           Manager entries. Putting public data in a secret store would imply a confidentiality it
+           does not have and cannot enforce.
+
+             export APPLINKS_ANDROID_PACKAGE=dev.jzen.zen_demo_client
+             export APPLINKS_ANDROID_FINGERPRINTS="AA:BB:...,CC:DD:..."   # every signing key
+             export APPLINKS_APPLE_APP_IDS="<TeamID>.<bundle-id>"          # paid Apple account
+             GCP_PROJECT=... task deploy:cloudrun
+
+           List EVERY signing certificate that will run, not just the release one: a debug keystore
+           signs the build a developer actually installs, and a build signed by an unlisted key
+           fails verification with no error anyone sees. Get a fingerprint with:
+
+             keytool -list -v -keystore ~/.android/debug.keystore \
+               -alias androiddebugkey -storepass android | grep SHA256
+
+           Unset is a supported state: the endpoints answer 404, which leaves the association
+           unestablished rather than teaching the platform that it FAILED (both Android and iOS
+           cache a failure). The custom scheme keeps working either way.
+
            AUTH_REDIRECT_URIS is what lets a NATIVE client authenticate at all. One backend
            serves every client, and a phone is not reachable at the web app's URL, so a native
            build names its own scheme and the server allows it only by EXACT match (ADR-019).
@@ -1413,6 +1458,7 @@ tasks:
           --min-instances=0 --max-instances=1 \
           --timeout=300s --port=8080 --concurrency=200 \
           --allow-unauthenticated \
+          --set-env-vars="^@^APPLINKS_ANDROID_PACKAGE=${APPLINKS_ANDROID_PACKAGE:-}@APPLINKS_ANDROID_FINGERPRINTS=${APPLINKS_ANDROID_FINGERPRINTS:-}@APPLINKS_APPLE_APP_IDS=${APPLINKS_APPLE_APP_IDS:-}" \
           --set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,DB_URL=DB_URL:latest,DB_USERNAME=DB_USERNAME:latest,DB_PASSWORD=DB_PASSWORD:latest,CORS_ORIGINS=CORS_ORIGINS:latest,AUTH_REDIRECT_URI=AUTH_REDIRECT_URI:latest,AUTH_REDIRECT_URIS=AUTH_REDIRECT_URIS:latest,SITE_URL=SITE_URL:latest,SMTP_HOST=SMTP_HOST:latest,SMTP_PORT=SMTP_PORT:latest,SMTP_USERNAME=SMTP_USERNAME:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,SMTP_FROM=SMTP_FROM:latest,ZEN_JOBS_TRIGGER_TOKEN=ZEN_JOBS_TRIGGER_TOKEN:latest
 
   destroy:cloudrun:

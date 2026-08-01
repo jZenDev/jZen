@@ -38,6 +38,31 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="zendemo" android:host="auth-callback"/>
             </intent-filter>
+
+            <!-- The App Link, which is the same flow with the hijacking removed. A private-use
+                 scheme cannot be owned - any app may register "zendemo" and receive a link
+                 carrying a live refresh token (RFC 8252 8.6). An https link with autoVerify is
+                 different in kind: Android fetches /.well-known/assetlinks.json from the host and
+                 opens the app only if it finds this package AND a signing fingerprint that matches
+                 the installed build. A hostile app cannot forge that without serving files from
+                 the domain.
+
+                 android:host is a build placeholder rather than a literal, because the host IS the
+                 deployed environment and no environment fact belongs in the repository (STANDARDS
+                 "Deployment model"). It comes from ZEN_APPLINKS_HOST via build.gradle.kts.
+
+                 Both filters coexist on purpose: the scheme keeps local runs working with no
+                 domain and no signing, and it is what a developer replays from the terminal. The
+                 https filter is what a deployed environment should actually mail. Retiring the
+                 scheme in production is a config change (AUTH_REDIRECT_URIS), not a code one. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https"
+                      android:host="${zenApplinksHost}"
+                      android:pathPrefix="/auth/callback"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

@@ -15,7 +15,91 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
-## ADR-025 — The email link becomes verifiable: App Links beside the custom scheme, and the association is served, not shipped
+## ADR-026 — A second product consumes jZen from a sibling checkout: one Maven aggregator, path dependencies everywhere else
+
+**Date:** 2026-08-02. **Status:** accepted. **Refines:** ADR-020 (backlog item 1's trigger).
+
+### Context
+
+The second product (ROADMAP step 4) lives in its **own repository**, which is what makes it an
+honest test of the framework/application boundary — `zen_demo` cannot be, because it was written
+alongside the framework and an awkward API gets fixed in the same commit that revealed it.
+
+But a separate repository cannot use the `path:` dependencies and `<relativePath>` parents that
+`zen_demo` relies on, and publishing every iteration is exactly the tax ADR-020 postponed
+publishing to avoid. The question is how a sibling checkout consumes an unpublished framework.
+
+Both repositories are cloned side by side under a plain working folder:
+
+```
+workspace/
+  pom.xml          jzen/          <product>/
+```
+
+### Decision, and what was measured rather than assumed
+
+- **Maven: a root aggregator POM.** It lists `jzen/server` and `<product>/<product>_server` as
+  modules, so both build in one reactor and the product resolves `zen-core` from it directly. The
+  product's server keeps `zen-parent` as its parent with a `<relativePath>` into `jzen/`, exactly
+  as `zen_demo_server` already does across directories. **Verified:** a probe module compiled
+  against `zen.core.http.ZenStatus` with `BUILD SUCCESS`, no `~/.m2` install and no registry.
+
+  This is required rather than chosen. Maven has **no path dependencies and no git dependencies** —
+  `<relativePath>` resolves a *parent POM*, never a dependency — so of the three ecosystems only
+  Java cannot manage on its own.
+
+- **Dart: plain `path:` dependencies, package by package.** **Verified** that a package outside
+  jZen's workspaces resolves `path: ../jzen/client/zen_core` cleanly, and that a git dependency
+  with a `path:` subdirectory works too. `resolution: workspace` does not obstruct an external
+  consumer, which was the open worry.
+
+- **TypeScript: the existing source alias**, or an outer `pnpm-workspace.yaml`. jZen declares no
+  pnpm workspace at all, so nothing conflicts.
+
+- **No root `pubspec.yaml`.** Two variants were built and both *worked*, and both were rejected:
+
+  1. *An outer Dart workspace over jZen's* is impossible without adding `resolution: workspace` to
+     `client/pubspec.yaml` and `apps/pubspec.yaml` — which **breaks jZen standalone**, verified:
+     a member with no root above it fails with *"found no workspace root including it"*. The
+     framework would resolve only from inside one particular folder layout. Its own CI would fail.
+  2. *A facade package re-exporting the framework* compiles, but changes every import in the
+     product to `package:<facade>/…`, so the day the packages are published **every import
+     changes**. A `path:` dependency leaves imports as `package:zen_core/…` — character for
+     character what a published consumer writes — making that migration a pubspec edit with zero
+     code churn.
+
+  Importing a package transitively without declaring it also works, and is precisely what
+  `depend_on_referenced_packages` exists to stop; the lint was confirmed to fire.
+
+### The reason that is not mechanical
+
+A facade would **erase the signal the second product exists to produce**. `import
+'package:zen_identity/…'` says the product reached into identity; `import 'package:<facade>/…'`
+says nothing. A product's dependency list naming five framework packages *is the finding* — the
+real coupling surface, visible. One umbrella dependency hides it behind a name we invented.
+
+The verbosity is therefore the feature, and it is also the exact dependency list that will be
+published against.
+
+### What this supersedes, and why
+
+- **"The one thing that would force [publishing] earlier is a consumer in a *different
+  repository*, since path dependencies do not reach across repos"** (ROADMAP, backlog item 1;
+  ADR-020) → **refined, and it was half wrong.** Path dependencies reach across repositories
+  perfectly well in **Dart**, and TypeScript needs no dependency edge at all. It is **Java** that
+  cannot, and even Java is satisfied locally by the aggregator. So the trigger is not "a separate
+  repository" but **"the second product gets its own CI"** — a lone clone has no sibling `jzen/`
+  and no root POM, so the reactor is not there and the Java half must resolve from a registry.
+
+### Consequence
+
+The second product can start immediately, in its own repository, with no publishing at all, and
+the framework stays buildable on its own. Publishing (backlog item 1) keeps its postponement and
+gains a sharper trigger — **the product's first CI run, and Java first**.
+
+That last point is itself the first signal from crossing the boundary, and it arrived before a line
+of the product was written: the ecosystems disagree about what "depend on something unpublished"
+means, and the framework's Java half is the one that will force the decision.
 
 **Date:** 2026-08-01. **Status:** accepted. **Refines:** ADR-018, ADR-019, ADR-021. **Closes:** backlog item 8 (Android half).
 

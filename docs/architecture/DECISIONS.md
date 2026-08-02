@@ -15,7 +15,83 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
-## ADR-024 — A Flutter plugin must be Wasm-clean, because the web bundle cannot refuse one
+## ADR-025 — The email link becomes verifiable: App Links beside the custom scheme, and the association is served, not shipped
+
+**Date:** 2026-08-01. **Status:** accepted. **Refines:** ADR-018, ADR-019, ADR-021. **Closes:** backlog item 8 (Android half).
+
+### Context
+
+`zendemo://auth-callback` is a private-use URI scheme, and RFC 8252 §8.6 is explicit that no
+application can claim one exclusively — any app on the device may register the same string. That
+would be a small matter if the link carried a one-time code. It does not: jZen uses the implicit
+fragment flow (ADR-018), so the URL contains a live **access and refresh token**. An app that wins
+the scheme race has the account, and every signal the victim can check says they are safe — they
+requested the email, it came from the right sender, they followed their own link.
+
+The server-side allowlist (ADR-019) does not help, and the reason is worth stating because it looks
+like it should: it governs which return address may be **requested**, and the attacker requests
+nothing. They listen for the address the real app already asked for.
+
+### Decision
+
+- **Serve the association files from the backend** — `GET /.well-known/assetlinks.json` and
+  `GET /.well-known/apple-app-site-association` (no extension, as iOS requires), both
+  `application/json`, both anonymous, neither redirecting. A `WellKnownResource` in `zen-identity`,
+  framework-side like the rest of auth, with the values coming from configuration.
+- **404 until configured, never an empty document.** Android and iOS both *cache* the outcome of
+  verification, so a file that exists but does not name the app teaches the platform that the
+  association **failed**. Absent is a state they retry from cleanly; wrong is not. This is why the
+  `verify:deploy` assertion fails on a malformed file but merely reports an absent one.
+- **The values are public, so they are environment variables, not secrets.** The server serves them
+  to anyone who asks — that *is* the mechanism. Putting them in Secret Manager would imply a
+  confidentiality they do not have and cannot enforce.
+- **Android gets an `autoVerify` https intent-filter beside the custom-scheme one.** Both, not
+  either: the scheme is what makes a local run work with no domain and no signing, and it is what a
+  developer replays from the terminal. The https filter is what a deployed environment mails.
+- **The host is a manifest placeholder, not a literal** (`-Pzen-applinks-host=…`), defaulting to
+  `applinks.invalid` — a reserved TLD (RFC 2606) that can never resolve. An environment fact
+  baked into the manifest would outlive the environment it names, and `destroy:cloudrun` cannot
+  edit the repository (STANDARDS "Deployment model"). A manifest placeholder cannot be empty, so
+  the default had to be a host that exists syntactically and can never match.
+- **Every signing certificate is listed, not just the release key.** A debug keystore signs the
+  build a developer actually installs; a build signed by an unlisted key fails verification with no
+  error anyone sees.
+
+### iOS is deliberately not finished, and not for a technical reason
+
+The server half is done — configure `APPLINKS_APPLE_APP_IDS` and the file is served. The app half
+needs the **Associated Domains** capability, which Apple grants only to a **paid Developer Program
+membership**; free provisioning cannot sign it. Adding the entitlement now would break every iOS
+build on a machine without that membership, which is exactly the trap the macOS Keychain
+entitlement sprang earlier (ADR-023): an entitlement that requires signing turns a working build
+into `"entitlements that require signing with a development certificate"`.
+
+So the entitlement is **not** added. The custom scheme continues to serve iOS, and the remaining
+step is one entitlement plus one config value on the day a paid membership exists.
+
+### What this supersedes, and why
+
+- **"Blocked on signing identities, so it sits with item 6"** (ROADMAP, backlog item 8) →
+  **split.** True for iOS, false for Android: an App Link is verified against the SHA-256 of
+  whatever key signed the build, and a *debug keystore* is a perfectly good key to list. The
+  Android half needs no paid account, no store, and no release signing — so it was never actually
+  blocked, and treating the item as one indivisible thing is what kept it closed.
+
+### Consequence
+
+The hijack is closed on Android for any environment that configures it, and the mechanism is in
+place for iOS. What remains true, and is the reason both filters stay: **a deployment that has not
+adopted App Links is not broken**, it is simply back to the custom scheme with its known weakness.
+Retiring the scheme in production is a configuration change (`AUTH_REDIRECT_URIS`), not a code one.
+
+Verified: `WellKnownResourceTest` + `WellKnownResourceConfiguredTest` cover both sides of
+"configured" — 404 when unset, and the exact documents the platforms parse, served as JSON, without
+redirect, anonymously, and with the Apple file refusing a `.json` suffix. `task test:apps:server`
+72/72. The Android build produces both intent-filters, confirmed by dumping the manifest out of the
+built APK; the default placeholder and a real host both build. The served `assetlinks.json` was
+fetched from a running backend and matches Digital Asset Links byte for byte. `verify:deploy`
+against the live service correctly reports the association as *not adopted* rather than failing,
+because that environment has not been redeployed with the values yet.
 
 **Date:** 2026-07-31. **Status:** accepted. **Refines:** ADR-016, ADR-023.
 

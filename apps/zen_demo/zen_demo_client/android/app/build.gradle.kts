@@ -23,6 +23,21 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // The App Link host for the autoVerify intent-filter in AndroidManifest.xml.
+        //
+        // A placeholder, not a literal, because the host IS the deployed environment: a URL baked
+        // in here would outlive the environment it names, and `destroy:cloudrun` cannot edit the
+        // repository (STANDARDS "Deployment model"). Supply it with
+        //   flutter build apk --dart-define=... -Pzen-applinks-host=app.example.com
+        // or leave it unset, which is the default and the local case.
+        //
+        // The default is deliberately an unresolvable host rather than an empty string: a manifest
+        // placeholder cannot be empty, and "invalid" is a reserved TLD (RFC 2606) that can never
+        // be registered, so an unconfigured build declares a filter that cannot match anything
+        // instead of one that matches something unintended.
+        manifestPlaceholders["zenApplinksHost"] =
+            (project.findProperty("zen-applinks-host") as String?) ?: "applinks.invalid"
     }
 
     buildTypes {

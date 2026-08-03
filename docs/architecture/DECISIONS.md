@@ -15,6 +15,177 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-028 — Deployment capacity is the application's choice: the framework ships defaults, not constants
+
+**Date:** 2026-08-03. **Status:** accepted. **Refines:** ADR-027, ADR-020, ADR-001 (the
+framework/application boundary).
+
+### Context
+
+`Taskfile.yml`'s `deploy:cloudrun` writes `--memory=256Mi --cpu=1 --min-instances=0
+--max-instances=1 --concurrency=200 --timeout=300s` as **literals**, while `GCP_PROJECT`,
+`GCP_REGION`, `SERVICE_NAME` and `AR_REPO` sitting a thousand lines above are overridable `vars`.
+
+The repository root is language-neutral and framework-level; `zen_demo` is the only application
+today, not the only application there will be. So the framework's orchestrator currently fixes one
+particular application's capacity envelope for every application that will ever use it. That is a
+layering defect by the repository's own rules, and it is invisible precisely because there is only
+one app to notice it.
+
+It also quietly misrepresents ADR-020 and ADR-027, both of which read as though `--max-instances=1`
+were a property of *jZen* when it is a property of *zen_demo's deployment*.
+
+### Decision
+
+- The capacity parameters become `vars` with **today's values as defaults**. jZen's own posture is
+  unchanged: `zen_demo` still deploys at 256Mi / 1 CPU / min 0 / max 1 / concurrency 200.
+- An application may override them. Concretely, an operator willing to pay for it may deploy at
+  `--min-instances=1 --max-instances=10`, and the framework must not stand in the way.
+- The framework's obligation in exchange is to say **what each knob invalidates**, next to the knob
+  and not only here. A framework that lets an operator raise `--max-instances` without telling them
+  what it breaks is a trap, and the things it breaks fail silently.
+
+### What each knob costs
+
+- **`--max-instances > 1`** invalidates three pieces of in-process state, none of which fails loudly:
+  1. **The burst tier of the rate limiter.** N instances keep N independent counters, so the
+     effective limit is N× the configured one.
+  2. **`JobScheduler`'s overlap guard.** The `AtomicBoolean ticking` flag is per-instance, so two
+     instances can run the same tick concurrently. `JobScheduler`'s own javadoc already names the
+     remedy — a Postgres advisory lock — and ADR-020 already names the trigger. Worth stating the
+     stakes plainly, because the tick runs retention: concurrent ticks mean concurrent **account
+     anonymisation**. The retention queries exclude already-anonymised rows, so the operation is
+     idempotent and the damage is bounded, but that is a property to verify rather than assume.
+  3. **Any in-memory cache**, which diverges per instance.
+
+  The **durable** tier of the rate limiter is unaffected: it lives in Postgres precisely so that it
+  depends neither on how many instances run nor on any one of them surviving. The second half of
+  that is measured rather than assumed — under `--min-instances=0` the live service's process is
+  replaced every hour (ADR-027), so a counter whose window outlives an hour cannot be held in
+  memory at all, whatever `--max-instances` says.
+- **`--min-instances ≥ 1`** is the opposite axis and invalidates nothing. It removes cold starts and
+  would make an in-process `@Scheduled` viable again — but `zen-jobs` stays correct either way, so
+  there is no reason to undo it. Paying for a warm instance buys latency, not a simpler
+  architecture. **What it buys is now measured** (ADR-027): a cold request costs 2.9–4.8s against
+  26ms warm, and in `zen_demo`'s deployment the instance is cold for practically every real
+  visitor, because the only recurring traffic is one scheduler tick an hour.
+- **`--concurrency` and `--timeout`** carry no invariant at all. They are capacity and latency
+  trade-offs, and `--timeout` is additionally a denial-of-service lever (ADR-027).
+
+### What this supersedes, and why
+
+- **The literal capacity flags in `deploy:cloudrun`** → **replaced by defaults.** *Why:* a framework
+  whose orchestrator hardcodes one application's cost envelope has stopped being a framework at that
+  line. The values were right for `zen_demo`; being right for one app is not a reason to be
+  mandatory for all of them.
+- **"`--max-instances=1` stays valid for the MVP, with the documented trigger unchanged"** (ADR-020,
+  Consequence) → **reframed, not reversed.** *Why:* the trigger is unchanged and still correct. What
+  changes is whose decision it is — the application's, not the framework's — and that the framework
+  now has to publish the consequences instead of assuming a single deployment reads the ADR.
+
+### Consequence
+
+- Defaults are unchanged, so ADR-027's acceptance of the 200-slot ceiling still describes what
+  `zen_demo` actually runs. An application that raises the ceiling opts out of ADR-027's reasoning
+  along with its cost floor.
+- `deploy:cloudrun`'s summary is where the knob-by-knob consequences above belong, because that is
+  what an operator reads before changing them.
+
+---
+
+## ADR-027 — The 200-slot ceiling is accepted: the perimeter stays inside the application, and what would move it
+
+**Date:** 2026-08-03. **Status:** accepted. **Refines:** ADR-020 (the `--max-instances=1` trigger),
+STANDARDS "Deployment model".
+
+### Context
+
+A security audit of the whole surface (`docs/plans/SECURITY-REMEDIATION.md`) found that the backend
+has no rate limiting at all, and that the deployment shape makes denial of service cheap. Two
+numbers carry the argument:
+
+- `--concurrency=200` on `--max-instances=1` means 200 concurrent requests is the entire capacity of
+  the service, and by design that capacity cannot grow.
+- `--timeout=300s` means holding all 200 slots costs an attacker `200 / 300` = **0.67 requests per
+  second**. One slow connection. No botnet, no load.
+
+The second number is a configuration mistake and is fixed. The first is not a mistake — it is the
+cost floor working as intended — and it cannot be configured away.
+
+### Measured on the live service
+
+Taken 2026-08-03 against `zen-demo-server` revision `00013-qw9` in `jzen-prod`, from Cloud Run
+request logs and browser Navigation Timing. This ADR rests on these numbers rather than on estimates.
+
+| | Measured | Samples |
+|---|---|---|
+| Cold request, end to end | 2.9–4.8s, mean **3.7s** | 12 |
+| — of which Quarkus native boot | 2.6–3.3s, mean 3.0s | 15 |
+| Warm request, time to first byte | **26ms** | 1 |
+| Deployed flags | concurrency 200, timeout 300s, min 0, max 1, 256Mi / 1 CPU | — |
+
+Two findings came out of the measurement that reasoning had not produced:
+
+- **The service is almost never warm.** Its only recurring traffic is the hourly Cloud Scheduler
+  tick, so the container starts, serves one request and scales back to zero — 24 cold starts a day,
+  and a visitor arriving between ticks pays the full 3.7s.
+- **The heaviest operation takes about 0.7s of actual work.** The hourly trigger completes in 3.7s
+  *including* the 3.0s boot, which is what makes a 60s timeout generous rather than a guess.
+
+### Decision
+
+1. **The application closes what it can.** Lower `--timeout` to roughly 60s — the measurement above
+   shows the only long-running operation needs under a second — and add the rate limiter. Together
+   these raise the single-source cost about fivefold and put the remaining 3.3 req/s within reach of
+   a per-address limiter.
+2. **The residual is accepted, not closed.** A distributed attack from a pool of addresses still
+   saturates 200 slots, and nothing in the application can prevent that.
+3. **No edge is introduced.** jZen continues to serve Cloud Run directly.
+
+### What was rejected, and why
+
+- **Cloud Armor** → **rejected on cost.** It cannot attach to Cloud Run directly; it requires a
+  Global External Application Load Balancer in front. The floor is roughly **$25–30/month before a
+  single request** (ALB forwarding rule ~$18/mo, policy $5/mo, $1/mo per rule). *Why this is
+  consistent rather than a compromise:* the same cost discipline that produced `--max-instances=1`
+  and `--min-instances=0` cannot then buy a $30/month appliance to defend them.
+- **Cloudflare's free tier** → **deferred on invariants, not on price.** It is $0, and a domain is
+  already on the critical path for App Links and email deliverability, so it adds no money either.
+  It is deferred because **two written constraints depend on there being no edge**: STANDARDS
+  "Deployment model" (an edge that strips or renames cookies breaks the entire auth path, since the
+  session is a normally-named cookie SmallRye JWT parses directly) and `WellKnownResource` (the
+  `.well-known` association files must not be rewritten and must not redirect — and a *failed* App
+  Links verification is cached by both Android and iOS, which is painful to recover from).
+  Free-tier Bot Fight Mode, which injects a JavaScript challenge, would break every API client
+  outright. One wrong toggle in a third-party panel breaks two invariants at once.
+
+### Why acceptance is a position rather than negligence
+
+`--max-instances=1` is simultaneously the vulnerability and its own fuse. Because at most one
+instance ever runs, an attack cannot produce a surprise bill: **it costs availability, not money.**
+That asymmetry is what makes accepting the residual an engineering judgement instead of an omission
+— the blast radius is bounded by the same constraint that creates the exposure.
+
+### The trigger
+
+Revisit on **observed abuse**, not on a date and not pre-emptively. In that order:
+
+1. **Cloudflare free**, gated on verifying that cookies and `.well-known` paths pass through
+   untouched and that Bot Fight Mode is off. It needs its own ADR, because it amends two invariants
+   this one is preserving.
+2. **Raising `--max-instances`**, which ADR-020 already names as the trigger that forces in-process
+   state out to Postgres or Redis.
+
+### Consequence
+
+- The perimeter is the application's own rate limiter and nothing else. There is no network-level
+  protection in front of jZen, and that is a chosen position, recorded here so it is not later
+  mistaken for an oversight.
+- `docs/plans/SECURITY-REMEDIATION.md` carries the execution and is disposable once executed. This
+  entry carries the reasoning and is not.
+
+---
+
 ## ADR-026 — A second product consumes jZen from a sibling checkout: one Maven aggregator, path dependencies everywhere else
 
 **Date:** 2026-08-02. **Status:** accepted. **Refines:** ADR-020 (backlog item 1's trigger).

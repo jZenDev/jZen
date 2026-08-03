@@ -292,35 +292,77 @@ second app gets its *own* e2e gate (ADR-001).
 
 ## Deploy
 
-**The backend has a deploy path today; the web and admin surfaces do not yet.** jZen ships one
-deploy task — the Quarkus server as a **native image** to Cloud Run:
+**One task deploys the whole stack**, as a single Quarkus **native image** on Cloud Run:
 
 ```bash
 task deploy:cloudrun
 ```
 
-- **Backend — done.** `deploy:cloudrun` builds the native image and pushes it to Cloud Run.
-- **Web app and admin panel — planned, not yet wired.** Both are static bundles (`flutter build
-  web` for the client, `task build:admin` → a Vite bundle for the panel) and both belong on GCP
-  the same way the backend does — a container on Cloud Run, or GCP static hosting. There is no
-  `deploy:web` / `deploy:admin` task yet, and the backend container currently serves the API only
-  (the web/admin bundles are not baked in, and in local dev they run on their own origins behind
-  CORS). Wiring their deployment is open work, not a deliberate exclusion.
-- **Native mobile/desktop — later.** App-store / notarized-build pipelines are outside what the
-  framework automates for now, and that one *is* fine to leave to each app.
+- **Backend, web app and admin panel — one container, one origin.** `deploy:cloudrun` stages both
+  frontends before the native build (`build:web` → `/`, `build:web:admin` → `/admin/`) so the image
+  serves them same-origin with the API. Same-origin is not a convenience: it is what lets the
+  session cookie work without CORS credentials, and `StaticCacheHeaders` keeps the fixed-name entry
+  files revalidating so a redeploy is not invisible to returning browsers.
+- **Native mobile/desktop — later.** App-store and notarized-build pipelines are outside what the
+  framework automates, and that one *is* fine to leave to each app (ADR-020).
 
-> jZen has never actually been deployed or published: no live Cloud Run service, no pub.dev / npm
-> package, no production database. The backend deploy path is defined and exercised up to the
-> point real GCP credentials are required.
+> **Deployed and exercised; not published.** The stack has run on real Cloud Run against real
+> Supabase — several defects in [`ROADMAP.md`](docs/architecture/ROADMAP.md) ("Defects surfaced by
+> the first real deployment") were found only that way, and `task verify:deploy` asserts the
+> deployment contract against a live service. What has *not* happened is **publishing**: no pub.dev
+> or npm package, deliberately, until a second product has bent the API (ADR-020).
 
-The Cloud Run deploy runs a **single instance by design** (`--max-instances=1`,
-`--min-instances=0`, `--concurrency=200`): a deliberate cost floor, not a scaling ceiling.
-Because at most one instance ever runs, in-process state (rate limiting, caches, counters) is
-valid by construction; the trigger to externalize state is the decision to raise
-`--max-instances` above 1. Scale-to-zero means scheduled work is driven from **outside** the
-container — one Cloud Scheduler entry calls an authenticated trigger endpoint. The
-`deploy:cloudrun` task summary (`task --summary deploy:cloudrun`) lists the required Secret
-Manager secrets and the one-time scheduler setup. See STANDARDS "Deployment model".
+### Capacity: the defaults, and the reason for each
+
+The Cloud Run deploy runs a **single instance by design** — a deliberate cost floor, not a scaling
+ceiling. These are **defaults, not constants**: they are `vars` in `Taskfile.yml`, so an
+application overrides them without touching the framework. The values below are sized for
+`zen_demo`'s target (~2K MAU); nobody else has to live with them (ADR-028).
+
+| Flag | Default | Why this default | What changing it costs |
+|---|---|---|---|
+| `--min-instances` | `0` | Nothing is paid while the service sits idle. The price is a cold start on the first request after a quiet period — **measured at 2.9–4.8s, mean 3.7s** (see below). | Setting `1` removes cold starts and buys latency, at the cost of a warm instance around the clock. **Invalidates nothing.** |
+| `--max-instances` | `1` | A ceiling the bill cannot escape. It is also why an attack on this service costs availability rather than money (ADR-027). | Raising it above `1` **silently breaks three pieces of in-process state**: any burst rate limiter, `JobScheduler`'s overlap guard, and any in-memory cache. Read **ADR-028** first — none of them fails loudly. |
+| `--concurrency` | `200` | Requests one instance serves at once. With `--max-instances=1`, this is the entire capacity of the service. | A pure capacity trade-off, no invariant attached. Together with `--timeout` it decides how cheap a denial-of-service is (ADR-027). |
+| `--timeout` | `300s` | Cloud Run's per-request ceiling. | Lower is safer: the shorter the timeout, the more traffic an attacker needs to keep every slot occupied. No invariant attached. |
+| `--memory` / `--cpu` | `256Mi` / `1` | What the native image needs for the target load. | Raise it if your application's workload is heavier. |
+
+**What a cold start actually costs.** Measured on the live service on 2026-08-03, from Cloud Run
+request logs and the browser:
+
+| | Measured | Samples |
+|---|---|---|
+| Cold request, end to end | **2.9–4.8s, mean 3.7s** | 12 |
+| — of which Quarkus native boot | 2.6–3.3s, mean 3.0s | 15 |
+| — remainder | container scheduling, ~0.7s | — |
+| Warm request, time to first byte | **~26ms** | 1 |
+| Web app, fully loaded (warm) | 125ms, ~2.5 MB over 11 requests | 1 |
+
+Two things worth knowing before you copy these defaults:
+
+- **A ~3.7s first request is the deal `--min-instances=0` buys you.** That is not "sub-second", as
+  an earlier version of the architecture docs claimed without measuring. Whether it is acceptable
+  is a product decision.
+- **In this deployment the instance is almost never warm.** The only recurring traffic is the
+  hourly Cloud Scheduler tick, so the container starts, serves it, and scales back to zero — 24
+  cold starts a day, and a real visitor arriving between ticks pays the full 3.7s. An application
+  with steady traffic will see this far less; one with none will see it every time.
+
+Two consequences of scale-to-zero that are easy to miss, and that no test will catch:
+
+- **Scheduled work must be driven from outside the container.** With `--min-instances=0` there is
+  no thread alive at the hour a cron names, so an in-process `@Scheduled` usually does not fire —
+  and when it does, that is an accident of traffic. One Cloud Scheduler entry calls an
+  authenticated trigger endpoint instead (`zen-jobs`).
+- **In-process state does not survive an idle period.** Anything whose window outlives the
+  instance — a login-attempt counter, a daily quota — belongs in Postgres. Short-window state (a
+  per-second burst counter) is fine in memory, because the traffic that would exceed it is what
+  keeps the instance alive in the first place.
+
+The `deploy:cloudrun` task summary (`task --summary deploy:cloudrun`) lists the required Secret
+Manager secrets and the one-time scheduler setup. See STANDARDS "Deployment model", plus
+[ADR-027](docs/architecture/DECISIONS.md) (why this posture is accepted) and **ADR-028** (what each
+knob invalidates when you change it).
 
 ## Licence and contribution
 

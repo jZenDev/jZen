@@ -12,8 +12,9 @@ import 'package:zen_transport/zen_transport.dart';
 /// means the cookie set at login flows to the auth-gated /profile call - the round trip the
 /// native cookie jar exists to make work off-web.
 class DemoRepository {
-  DemoRepository({required String baseUrl, required http.Client session})
-    : _wsUri = _webSocketUri(baseUrl),
+  DemoRepository({required String baseUrl, required ZenSessionClient session})
+    : _session = session,
+      _wsUri = _webSocketUri(baseUrl),
       _json = ZenClient(baseUrl: baseUrl, format: ZenTransportFormat.json, httpClient: session),
       _protobuf = ZenClient(
         baseUrl: baseUrl,
@@ -28,6 +29,11 @@ class DemoRepository {
   final ZenClient _json;
   final ZenClient _protobuf;
   final Uri _wsUri;
+
+  /// Held for the WebSocket handshake, not for the HTTP calls (those go through the ZenClients
+  /// above, which already share it). The socket endpoint is authenticated, so the upgrade has to
+  /// carry the same session — and on native only this object knows what that is.
+  final ZenSessionClient _session;
 
   /// Pings the server in the given transport [format], localized by [language]. Both modes hit
   /// the same typed endpoint; only the wire format differs.
@@ -56,7 +62,15 @@ class DemoRepository {
 
   /// Opens the demo WebSocket echo. Frames are binary Protobuf on every platform (the server
   /// endpoint is single-format), so the format is forced rather than negotiated.
-  ZenWebSocket connectWebSocket() => ZenWebSocket(_wsUri, format: ZenTransportFormat.protobuf);
+  ///
+  /// The handshake carries the session: `DemoWebSocket` is `@Authenticated`, so an anonymous
+  /// upgrade is closed by the server. On web that happens by itself and `handshakeHeaders()` is
+  /// empty; on native it is the cookie jar's `Cookie:` header, which nothing else would attach.
+  ZenWebSocket connectWebSocket() => ZenWebSocket(
+    _wsUri,
+    format: ZenTransportFormat.protobuf,
+    headers: _session.handshakeHeaders(),
+  );
 
   static Uri _webSocketUri(String baseUrl) {
     final base = Uri.parse(baseUrl);

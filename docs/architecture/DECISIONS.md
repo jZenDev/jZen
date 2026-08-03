@@ -15,6 +15,112 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-029 — The rate limiter is two tiers: in-memory burst, PostgreSQL for anything that outlives a process
+
+**Date:** 2026-08-03. **Status:** accepted. **Supersedes:** STANDARDS "Deployment model", the
+bullet *"One instance makes in-process state valid"*. **Refines:** ADR-027 (the perimeter),
+ADR-028 (what each capacity knob invalidates), ADR-020 (the max-instances trigger).
+
+### Context
+
+A security audit found the backend had no rate limiting anywhere
+(`docs/plans/SECURITY-REMEDIATION.md`, F1). ADR-027 already accepted that the perimeter is the
+application's own limiter and nothing else, so this is the component that decision was resting on.
+
+The obvious place to put counters is memory, and STANDARDS said so in as many words:
+
+> **One instance makes in-process state valid.** Because at most one instance ever runs, in-process
+> state — rate limiting, in-memory caches, login-attempt counters — is correct by construction.
+> […] **The trigger to externalize state (Postgres/Redis) is the decision to raise
+> `--max-instances` above 1**.
+
+That is right about sharing and **wrong about lifetime**, and the second half is what a rate
+limiter depends on. ADR-027's measurement is the evidence: under `--min-instances=0` the container
+exists only while it is serving, and the live service's process is replaced **about every hour** —
+zen_demo's only recurring traffic is one scheduler tick an hour, so it starts, serves, and scales
+back to zero, twenty-four times a day.
+
+A login counter with a one-hour window, held in memory, therefore resets itself roughly as often as
+an attacker fills it. It is not weakened by scale-to-zero; it is *defeated* by it, silently, while
+looking exactly like a working control. Raising `--max-instances` was never the trigger for that
+one — `--min-instances=0` already was, and STANDARDS stated the very same constraint correctly one
+bullet later for *scheduling* ("Scale-to-zero makes in-process scheduling invalid") without
+carrying it to counters.
+
+### Decision
+
+- **Two tiers, split on how long the window is.**
+  - **Burst — in memory.** Fixed windows, second- to minute-scale. Valid because at most one
+    instance runs, and valid *in time* because a window shorter than the process's life is one the
+    attacker's own traffic keeps alive: the flood that would exceed it is what stops the instance
+    scaling to zero.
+  - **Durable — PostgreSQL.** Hour-scale windows, in a Flyway-migrated table
+    (`zen_rate_limit_counters`, `V200`, band 200-299 claimed for `zen-ratelimit`). Incremented with
+    a single `INSERT … ON CONFLICT DO UPDATE … RETURNING`, because a read-then-write is a lost
+    update and a rate limiter that loses updates has whatever limit concurrency happens to produce.
+- **Redis rejected.** Memorystore has no free tier (~$35/month floor); Upstash adds a vendor, a
+  secret, a network hop and a failure mode. Postgres is already provisioned, already under Flyway,
+  already migrated at start, and costs $0 incrementally. The application cannot serve an
+  authenticated request without it anyway, since roles are loaded from the `users` table on every
+  one — so it adds no new dependency, only a new table.
+- **The client address is resolved by counting `X-Forwarded-For` from the right**, by a configured
+  number of trusted hops (`zen.ratelimit.forwarded-hops`, default **0** = ignore the header
+  entirely). The conventional leftmost reading — which is what `quarkus.http.proxy.allow-x-forwarded`
+  does — is attacker input, because a proxy appends rather than replaces. `%prod` sets 1: Cloud Run
+  is itself a proxy and its frontend appends the real peer. **An edge in front of Cloud Run changes
+  this number**, which is one more thing ADR-027's "no edge" position is holding up.
+- **Two guards, because all three failure modes here are silent.**
+  `RateLimitAddressGuard` refuses to boot when `proxy-address-forwarding` and `forwarded-hops`
+  contradict each other (either pairing throttles nobody). `RateLimitWiringTest` resolves the
+  filter from the `BeanManager`, so losing `jandex-maven-plugin` from the module fails the build
+  rather than producing a limiter that permits everything.
+- **Cleanup is a `zen-jobs` `ZenJob`, never `@Scheduled`** — the rule this ADR is restating, applied
+  to itself.
+- **Production limits are the framework's defaults**, shipped in the module's
+  `META-INF/microprofile-config.properties`. `%dev` and `%test` deliberately run looser ones, and
+  the reason is recorded next to them: a suite drives hundreds of requests from `127.0.0.1` in
+  seconds, so production values would test the limiter instead of the endpoint. `%dev` needs looser
+  *durable* limits for a further reason `%test` does not have — it points at the persistent local
+  Postgres, so an hour-scale counter accumulates across every `task test:e2e` run in that hour.
+  Enforcement is not taken on trust: `RateLimitEnforcementTest` boots its own `@TestProfile` with
+  deliberately tiny limits and asserts a real 429.
+
+### What this supersedes, and why
+
+- **"One instance makes in-process state valid […] The trigger to externalize state
+  (Postgres/Redis) is the decision to raise `--max-instances` above 1"** (STANDARDS "Deployment
+  model") → **refined, and one constraint added.** *Why:* it names one of two constraints.
+  `--max-instances > 1` governs whether state is *shared*; `--min-instances = 0` governs whether it
+  *survives*, and only the second is measurable — ADR-027 measured it. The corrected rule is that
+  the state's window decides where it lives: minute-scale in memory, hour-scale in Postgres. The
+  original claim stays true for caches and for `JobScheduler`'s overlap flag, which only has to
+  outlive a tick.
+- **"Rate limiting" as an example of valid in-process state** (same bullet) → **split.** *Why:* it
+  was the one example in that list where the lifetime constraint bites, and it was leading by
+  example toward a limiter that could not work.
+
+### Consequence
+
+- `zen-ratelimit` is the sixth framework library and claims Flyway band **200-299**; STANDARDS
+  "Database migrations" updated. The next library takes 300-399.
+- Coverage is three buckets, tightest first: `POST /api/v1/jobs/trigger` (20/hour durable — its
+  real caller is one Cloud Scheduler entry once an hour, and a successful call anonymises
+  accounts), the credential-bearing auth endpoints (10/min, 100/hour), and everything else under
+  `/api/` (120/min burst only — below the ~3.3 req/s that saturates all 200 slots per ADR-027,
+  and far above any real client).
+- The counter table stores a **salted hash** of the address, never the address: an IP is personal
+  data under GDPR Recital 30 and the limiter only ever needs equality.
+- ADR-027's residual risk is unchanged. This closes the single-source attack; a distributed one
+  still saturates 200 slots, and that remains accepted rather than closed.
+- Verified green: the app's `@QuarkusTest` suite (80 tests, including the 429 enforcement proof and
+  the bean-discovery guard), `zen-ratelimit`'s own 31 unit tests, and the live `task test:e2e` gate.
+  One existing assertion changed and was made *stronger*, not weaker:
+  `JobTriggerResourceTest` asserted `due == 1`, which encoded "this application has exactly one
+  job"; it now identifies the retention job by id among the due runs and additionally asserts that
+  nothing failed.
+
+---
+
 ## ADR-028 — Deployment capacity is the application's choice: the framework ships defaults, not constants
 
 **Date:** 2026-08-03. **Status:** accepted. **Refines:** ADR-027, ADR-020, ADR-001 (the

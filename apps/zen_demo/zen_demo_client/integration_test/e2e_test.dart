@@ -34,7 +34,7 @@ void main() {
   final email = 'zen-e2e-${DateTime.now().microsecondsSinceEpoch}@example.com';
   const password = 'secret123';
 
-  late http.Client session;
+  late ZenSessionClient session;
   late SupabaseIdentityRepository identity;
   late DemoRepository demo;
 
@@ -102,6 +102,10 @@ void main() {
   });
 
   test('the WebSocket echoes a message back', () async {
+    // Also the proof that the authenticated handshake works on native: DemoWebSocket is
+    // @Authenticated, and nothing attaches the session cookie to a dart:io upgrade unless
+    // ZenWebSocket is handed the cookie jar's handshakeHeaders(). If that seam breaks, this
+    // reads as a closed socket rather than as a wrong echo.
     final socket = demo.connectWebSocket();
     addTearDown(() => socket.close());
     final echoes = socket.responses(WebSocketMessage.new);
@@ -110,6 +114,33 @@ void main() {
     final reply = await first.timeout(const Duration(seconds: 10));
     expect(reply.type, 'echo');
     expect(reply.payload, 'hello-e2e');
+  });
+
+  test('an anonymous WebSocket handshake is refused', () async {
+    // The socket used to be the one route into the application that needed no credential at
+    // all. It is also the one route the rate limiter cannot police after the upgrade, since the
+    // limiter is a JAX-RS filter and the connection leaves JAX-RS behind - so the handshake is
+    // where it has to be stopped. An anonymous client has no cookie jar entry to send.
+    // A bare dart:io WebSocket rather than ZenWebSocket, deliberately: a refused upgrade errors
+    // the WebSocketChannel's stream AND its sink, and the sink's error escapes the test zone as
+    // an unhandled async error no matter how the stream's is caught. dart:io's connect() is a
+    // single Future with nothing dangling behind it, and the status code is the assertion anyway.
+    // The authenticated half of the same seam is covered by the echo test above.
+    final wsUrl = Uri.parse(baseUrl).replace(
+      scheme: Uri.parse(baseUrl).scheme == 'https' ? 'wss' : 'ws',
+      path: '/api/v1/demo/ws',
+    );
+
+    await expectLater(
+      WebSocket.connect(wsUrl.toString()),
+      throwsA(
+        // Matched on toString rather than .message: dart:io appends the status code there, and
+        // the code is the assertion — a socket that failed to open for any other reason would
+        // pass a bare isA<WebSocketException> while proving nothing about authentication.
+        isA<WebSocketException>().having((e) => e.toString(), 'toString', contains('401')),
+      ),
+      reason: 'the server must refuse an unauthenticated upgrade rather than serve it',
+    );
   });
 
   test('an anonymous demo profile returns a ZenError', () async {

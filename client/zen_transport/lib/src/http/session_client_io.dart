@@ -126,6 +126,22 @@ class CookieJarClient extends ZenSessionClient {
     }
   }
 
+  /// The jar's cookies as a `Cookie:` request header, for a WebSocket handshake.
+  ///
+  /// The handshake is an ordinary HTTP request and jZen's socket endpoint requires the same
+  /// session as every other route, but a `dart:io` WebSocket shares nothing with this jar — so
+  /// without this the upgrade goes out anonymous and the server closes it. Returns an empty map
+  /// when there is no session, rather than an empty `Cookie:` header, because a header present
+  /// but blank is not the same thing as no header and some servers treat it differently.
+  @override
+  Map<String, String> handshakeHeaders() {
+    if (_jar.isEmpty) return const {};
+    return {
+      HttpHeaders.cookieHeader:
+          _jar.values.map((c) => '${c.name}=${c.value}').join('; '),
+    };
+  }
+
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     final bodyBytes = await request.finalize().toBytes();

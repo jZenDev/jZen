@@ -11,6 +11,7 @@ import io.quarkus.test.security.TestSecurity;
 import io.restassured.response.Response;
 import java.time.OffsetDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import zen.identity.user.User;
@@ -52,10 +53,22 @@ class JobTriggerResourceTest {
             .andReturn();
 
     assertEquals(200, response.statusCode());
-    assertEquals(1, response.jsonPath().getInt("due"), "the retention job was due");
-    assertEquals(1, response.jsonPath().getInt("succeeded"));
-    assertEquals(RETENTION_JOB, response.jsonPath().getString("runs[0].jobId"));
-    assertEquals("success", response.jsonPath().getString("runs[0].status"));
+
+    // Identified by job id rather than by position or by a total count. This application ships
+    // more than one ZenJob now (zen-ratelimit's counter cleanup is the second), and a tick runs
+    // every job that is due in id order - so "runs[0]" and "due == 1" were assertions about how
+    // many jobs happen to exist, which is not what this test is about and would break again on
+    // the third. What it is about is unchanged and asserted in full below: the retention job was
+    // due, the trigger ran it, and it succeeded.
+    List<String> ranJobs = response.jsonPath().getList("runs.jobId");
+    assertTrue(ranJobs.contains(RETENTION_JOB), "the retention job was due; ran: " + ranJobs);
+    int retention = ranJobs.indexOf(RETENTION_JOB);
+    assertEquals("success", response.jsonPath().getString("runs[" + retention + "].status"));
+    assertEquals(ranJobs.size(), response.jsonPath().getInt("succeeded"), "every due job succeeded");
+    // Canonical proto3 JSON omits a zero-valued field, so "no failures" arrives as an ABSENT
+    // "failed" rather than as 0. Reading it with getInt() would NPE on the passing case.
+    Integer failed = response.jsonPath().get("failed");
+    assertTrue(failed == null || failed == 0, "no due job failed, got failed=" + failed);
 
     JobState state = reloadJob();
     assertNotNull(state.lastRunAt, "the run is visible after the fact, which is the point");

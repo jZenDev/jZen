@@ -110,7 +110,8 @@ Two rules the walking skeleton established, both mandatory for every backend mod
   |---|---|---|
   | `zen-identity` | 1-99 | `V1__init_identity.sql`, `V2__row_level_security.sql` |
   | `zen-jobs` | 100-199 | `V100__init_jobs.sql` |
-  | the next framework library | 200-299, 300-399, … | — |
+  | `zen-ratelimit` | 200-299 | `V200__init_rate_limit.sql` |
+  | the next framework library | 300-399, 400-499, … | — |
   | applications (`apps/*/*_server`) | 1000+ | — |
 
   A new library claims the next free hundred *in this table* as part of its first migration, so two
@@ -343,12 +344,22 @@ provider is only made meaningful by the backend.
   earlier claim of a "sub-second start" here was never measured and was wrong by three to
   five times; whether a ~3.7s first request stays an acceptable trade is a product
   decision, not a property of the image.
-- **One instance makes in-process state valid.** Because at most one instance ever runs,
-  in-process state — rate limiting, in-memory caches, login-attempt counters — is correct
-  by construction. This is a feature of the deployment model, not a hazard. **The trigger
-  to externalize state (Postgres/Redis) is the decision to raise `--max-instances` above
-  1**, e.g. a login counter shared across instances. Until then, keep it simple and
-  in-process.
+- **One instance makes in-process state valid — but only for as long as the process
+  lives.** Because at most one instance ever runs, in-process state (in-memory caches, a
+  burst rate-limit counter) is correct by construction as far as *sharing* goes, and
+  `--max-instances > 1` is the trigger to externalize it: N instances keep N independent
+  copies (ADR-028). That is one of **two** constraints, and this bullet used to state only
+  the first. The second is `--min-instances=0`: the container exists only while it is
+  serving, and the live service's process is **measurably replaced about every hour**
+  (ADR-027, twelve consecutive samples). So state whose window outlives a process cannot
+  be held in memory *whatever* `--max-instances` says — an hour-scale login counter kept
+  in memory resets itself roughly as fast as an attacker fills it, which looks like
+  protection and is not.
+  **The rule, therefore: how long the state must live decides where it goes.** Second- to
+  minute-scale is in-process and correct; hour-scale and longer goes to Postgres. jZen's
+  own rate limiter is split on exactly that line — `zen-ratelimit`'s burst tier is in
+  memory, its durable tier is a Flyway-migrated table (**ADR-029**). Redis was rejected:
+  Postgres is already provisioned, already migrated, and costs nothing incrementally.
 - **Scale-to-zero makes in-process *scheduling* invalid — the mirror image of the rule
   above.** `--min-instances=0` means the container exists only while it is serving a
   request, so an in-process `@Scheduled` cron has no thread alive at the hour it names: it

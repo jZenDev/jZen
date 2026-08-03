@@ -15,6 +15,79 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-027 — The 200-slot ceiling is accepted: the perimeter stays inside the application, and what would move it
+
+**Date:** 2026-08-03. **Status:** accepted. **Refines:** ADR-020 (the `--max-instances=1` trigger),
+STANDARDS "Deployment model".
+
+### Context
+
+A security audit of the whole surface (`docs/plans/SECURITY-REMEDIATION.md`) found that the backend
+has no rate limiting at all, and that the deployment shape makes denial of service cheap. Two
+numbers carry the argument:
+
+- `--concurrency=200` on `--max-instances=1` means 200 concurrent requests is the entire capacity of
+  the service, and by design that capacity cannot grow.
+- `--timeout=300s` means holding all 200 slots costs an attacker `200 / 300` = **0.67 requests per
+  second**. One slow connection. No botnet, no load.
+
+The second number is a configuration mistake and is fixed. The first is not a mistake — it is the
+cost floor working as intended — and it cannot be configured away.
+
+### Decision
+
+1. **The application closes what it can.** Lower `--timeout` to roughly 60s (measured against the
+   retention job, which is the only long operation), and add the rate limiter. Together these raise
+   the single-source cost about fivefold and put the remaining 3.3 req/s within reach of a
+   per-address limiter.
+2. **The residual is accepted, not closed.** A distributed attack from a pool of addresses still
+   saturates 200 slots, and nothing in the application can prevent that.
+3. **No edge is introduced.** jZen continues to serve Cloud Run directly.
+
+### What was rejected, and why
+
+- **Cloud Armor** → **rejected on cost.** It cannot attach to Cloud Run directly; it requires a
+  Global External Application Load Balancer in front. The floor is roughly **$25–30/month before a
+  single request** (ALB forwarding rule ~$18/mo, policy $5/mo, $1/mo per rule). *Why this is
+  consistent rather than a compromise:* the same cost discipline that produced `--max-instances=1`
+  and `--min-instances=0` cannot then buy a $30/month appliance to defend them.
+- **Cloudflare's free tier** → **deferred on invariants, not on price.** It is $0, and a domain is
+  already on the critical path for App Links and email deliverability, so it adds no money either.
+  It is deferred because **two written constraints depend on there being no edge**: STANDARDS
+  "Deployment model" (an edge that strips or renames cookies breaks the entire auth path, since the
+  session is a normally-named cookie SmallRye JWT parses directly) and `WellKnownResource` (the
+  `.well-known` association files must not be rewritten and must not redirect — and a *failed* App
+  Links verification is cached by both Android and iOS, which is painful to recover from).
+  Free-tier Bot Fight Mode, which injects a JavaScript challenge, would break every API client
+  outright. One wrong toggle in a third-party panel breaks two invariants at once.
+
+### Why acceptance is a position rather than negligence
+
+`--max-instances=1` is simultaneously the vulnerability and its own fuse. Because at most one
+instance ever runs, an attack cannot produce a surprise bill: **it costs availability, not money.**
+That asymmetry is what makes accepting the residual an engineering judgement instead of an omission
+— the blast radius is bounded by the same constraint that creates the exposure.
+
+### The trigger
+
+Revisit on **observed abuse**, not on a date and not pre-emptively. In that order:
+
+1. **Cloudflare free**, gated on verifying that cookies and `.well-known` paths pass through
+   untouched and that Bot Fight Mode is off. It needs its own ADR, because it amends two invariants
+   this one is preserving.
+2. **Raising `--max-instances`**, which ADR-020 already names as the trigger that forces in-process
+   state out to Postgres or Redis.
+
+### Consequence
+
+- The perimeter is the application's own rate limiter and nothing else. There is no network-level
+  protection in front of jZen, and that is a chosen position, recorded here so it is not later
+  mistaken for an oversight.
+- `docs/plans/SECURITY-REMEDIATION.md` carries the execution and is disposable once executed. This
+  entry carries the reasoning and is not.
+
+---
+
 ## ADR-026 — A second product consumes jZen from a sibling checkout: one Maven aggregator, path dependencies everywhere else
 
 **Date:** 2026-08-02. **Status:** accepted. **Refines:** ADR-020 (backlog item 1's trigger).

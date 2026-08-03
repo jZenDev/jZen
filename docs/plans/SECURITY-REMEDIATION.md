@@ -193,19 +193,28 @@ radius of whatever comes later.
 | 4.7 | Cache or drop the per-request `to_regclass` probe | F16 |
 | 4.8 | Add `UNIQUE` on `users.email` (after 2.3); drop the unused `pgcrypto` extension | F18 |
 
-### Wave 5 — an open decision, not a task
+---
 
-The 200-slot ceiling is not closable in code. After Waves 0 and 1 the exposure is materially
-reduced, and `--max-instances=1` acts as a **cost fuse**: an attack costs availability, not money.
-Two options remain, to be decided when real abuse appears rather than pre-emptively.
+## 5. Residual risk after the plan is executed
 
-- **Accept**, with the perimeter documented as a known limit.
-- **Cloudflare free tier**, requiring an ADR that amends two written invariants, plus verification
-  that cookies and `.well-known` paths pass through untouched and that Bot Fight Mode is off.
+Wave 0.1 and Wave 1 raise the cost of saturating the service's 200 concurrency slots from 0.67 to
+about 3.3 requests per second, and put that rate within reach of the per-address limiter — which
+closes the attack **from a single source**. A distributed attack from a pool of addresses still
+saturates the service, because 200 slots on one instance with no autoscaling is the deployment's
+cost floor, not a setting.
+
+That residual is **accepted**, and the reasoning belongs to the architecture rather than to this
+plan: see **ADR-027**. In short — `--max-instances=1` is both the exposure and its own fuse (an
+attack costs availability, not money), Cloud Armor was rejected on cost, and Cloudflare's free tier
+was deferred because it would amend two written invariants. The trigger to revisit is observed
+abuse, not a date.
+
+Nothing in this section is work. It is here so that executing the plan is not mistaken for closing
+the last gap.
 
 ---
 
-## 5. Documentation debt this plan creates
+## 6. Documentation debt this plan creates
 
 `DECISIONS.md` is append-only — new entries, never edits to accepted ones. The repository has an
 `add-adr` skill for the format.
@@ -214,5 +223,5 @@ Two options remain, to be decided when real abuse appears rather than pre-emptiv
 |---|---|
 | ADR — rate-limit storage | Wave 1.5. Supersedes the in-process-state claim in `STANDARDS.md:342`. |
 | ADR — database privilege split and RLS scope | Wave 3.4 |
-| ADR — perimeter | Only if Wave 5 chooses Cloudflare |
+| ADR — perimeter | **Already written: ADR-027.** A further ADR is needed only if the trigger fires and Cloudflare is adopted. |
 | Correction to `STANDARDS.md:342` | **Independent of any code change.** The document attributes the validity of in-process state to `--max-instances=1`; the actual constraint is `--min-instances=0`. STANDARDS states this rule correctly for scheduling and then fails to carry it to counters. |

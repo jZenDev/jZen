@@ -15,6 +15,78 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-028 — Deployment capacity is the application's choice: the framework ships defaults, not constants
+
+**Date:** 2026-08-03. **Status:** accepted. **Refines:** ADR-027, ADR-020, ADR-001 (the
+framework/application boundary).
+
+### Context
+
+`Taskfile.yml`'s `deploy:cloudrun` writes `--memory=256Mi --cpu=1 --min-instances=0
+--max-instances=1 --concurrency=200 --timeout=300s` as **literals**, while `GCP_PROJECT`,
+`GCP_REGION`, `SERVICE_NAME` and `AR_REPO` sitting a thousand lines above are overridable `vars`.
+
+The repository root is language-neutral and framework-level; `zen_demo` is the only application
+today, not the only application there will be. So the framework's orchestrator currently fixes one
+particular application's capacity envelope for every application that will ever use it. That is a
+layering defect by the repository's own rules, and it is invisible precisely because there is only
+one app to notice it.
+
+It also quietly misrepresents ADR-020 and ADR-027, both of which read as though `--max-instances=1`
+were a property of *jZen* when it is a property of *zen_demo's deployment*.
+
+### Decision
+
+- The capacity parameters become `vars` with **today's values as defaults**. jZen's own posture is
+  unchanged: `zen_demo` still deploys at 256Mi / 1 CPU / min 0 / max 1 / concurrency 200.
+- An application may override them. Concretely, an operator willing to pay for it may deploy at
+  `--min-instances=1 --max-instances=10`, and the framework must not stand in the way.
+- The framework's obligation in exchange is to say **what each knob invalidates**, next to the knob
+  and not only here. A framework that lets an operator raise `--max-instances` without telling them
+  what it breaks is a trap, and the things it breaks fail silently.
+
+### What each knob costs
+
+- **`--max-instances > 1`** invalidates three pieces of in-process state, none of which fails loudly:
+  1. **The burst tier of the rate limiter.** N instances keep N independent counters, so the
+     effective limit is N× the configured one.
+  2. **`JobScheduler`'s overlap guard.** The `AtomicBoolean ticking` flag is per-instance, so two
+     instances can run the same tick concurrently. `JobScheduler`'s own javadoc already names the
+     remedy — a Postgres advisory lock — and ADR-020 already names the trigger. Worth stating the
+     stakes plainly, because the tick runs retention: concurrent ticks mean concurrent **account
+     anonymisation**. The retention queries exclude already-anonymised rows, so the operation is
+     idempotent and the damage is bounded, but that is a property to verify rather than assume.
+  3. **Any in-memory cache**, which diverges per instance.
+
+  The **durable** tier of the rate limiter is unaffected: it lives in Postgres precisely so that it
+  does not depend on how many instances run.
+- **`--min-instances ≥ 1`** is the opposite axis and invalidates nothing. It removes cold starts and
+  would make an in-process `@Scheduled` viable again — but `zen-jobs` stays correct either way, so
+  there is no reason to undo it. Paying for a warm instance buys latency, not a simpler architecture.
+- **`--concurrency` and `--timeout`** carry no invariant at all. They are capacity and latency
+  trade-offs, and `--timeout` is additionally a denial-of-service lever (ADR-027).
+
+### What this supersedes, and why
+
+- **The literal capacity flags in `deploy:cloudrun`** → **replaced by defaults.** *Why:* a framework
+  whose orchestrator hardcodes one application's cost envelope has stopped being a framework at that
+  line. The values were right for `zen_demo`; being right for one app is not a reason to be
+  mandatory for all of them.
+- **"`--max-instances=1` stays valid for the MVP, with the documented trigger unchanged"** (ADR-020,
+  Consequence) → **reframed, not reversed.** *Why:* the trigger is unchanged and still correct. What
+  changes is whose decision it is — the application's, not the framework's — and that the framework
+  now has to publish the consequences instead of assuming a single deployment reads the ADR.
+
+### Consequence
+
+- Defaults are unchanged, so ADR-027's acceptance of the 200-slot ceiling still describes what
+  `zen_demo` actually runs. An application that raises the ceiling opts out of ADR-027's reasoning
+  along with its cost floor.
+- `deploy:cloudrun`'s summary is where the knob-by-knob consequences above belong, because that is
+  what an operator reads before changing them.
+
+---
+
 ## ADR-027 — The 200-slot ceiling is accepted: the perimeter stays inside the application, and what would move it
 
 **Date:** 2026-08-03. **Status:** accepted. **Refines:** ADR-020 (the `--max-instances=1` trigger),

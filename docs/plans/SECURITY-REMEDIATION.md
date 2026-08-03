@@ -137,7 +137,7 @@ Hours of work, near-zero risk, highest leverage in the plan.
 | 0.1 | Lower the Cloud Run `--timeout` (measure the retention job first; target ~60s) | F2 |
 | 0.2 | Set `quarkus.http.idle-timeout` | F13 |
 | 0.3 | Add a `MAX_PAGE_SIZE` bound to `parseRange` | F10 |
-| 0.4 | Promote deploy capacity parameters to `vars`, current values as defaults | F6 |
+| 0.4 | Promote deploy capacity parameters to `vars`, current values as defaults, **and document what each knob invalidates** in `deploy:cloudrun`'s summary — see **ADR-028** | F6 |
 | 0.5 | Replace logged email addresses with user ids; sweep server code for other PII | F12 |
 | 0.6 | Fail fast on `CORS_ORIGINS = *` while `allow-credentials=true` | F17 |
 
@@ -224,4 +224,5 @@ the last gap.
 | ADR — rate-limit storage | Wave 1.5. Supersedes the in-process-state claim in `STANDARDS.md:342`. |
 | ADR — database privilege split and RLS scope | Wave 3.4 |
 | ADR — perimeter | **Already written: ADR-027.** A further ADR is needed only if the trigger fires and Cloudflare is adopted. |
+| ADR — deployment capacity is app-tunable | **Already written: ADR-028.** Wave 0.4 implements it; the knob-by-knob consequences belong in `deploy:cloudrun`'s summary. |
 | Correction to `STANDARDS.md:342` | **Independent of any code change.** The document attributes the validity of in-process state to `--max-instances=1`; the actual constraint is `--min-instances=0`. STANDARDS states this rule correctly for scheduling and then fails to carry it to counters. |

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.protobuf.util.JsonFormat;
 import zen.identity.user.User;
+import zen.identity.auth.SessionService;
 import zen.identity.user.UserRole;
 import zen.proto.v1.AdminUser;
 import zen.proto.v1.ZenError;
@@ -42,6 +43,22 @@ class AdminUserResourceTest {
   /** Applies the JSON transport header the admin panel always sends. */
   private static io.restassured.specification.RequestSpecification json() {
     return given().header(ZenTransportFormat.HEADER, ZenTransportFormat.JSON.wire());
+  }
+
+  /**
+   * The JSON header plus a matching double-submit CSRF pair, as the panel sends on a mutation.
+   *
+   * <p>Reads carry no CSRF risk and are not asked for it, which is why only the mutating tests use
+   * this. {@code createDataProvider} echoes the {@code XSRF-TOKEN} cookie into
+   * {@code X-CSRF-Token} on every non-GET, so a mutating request without the pair is a shape the
+   * real panel never produces — and {@link #update_withoutTheCsrfToken_isRefused} asserts the
+   * server refuses it.
+   */
+  private static io.restassured.specification.RequestSpecification jsonMutation() {
+    String token = UUID.randomUUID().toString();
+    return json()
+        .cookie(SessionService.CSRF_COOKIE, token)
+        .header(SessionService.CSRF_HEADER, token);
   }
 
   @BeforeEach
@@ -142,7 +159,7 @@ class AdminUserResourceTest {
             .build();
 
     Response resp =
-        json()
+        jsonMutation()
             .header(HttpHeaders.CONTENT_TYPE, ZenTransportFormat.JSON.mediaType())
             .body(JsonFormat.printer().print(payload))
             .when()
@@ -159,6 +176,34 @@ class AdminUserResourceTest {
     User reloaded = QuarkusTransaction.requiringNew().call(() -> User.findById(ALICE));
     assertEquals(UserRole.ADMIN, reloaded.role);
     assertTrue(reloaded.isPremium);
+  }
+
+  @Test
+  @TestSecurity(user = ADMIN_ID, roles = UserRole.Names.ADMIN)
+  void update_withoutTheCsrfToken_isRefused() throws Exception {
+    // Being an admin is not enough. The panel's session cookie is ambient - a browser attaches it
+    // to whatever asks - so an authenticated mutation must also prove it was issued by code that
+    // could read the double-submit token. Editing a user is the highest-value mutation the panel
+    // offers, role changes included, which is why this is asserted here and not only in the
+    // framework's own tests.
+    AdminUser payload =
+        AdminUser.newBuilder()
+            .setId(ALICE.toString())
+            .setEmail("alice@example.com")
+            .setRole(UserRole.Names.ADMIN)
+            .build();
+
+    json()
+        .header(HttpHeaders.CONTENT_TYPE, ZenTransportFormat.JSON.mediaType())
+        .body(JsonFormat.printer().print(payload))
+        .when()
+        .put("/api/v1/admin/users/" + ALICE)
+        .then()
+        .statusCode(Status.FORBIDDEN.getStatusCode());
+
+    // Refused before the resource ran: nothing was written.
+    User unchanged = QuarkusTransaction.requiringNew().call(() -> User.findById(ALICE));
+    assertEquals(UserRole.USER, unchanged.role);
   }
 
   @Test

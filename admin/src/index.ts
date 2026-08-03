@@ -14,6 +14,7 @@ export {
   HttpMethod,
   HttpStatus,
   MediaType,
+  readCookie,
   Role,
   Transport,
 } from "./http";

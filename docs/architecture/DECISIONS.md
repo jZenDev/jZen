@@ -15,6 +15,117 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-030 — An unverifiable session cookie means anonymous, not an error: the ambient-credential rule
+
+**Date:** 2026-08-03. **Status:** accepted. **Supersedes:** the implicit rule in
+`application.properties` that `quarkus.http.auth.proactive=true` may reject any bad credential
+before routing. **Corrects:** ADR-029's coverage claim for the rate limiter. **Refines:** ADR-027
+(the perimeter), STANDARDS "Deployment model" (the cookie path).
+
+### Context
+
+jZen keeps proactive authentication on, so every request is authenticated before it reaches JAX-RS.
+Quarkus's default answer to a `zen_access_token` cookie that does not verify is an
+`AuthenticationFailedException`, which proactive auth turns into a 401 **immediately** — before any
+resource, filter or provider.
+
+For a token offered in an `Authorization` header that is the right answer: the caller deliberately
+presented a credential and it was bad. For a cookie it is the wrong answer, and the distinction is
+the whole of this entry. **A cookie is ambient.** The browser attaches it with nobody deciding to,
+so "the cookie in your jar is an hour old" is the most ordinary state a session ever reaches — not
+an error condition, and not a statement of intent by anyone.
+
+Three failures followed from treating it as one. All three were **measured against a running
+server**, not inferred:
+
+| Request (with an unverifiable access cookie) | Was | Should be |
+|---|---|---|
+| `POST /api/v1/auth/logout` | 401 | 204, cookies cleared |
+| `POST /api/v1/auth/refresh` | 401 | 200, session renewed |
+| `GET /api/v1/auth/identity` | 401 | 204, anonymous |
+
+- **Sign-out was impossible.** The one action that ends a stale session was the one action a stale
+  session could not perform — and after Wave 2 it is also where upstream revocation happens, so the
+  refresh token stayed live for its remaining days.
+- **Recovery was impossible.** `/auth/refresh` exists to be called *after* the access token dies,
+  and its credential is the refresh cookie — but the expired access cookie travelling beside it
+  killed the request first. A seven-day refresh token was unreachable from any client still holding
+  the dead one, which on native is every client until the process restarts.
+- **The rate limiter was bypassable**, and this is the one that changes a shipped decision.
+  `RateLimitFilter` is a JAX-RS filter, so a request rejected before JAX-RS is never counted.
+  Measured on the durable counter: three calls carrying a junk `zen_access_token` moved it by
+  **0**; three identical calls without the cookie moved it by **3**. Attaching any junk value made
+  a request unmetered on **every** endpoint while still occupying one of the 200 concurrency slots
+  that are the entire capacity of the service.
+
+### Decision
+
+- **`SessionCookieAuthenticationMechanism`** (zen-identity) wraps Quarkus's `JWTAuthMechanism` as an
+  `@Alternative @Priority(1)` bean and recovers an authentication *failure* into **no identity**.
+  The request proceeds as anonymous. Everything else — challenge, credential types, transport — is
+  delegated unchanged.
+- **It fails closed.** Recovery yields no identity, never a partial or assumed one, so
+  `@Authenticated` and `@RolesAllowed` still answer 401 through the delegated challenge and
+  `RoleAugmentor` has nothing to augment. What changes is *when* the 401 is decided and *by whom* —
+  the route, on its own terms, rather than the transport layer on everyone's. Refusing later is not
+  refusing less.
+- **The CSRF check keys on the identity, not on a cookie being present.** Forgery rides on an
+  ambient credential the server *accepts*; a request it does not accept has nothing to forge with.
+  The earlier rule — enforce when the access cookie is present — was only safe because an
+  unverifiable cookie 401'd first, and would now answer 403 to a client whose session had merely
+  aged out, with no way to clear it (the CSRF cookie expires alongside the access token). Signing
+  out would have been impossible for exactly the sessions that most need to end.
+- **The client renews and replays.** `ZenClient.recoverSession` is an optional callback: on a 401 it
+  runs once, and on success the request is replayed once. Safe because a 401 is decided before the
+  resource runs, so the original had no effect to repeat. Concurrent 401s **join** one in-flight
+  attempt rather than each starting their own — the refresh endpoint sits in the limiter's
+  credential bucket at 10/min, so a client recovering in parallel would throttle itself out of
+  recovering. The callback's own requests are excluded by the `Zone` they run in, not by "is an
+  attempt in progress", because those two look identical from outside.
+
+### What was rejected, and why
+
+- **`quarkus.http.auth.proactive=false`** — the documented lever, and far broader: it changes the
+  posture of every route at once. It also **does not fix this**, because any `@PermitAll` route that
+  touches `SecurityIdentity` (`AuthResource` does) forces the same failure lazily.
+- **A path-scoped `quarkus.http.auth.permission.<n>.policy=permit`** — measured, and it does not
+  suppress the challenge. Config alone cannot fix this.
+
+### What this supersedes, and why
+
+- **"Coverage is three buckets … and everything else under `/api/`"** (ADR-029, Consequence) →
+  **corrected.** *Why:* it described the buckets accurately and the coverage optimistically. Any
+  request carrying an unverifiable session cookie reached none of them, so the limiter shipped with
+  a one-cookie opt-out. `RateLimitFilter`'s own javadoc already stated the intended rule — "the 429
+  is charged before authentication, not after" — and this is what makes it true.
+- **"proactive=false so login and register are not 401'd before it runs"** (`application.properties`,
+  the JWT block) → **refined.** *Why:* the comment names proactive auth's blast radius correctly but
+  treats it as a property of a hypothetical packed-cookie future. It is a property of *today's*
+  cookie path, and the narrow fix is one credential source reclassified rather than the whole
+  posture inverted.
+
+### Consequence
+
+- An expired session now behaves the way a client can act on: 401 on the routes that need a user,
+  204 from the identity probe, and a refresh that works. The seven-day refresh token is reachable
+  for the first time on the web at all.
+- Enforcement widened where it should: an authenticated mutation without a CSRF token is refused
+  even when the caller never presented a cookie. `AdminUserResourceTest.update_persistsEditableFields`
+  was updated to send the pair the real panel sends, and a new
+  `update_withoutTheCsrfToken_isRefused` asserts the omission is refused and writes nothing —
+  the assertion is stronger than the one it replaced, not weaker.
+- Verified green: `task test` (102 backend tests including the bean-discovery guard, the
+  dead-cookie behaviour in both directions, and the limiter counting a dead-cookie request;
+  every client suite; the live e2e gate at 16 tests, three of which drive an unverifiable cookie
+  against a real provider-issued session), `task test:client:matrix` under dart2js **and**
+  dart2wasm, `task test:admin`, `task verify:docs`.
+- The mechanism lives in a Jandex-indexed module and is therefore silent if lost.
+  `ExpiredSessionCookieTest` resolves it from the `BeanManager` for the same reason
+  `RateLimitWiringTest` resolves the limiter: without the index the default returns, and nothing
+  else would say so.
+
+---
+
 ## ADR-029 — The rate limiter is two tiers: in-memory burst, PostgreSQL for anything that outlives a process
 
 **Date:** 2026-08-03. **Status:** accepted. **Supersedes:** STANDARDS "Deployment model", the

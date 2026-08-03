@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:zen_core/zen_core.dart';
 
+import 'csrf.dart';
 import 'token_store.dart';
 import 'zen_session_client.dart';
 
@@ -152,6 +153,24 @@ class CookieJarClient extends ZenSessionClient {
 
     request.headers.forEach(ioRequest.headers.set);
     ioRequest.cookies.addAll(_jar.values);
+
+    // Echo the CSRF cookie back as a header on mutating requests.
+    //
+    // Native gains no protection from this: there is no other origin to forge a request from and
+    // no ambient cookie store a hostile page could ride. What it buys is on the server, which can
+    // then enforce one rule for every client instead of exempting a platform - and a per-platform
+    // exemption is the kind that quietly becomes the way in, since the exemption cannot check
+    // which platform is really calling.
+    //
+    // A caller's own header wins, so an explicit per-call value is never overwritten.
+    final csrf = _jar[csrfCookieName]?.value;
+    if (csrf != null &&
+        csrf.isNotEmpty &&
+        isMutatingMethod(request.method) &&
+        !request.headers.keys.any((k) => k.toLowerCase() == csrfHeaderName.toLowerCase())) {
+      ioRequest.headers.set(csrfHeaderName, csrf);
+    }
+
     if (bodyBytes.isNotEmpty) {
       ioRequest.add(bodyBytes);
     }

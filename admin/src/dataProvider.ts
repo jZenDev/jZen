@@ -5,6 +5,7 @@ import {
   HttpHeader,
   HttpMethod,
   MediaType,
+  readCookie,
   Transport,
 } from "./http";
 
@@ -29,8 +30,9 @@ export function createDataProvider(apiBase: string): DataProvider {
     headers.set(Transport.header, Transport.json);
     headers.set(HttpHeader.Accept, MediaType.Json);
 
-    // Echo the JS-readable XSRF-TOKEN on mutating requests. The backend issues it and does
-    // not yet enforce it; sending it now is forward-looking hygiene. GET/HEAD carry no CSRF risk.
+    // Echo the JS-readable XSRF-TOKEN on mutating requests. The backend enforces this: a mutating
+    // call carrying the session cookie without a matching header is refused with 403 `csrf_failed`.
+    // GET/HEAD carry no CSRF risk and are not asked for it.
     const method = (options.method ?? HttpMethod.Get).toUpperCase();
     if (method !== HttpMethod.Get && method !== HttpMethod.Head) {
       const csrf = readCookie(CSRF_COOKIE);
@@ -53,15 +55,4 @@ export function createDataProvider(apiBase: string): DataProvider {
       json: text ? JSON.parse(text) : undefined,
     };
   });
-}
-
-/** Reads a cookie value by name; returns undefined off-DOM or when absent. */
-function readCookie(name: string): string | undefined {
-  if (typeof document === "undefined") {
-    return undefined;
-  }
-  const match = document.cookie
-    .split("; ")
-    .find((row) => row.startsWith(`${name}=`));
-  return match ? decodeURIComponent(match.slice(name.length + 1)) : undefined;
 }

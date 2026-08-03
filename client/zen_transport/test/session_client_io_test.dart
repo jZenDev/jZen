@@ -22,11 +22,21 @@ void main() {
     server.listen((request) async {
       switch (request.uri.path) {
         case '/login':
-          // Set an httpOnly session cookie, like the Quarkus AuthResource does.
+          // Set an httpOnly session cookie plus the JS-readable CSRF token, like the Quarkus
+          // AuthResource does - it issues both together, always.
           request.response.cookies.add(Cookie('zen_access_token', 'access-jwt')..httpOnly = true);
+          request.response.cookies.add(Cookie('XSRF-TOKEN', 'csrf-token')..httpOnly = false);
           request.response
             ..statusCode = HttpStatus.ok
             ..write('ok');
+        case '/echo-csrf':
+          // Report what the client sent back in the double-submit header, and on which method.
+          request.response
+            ..statusCode = HttpStatus.ok
+            ..write(jsonEncode({
+              'header': request.headers.value('X-CSRF-Token') ?? '',
+              'method': request.method,
+            }));
         case '/whoami':
           // Echo back whatever session cookie the client resent.
           final sid = request.cookies
@@ -37,8 +47,10 @@ void main() {
             ..statusCode = HttpStatus.ok
             ..write(jsonEncode({'token': sid}));
         case '/logout':
-          // Clear the cookie the way SessionService.clearCookie does (Max-Age=0).
+          // Clear the cookies the way SessionService.clearCookie does (Max-Age=0). AuthResource
+          // clears the CSRF token alongside the session, so the fixture does too.
           request.response.cookies.add(Cookie('zen_access_token', '')..maxAge = 0);
+          request.response.cookies.add(Cookie('XSRF-TOKEN', '')..maxAge = 0);
           request.response.statusCode = HttpStatus.noContent;
         default:
           request.response.statusCode = HttpStatus.notFound;
@@ -89,6 +101,56 @@ void main() {
 
     final who = await client.get(baseUri.resolve('/whoami'));
     expect(jsonDecode(who.body)['token'], '');
+  });
+
+  group('the double-submit CSRF echo', () {
+    test('a mutating request echoes the XSRF-TOKEN cookie as X-CSRF-Token', () async {
+      final client = CookieJarClient();
+      addTearDown(client.close);
+
+      await client.get(baseUri.resolve('/login'));
+      final echoed = await client.post(baseUri.resolve('/echo-csrf'));
+
+      expect(
+        jsonDecode(echoed.body)['header'],
+        'csrf-token',
+        reason: 'without this the server refuses every mutating call the native app makes',
+      );
+    });
+
+    test('a GET echoes nothing', () async {
+      final client = CookieJarClient();
+      addTearDown(client.close);
+
+      await client.get(baseUri.resolve('/login'));
+      final echoed = await client.get(baseUri.resolve('/echo-csrf'));
+
+      expect(jsonDecode(echoed.body)['header'], '', reason: 'a read carries no CSRF risk');
+    });
+
+    test('a client with no session echoes nothing', () async {
+      final client = CookieJarClient();
+      addTearDown(client.close);
+
+      final echoed = await client.post(baseUri.resolve('/echo-csrf'));
+
+      // Nothing to echo and nothing to protect: an anonymous request has no ambient credential
+      // for a forged call to ride on, and the server does not enforce against one.
+      expect(jsonDecode(echoed.body)['header'], '');
+    });
+
+    test("an explicit per-call header is not overwritten", () async {
+      final client = CookieJarClient();
+      addTearDown(client.close);
+
+      await client.get(baseUri.resolve('/login'));
+      final echoed = await client.post(
+        baseUri.resolve('/echo-csrf'),
+        headers: {'X-CSRF-Token': 'caller-supplied'},
+      );
+
+      expect(jsonDecode(echoed.body)['header'], 'caller-supplied');
+    });
   });
 
   test('createSessionClient returns a working cookie-jar client on native', () async {

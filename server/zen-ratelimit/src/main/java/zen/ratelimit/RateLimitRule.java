@@ -43,6 +43,13 @@ public enum RateLimitRule {
    * holds and logout destroys it. A client calls identity on every launch and on every route
    * change, so bucketing it with login would be counting ordinary use against an abuse budget —
    * it falls to {@link #GLOBAL} like any other read.
+   *
+   * <p>Logout was re-examined when it gained an upstream call of its own (it now revokes the
+   * session with the identity provider rather than only clearing cookies), because an endpoint
+   * that makes an outbound call per request is an amplifier. It stays in {@link #GLOBAL}: the
+   * outbound call happens only for a caller presenting a live access-token cookie, and the same
+   * response destroys it, so there is no cheap way to repeat it. A caller with no session reaches
+   * no further than the cookie clearing.
    */
   AUTH,
 

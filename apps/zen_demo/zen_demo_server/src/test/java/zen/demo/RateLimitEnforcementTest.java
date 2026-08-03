@@ -53,7 +53,11 @@ class RateLimitEnforcementTest {
           "zen.ratelimit.job-trigger.burst-limit", String.valueOf(BURST_LIMIT),
           "zen.ratelimit.job-trigger.burst-window", "1m",
           "zen.ratelimit.job-trigger.durable-limit", "10000",
-          "zen.ratelimit.auth.burst-limit", "10000",
+          // The auth bucket is tight here too, so the dead-cookie case below can spend a budget of
+          // its own. Buckets are counted separately, which is what keeps the two test methods
+          // independent of each other's order — the reason the assertions above share one method.
+          "zen.ratelimit.auth.burst-limit", String.valueOf(BURST_LIMIT),
+          "zen.ratelimit.auth.durable-limit", "10000",
           "zen.ratelimit.global.burst-limit", "10000");
     }
   }
@@ -88,7 +92,43 @@ class RateLimitEnforcementTest {
     given().header("X-Zen-Transport", "json").when().get("/api/v1/health").then().statusCode(200);
   }
 
+  @Test
+  void aRequestCarryingADeadSessionCookieIsStillCounted() {
+    /*
+     * The bypass this closes was measured rather than imagined. While an unverifiable access-token
+     * cookie was rejected by proactive auth before the JAX-RS chain, RateLimitFilter never ran and
+     * the durable counter did not move: attaching any junk value as zen_access_token made a request
+     * unmetered on EVERY endpoint while still occupying one of the 200 concurrency slots that are
+     * the entire capacity of the service (ADR-027). A limiter with a one-cookie opt-out.
+     *
+     * SessionCookieAuthenticationMechanism turns that cookie into "anonymous" rather than an error,
+     * so the request reaches the filter and is charged like any other. The proof is that the budget
+     * runs out at all: if these were still uncounted, every call below would answer 401 forever.
+     */
+    for (int attempt = 1; attempt <= BURST_LIMIT; attempt++) {
+      assertEquals(
+          401,
+          refreshWithDeadCookie().statusCode(),
+          "attempt " + attempt + " is within budget and should reach the endpoint's own 401");
+    }
+
+    assertEquals(
+        429,
+        refreshWithDeadCookie().statusCode(),
+        "a dead session cookie must not buy an unmetered request");
+  }
+
   private Response trigger() {
     return given().header("X-Zen-Transport", "json").when().post("/api/v1/jobs/trigger").andReturn();
+  }
+
+  /** A refresh with no refresh cookie: the endpoint's own answer is 401, so a 429 is the limiter. */
+  private Response refreshWithDeadCookie() {
+    return given()
+        .header("X-Zen-Transport", "json")
+        .cookie("zen_access_token", "expired.or.garbage")
+        .when()
+        .post("/api/v1/auth/refresh")
+        .andReturn();
   }
 }

@@ -205,7 +205,30 @@ public class AuthResource {
   @PermitAll
   @Operation(summary = "Terminate the current session")
   @APIResponse(responseCode = ZenStatus.NO_CONTENT, description = "Session cookies cleared")
-  public Response logout() {
+  public Response logout(@CookieParam(SessionService.ACCESS_COOKIE) String accessToken) {
+    /*
+     * Revoke first, then clear - but never let the first decide whether the second happens.
+     * Clearing cookies alone ends the session on this device only; the refresh token behind it
+     * remains usable upstream for seven days, which is what made signing out on a borrowed machine
+     * theatre. IdentityService.logout does the revocation and reports a failure rather than
+     * throwing, so a user who presses sign out while Supabase is down still ends up signed out
+     * here. The failure is logged there, not swallowed.
+     *
+     * @PermitAll rather than @Authenticated: a caller whose access token has already expired must
+     * still be able to clear their cookies, and a request with no session at all is a no-op, not
+     * a 401.
+     */
+    if (!securityIdentity.isAnonymous()) {
+      /*
+       * Only a session the server accepts is worth revoking. A caller whose cookie no longer
+       * verifies is anonymous (SessionCookieAuthenticationMechanism), and the provider would refuse
+       * the token anyway - so attempting it would spend an outbound call per request on a certain
+       * failure, log a security warning for the most ordinary event there is, and hand anyone an
+       * amplifier: one cheap request in, one upstream call out. The cookies below are cleared
+       * either way, which is the whole of what such a caller needs.
+       */
+      identityService.logout(accessToken, currentUserId());
+    }
     return Response.noContent()
         .cookie(
             sessionService.clearCookie(SessionService.ACCESS_COOKIE),
@@ -245,13 +268,8 @@ public class AuthResource {
       })
   @APIResponse(responseCode = ZenStatus.NO_CONTENT, description = "No active session")
   public Response getCurrentIdentity() {
-    if (securityIdentity.isAnonymous()) {
-      return Response.noContent().build();
-    }
-    UUID userId;
-    try {
-      userId = UUID.fromString(securityIdentity.getPrincipal().getName());
-    } catch (IllegalArgumentException e) {
+    UUID userId = currentUserId();
+    if (userId == null) {
       return Response.noContent().build();
     }
     User user = identityService.currentUser(userId);
@@ -259,6 +277,22 @@ public class AuthResource {
       return Response.noContent().build();
     }
     return Response.ok(identityMapper.toProto(user)).build();
+  }
+
+  /**
+   * The authenticated subject's id, or null when the caller is anonymous or the principal is not a
+   * Supabase user id. Null is an ordinary answer here, not an error: every caller of this is on a
+   * route that permits anonymous access.
+   */
+  private UUID currentUserId() {
+    if (securityIdentity.isAnonymous()) {
+      return null;
+    }
+    try {
+      return UUID.fromString(securityIdentity.getPrincipal().getName());
+    } catch (IllegalArgumentException e) {
+      return null;
+    }
   }
 
   /** Builds a 200 {@link Identity} response, attaching whatever session cookies are available. */

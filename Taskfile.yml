@@ -805,7 +805,17 @@ tasks:
       - ./mvnw -B -f ../{{.DEMO_SERVER_DIR}}/pom.xml test
 
   test:client:matrix:
-    desc: Recompile-per-env/platform matrix for the transport codec selector
+    desc: Recompile-per-env/platform matrix for the compile-time client seams
+    summary: |
+      The half of the client that `task test` cannot see. Every compile-time seam in zen_transport
+      picks its implementation with a conditional import, so the default VM suite compiles exactly
+      one branch of each and never even parses the other. A web-only mistake is therefore a green
+      `task test` and a broken app, which is why these rows exist as their own gate.
+
+      Two seams are covered. The codec selector, which resolves per ZEN_ENV and platform; and the
+      session client, whose web branch reads the CSRF cookie through dart:js_interop - run under
+      BOTH web compilers, because dart2js and dart2wasm accept different things and the app ships
+      as WebAssembly.
     dir: "{{.CLIENT_DIR}}/zen_transport"
     silent: true
     cmds:
@@ -819,6 +829,10 @@ tasks:
         dart --define=ZEN_ENV=prd test test/zen_codec_selector_test.dart
         echo ">> ZEN_ENV=prd  (web)  -> json"
         dart --define=ZEN_ENV=prd test test/zen_codec_selector_test.dart -p chrome
+        echo ">> session client (web, dart2js)   -> reads XSRF-TOKEN"
+        dart test test/session_client_web_test.dart -p chrome
+        echo ">> session client (web, dart2wasm) -> reads XSRF-TOKEN"
+        dart test test/session_client_web_test.dart -p chrome --compiler dart2wasm
 
   test:admin:
     desc: Typecheck the admin panel (also typechecks the @jzen/admin-core scaffold it imports)

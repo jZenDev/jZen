@@ -47,14 +47,31 @@ void main() {
   // the typed generated strings - ADR-009); the wire wants the language tag, which is the one
   // conversion this seam performs.
   late final ProviderContainer container;
-  final identityRepository = SupabaseIdentityRepository(
+
+  // The 401 -> renew -> replay loop, wired once and shared by every repository.
+  //
+  // The access token lives an hour; the refresh token behind it lives seven days. Nothing spent
+  // the difference: the session was resumed at launch on native and never on the web, so an app
+  // left open past the hour saw every call fail until it was restarted. The closure is late-bound
+  // for the same reason the language one is - it names a repository built on the client it is
+  // being handed to, and it is only ever called during a request, by which time both exist.
+  late final SupabaseIdentityRepository identityRepository;
+  Future<bool> recoverSession() async =>
+      (await identityRepository.refreshSession()).isSuccess;
+
+  identityRepository = SupabaseIdentityRepository(
     client: ZenClient(
       baseUrl: zenApiUrl,
       httpClient: session,
       language: () => container.read(localeProvider).languageCode,
+      recoverSession: recoverSession,
     ),
   );
-  final demoRepository = DemoRepository(baseUrl: zenApiUrl, session: session);
+  final demoRepository = DemoRepository(
+    baseUrl: zenApiUrl,
+    session: session,
+    recoverSession: recoverSession,
+  );
 
   container = ProviderContainer(
     overrides: [

@@ -39,6 +39,9 @@ public class EmailService {
   /** Separates a template's base name from its locale: {@code welcome} + {@code _} + {@code uk}. */
   private static final String LOCALE_SEPARATOR = "_";
 
+  /** Stands in for the local part of an address in a log line. See {@link #recipient}. */
+  private static final String MASK = "***";
+
   private final Mailer mailer;
   private final Engine engine;
 
@@ -70,12 +73,31 @@ public class EmailService {
         return false;
       }
       mailer.send(Mail.withHtml(email.to(), email.subject(), render(template, email.data())));
-      LOG.debugf("Sent '%s' mail to %s in locale '%s'", email.template(), email.to(), locale);
+      LOG.debugf("Sent '%s' mail to %s in locale '%s'", email.template(), recipient(email), locale);
       return true;
     } catch (RuntimeException e) {
-      LOG.warnf("Failed to send '%s' mail to %s: %s", templateName, email.to(), e.toString());
+      LOG.warnf("Failed to send '%s' mail to %s: %s", templateName, recipient(email), e.toString());
       return false;
     }
+  }
+
+  /**
+   * How a recipient is named in a log line — never by their address.
+   *
+   * <p>An email address is personal data, and a log line is not a private place: in production
+   * these go to Cloud Logging, which has its own retention and its own access list. So the caller's
+   * {@code recipientRef} (normally the user id) is preferred, and when there is none the local part
+   * is masked and only the domain survives. The domain is what actually diagnoses a send failure —
+   * a refusing MX, an unroutable vanity domain, a typo'd TLD — while the local part is the half
+   * that identifies a person, and it is the half that is dropped.
+   */
+  private static String recipient(LocalizedEmail email) {
+    if (email.recipientRef() != null && !email.recipientRef().isBlank()) {
+      return email.recipientRef();
+    }
+    String address = email.to();
+    int at = address.lastIndexOf('@');
+    return at < 0 ? MASK : MASK + address.substring(at);
   }
 
   private String render(Template template, Map<String, Object> data) {

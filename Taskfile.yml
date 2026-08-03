@@ -42,6 +42,25 @@ vars:
   SERVICE_NAME: '{{.SERVICE_NAME | default "zen-demo-server"}}'
   AR_REPO: '{{.AR_REPO | default "jzen"}}'
 
+  # Cloud Run CAPACITY. These are the APPLICATION's choice, not the framework's (ADR-028):
+  # the repo root is language- and application-neutral, so hardcoding one app's cost envelope
+  # here would fix it for every app that will ever assemble jZen. Today's values are the
+  # defaults, so zen_demo's posture is unchanged — but an operator may override any of them,
+  # and `task deploy:cloudrun --summary` states what each one silently invalidates.
+  SERVICE_MEMORY: '{{.SERVICE_MEMORY | default "256Mi"}}'
+  SERVICE_CPU: '{{.SERVICE_CPU | default "1"}}'
+  SERVICE_MIN_INSTANCES: '{{.SERVICE_MIN_INSTANCES | default "0"}}'
+  SERVICE_MAX_INSTANCES: '{{.SERVICE_MAX_INSTANCES | default "1"}}'
+  SERVICE_CONCURRENCY: '{{.SERVICE_CONCURRENCY | default "200"}}'
+  # 60s, not Cloud Run's 300s default. The timeout is a denial-of-service lever: holding all
+  # SERVICE_CONCURRENCY slots costs an attacker concurrency/timeout requests per second, so
+  # 300s made saturation cost 0.67 req/s — one slow connection. Sized by MEASUREMENT, not
+  # guess: the heaviest operation in the service (the hourly retention trigger) completes in
+  # 3.7s including a 3.0s cold boot, so under a second of actual work (ADR-027). Cloud Run's
+  # timeout is per SERVICE, not per route, so this one value has to cover that job too — 60s
+  # is two orders of magnitude of headroom over it.
+  SERVICE_TIMEOUT: '{{.SERVICE_TIMEOUT | default "60s"}}'
+
   # Where build:web stages the Flutter bundle so the native build bakes it in and Quarkus
   # serves the web app same-origin with the API. Gitignored (see the .gitignore there).
   WEB_RESOURCES: apps/zen_demo/zen_demo_server/src/main/resources/META-INF/resources
@@ -1252,16 +1271,73 @@ tasks:
           two dirty builds still collide with each other, by design and not by accident.
         - No `firebase deploy`: jZen serves Cloud Run directly with no Firebase Hosting
           edge, which is what lets it use normal cookie names and proactive auth.
-        - --max-instances=1, --min-instances=0: a deliberate cost floor. The native-image
-          server handles the target load (~2K MAU) on a single instance at concurrency
-          200, and min=0 means no warm instance to pay for (cold starts are accepted).
-          Because there is at most one instance, in-process state (rate limiting, caches)
-          is valid by construction. Raising max above 1 is the trigger to move such state
-          to Postgres/Redis, not the other way around. See STANDARDS.md.
         - Scheduled work is triggered from OUTSIDE the container. min-instances=0 means
           there is no thread alive to run an in-process cron, so zen-jobs exposes
           POST /api/v1/jobs/trigger and one Cloud Scheduler entry calls it. One entry, one
           container start, N jobs: N entries would mean N cold starts.
+
+      ═══════════════════════════════════════════════════════════════════════════════════
+      CAPACITY — the six knobs, and what each one BREAKS. Read before changing any of them.
+      ═══════════════════════════════════════════════════════════════════════════════════
+
+      These are `vars`, not literals: capacity is the APPLICATION's decision, and jZen is a
+      framework (ADR-028). The defaults below are zen_demo's deployment and are unchanged.
+      Override per deploy, e.g.:
+
+          SERVICE_MAX_INSTANCES=10 SERVICE_MIN_INSTANCES=1 \
+            GCP_PROJECT=my-project task deploy:cloudrun
+
+      The framework's obligation in exchange for the freedom is to say what each knob
+      invalidates — because EVERY consequence below fails silently. Nothing errors, nothing
+      warns, and the test suite stays green.
+
+        SERVICE_MEMORY (256Mi) / SERVICE_CPU (1)
+          No invariant. Pure cost/headroom. 256Mi is why the admin list endpoint bounds its
+          page size — an unbounded range is an OOM at this size, not a slow query.
+
+        SERVICE_MIN_INSTANCES (0)
+          A deliberate cost floor: no warm instance to pay for, cold starts accepted.
+          MEASURED (ADR-027): a cold request costs 2.9-4.8s end to end against 26ms warm,
+          and this service is cold for practically every real visitor, because its only
+          recurring traffic is one scheduler tick an hour.
+          Raising it to 1 or more INVALIDATES NOTHING. It is the opposite axis: it removes
+          cold starts and would make an in-process @Scheduled viable again — but zen-jobs
+          stays correct either way, so there is no reason to undo it. A warm instance buys
+          latency, not a simpler architecture.
+          Note what min=0 itself already breaks, and why zen-jobs exists: an in-process cron
+          provably does not fire when no process is alive, so scheduled work is triggered
+          from outside (above).
+
+        SERVICE_MAX_INSTANCES (1)
+          The one that carries invariants. At most one instance runs, so in-process state is
+          valid BY CONSTRUCTION. Raising it above 1 invalidates three things, none loudly:
+            1. The burst tier of the rate limiter. N instances keep N independent counters,
+               so the effective limit becomes N x the configured one. (The DURABLE tier is
+               unaffected — it lives in Postgres precisely so it depends neither on how many
+               instances run nor on any one of them surviving. Under min-instances=0 the
+               live process is replaced hourly (ADR-027), so a window longer than an hour
+               cannot be held in memory whatever max-instances says.)
+            2. JobScheduler's overlap guard. The `AtomicBoolean ticking` flag is per-instance,
+               so two instances can run the same tick concurrently. The tick runs retention,
+               which means concurrent ACCOUNT ANONYMISATION. The retention queries exclude
+               already-anonymised rows, so the operation is idempotent and the damage is
+               bounded — but that is a property to verify before relying on it, not assume.
+               JobScheduler's own javadoc names the remedy: a Postgres advisory lock.
+            3. Any in-memory cache, which diverges per instance.
+          Raising it also opts out of ADR-027's acceptance of the 200-slot ceiling, and out
+          of its cost floor: with max=1 an attack costs availability, not money. Above 1 it
+          can cost money.
+
+        SERVICE_CONCURRENCY (200) / SERVICE_TIMEOUT (60s)
+          No invariant — capacity and latency trade-offs. But the PRODUCT of them is the
+          denial-of-service surface: saturating every slot costs an attacker
+          concurrency/timeout requests per second. At the old 300s that was 0.67 req/s, one
+          slow connection; at 60s it is ~3.3 req/s, which is a rate the per-address limiter
+          can see and act on. Raising the timeout back up lowers that cost again.
+          60s is not a guess: the heaviest operation in the service, the hourly retention
+          trigger, completes in 3.7s INCLUDING a 3.0s cold boot (ADR-027). Cloud Run's
+          timeout is per service, not per route, so this single value must cover that job —
+          it does, with two orders of magnitude to spare.
 
       Requires: gcloud auth, GCP_PROJECT set, and everything under ONE-TIME SETUP below.
       Run it as `GCP_PROJECT=my-project task deploy:cloudrun` — this task never changes your
@@ -1454,9 +1530,13 @@ tasks:
           --image="$IMAGE" \
           --project={{.GCP_PROJECT}} \
           --region={{.GCP_REGION}} \
-          --memory=256Mi --cpu=1 \
-          --min-instances=0 --max-instances=1 \
-          --timeout=300s --port=8080 --concurrency=200 \
+          --memory={{.SERVICE_MEMORY}} \
+          --cpu={{.SERVICE_CPU}} \
+          --min-instances={{.SERVICE_MIN_INSTANCES}} \
+          --max-instances={{.SERVICE_MAX_INSTANCES}} \
+          --concurrency={{.SERVICE_CONCURRENCY}} \
+          --timeout={{.SERVICE_TIMEOUT}} \
+          --port=8080 \
           --allow-unauthenticated \
           --set-env-vars="^@^APPLINKS_ANDROID_PACKAGE=${APPLINKS_ANDROID_PACKAGE:-}@APPLINKS_ANDROID_FINGERPRINTS=${APPLINKS_ANDROID_FINGERPRINTS:-}@APPLINKS_APPLE_APP_IDS=${APPLINKS_APPLE_APP_IDS:-}" \
           --set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,DB_URL=DB_URL:latest,DB_USERNAME=DB_USERNAME:latest,DB_PASSWORD=DB_PASSWORD:latest,CORS_ORIGINS=CORS_ORIGINS:latest,AUTH_REDIRECT_URI=AUTH_REDIRECT_URI:latest,AUTH_REDIRECT_URIS=AUTH_REDIRECT_URIS:latest,SITE_URL=SITE_URL:latest,SMTP_HOST=SMTP_HOST:latest,SMTP_PORT=SMTP_PORT:latest,SMTP_USERNAME=SMTP_USERNAME:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,SMTP_FROM=SMTP_FROM:latest,ZEN_JOBS_TRIGGER_TOKEN=ZEN_JOBS_TRIGGER_TOKEN:latest

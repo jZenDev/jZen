@@ -6,7 +6,15 @@ of them, it says so and names the ADR that has to record it.
 
 **Audit date:** 2026-08-03
 **Scope:** `server/`, `apps/zen_demo/`, `client/`, `admin/`, `Taskfile.yml`, Flyway migrations
-**Method:** source review of every security-relevant path, plus `pnpm audit` and `dart pub outdated`
+**Method:** source review of every security-relevant path, `pnpm audit` and `dart pub outdated`, and
+**measurement against the live service** — `zen-demo-server` revision `00013-qw9` in `jzen-prod`,
+via Cloud Run request logs and browser Navigation Timing.
+
+The measured figures are in **ADR-027**, and the decisions in §3 rest on them rather than on
+estimates. Two of them changed what this plan says: the heaviest operation on the service needs
+under a second of work (so Wave 0.1's timeout target is sized, not guessed), and the container's
+process is replaced every hour (so the split between in-memory and durable rate-limit counters is a
+measured constraint, not a precaution).
 
 Two areas are **not** covered and must not be read as clean: Maven dependencies have never been
 CVE-scanned (F20), and the GCP pricing behind the Cloud Armor rejection comes from model knowledge
@@ -91,7 +99,10 @@ load. Dropping the timeout to roughly 60s raises that to ~3.3 req/s, which is tr
 limiter (F1) can see and act on. Nothing in the application needs 300s: every Supabase call is under
 `@Timeout(2000)`, worst case with retries ≈ 7s. The one candidate for a long operation is the
 retention job behind `/api/v1/jobs/trigger`, and Cloud Run's timeout is per service rather than per
-route — so measure the job first, then set the service timeout from it.
+route — so the service timeout has to cover it. **It was measured rather than estimated:** the
+hourly trigger completes in 3.7s *including* a 3.0s cold boot, so the job itself needs under a
+second. 60s is generous by two orders of magnitude, which is what makes this a safe change rather
+than a trade.
 
 **F5 changes the risk model rather than adding to it.** There is no injection today; that was
 verified. But the application connects under a role that can read the entire database, **including
@@ -115,7 +126,7 @@ Recorded so they are not re-litigated during execution.
 
 | Question | Decision | Reasoning |
 |---|---|---|
-| Rate-limit storage | **Two tiers: in-memory burst + PostgreSQL for durable counters.** No Redis. | Memory alone is invalid under `--min-instances=0`, but valid for second-scale windows because attack traffic keeps the instance alive. Postgres is already provisioned, already under Flyway, costs $0 incrementally, and absorbs ~20K auth events/month at 2K MAU trivially. |
+| Rate-limit storage | **Two tiers: in-memory burst + PostgreSQL for durable counters.** No Redis. | **Measured, not assumed:** the live service's process is replaced every hour, so a counter whose window outlives an hour cannot be held in memory at all. Memory stays valid for second-scale windows, because the attack traffic that would exceed one is what keeps the instance alive. Postgres is already provisioned, already under Flyway, costs $0 incrementally, and absorbs ~20K auth events/month at 2K MAU trivially. |
 | Redis / Memorystore | **Rejected.** | Memorystore has no free tier (~$35/mo floor). Upstash adds a vendor, a secret, a network hop and a failure mode for a workload Postgres handles for free. |
 | Counter cleanup | **An existing `zen-jobs` ZenJob.** Not `@Scheduled`. | `@Scheduled` provably does not fire under `--min-instances=0` — which is the entire reason `zen-jobs` exists. |
 | Security-headers module | **Into `zen-transport`.** No new package. | It already owns the HTTP boundary and already hosts `@Provider` filters. One responsibility, not two. |
@@ -134,7 +145,7 @@ Hours of work, near-zero risk, highest leverage in the plan.
 
 | # | Task | Finding |
 |---|---|---|
-| 0.1 | Lower the Cloud Run `--timeout` (measure the retention job first; target ~60s) | F2 |
+| 0.1 | Lower the Cloud Run `--timeout` to ~60s. **Already sized:** the hourly trigger — the only long-running operation — completes in 3.7s including a 3.0s cold boot, so under a second of actual work (ADR-027) | F2 |
 | 0.2 | Set `quarkus.http.idle-timeout` | F13 |
 | 0.3 | Add a `MAX_PAGE_SIZE` bound to `parseRange` | F10 |
 | 0.4 | Promote deploy capacity parameters to `vars`, current values as defaults, **and document what each knob invalidates** in `deploy:cloudrun`'s summary — see **ADR-028** | F6 |
@@ -225,4 +236,5 @@ the last gap.
 | ADR — database privilege split and RLS scope | Wave 3.4 |
 | ADR — perimeter | **Already written: ADR-027.** A further ADR is needed only if the trigger fires and Cloudflare is adopted. |
 | ADR — deployment capacity is app-tunable | **Already written: ADR-028.** Wave 0.4 implements it; the knob-by-knob consequences belong in `deploy:cloudrun`'s summary. |
-| Correction to `STANDARDS.md:342` | **Independent of any code change.** The document attributes the validity of in-process state to `--max-instances=1`; the actual constraint is `--min-instances=0`. STANDARDS states this rule correctly for scheduling and then fails to carry it to counters. |
+| Correction to `STANDARDS.md:342` | **Independent of any code change.** The document attributes the validity of in-process state to `--max-instances=1`; the actual constraint is `--min-instances=0`. STANDARDS states this rule correctly for scheduling and then fails to carry it to counters. The hourly process replacement measured for ADR-027 is the evidence. |
+| Correction to `STANDARDS.md:339` | **Done.** The claim that a native image has a "sub-second start" was never measured and is wrong by three to five times; replaced with the measured 2.6–3.3s boot / 2.9–4.8s end to end. The decision it supported (accept cold starts) stands, but now rests on the real figure. |

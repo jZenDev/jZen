@@ -336,8 +336,13 @@ provider is only made meaningful by the backend.
   `--min-instances=0`, `--concurrency=200`. This is a deliberate cost floor, not a
   scaling limit: the native-image server is fast and small enough to serve the target
   load (~2K MAU) on one instance, and `min=0` means there is no always-warm instance to
-  pay for — cold starts are accepted as the cost/latency trade. A native image's
-  sub-second start makes that acceptable.
+  pay for — cold starts are accepted as the cost/latency trade. **Measured on the live
+  service** (2026-08-03, twelve consecutive hourly wake-ups): a cold request completes in
+  **2.9–4.8s, mean 3.7s**, of which the Quarkus native boot is **2.6–3.3s, mean 3.0s** and
+  the remainder is container scheduling. A warm request is **~26ms** to first byte. An
+  earlier claim of a "sub-second start" here was never measured and was wrong by three to
+  five times; whether a ~3.7s first request stays an acceptable trade is a product
+  decision, not a property of the image.
 - **One instance makes in-process state valid.** Because at most one instance ever runs,
   in-process state — rate limiting, in-memory caches, login-attempt counters — is correct
   by construction. This is a feature of the deployment model, not a hazard. **The trigger

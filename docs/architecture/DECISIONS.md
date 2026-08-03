@@ -59,10 +59,16 @@ were a property of *jZen* when it is a property of *zen_demo's deployment*.
   3. **Any in-memory cache**, which diverges per instance.
 
   The **durable** tier of the rate limiter is unaffected: it lives in Postgres precisely so that it
-  does not depend on how many instances run.
+  depends neither on how many instances run nor on any one of them surviving. The second half of
+  that is measured rather than assumed — under `--min-instances=0` the live service's process is
+  replaced every hour (ADR-027), so a counter whose window outlives an hour cannot be held in
+  memory at all, whatever `--max-instances` says.
 - **`--min-instances ≥ 1`** is the opposite axis and invalidates nothing. It removes cold starts and
   would make an in-process `@Scheduled` viable again — but `zen-jobs` stays correct either way, so
-  there is no reason to undo it. Paying for a warm instance buys latency, not a simpler architecture.
+  there is no reason to undo it. Paying for a warm instance buys latency, not a simpler
+  architecture. **What it buys is now measured** (ADR-027): a cold request costs 2.9–4.8s against
+  26ms warm, and in `zen_demo`'s deployment the instance is cold for practically every real
+  visitor, because the only recurring traffic is one scheduler tick an hour.
 - **`--concurrency` and `--timeout`** carry no invariant at all. They are capacity and latency
   trade-offs, and `--timeout` is additionally a denial-of-service lever (ADR-027).
 
@@ -106,12 +112,32 @@ numbers carry the argument:
 The second number is a configuration mistake and is fixed. The first is not a mistake — it is the
 cost floor working as intended — and it cannot be configured away.
 
+### Measured on the live service
+
+Taken 2026-08-03 against `zen-demo-server` revision `00013-qw9` in `jzen-prod`, from Cloud Run
+request logs and browser Navigation Timing. This ADR rests on these numbers rather than on estimates.
+
+| | Measured | Samples |
+|---|---|---|
+| Cold request, end to end | 2.9–4.8s, mean **3.7s** | 12 |
+| — of which Quarkus native boot | 2.6–3.3s, mean 3.0s | 15 |
+| Warm request, time to first byte | **26ms** | 1 |
+| Deployed flags | concurrency 200, timeout 300s, min 0, max 1, 256Mi / 1 CPU | — |
+
+Two findings came out of the measurement that reasoning had not produced:
+
+- **The service is almost never warm.** Its only recurring traffic is the hourly Cloud Scheduler
+  tick, so the container starts, serves one request and scales back to zero — 24 cold starts a day,
+  and a visitor arriving between ticks pays the full 3.7s.
+- **The heaviest operation takes about 0.7s of actual work.** The hourly trigger completes in 3.7s
+  *including* the 3.0s boot, which is what makes a 60s timeout generous rather than a guess.
+
 ### Decision
 
-1. **The application closes what it can.** Lower `--timeout` to roughly 60s (measured against the
-   retention job, which is the only long operation), and add the rate limiter. Together these raise
-   the single-source cost about fivefold and put the remaining 3.3 req/s within reach of a
-   per-address limiter.
+1. **The application closes what it can.** Lower `--timeout` to roughly 60s — the measurement above
+   shows the only long-running operation needs under a second — and add the rate limiter. Together
+   these raise the single-source cost about fivefold and put the remaining 3.3 req/s within reach of
+   a per-address limiter.
 2. **The residual is accepted, not closed.** A distributed attack from a pool of addresses still
    saturates 200 slots, and nothing in the application can prevent that.
 3. **No edge is introduced.** jZen continues to serve Cloud Run directly.

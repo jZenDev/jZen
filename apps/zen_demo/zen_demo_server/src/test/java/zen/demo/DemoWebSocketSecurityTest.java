@@ -71,6 +71,35 @@ class DemoWebSocketSecurityTest {
     }
   }
 
+  /**
+   * Asserts the two ceilings are <em>configured</em>. Be clear about what that is and is not: a
+   * value present in configuration is not the same claim as a frame actually being rejected, and
+   * this test cannot make the stronger one. Proving enforcement needs a real WebSocket client
+   * holding a real session, and {@code @TestSecurity} mints a {@code SecurityIdentity} for
+   * in-container calls rather than a cookie a raw client could send on an upgrade.
+   *
+   * <p><strong>Enforcement was verified out of band, and this is the evidence</strong>, recorded
+   * here so a future reader does not have to infer it from a config assertion. Against a running
+   * server, on an authenticated socket: a 13-byte frame echoed normally, and a single 100 KiB
+   * binary frame was refused with the connection torn down before the handler ever saw it —
+   *
+   * <pre>
+   * io.netty.handler.codec.http.websocketx.CorruptedWebSocketFrameException:
+   *     Max frame length of 65536 has been exceeded.
+   *   at WebSocket08FrameDecoder.protocolViolation(WebSocket08FrameDecoder.java:427)
+   * </pre>
+   *
+   * The rejection is Netty's frame decoder at the protocol layer, which is why it is worth
+   * recording: it is not jZen code, nothing in this repository would fail if it stopped happening,
+   * and the payload used was also invalid protobuf — so a decode failure would have produced an
+   * {@code error} echo instead. The close, not an echo, is what identifies the ceiling as the
+   * cause.
+   *
+   * <p>So this test defends the configuration, and the note defends the meaning. If the ceilings
+   * ever need to move, move them together: {@code max-message-size} bounds a message reassembled
+   * from several frames, so raising only {@code max-frame-size} leaves the same hole open one
+   * fragment at a time.
+   */
   @Test
   void theFrameAndMessageCeilingsAreConfigured() {
     // quarkus.http.limits.max-body-size does NOT apply to WebSocket frames, so losing these two

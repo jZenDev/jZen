@@ -313,14 +313,40 @@ task deploy:cloudrun
 > package, no production database. The backend deploy path is defined and exercised up to the
 > point real GCP credentials are required.
 
-The Cloud Run deploy runs a **single instance by design** (`--max-instances=1`,
-`--min-instances=0`, `--concurrency=200`): a deliberate cost floor, not a scaling ceiling.
-Because at most one instance ever runs, in-process state (rate limiting, caches, counters) is
-valid by construction; the trigger to externalize state is the decision to raise
-`--max-instances` above 1. Scale-to-zero means scheduled work is driven from **outside** the
-container — one Cloud Scheduler entry calls an authenticated trigger endpoint. The
-`deploy:cloudrun` task summary (`task --summary deploy:cloudrun`) lists the required Secret
-Manager secrets and the one-time scheduler setup. See STANDARDS "Deployment model".
+### Capacity: the defaults, and the reason for each
+
+The Cloud Run deploy runs a **single instance by design** — a deliberate cost floor, not a scaling
+ceiling. These are **defaults, not constants**: they are `vars` in `Taskfile.yml`, so an
+application overrides them without touching the framework. The values below are sized for
+`zen_demo`'s target (~2K MAU); nobody else has to live with them (ADR-028).
+
+| Flag | Default | Why this default | What changing it costs |
+|---|---|---|---|
+| `--min-instances` | `0` | Nothing is paid while the service sits idle. The price is a cold start on the first request after a quiet period, which a native image makes short enough to accept. | Setting `1` removes cold starts and buys latency, at the cost of a warm instance around the clock. **Invalidates nothing.** |
+| `--max-instances` | `1` | A ceiling the bill cannot escape. It is also why an attack on this service costs availability rather than money (ADR-027). | Raising it above `1` **silently breaks three pieces of in-process state**: any burst rate limiter, `JobScheduler`'s overlap guard, and any in-memory cache. Read **ADR-028** first — none of them fails loudly. |
+| `--concurrency` | `200` | Requests one instance serves at once. With `--max-instances=1`, this is the entire capacity of the service. | A pure capacity trade-off, no invariant attached. Together with `--timeout` it decides how cheap a denial-of-service is (ADR-027). |
+| `--timeout` | `300s` | Cloud Run's per-request ceiling. | Lower is safer: the shorter the timeout, the more traffic an attacker needs to keep every slot occupied. No invariant attached. |
+| `--memory` / `--cpu` | `256Mi` / `1` | What the native image needs for the target load. | Raise it if your application's workload is heavier. |
+
+> **The cold-start figure is not measured.** As the note above says, jZen has never been deployed
+> to a live Cloud Run service. "Short enough to accept" is design intent, not a benchmark — measure
+> it against your own workload before relying on it.
+
+Two consequences of scale-to-zero that are easy to miss, and that no test will catch:
+
+- **Scheduled work must be driven from outside the container.** With `--min-instances=0` there is
+  no thread alive at the hour a cron names, so an in-process `@Scheduled` usually does not fire —
+  and when it does, that is an accident of traffic. One Cloud Scheduler entry calls an
+  authenticated trigger endpoint instead (`zen-jobs`).
+- **In-process state does not survive an idle period.** Anything whose window outlives the
+  instance — a login-attempt counter, a daily quota — belongs in Postgres. Short-window state (a
+  per-second burst counter) is fine in memory, because the traffic that would exceed it is what
+  keeps the instance alive in the first place.
+
+The `deploy:cloudrun` task summary (`task --summary deploy:cloudrun`) lists the required Secret
+Manager secrets and the one-time scheduler setup. See STANDARDS "Deployment model", plus
+[ADR-027](docs/architecture/DECISIONS.md) (why this posture is accepted) and **ADR-028** (what each
+knob invalidates when you change it).
 
 ## Licence and contribution
 

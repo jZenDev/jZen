@@ -117,6 +117,19 @@ Two rules the walking skeleton established, both mandatory for every backend mod
   A new library claims the next free hundred *in this table* as part of its first migration, so two
   libraries developed in parallel cannot both land a `V3`. Applications start at 1000 so no library
   can ever grow into an application's numbering. See [`DECISIONS.md`](./DECISIONS.md) ADR-008.
+- **A band allocates ownership; it does not stay reachable.** Once a higher band has migrated a
+  database, a *new* version inside a lower band is out-of-order and **Flyway refuses to start the
+  application** — "Detected resolved migration not applied to database: N". zen-identity cannot
+  add a `V3` to any database that has run `V100` or `V200`, and that is not a defect to be fixed
+  with `out-of-order=true` or `ignoreMigrationPatterns`, both of which work by making Flyway stop
+  checking. A library's second migration either takes a number above every applied version, or —
+  when what it expresses is a desired state rather than a step — is repeatable. See
+  [`DECISIONS.md`](./DECISIONS.md) ADR-031.
+- **Repeatable migrations (`R__`) are keyed by description, not version**, so their name carries
+  the owning module the way a band otherwise would: `R__identity_application_role.sql`. They run
+  after every versioned migration, they re-run whenever their checksum changes — so unlike a
+  versioned migration a repeatable **may** be edited — and in exchange every statement in one must
+  be idempotent. Use them for grants, privileges and policies; never for a schema step.
 - **An applied migration is immutable — including its comments.** Flyway checksums the whole file,
   so correcting a typo in a comment block is indistinguishable from rewriting the DDL: every
   database that already ran it fails validation at startup and will not boot until it is repaired.
@@ -281,6 +294,12 @@ So the rule is enforced by **`task verify:boundaries`**, which runs first in `ta
 fails on a provider SDK in any client package, on a provider host or credential named in client
 library code, and on any absolute URL literal outside the one configured base URL. Comments,
 generated code and tests are exempt.
+
+The gate covers **both client languages**: Dart (`client/*/lib`, `apps/*/*/lib`, base URL in
+`zen_identity_config.dart`) and TypeScript (`admin/src`, `apps/*/*_admin/src`, base URL in
+`config.ts`). The admin panel is a client by this rule's definition and not an exception to it —
+`@supabase/supabase-js` is one `pnpm add` away and better documented than the Dart SDK, and a
+panel that used it would lose all three properties above in the same silent way.
 
 **The one thing that legitimately crosses.** Provider-minted tokens arrive at the client in an
 email link's fragment (the implicit flow, [`DECISIONS.md`](./DECISIONS.md) ADR-018). That is not a

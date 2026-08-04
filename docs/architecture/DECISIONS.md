@@ -15,6 +15,204 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-031 — The application stops being the database owner, and row-level security is Supabase-side only
+
+**Date:** 2026-08-04. **Status:** accepted. **Supersedes:** `V2__row_level_security.sql`'s
+implication that the `users_owner` policy is a line of defence the application path receives.
+**Refines:** STANDARDS "Database migrations" (a fourth zen-identity migration; migrations may now
+carry grants), STANDARDS "The client talks to one server" (the gate's language coverage).
+
+### Context
+
+The audit's F5 (`docs/plans/SECURITY-REMEDIATION.md`): the application connects to PostgreSQL as
+the owner. **Nothing exploits this today** — every admin filter uses named Panache parameters,
+sort is whitelisted, and `UserRoleLoader`'s native query takes no user input, all of it verified
+during the audit. This entry is therefore blast-radius reduction and not a fix, and it is worth
+being plain about which of the two it is.
+
+What it changes is what a *future* injection, or a leaked `DB_PASSWORD`, is worth. Supabase's
+`auth` schema lives in the same database as the application's `public` schema, so under the owner
+role the answer is "`auth.users`, password hashes, and the ability to forge identities". Under a
+role that holds DML on `public` and nothing else, the answer is the application's own data.
+
+The second half of F5 is the more interesting one. `V2` enables row-level security on `users` and
+creates `users_owner` (`id = auth.uid()`), and its own header already says the owner connection
+bypasses it. So the migration reads as a second line of defence that the application path does not
+get — and that ambiguity is not merely cosmetic, because **the two halves of this wave interact in
+a way that fails silently.** `auth.uid()` reads a request-scoped Supabase JWT claim. jZen reaches
+Postgres over a plain pooled JDBC connection carrying no such claim, so `auth.uid()` is NULL and
+the predicate matches nothing. Give the application a non-owner role while that policy stands and
+every query against `users` returns **zero rows** — not an error, an empty result. `RoleAugmentor`
+fails closed on every request, `@RolesAllowed` refuses everything, the admin panel dies, and the
+whole thing reads as a permissions bug rather than a database one.
+
+### Decision
+
+- **Two roles, one database.** `zen_runtime` serves traffic; the existing DDL role migrates. The
+  name is deliberate: it is the role the running server *connects as*, the counterpart of the DDL
+  role. The first draft called it `zen_app`, which reads as "the zen application" in a repository
+  whose `apps/` directory holds exactly that — a name inviting the misreading is a defect even
+  when the code is right. One role serves every application, the way one `users` table does.
+- **The migration lives in `zen-identity`, and the role is framework-wide.** Worth stating rather
+  than leaving to be noticed, because they are in tension: the role needs privileges over
+  zen-jobs' and zen-ratelimit's tables too. It sits in zen-identity because that library owns the
+  schema baseline and every application depends on it, so the role exists before anything needs
+  it — and because the grants are **schema-wide** and never name a sibling's table, so no library
+  reaches into another. A `zen-db` module for one repeatable migration and no code was considered
+  and rejected as more layering than the problem has.
+  `R__identity_application_role.sql` creates `zen_runtime` **NOLOGIN** and grants it `CONNECT`,
+  `USAGE` on `public`, and `SELECT/INSERT/UPDATE/DELETE` on that schema's tables — plus `ALTER
+  DEFAULT PRIVILEGES` so tables from later migrations are covered. It gets nothing on `auth`,
+  nothing on `flyway_schema_history`, and no DDL.
+- **The migration is repeatable, and that is forced rather than stylistic** — see the next section.
+- **Flyway holds its own credentials.** `quarkus.flyway.jdbc-url` / `username` / `password`
+  (Quarkus 3.32.2; all three are required together, and Quarkus only opens a separate Flyway
+  connection when `jdbc-url` is present). `%test` sets none of them, so Dev Services is unchanged.
+- **The migration deliberately does not create a usable credential.** A password written into a
+  migration is plaintext in git, readable by everyone who can read the repository, and rotated
+  only by editing source. `ALTER ROLE zen_runtime WITH LOGIN PASSWORD …` is **operator work, outside
+  the repository**, and `deploy:cloudrun`'s summary step 1c carries the commands alongside the other
+  fourteen secrets.
+- **The split is opt-in, and the deploy says which branch it took.** `APP_DB_USERNAME` /
+  `APP_DB_PASSWORD` fall back to `DB_USERNAME` / `DB_PASSWORD` when absent, and `deploy:cloudrun`
+  attaches them only when both exist in Secret Manager, printing "privilege split ON/OFF" either
+  way. Refusing to boot without them would break a deploy on configuration the deploy itself
+  cannot supply; printing nothing would be the silent regression this wave exists to remove.
+- **Row-level security on `users` is Supabase-side only, and says so in the schema.** The migration
+  adds `users_application` (`FOR ALL TO zen_runtime USING (true) WITH CHECK (true)`). `FORCE ROW LEVEL
+  SECURITY` is **not** set, and that is now a decision rather than an omission.
+
+### A version band allocates ownership, and does not stay reachable
+
+Discovered by the migration failing to boot, not by reading the rule. The obvious name for this
+file was `V3`, inside zen-identity's band 1-99. Every database that has run `V100` (zen-jobs) and
+`V200` (zen-ratelimit) — which is production, and the local dev database — is already past
+version 3, so a new `V3` is **out-of-order** and Flyway refuses to start the application at all:
+
+```
+Caused by: org.flywaydb.core.api.exception.FlywayValidateException: Validate failed:
+Detected resolved migration not applied to database: 3.
+```
+
+The band scheme (ADR-008) does exactly what it was designed to do — it stops two libraries
+colliding on a version — and it silently implies something it never guaranteed, that a library can
+keep adding migrations inside its band. It cannot, once a higher band has shipped. Flyway offers
+`out-of-order=true` and `ignoreMigrationPatterns` as the remedies, and both work by making Flyway
+stop checking, which is the same shape of change as `validate-on-migrate=false` that STANDARDS
+already refuses.
+
+So this file is **repeatable** (`R__`), which is also what it should have been on the merits.
+Repeatables run after every versioned migration — so `GRANT … ON ALL TABLES IN SCHEMA public`
+reaches every band's tables, on a fresh database and an existing one alike — they are keyed by
+description rather than version, and they re-run when their checksum changes. What that buys is
+the honest semantic for this content: grants and policies are a **desired state**, not a step, and
+a privilege model that can be edited and re-applied is better than one frozen by a checksum. The
+price is idempotence, which every statement in the file is written for. Nothing here weakens
+validation: the versioned migrations remain immutable and validated exactly as before.
+
+### Measured against the live database
+
+Taken 2026-08-04 against `jzen-prod`'s Supabase project, through the **session pooler** — the same
+connection Cloud Run uses. Three of these were open questions that reasoning could not close, and
+one of them changed the migration.
+
+| Question | Measured |
+|---|---|
+| Does the pooler accept a non-`postgres` role in the `<role>.<ref>` form? | **Yes.** `current_user` and `session_user` both answer `zen_runtime`. |
+| Is the production database past the identity band? | **Yes** — `V1, V2, V100, V200` applied, so a `V3` refuses to boot. |
+| Does `zen_runtime` still see rows with RLS on and `users_owner` present? | **Yes** — 8 of 8, then 9 of 9 after seeding one. Owner and application counts agree. |
+| Can the DDL role revoke on the `auth` schema? | **No.** `auth` is owned by `supabase_admin`; `postgres` holds `USAGE` without grant option. |
+| Can the DDL role drop or impersonate the runtime role? | **No, by default.** PostgreSQL 16+ gives a `CREATEROLE` creator membership with `ADMIN` but `inherit_option = f, set_option = f`, so `DROP OWNED BY` is refused until the membership is re-granted `WITH SET TRUE, INHERIT TRUE`. |
+
+Every denial was exercised rather than assumed: `auth.users` (schema denied), `flyway_schema_history`
+(select and delete denied), `CREATE TABLE`, `ALTER TABLE users`, `DROP TABLE users` — and the
+permitted side too, insert/update/delete on `users` and reads of `zen_jobs` and
+`zen_rate_limit_counters`.
+
+**The `auth` measurement changed the migration.** It originally revoked — `REVOKE ALL ON SCHEMA
+auth`, and on its tables, sequences and functions. PostgreSQL answers a revoke the caller is not
+entitled to make with a **warning, not an error**, one per object and per *column* for tables, so
+that version printed dozens of "no privileges could be revoked" lines on every boot while changing
+nothing. It now **asserts** instead: if `zen_runtime` ever holds `USAGE` on `auth`, the migration
+raises and the application refuses to start. That is strictly better than what was intended — the
+revoke was always a no-op on a freshly created role, and the property that matters is that it
+stays true. A control that cannot enforce itself should fail closed rather than warn.
+
+### Why RLS cannot be the application's second line
+
+The tempting reading is that `FORCE ROW LEVEL SECURITY` plus a policy the application can satisfy
+would make this a real defence. It would not, and the reason is about access patterns rather than
+plumbing: **the application legitimately reads rows it does not own.** The admin panel lists every
+user; `UserRetentionService` scans every user. Any policy the application path can satisfy is
+therefore a policy that permits everything the application path does. Making the application
+satisfy `id = auth.uid()` would additionally require binding a per-request identity onto a pooled
+connection (`SET LOCAL request.jwt.claims` per transaction), which is real architecture bought for
+a predicate that then has to be widened until it protects nothing.
+
+RLS is genuinely load-bearing for the client Postgres *does* know per request — PostgREST's `anon`
+and `authenticated` roles, where the JWT claim is present by construction. That is the surface
+`users_owner` defends, and this entry narrows the claim to it rather than deleting it.
+
+### What this supersedes, and why
+
+- **"The Quarkus JDBC connection uses the postgres/service role, which is the table owner and
+  bypasses RLS (no FORCE ROW LEVEL SECURITY); the policy guards direct Supabase-side access"**
+  (`V2__row_level_security.sql`, header) → **narrowed and made enforceable.** *Why:* the sentence
+  is accurate and was always honest about the bypass; what it left open is whether the bypass was
+  intended or pending. It was pending, and an undecided middle is the worst of the three available
+  positions — it is the state in which someone tightens the role, gets zero rows, and spends a day
+  in the wrong subsystem. **The file itself is not edited**: `V2` has run on production and Flyway
+  checksums comments along with DDL, so correcting it is indistinguishable from rewriting its DDL
+  and would refuse to boot every database that already ran it (STANDARDS "Database migrations").
+  `V3`'s header and this entry carry the correction, which is exactly the mechanism that rule
+  prescribes.
+- **"A dedicated least-privilege database role for the application … Coordinate with Supabase
+  project setup"** (SECURITY-REMEDIATION §4.3, task 3.1) → **refined.** *Why:* it reads as
+  repository work and it is not entirely. The role's password cannot live in a migration, so
+  provisioning is operator work by construction, and `deploy:cloudrun`'s summary step 1c is where
+  those commands belong. The pooler's `<role>.<ref>` form was the open question the task rested on
+  and it is now measured (above), so the arrangement the plan assumed is the one that ships — no
+  direct-connection fallback, and therefore no collision with the IPv4/IPv6 constraint.
+- **"Scope is `client/*/lib` and `apps/*/*/lib`"** (`verify:boundaries`, summary) → **extended to
+  TypeScript.** *Why:* covering only Dart read as a statement that the boundary rule was about
+  Flutter. It is about clients, and react-admin is one — a browser application holding a session
+  cookie, for which `@supabase/supabase-js` is one `pnpm add` away and better documented than the
+  Dart SDK. `schema.generated.ts` is excluded as generated output, and `config.ts` is the
+  TypeScript analogue of `zen_identity_config.dart`.
+
+### Consequence
+
+- `zen-identity` still owns `V1` and `V2` in band 1-99 and now also ships one repeatable. STANDARDS
+  "Database migrations" gains two rules: a band allocates ownership but does not stay reachable,
+  and repeatables are named with the owning module's prefix and must be idempotent.
+- **Production is unaffected until an operator acts.** The migration applies cleanly to the running
+  database and changes nothing about how the application connects, because `zen_runtime` cannot log
+  in. That is what makes this deployable in the same release as the rest of Wave 3.
+- **`%test` still runs as the Dev Services owner**, because those credentials are generated and
+  there is nothing to point at `zen_runtime`. `DatabasePrivilegeTest` therefore proves the *privileges*
+  by opening its own connection as the role and trying — reading `auth.users`, creating a table,
+  editing Flyway history, all refused with SQLSTATE 42501 — rather than proving the application
+  path end to end. Stated here so the coverage is not read as more than it is; the end-to-end half
+  was measured against the live database instead (above).
+- The migration re-runs cleanly (it is repeatable, so "runs twice" is ordinary), and the
+  auth-schema assertion is itself asserted: granting `zen_runtime` `USAGE` on `auth` makes the
+  migration refuse, and revoking it makes it migrate again.
+- `jzen-prod` is **provisioned but not yet cut over**: `zen_runtime` exists with its login, and
+  `APP_DB_USERNAME` / `APP_DB_PASSWORD` are in Secret Manager. The deployed revision does not
+  reference them, so the split takes effect on the next deploy and can be undone by removing two
+  secrets.
+- The zero-rows trap is asserted **in both directions**: with RLS enabled and a stand-in for
+  `users_owner` in place, the application role still reads its rows; dropping `users_application`
+  makes the same query return 0. The second half is what stops the first from passing for some
+  unrelated reason, and it is why the assertion is on rows returned rather than on the absence of
+  an exception.
+- Verified green: `task test` (111 backend tests, including the nine above, and the live e2e gate
+  at 16), `task sync:contracts`, `task test:admin`, `task verify:docs`. `verify:boundaries`'
+  TypeScript extension was verified by planting a violation of each of its three checks and
+  confirming it fails, then confirming both exemptions (`schema.generated.ts`, `config.ts`) hold.
+
+---
+
 ## ADR-030 — An unverifiable session cookie means anonymous, not an error: the ambient-credential rule
 
 **Date:** 2026-08-03. **Status:** accepted. **Supersedes:** the implicit rule in

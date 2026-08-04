@@ -29,6 +29,12 @@ Python here is **floored at 3.9, not pinned** (`task doctor` checks it), and **s
 `pip`, no virtualenv, no `requirements.txt`. The floor is what keeps these scripts working on a Mac
 carrying nothing but Xcode's Command Line Tools.
 
+Shared helpers follow the same split: `lib.sh` is sourced by the runners, `lib.py` is imported by
+the Python scripts, and the two mirror each other's vocabulary (`info`, `warn`, `die`, `ok`,
+`fail`) so both halves of the directory read as one thing. A file that is *imported* keeps an
+underscore (`lib.py`); a file that is *executed* keeps a hyphen (`pick-device.py`,
+`verify-boundaries.py`).
+
 ## admin.sh — the admin panel stack
 
 ```
@@ -84,6 +90,21 @@ scripts/stop.sh --supabase  # tear everything down
 
 scripts/demo.sh             # or: the ZenDemo reference app (Flutter) instead of the admin panel
 ```
+
+## verify-boundaries.py — the client/server boundary gate
+
+Run by `task verify:boundaries`, which is the first thing `task test` and CI do. What it enforces
+and why is the task's own summary (`task verify:boundaries --summary`); the script's docstring
+covers how.
+
+Three checks over `client/*/lib` and `apps/*/*/lib`: no client package depends on an
+identity-provider SDK, no client source names a provider host or credential, and no client source
+hard-codes an absolute URL except the one compile-time base in `zen_identity_config.dart`.
+
+**A scope that matches nothing fails.** The sh version ended each scan with `2>/dev/null … ||
+true`, so renaming a directory under `client/` left every scan empty — which reads as a clean
+repository, and reported green forever. `task test:scripts` covers this and each of the three
+checks with planted violations.
 
 ## pick-device.py — which device a native run targets
 

@@ -143,6 +143,30 @@ tasks:
           fi
         }
 
+        # Presence AND a MINIMUM version, which is a third category from the two above and is
+        # explained in STANDARDS "Scripting": a version is PINNED when it shapes a build artifact
+        # and FLOORED when it only has to run. Python is the only floored tool — it returns
+        # verdicts and seeds a dev database, so any interpreter at or above the floor does, and
+        # flooring rather than pinning is what keeps the scripts working on a Mac carrying nothing
+        # but Xcode's Command Line Tools. $2 must print a BARE version, same contract as checkv.
+        checkmin() {
+          name=$1; ver_cmd=$2; hint=$3; want=$4
+          if ! command -v "$name" >/dev/null 2>&1; then
+            printf '  \033[31mMISS\033[0m %-14s %s\n' "$name" "$hint"; missing=1; return
+          fi
+          got=$(eval "$ver_cmd" 2>/dev/null | head -1)
+          # major/minor compared as integers, never as text: a string compare ranks 3.9 above
+          # 3.10, which would reject every modern interpreter and accept nothing but the floor.
+          maj=${got%%.*}; rest=${got#*.}; min=${rest%%.*}
+          wmaj=${want%%.*}; wmin=${want#*.}
+          if [ "$maj" -gt "$wmaj" ] 2>/dev/null || { [ "$maj" -eq "$wmaj" ] && [ "$min" -ge "$wmin" ]; } 2>/dev/null; then
+            printf '  \033[32mok\033[0m   %-14s %s (floor %s)\n' "$name" "$got" "$want"
+          else
+            printf '  \033[31mOLD\033[0m  %-14s %s (need >= %s)\n' "$name" "$got" "$want"
+            missing=1
+          fi
+        }
+
         echo "jZen toolchain (each version pinned in its own ecosystem's file):"
         checkv java    "java -version 2>&1 | sed -n '1s/.*\"\([0-9][^\"]*\)\".*/\1/p'" "sdk env install"                              "$(pin_java)"    "sdk env"
         checkv flutter "flutter --version | awk 'NR==1{print \$2}'"                    "https://docs.flutter.dev/get-started/install" "$(pin_flutter)" "fvm use"
@@ -163,6 +187,12 @@ tasks:
         check supabase "supabase --version"  "a local dev service, not a build input: brew install supabase/tap/supabase"
         check docker   "docker --version"    "a daemon, not a toolchain version: https://docs.docker.com/get-docker"
         check gcloud   "gcloud --version"    "a deploy-time client, expected to self-update: https://cloud.google.com/sdk/docs/install"
+        # Floored, not pinned (STANDARDS "Scripting", DECISIONS.md ADR-032). The interpreter is
+        # asked for its own version rather than having it parsed out of --version text. Until this
+        # line existed, run:demo:native failed with a raw `env: python3: No such file` — the only
+        # tool in the repository doctor could not see.
+        checkmin python3 "python3 -c 'import platform; print(platform.python_version())'" \
+                 "the dev-loop scripting runtime beside sh: comes with Xcode CLT, or brew install python" "3.9"
         echo "Dart protobuf codegen (needed by generate:proto, not by the Java build):"
         check protoc   "protoc --version"    "brew install protobuf"
         if [ -x "$HOME/.pub-cache/bin/protoc-gen-dart" ]; then
@@ -705,7 +735,12 @@ tasks:
     cmds:
       # First, and cheap: an architectural rule no unit test can catch, because the violation it
       # looks for makes every other suite pass. See STANDARDS "The client talks to one server".
+      #
+      # test:scripts runs immediately after, and deliberately not before: it is the suite that
+      # proves the gate above still fires, so the cheap architectural check keeps its place at the
+      # front and the thing that vouches for it follows straight behind.
       - task: verify:boundaries
+      - task: test:scripts
       - task: test:server
       - task: test:client
       - task: test:apps
@@ -839,6 +874,29 @@ tasks:
     dir: "{{.DEMO_ADMIN_DIR}}"
     cmds:
       - pnpm exec tsc -b
+
+  test:scripts:
+    desc: Run the fixture tests for the Python dev scripts (today, the boundary gate)
+    silent: true
+    summary: |
+      Covers the scripts on the Python side of STANDARDS "Scripting" — today `verify:boundaries`,
+      as the other two conversions land.
+
+      WHY A GATE NEEDS TESTS AT ALL. For its whole sh lifetime `verify:boundaries` could only be
+      shown to work by planting a violation in the repository by hand and remembering to take it
+      out, so in practice nobody ever showed it. The one thing it could never assert about itself
+      is the one that mattered: that it was still reading the tree. Its scans ended in
+      `2>/dev/null … || true`, so a renamed directory under `client/` produced no hits, and no
+      hits is indistinguishable from a clean repository — the gate reported green having examined
+      nothing. `test_stale_scope_is_a_failure` is the regression test for exactly that.
+
+      `unittest`, not pytest: the Python side is stdlib-only by rule (ADR-032), so the runner is
+      too. Runs in well under a second and needs no toolchain beyond the 3.9 floor `doctor` checks.
+
+      Discovery is rooted at `scripts/tests`; a failing test exits non-zero and fails the suite,
+      as STANDARDS "Failures surface" requires.
+    cmds:
+      - python3 -m unittest discover -s scripts/tests
 
   test:e2e:
     desc: The release gate - drive zen_demo's suite against the LIVE Quarkus + Supabase stack
@@ -1791,7 +1849,11 @@ tasks:
       The naming makes it likelier, not less: `SupabaseIdentityRepository` is named for the
       provider standing behind the backend, and reads like a class that ought to call it.
 
-      Three checks, deliberately textual so they cost nothing and cannot themselves break:
+      Three checks, textual so they cost nothing to run. They live in
+      `scripts/verify-boundaries.py` — reading source and returning a verdict is Python's side of
+      the line in STANDARDS "Scripting" — and `task test:scripts` covers them with fixture tests
+      that plant each violation and assert it is caught. That is what keeps the gate itself
+      honest; the previous sh implementation could not make that assertion about itself.
 
         A. No client or app package may depend on a provider SDK (supabase, gotrue, postgrest,
            realtime/storage/functions clients).
@@ -1823,84 +1885,12 @@ tasks:
 
       The SERVER is where the provider is reached — `SupabaseAuthClient`,
       `@RegisterRestClient(configKey = "supabase-auth")` — and it is meant to be the only place.
+
+      A scope that matches NOTHING is a failure, not a pass. Renaming a directory under
+      `client/`, or the admin panel moving out of `admin/src`, used to leave a scan empty —
+      which read as a clean repository and reported green forever.
     cmds:
-      - |
-        set -eu
-        fail=0
-        say_fail() { printf '  \033[31mFAIL\033[0m %s\n' "$1"; fail=1; }
-        say_ok()   { printf '  \033[32mok\033[0m   %s\n' "$1"; }
-
-        echo "Checking the client/server boundary..."
-
-        # The TypeScript admin panel is a client too, and its sources are scoped exactly the way
-        # the Dart ones are: library/app source only, generated output excluded, tests excluded.
-        TS_SRC="admin/src apps/*/*_admin/src"
-        TS_PKG="admin/package.json apps/*/*_admin/package.json"
-        # A backtick written literally here would be command substitution before grep ever sees
-        # it, so the template-literal delimiter is built rather than typed (same trick as
-        # verify:docs).
-        bt=$(printf '\140')
-
-        # A. A provider SDK in a client or app package.
-        hits=$(grep -rnE "^[[:space:]]{2}(supabase|gotrue|postgrest|realtime_client|storage_client|functions_client)[a-z_]*[[:space:]]*:" \
-                 --include="pubspec.yaml" client apps 2>/dev/null || true)
-        ts_hits=$(grep -nE "^[[:space:]]*\"(@supabase/[^\"]+|gotrue[^\"]*|postgrest[^\"]*|realtime-js|storage-js|functions-js)\"[[:space:]]*:" \
-                 $TS_PKG 2>/dev/null || true)
-        hits=$(printf '%s\n%s' "$hits" "$ts_hits" | grep -v '^$' || true)
-        if [ -n "$hits" ]; then
-          say_fail "a client package depends on an identity-provider SDK:"
-          printf '%s\n' "$hits" | sed 's/^/         /'
-        else
-          say_ok "no client or admin package depends on a provider SDK"
-        fi
-
-        # B. Provider hosts or credentials named in client library code.
-        provider='supabase\.co|:54321|apikey|anon_key|service_role|SUPABASE_(URL|KEY)'
-        hits=$(grep -rniE "$provider" \
-                 --include="*.dart" client/*/lib apps/*/*/lib 2>/dev/null | grep -v "/generated/" || true)
-        ts_hits=$(grep -rniE "$provider" \
-                 --include="*.ts" --include="*.tsx" $TS_SRC 2>/dev/null \
-                 | grep -v "\.generated\.ts:" || true)
-        hits=$(printf '%s\n%s' "$hits" "$ts_hits" | grep -v '^$' || true)
-        if [ -n "$hits" ]; then
-          say_fail "client code names a provider host or credential:"
-          printf '%s\n' "$hits" | sed 's/^/         /'
-        else
-          say_ok "no provider host or credential in client or admin code"
-        fi
-
-        # C. Absolute URLs in client library code, other than the one configured base URL.
-        # Comments are stripped first: a doc example showing `ZenClient(baseUrl: 'http://...')`
-        # is documentation, not a call. On the TypeScript side that means JSDoc block lines too,
-        # and the quote set gains the template-literal backtick, which is how a URL would most
-        # naturally be written there.
-        hits=$(grep -rnE "['\"]https?://" --include="*.dart" client/*/lib apps/*/*/lib 2>/dev/null \
-                 | grep -v "/generated/" \
-                 | grep -v "zen_identity_config.dart" \
-                 | awk -F: '{ line=$0; sub(/^[^:]*:[^:]*:/,"",line); gsub(/^[ \t]+/,"",line);
-                              if (line !~ /^\/\//) print }' || true)
-        ts_hits=$(grep -rnE "['\"${bt}]https?://" --include="*.ts" --include="*.tsx" $TS_SRC 2>/dev/null \
-                 | grep -v "\.generated\.ts:" \
-                 | grep -v "_admin/src/config\.ts:" \
-                 | awk -F: '{ line=$0; sub(/^[^:]*:[^:]*:/,"",line); gsub(/^[ \t]+/,"",line);
-                              if (line !~ /^(\/\/|\/\*|\*)/) print }' || true)
-        hits=$(printf '%s\n%s' "$hits" "$ts_hits" | grep -v '^$' || true)
-        if [ -n "$hits" ]; then
-          say_fail "client code hard-codes an absolute URL (the base is zenApiUrl / config.ts):"
-          printf '%s\n' "$hits" | sed 's/^/         /'
-        else
-          say_ok "the only base URL in client and admin code is the compile-time one"
-        fi
-
-        echo
-        if [ "$fail" -eq 0 ]; then
-          echo "Boundary intact: the client talks to the jZen backend and nothing else."
-        else
-          echo "The client/server boundary is broken. The jZen backend is the ONLY thing a client"
-          echo "may call: it is where a session is minted, where the provider's credentials live,"
-          echo "and where roles are resolved. See STANDARDS 'The client talks to one server'."
-          exit 1
-        fi
+      - scripts/verify-boundaries.py
 
   verify:docs:
     desc: Fail if a README names a non-existent task, or a module LICENSE drifted from root
@@ -1913,7 +1903,11 @@ tasks:
         1. Every `task <name>` a README mentions must exist in `task --list`. This is what would
            have caught a README promising `task run:all` brings up more than it does. Only
            commands are checked - inline-code spans and code-fence command lines - so a bare
-           `task` in prose or a flag like `task --list` is skipped.
+           `task` in prose or a flag like `task --list` is skipped. A flag's numeric value is
+           skipped too: `task run:demo --port 8085` documents one task and a port, and no task
+           name is all digits. Several names on one line stay checked, because `task build test`
+           really is two tasks. A non-numeric value (`--email admin`) is still read as a name -
+           telling them apart would mean encoding which flags take arguments, and that would rot.
         2. Every module LICENSE (the copies beside each pubspec/pom, git ls-files '*/LICENSE')
            must be byte-identical to the root LICENSE. A licence that differs from the one it
            claims to be is a legal defect, and sixteen copies of a 190-line file is a drift
@@ -1922,54 +1916,11 @@ tasks:
       Unlike the step-8 standalone check (a terminal one-shot, reverted once its failure mode
       stopped occurring), README and LICENSE drift START the moment those files exist and keep
       recurring, so this ships as a standing gate. Wire it into CI beside sync:contracts.
+
+      Both scans refuse to pass vacuously. The task-list read always did; `git ls-files` for
+      READMEs and for module LICENSEs now does too, because a `for` loop over nothing printed
+      the success line — "All README task references resolve" is true of zero READMEs.
+
+      Implementation: `scripts/verify-docs.py`, covered by `task test:scripts`.
     cmds:
-      - |
-        # No `pipefail`: the membership test below is `printf | grep -q`, and a matching grep
-        # closes the pipe early, so pipefail would turn printf's harmless EPIPE into a failure.
-        set -u
-        if ! git rev-parse --git-dir >/dev/null 2>&1; then
-          echo "Not a git repository, cannot verify docs."; exit 1
-        fi
-
-        # NO_COLOR plus an ANSI strip: `task --list` colorizes when it thinks it has a terminal,
-        # and a colorized line does not match the parse below. Depending on TTY detection would
-        # make this gate pass or fail by accident, so both defences are applied.
-        valid=$(NO_COLOR=1 task --list 2>/dev/null \
-          | sed -E 's/\x1b\[[0-9;]*m//g' \
-          | sed -nE 's/^\* ([a-z0-9:_-]+):.*/\1/p' | sort -u)
-        if [ -z "$valid" ]; then
-          echo "Could not read the task list; refusing to pass vacuously."; exit 1
-        fi
-        fail=0
-
-        # A literal backtick would be command substitution to the task interpreter, so the
-        # inline-code delimiter is built with printf rather than written into the pattern.
-        bt=$(printf '\140')
-
-        echo "Checking task references in READMEs..."
-        for md in $(git ls-files '*README.md'); do
-          refs=$( { grep -oE "${bt}task +[a-z][a-z0-9:_ -]*${bt}" "$md" 2>/dev/null | tr -d "${bt}"
-                    grep -oE '^ *task +[a-z][a-z0-9:_ -]*' "$md" 2>/dev/null
-                  } | sed -E 's/^ *task +//' )
-          for name in $refs; do
-            case "$name" in -*) continue ;; esac
-            if ! printf '%s\n' "$valid" | grep -qxF "$name"; then
-              echo "  MISSING: '$md' references 'task $name', not in 'task --list'"
-              fail=1
-            fi
-          done
-        done
-        [ "$fail" -eq 0 ] && echo "  All README task references resolve."
-
-        echo "Checking LICENSE copies..."
-        count=0
-        for lic in $(git ls-files '*/LICENSE'); do
-          if diff -q LICENSE "$lic" >/dev/null 2>&1; then
-            count=$((count + 1))
-          else
-            echo "  DRIFTED: '$lic' differs from the root LICENSE"; fail=1
-          fi
-        done
-        [ "$fail" -eq 0 ] && echo "  All $count module LICENSE copies are byte-identical to root."
-
-        [ "$fail" -eq 0 ] && echo "Docs verified." || { echo "Docs verification FAILED."; exit 1; }
+      - scripts/verify-docs.py

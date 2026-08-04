@@ -38,7 +38,7 @@ you straight in. The login screen **says this on itself** — a banner points yo
 first-time user is not left guessing (`zen_demo_client`'s `AuthFlow` fills the framework login
 screen's `banner` slot with a localized hint). The **admin panel** does need an account with the
 `admin` role (roles live in the `users` table, not the JWT), and that one *is* seeded for you: run
-`scripts/seed-admin.sh`, which registers `admin@jzen.local` / `password123` and promotes it to
+`scripts/seed-admin.py`, which registers `admin@jzen.local` / `password123` and promotes it to
 `admin` — then sign in at `http://localhost:5173`. See
 [`../../scripts/README.md`](../../scripts/README.md).
 

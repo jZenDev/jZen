@@ -2,9 +2,43 @@
 
 One-shot helpers for the local dev loop. They wrap the Taskfile targets and add the two things
 `task` cannot do alone: run the backend together with a frontend, and dodge a leftover Supabase
-stack from another project that shadows the local ports (notably `54321`/`54322`). Shared logic
-(colors, Supabase bring-up, backend start, health wait, port freeing) lives in `lib.sh`, which the
-runners source.
+stack from another project that shadows the local ports (notably `54321`/`54322`). Shared logic for
+the sh side (colors, Supabase bring-up, backend start, health wait, port freeing) lives in `lib.sh`,
+which the runners source.
+
+## Two languages, and which one a script is
+
+This directory holds **sh and Python, and neither is the default**. The full rule is
+[`STANDARDS.md`](../docs/architecture/STANDARDS.md) "Scripting" with the reasoning in
+[`DECISIONS.md`](../docs/architecture/DECISIONS.md) ADR-032, but it is short enough to state here —
+four ordered tests, first match wins:
+
+| # | Test | Language |
+|---|---|---|
+| 0 | Must it run *before* the toolchain is verified? | **sh** |
+| 1 | Does it start, background, signal, wait on, or kill a process — or export environment into its caller? | **sh** |
+| 2 | Does it only run commands and branch on exit codes or scalars a tool hands it? | **sh** |
+| 3 | Must it understand *content* — parse structure out of text, or construct structure safely into it? | **Python** |
+
+**sh runs things; Python understands things.** That is why the three runners below (`admin.sh`,
+`demo.sh`, `stop.sh`) are sh — Rule 1, and structurally so: `lib.sh`'s `ensure_supabase` exports
+into *its caller* and `start_backend` relies on `java` inheriting that, which a Python child
+process cannot do for its parent. And it is why `pick-device.py` is Python: parsing
+`flutter devices --machine` JSON is Rule 3.
+
+`seed-admin.py` is the case that shows the line is about the *job*, not the directory. It sits
+among the runners and reads like one, but it supervises nothing — it builds a JSON body and a SQL
+statement, which is Rule 3.
+
+Python here is **floored at 3.9, not pinned** (`task doctor` checks it), and **stdlib only** — no
+`pip`, no virtualenv, no `requirements.txt`. The floor is what keeps these scripts working on a Mac
+carrying nothing but Xcode's Command Line Tools.
+
+Shared helpers follow the same split: `lib.sh` is sourced by the runners, `lib.py` is imported by
+the Python scripts, and the two mirror each other's vocabulary (`info`, `warn`, `die`, `ok`,
+`fail`) so both halves of the directory read as one thing. A file that is *imported* keeps an
+underscore (`lib.py`); a file that is *executed* keeps a hyphen (`pick-device.py`,
+`verify-boundaries.py`).
 
 ## admin.sh — the admin panel stack
 
@@ -26,15 +60,21 @@ Supabase + backend + the `zen_demo` Flutter client in Chrome on `http://localhos
 (`--web-port`). The script form of `task run:demo`, with the same robust Supabase handling as
 `admin.sh`.
 
-## seed-admin.sh — create an admin login
+## seed-admin.py — create an admin login
 
 ```
-scripts/seed-admin.sh [--email E] [--password P] [--port N]
+scripts/seed-admin.py [--email E] [--password P] [--port N]
 ```
 
 Registers a user against the running backend, then flips its `users.role` to `admin` (roles live in
 the table, loaded by `RoleAugmentor`, never the JWT). Defaults: `admin@jzen.local` / `password123`.
 Log in with the printed credentials at `http://localhost:5173`.
+
+Both payloads are built by things that understand the format — `json.dumps` for the body, psql's
+`:'email'` interpolation for the statement — so an address with an apostrophe or a password with a
+quote is data, not syntax. The sh version assembled both by string interpolation and broke on
+either. Note the statement arrives on **stdin**, not via `psql -c`: `-c` skips psql's own lexer, so
+`:'email'` would never expand and the server would reject it outright.
 
 ## stop.sh — stop the stack
 
@@ -55,12 +95,41 @@ stack (CLI reports "running" but the db container has exited) with a `stop` befo
 
 ```
 scripts/admin.sh            # terminal 1: Supabase + backend + admin panel
-scripts/seed-admin.sh       # terminal 2: one-time, create the admin login
+scripts/seed-admin.py       # terminal 2: one-time, create the admin login
 # ... open http://localhost:5173, log in ...
 scripts/stop.sh --supabase  # tear everything down
 
 scripts/demo.sh             # or: the ZenDemo reference app (Flutter) instead of the admin panel
 ```
+
+## verify-boundaries.py — the client/server boundary gate
+
+Run by `task verify:boundaries`, which is the first thing `task test` and CI do. What it enforces
+and why is the task's own summary (`task verify:boundaries --summary`); the script's docstring
+covers how.
+
+Three checks, each spanning both client languages — Dart under `client/*/lib` and `apps/*/*/lib`,
+TypeScript under `admin/src` and `apps/*/*_admin/src`, because the admin panel is a client too. No
+package depends on an identity-provider SDK, no source names a provider host or credential, and no
+source hard-codes an absolute URL except the two compile-time bases (`zen_identity_config.dart`,
+and `config.ts` under a panel).
+
+**A scope that matches nothing fails.** The sh version ended each scan with `2>/dev/null … ||
+true`, so renaming a directory under `client/` — or moving the panel out of `admin/src` — left a
+scan empty, which reads as a clean repository and reported green forever. `task test:scripts`
+covers that on both sides, plus each check and each exemption, with planted violations.
+
+## verify-docs.py — the documentation drift gate
+
+Run by `task verify:docs`, in CI beside the contract-drift gate. Two checks: every `task <name>` a
+README names must exist in `task --list`, and every module `LICENSE` must be byte-identical to the
+root one.
+
+**Nothing passes vacuously.** An unreadable task list was already an error; the two `git ls-files`
+scans now are too. Previously each fed a loop that simply did not run when the pattern matched
+nothing, and then printed its success line — "All README task references resolve" is a true
+statement about zero READMEs, and "All 0 module LICENSE copies are byte-identical" is a gate that
+has stopped looking.
 
 ## pick-device.py — which device a native run targets
 

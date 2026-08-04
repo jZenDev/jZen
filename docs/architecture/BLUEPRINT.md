@@ -268,6 +268,16 @@ table's lifecycle. For the same reason the RLS migration (`auth.uid()` and the `
 exist only on Supabase) is guarded on `to_regprocedure('auth.uid()')` — it enables RLS and
 the owner policy on Supabase, and is a no-op on plain PostgreSQL so tests still migrate.
 
+**Row-level security covers the whole schema, not just `users`, and it is one of two layers.**
+Supabase serves the `public` schema over PostgREST to anyone holding the project's anon key, so a
+table without a policy is a table published to the internet. `zen_jobs` and
+`zen_rate_limit_counters` therefore carry RLS and a `zen_runtime` application policy of their own,
+shipped by the module that owns each; separately, `R__identity_data_api_lockdown.sql` strips the
+`anon` and `authenticated` roles of every privilege in `public`, including on tables a later
+migration creates. Three tables were reachable this way on the deployed project before ADR-036,
+which has the measurements; STANDARDS "Database migrations" carries the rule that keeps the next
+table from joining them.
+
 **Compliance columns are first-class.** The `users` table has zero learning-domain columns,
 but it deliberately keeps two cross-cutting product concerns: **payment**
 (`is_premium`) and **GDPR / data retention** (`analytics_consent`, `deletion_warning_sent_at`,

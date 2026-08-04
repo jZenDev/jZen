@@ -1640,6 +1640,35 @@ tasks:
               DROP POLICY users_application ON public.users;
               DROP OWNED BY zen_runtime; DROP ROLE zen_runtime;
 
+        1d. THE DATA API (in the Supabase dashboard, and the one check worth running on a project
+            you did not create). Supabase serves the `public` schema over PostgREST to anyone
+            holding the anon key, which is published on purpose. jZen never uses that interface --
+            the client talks to one server and it is ours -- so the correct state is that it
+            reaches nothing.
+
+            The migrations already establish two layers of this and need no operator step:
+            R__identity_data_api_lockdown.sql strips anon and authenticated of every privilege in
+            public, and each module enables row-level security on its own tables. This step is the
+            third, outside the repository because it is a project setting rather than schema:
+
+              Settings -> API -> Exposed schemas: remove `public` if nothing needs it.
+
+            Then verify from a terminal, because the dashboard reports configuration and this
+            reports reality. Any 200 here is a finding, whatever the settings page says:
+
+              curl -s -o /dev/null -w '%{http_code}\n' \
+                "$SUPABASE_URL/rest/v1/zen_jobs?select=id" \
+                -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY"
+
+            Want: 401. Before ADR-036 this project answered 200 with every job row, and a PATCH
+            was accepted -- which is one UPDATE away from switching off the retention job that
+            discharges the GDPR obligation, silently, with the next tick reporting success.
+
+            Note the dashboard's advisor flags "RLS disabled in public" for a table with no policy
+            and says nothing about privileges, so it is necessary reading and not sufficient: a
+            table can be fully locked down by grants and still be flagged, and a table can be
+            flagged for years while genuinely readable. Trust the curl.
+
         2. Let the runtime service account read those secrets. Without this the revision is
            created and then fails to start, because --set-secrets is resolved at boot.
 

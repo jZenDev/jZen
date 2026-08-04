@@ -108,6 +108,18 @@ true`, so renaming a directory under `client/` — or moving the panel out of `a
 scan empty, which reads as a clean repository and reported green forever. `task test:scripts`
 covers that on both sides, plus each check and each exemption, with planted violations.
 
+## verify-docs.py — the documentation drift gate
+
+Run by `task verify:docs`, in CI beside the contract-drift gate. Two checks: every `task <name>` a
+README names must exist in `task --list`, and every module `LICENSE` must be byte-identical to the
+root one.
+
+**Nothing passes vacuously.** An unreadable task list was already an error; the two `git ls-files`
+scans now are too. Previously each fed a loop that simply did not run when the pattern matched
+nothing, and then printed its success line — "All README task references resolve" is a true
+statement about zero READMEs, and "All 0 module LICENSE copies are byte-identical" is a gate that
+has stopped looking.
+
 ## pick-device.py — which device a native run targets
 
 Used by `task run:demo:native`. Prints `<device-id>\t<platform>` on stdout and everything a human

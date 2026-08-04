@@ -1912,54 +1912,11 @@ tasks:
       Unlike the step-8 standalone check (a terminal one-shot, reverted once its failure mode
       stopped occurring), README and LICENSE drift START the moment those files exist and keep
       recurring, so this ships as a standing gate. Wire it into CI beside sync:contracts.
+
+      Both scans refuse to pass vacuously. The task-list read always did; `git ls-files` for
+      READMEs and for module LICENSEs now does too, because a `for` loop over nothing printed
+      the success line — "All README task references resolve" is true of zero READMEs.
+
+      Implementation: `scripts/verify-docs.py`, covered by `task test:scripts`.
     cmds:
-      - |
-        # No `pipefail`: the membership test below is `printf | grep -q`, and a matching grep
-        # closes the pipe early, so pipefail would turn printf's harmless EPIPE into a failure.
-        set -u
-        if ! git rev-parse --git-dir >/dev/null 2>&1; then
-          echo "Not a git repository, cannot verify docs."; exit 1
-        fi
-
-        # NO_COLOR plus an ANSI strip: `task --list` colorizes when it thinks it has a terminal,
-        # and a colorized line does not match the parse below. Depending on TTY detection would
-        # make this gate pass or fail by accident, so both defences are applied.
-        valid=$(NO_COLOR=1 task --list 2>/dev/null \
-          | sed -E 's/\x1b\[[0-9;]*m//g' \
-          | sed -nE 's/^\* ([a-z0-9:_-]+):.*/\1/p' | sort -u)
-        if [ -z "$valid" ]; then
-          echo "Could not read the task list; refusing to pass vacuously."; exit 1
-        fi
-        fail=0
-
-        # A literal backtick would be command substitution to the task interpreter, so the
-        # inline-code delimiter is built with printf rather than written into the pattern.
-        bt=$(printf '\140')
-
-        echo "Checking task references in READMEs..."
-        for md in $(git ls-files '*README.md'); do
-          refs=$( { grep -oE "${bt}task +[a-z][a-z0-9:_ -]*${bt}" "$md" 2>/dev/null | tr -d "${bt}"
-                    grep -oE '^ *task +[a-z][a-z0-9:_ -]*' "$md" 2>/dev/null
-                  } | sed -E 's/^ *task +//' )
-          for name in $refs; do
-            case "$name" in -*) continue ;; esac
-            if ! printf '%s\n' "$valid" | grep -qxF "$name"; then
-              echo "  MISSING: '$md' references 'task $name', not in 'task --list'"
-              fail=1
-            fi
-          done
-        done
-        [ "$fail" -eq 0 ] && echo "  All README task references resolve."
-
-        echo "Checking LICENSE copies..."
-        count=0
-        for lic in $(git ls-files '*/LICENSE'); do
-          if diff -q LICENSE "$lic" >/dev/null 2>&1; then
-            count=$((count + 1))
-          else
-            echo "  DRIFTED: '$lic' differs from the root LICENSE"; fail=1
-          fi
-        done
-        [ "$fail" -eq 0 ] && echo "  All $count module LICENSE copies are byte-identical to root."
-
-        [ "$fail" -eq 0 ] && echo "Docs verified." || { echo "Docs verification FAILED."; exit 1; }
+      - scripts/verify-docs.py

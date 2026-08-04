@@ -15,6 +15,190 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-029 — `scripts/` is bilingual by rule: sh runs things, Python understands things
+
+**Date:** 2026-08-04. **Status:** accepted. **Refines:** ADR-014.
+
+### Context
+
+Python entered this repository without a decision. `scripts/pick-device.py` landed on 2026-08-01,
+eight days after ADR-014 argued the orchestrator choice at length, and nothing recorded that a
+second scripting language had joined the repository or what it was allowed to do. The consequence
+is measurable: every other toolchain is pinned in the file its own ecosystem reads and checked by
+`doctor` — `java` (`.sdkmanrc`), `flutter` (`.fvmrc`), `node` (`.nvmrc`), `pnpm` (`packageManager`)
+— while `python3` is pinned nowhere, checked nowhere, and set up in no CI job. `run:demo:native`
+fails with a raw `env: python3: No such file` on a machine without it.
+
+The question that forced the issue was a different one: `Taskfile.yml` has reached 1767 lines, and
+the maintainer is fluent in Java, Dart and TypeScript but not in sh. Two answers suggested
+themselves and both are wrong.
+
+**Replacing `task` with a runner written in a product language** (Gradle/Maven-driven Java, a Dart
+CLI, an npm-script layer) fails on ADR-014's own grounds plus one this repository has not written
+down: `doctor` exists to verify the toolchain, so the tool that runs it cannot depend on the
+toolchain. A Java runner needs a JDK resolve before it can report that the JDK is missing. It also
+elevates one of three peer product languages to the language that builds the other two, which is
+the language-neutral-root rule (ADR-014 point 4) arriving from the inside.
+
+**Converting the shell to Python wholesale** fails on measurement. Of the 1767 lines, 464 are
+`summary:` prose, 265 are YAML structure, and 159 are comments and `desc:`; only **507 are shell
+logic**, and 105 of those are bare tool invocations (`gcloud run deploy …`, `./mvnw …`) that read
+identically in any language. The lines that genuinely cannot be reviewed by inspection — nested
+`grep` pipelines, the `awk` comment-stripper in `verify:boundaries`, and in `verify:docs` a backtick
+smuggled past command substitution as `bt=$(printf '\140')` — amount to **55 lines in two tasks**.
+
+So the real problem was never the volume of sh, and never the number of languages. It was that a
+small, identifiable subset of the shell implements *algorithms* whose correctness is not visible
+from reading them, and that subset is exactly where a defect hides silently.
+
+### Decision
+
+**1. Python is a declared, first-class scripting language of this repository, bounded by a rule.**
+It is not the default and sh is not the default; each has a domain, and `scripts/` holds both
+because both are scripting languages serving the dev loop.
+
+**2. The rule is four ordered tests. First match wins.**
+
+| # | Test | Language |
+|---|---|---|
+| 0 | Must it run *before* the toolchain is verified? | **sh** |
+| 1 | Does it start, background, signal, wait on, or kill a process — or export environment into its caller? | **sh** |
+| 2 | Does it only run commands and branch on exit codes or scalars a tool hands it? | **sh** |
+| 3 | Must it understand *content* — parse structure out of text, or construct structure safely into it? | **Python** |
+
+**Tiebreak:** if Rule 3 work is ≲3 lines inside a Rule 1/2 script, it stays sh. If Rule 3 work *is
+the point* of the script, Python. In one sentence: **sh runs things; Python understands things.**
+
+Rule 0 is not an exception carved for `doctor`; it is ADR-014 point 1's reasoning applied one level
+down. The tool that verifies the toolchain cannot depend on the toolchain, which is why `task` is
+itself unpinnable (ADR-014, Consequence) and why `doctor` stays sh permanently.
+
+Rule 1 is the one that is structural rather than stylistic. `lib.sh`'s `ensure_supabase` runs
+`eval "$(supabase status -o env | sed 's/^/export SB_/')"` and exports into **its caller**, which
+`start_backend` then relies on `java` inheriting. A Python child process cannot export into its
+parent — that is an operating-system property, not a shortcoming of the language — so the launchers
+are not sh by preference, they are sh by necessity.
+
+**3. Applying the rule to what exists.** It reproduces every choice already made, and disagrees
+with exactly three files:
+
+| Artifact | Rule | Verdict |
+|---|---|---|
+| `doctor` | 0 — bootstrap | sh, permanently |
+| `lib.sh`, `admin.sh`, `demo.sh`, `stop.sh` | 1 — trap, background, foreground, kill, export-into-caller | sh |
+| `deploy:cloudrun`, `destroy:cloudrun`, `test:e2e`, `test:native`, `run:demo*`, `build:*` | 2 — invocation | sh |
+| `sync:verify` | 2 — `git status --porcelain`, emptiness check | sh |
+| `verify:endpoints`, `verify:deploy` | 2 + one parse line → tiebreak | sh |
+| `pick-device.py` | 3 — parses `flutter devices --machine` JSON | Python *(already)* |
+| **`seed-admin.sh`** | **3 — constructs JSON and SQL** | **→ Python** |
+| **`verify:boundaries`** | **3 — parses Dart/TS source, strips comments** | **→ Python** |
+| **`verify:docs`** | **3 — parses docs** | **→ Python** |
+
+That the rule independently re-derives `pick-device.py` as Python and all four launchers as sh is
+the evidence that it describes this repository rather than imposing a preference on it.
+
+**4. Python is floored, not pinned — and the distinction is the existing one.** `doctor` already
+separates `checkv` (presence **and** pinned version, for the four build-input tools) from `check`
+(presence only, for services and clients), on the principle that a version is pinned when it shapes
+the artifact. Python shapes no artifact: it returns verdicts and seeds a dev database. It therefore
+joins the `check` group with a **minimum of 3.9**, verified against Apple's `/usr/bin/python3`
+(3.9.6), so the scripts run on a Mac carrying nothing but Xcode Command Line Tools. No
+`.python-version` file is created: nothing but `pyenv` reads one, so it would be an inert file
+making a pin-shaped claim about a tool that is not pinned.
+
+**5. Stdlib only.** No `pip`, no virtualenv, no `requirements.txt`. This preserves the property
+that made `task` the right orchestrator — the dev loop bootstraps from what is already installed.
+A gate that needs a third-party library has grown past being a gate.
+
+**6. `make` is closed, not deferred.** ADR-014 left one door open: a trigger under which moving
+recipe bodies into `scripts/` would make `make`'s ubiquity win. This entry moves two bodies into
+`scripts/` and, in doing so, establishes that the door was never real — the trigger's premise is
+false, on the evidence below. **`go-task` is the orchestrator for the life of this repository**, and
+a future proposal to adopt `make` is arguing against a measured decision, not filling a silence.
+What remains open is a different and still-sound question: ADR-014's *second* trigger, about CI
+wall-time once a second application lands, is untouched and still points at `sources:`/`generates:`
+fingerprinting, then affected-detection, then Moon. Closing `make` is not closing orchestration.
+
+### What this supersedes, and why
+
+- **"If the Taskfile's recipe bodies collapse to one-line wrappers with the real logic living in
+  `scripts/`, then `task` is adding nothing that `make` does not, the four objections in point 2
+  evaporate along with the multi-line blocks that cause them, and `make`'s ubiquity wins. Revisit
+  then."** (ADR-014 point 7, first reversal trigger) → **retired.** *Why:* the trigger rests on a
+  premise that measurement does not support — that all four objections in ADR-014 point 2 are
+  consequences of multi-line bodies. **Two of them are independent of body length, and two more
+  that ADR-014 never weighed are as well.**
+
+  1. **Discovery does not evaporate.** `verify:docs` (ADR-012) mechanically asserts that every
+     `task <name>` named in a doc resolves in `task --list` — **57 distinct references** across the
+     READMEs and architecture docs today. `make` has no `--list`; the substitute is a hand-rolled
+     `##`-comment convention plus an `awk` parser, in a repository whose headline rule is "no custom
+     magic". ADR-014 already called this "the objection this entry finds hardest to answer", and it
+     is exactly as hard when every body is one line.
+  2. **The phony tax does not evaporate.** All 51 targets need `.PHONY` regardless of body length.
+  3. **`summary:` was never weighed, and is now the largest loss.** The Taskfile carries **17
+     `summary:` blocks spanning 464 lines — 26% of the file** — reachable as
+     `task <name> --summary`. That is the operator-facing contract for things like
+     `deploy:cloudrun`'s capacity knobs (ADR-028), and `make` has no equivalent at any body length.
+     This surface barely existed when ADR-014 was written and has since become load-bearing.
+  4. **Task naming was never weighed, and is disqualifying on its own.** **44 of 51 task names
+     (86%) contain `:`** — `deploy:cloudrun`, `test:apps:server`, `generate:proto:java` — which is
+     `make`'s rule separator. Adopting `make` means renaming every one of them, breaking the 57
+     documented references above, `CLAUDE.md`, and `ci.yml`. Body length has no bearing on this.
+
+  The direction of travel confirms it independently: the Taskfile has gone from **12 multi-line
+  blocks across 40 tasks** (ADR-014, 2026-07-24) to **23 across 51**, and stands at **21** after
+  this entry's conversions — accreting inline logic roughly twice as fast as this removes it. The
+  trigger anticipated a collapse that is not happening and, per Rules 0–2, is not permitted to: a
+  body that supervises a process or invokes a tool is *required* to stay in the Taskfile. The
+  condition is therefore not merely unmet, it is unreachable while this rule holds, and a condition
+  that cannot be reached is not a trigger. It is retired rather than left standing, because a dead
+  trigger in a live document is an invitation to relitigate `make` on a technicality.
+- **"Shared logic (colors, Supabase bring-up, backend start, health wait, port freeing) lives in
+  `lib.sh`, which the runners source."** (`scripts/README.md`) → **refined.** *Why:* accurate for
+  the sh side and now incomplete. `lib.py` becomes its Python counterpart for the scripts that
+  cannot source a shell file, and the README states which language a helper belongs to rather than
+  implying there is only one.
+- **Python's undeclared arrival on 2026-08-01** → **legitimised and bounded.** *Why:* `pick-device.py`
+  was the correct call — parsing `flutter devices --machine` JSON in sh is precisely the Rule 3 work
+  that hides defects — but it was made without a recorded decision, which is how it ended up as the
+  only toolchain in the repository that `doctor` cannot see. This entry is the decision it should
+  have arrived with, and it constrains the language rather than merely permitting it.
+
+### Consequence
+
+- **`doctor` gains a `python3 >= 3.9` check**, so the one tool `run:demo:native` silently depended on
+  is now reported like every other. The CI `gates` job gains `actions/setup-python`, because
+  `verify:boundaries` and `verify:docs` run there and will execute Python once converted; the
+  dependency is declared before it is relied upon rather than after.
+- **`.gitignore` gains `__pycache__/`.** This is cheap insurance and not a live fix: a `__main__`
+  script is never byte-cached and `pick-device.py` imports only stdlib, so nothing is generated
+  today. It matters once scripts import `lib.py`, because `deploy:cloudrun` computes `GIT_DIRTY`
+  from `git status --porcelain` where untracked files count — an untracked `__pycache__/` would tag
+  every image `-dirty`.
+- **The `summary:` blocks stay in the Taskfile** when a body moves to `scripts/`. They are the
+  operator-facing contract and are reachable as `task <name> --summary`; the Python file carries a
+  module docstring about implementation. Two audiences, no duplicated text — `pick-device.py` and
+  `run:demo:native` already model this split.
+- **The conversions are not in this entry.** This records the rule and closes the declaration gap;
+  `verify-boundaries.py`, `verify-docs.py` and `seed-admin.py` follow as separate work, and until
+  they land the three rows above marked **→ Python** describe an intent, not the tree. ADR-014 set
+  the precedent for an entry whose diff is a decision plus a STANDARDS cross-reference.
+- **One defect is the reason `verify:boundaries` converts first.** Its scans end in
+  `2>/dev/null … || true`, so if a glob stops matching — a directory renamed under `client/` — the
+  gate reports success having examined nothing. That is STANDARDS "Failures surface; nothing is
+  swallowed" broken by the gate that enforces the boundary rule, and the Python version asserts its
+  scan matched source roots and gets fixture tests proving it still catches a planted
+  `supabase_flutter` dependency.
+
+**No behaviour changed by this entry.** The diff is this ADR, a STANDARDS section, the `doctor`
+check, the `.gitignore` line, the CI step, and `scripts/README.md`; no task body, module, or
+generated artifact is touched. What was measured on the delivery machine: `/usr/bin/python3` reports
+3.9.6 and parses `pick-device.py` clean, Homebrew's reports 3.14.6 and wins `PATH`; the Taskfile
+holds 23 multi-line shell blocks and 19 `dir:` declarations across 51 tasks.
+
+---
+
 ## ADR-028 — Deployment capacity is the application's choice: the framework ships defaults, not constants
 
 **Date:** 2026-08-03. **Status:** accepted. **Refines:** ADR-027, ADR-020, ADR-001 (the

@@ -70,6 +70,18 @@ jobs:
           version: "3.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # The scripting runtime beside sh (DECISIONS.md ADR-029). verify:boundaries and verify:docs
+      # below are the two gates whose bodies move into scripts/*.py, so this job executes Python
+      # even though no other job does. Floored, not pinned, exactly as `task doctor` checks it:
+      # 3.9 is the floor these scripts are written to, so CI runs the oldest thing they support
+      # rather than the newest, and an incompatibility surfaces here instead of on a contributor's
+      # Mac carrying only Xcode's 3.9.6. ubuntu-latest ships a newer python3 that would otherwise
+      # be picked up implicitly — declaring it is what keeps CI from drifting off the floor.
+      - name: Python (floor, see STANDARDS "Scripting")
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
       # First because it is the cheapest thing here and the only one that catches a defect no test
       # can: a client package calling the identity provider directly still authenticates, still
       # renders, and still passes every suite. See STANDARDS "The client talks to one server".

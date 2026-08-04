@@ -124,6 +124,30 @@ tasks:
           fi
         }
 
+        # Presence AND a MINIMUM version, which is a third category from the two above and is
+        # explained in STANDARDS "Scripting": a version is PINNED when it shapes a build artifact
+        # and FLOORED when it only has to run. Python is the only floored tool — it returns
+        # verdicts and seeds a dev database, so any interpreter at or above the floor does, and
+        # flooring rather than pinning is what keeps the scripts working on a Mac carrying nothing
+        # but Xcode's Command Line Tools. $2 must print a BARE version, same contract as checkv.
+        checkmin() {
+          name=$1; ver_cmd=$2; hint=$3; want=$4
+          if ! command -v "$name" >/dev/null 2>&1; then
+            printf '  \033[31mMISS\033[0m %-14s %s\n' "$name" "$hint"; missing=1; return
+          fi
+          got=$(eval "$ver_cmd" 2>/dev/null | head -1)
+          # major/minor compared as integers, never as text: a string compare ranks 3.9 above
+          # 3.10, which would reject every modern interpreter and accept nothing but the floor.
+          maj=${got%%.*}; rest=${got#*.}; min=${rest%%.*}
+          wmaj=${want%%.*}; wmin=${want#*.}
+          if [ "$maj" -gt "$wmaj" ] 2>/dev/null || { [ "$maj" -eq "$wmaj" ] && [ "$min" -ge "$wmin" ]; } 2>/dev/null; then
+            printf '  \033[32mok\033[0m   %-14s %s (floor %s)\n' "$name" "$got" "$want"
+          else
+            printf '  \033[31mOLD\033[0m  %-14s %s (need >= %s)\n' "$name" "$got" "$want"
+            missing=1
+          fi
+        }
+
         echo "jZen toolchain (each version pinned in its own ecosystem's file):"
         checkv java    "java -version 2>&1 | sed -n '1s/.*\"\([0-9][^\"]*\)\".*/\1/p'" "sdk env install"                              "$(pin_java)"    "sdk env"
         checkv flutter "flutter --version | awk 'NR==1{print \$2}'"                    "https://docs.flutter.dev/get-started/install" "$(pin_flutter)" "fvm use"
@@ -144,6 +168,12 @@ tasks:
         check supabase "supabase --version"  "a local dev service, not a build input: brew install supabase/tap/supabase"
         check docker   "docker --version"    "a daemon, not a toolchain version: https://docs.docker.com/get-docker"
         check gcloud   "gcloud --version"    "a deploy-time client, expected to self-update: https://cloud.google.com/sdk/docs/install"
+        # Floored, not pinned (STANDARDS "Scripting", DECISIONS.md ADR-029). The interpreter is
+        # asked for its own version rather than having it parsed out of --version text. Until this
+        # line existed, run:demo:native failed with a raw `env: python3: No such file` — the only
+        # tool in the repository doctor could not see.
+        checkmin python3 "python3 -c 'import platform; print(platform.python_version())'" \
+                 "the dev-loop scripting runtime beside sh: comes with Xcode CLT, or brew install python" "3.9"
         echo "Dart protobuf codegen (needed by generate:proto, not by the Java build):"
         check protoc   "protoc --version"    "brew install protobuf"
         if [ -x "$HOME/.pub-cache/bin/protoc-gen-dart" ]; then

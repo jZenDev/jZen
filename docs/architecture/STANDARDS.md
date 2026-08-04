@@ -13,8 +13,19 @@ The rules that keep the monorepo honest. Philosophy is in
   second build driver beside the Taskfile. The general test behind that list, and the argument
   for `task` over `make`, Bazel, and Nx, is [`DECISIONS.md`](./DECISIONS.md) ADR-014: the
   orchestrator is a **task runner** and is deliberately too weak to become a build system,
-  because incrementality belongs to `mvnw` / `dart pub` / `pnpm`. ADR-014 also states the two
-  measured conditions under which this would be reopened.
+  because incrementality belongs to `mvnw` / `dart pub` / `pnpm`.
+- **`make` is closed, not deferred** ([`DECISIONS.md`](./DECISIONS.md) ADR-029). ADR-014 left a
+  trigger under which moving recipe bodies into `scripts/` would let `make`'s ubiquity win; ADR-029
+  **retires** it, because two of ADR-014's four objections — `task --list` discovery, which
+  `verify:docs` asserts across 57 documented references, and the `.PHONY` tax on all 51 targets —
+  are independent of body length, and two more it never weighed are decisive on their own: the 17
+  `summary:` blocks (464 lines, 26% of the file) that `make` cannot express at any body length, and
+  the 44 of 51 task names containing `:`, which is `make`'s rule separator. `go-task` is the
+  orchestrator for the life of this repository. **One** reopening condition survives, and it is
+  about scale rather than syntax: if a second application under `apps/` makes full-fanout CI
+  wall-time unacceptable, the answer is `sources:`/`generates:` fingerprinting, then
+  affected-detection, then Moon (ADR-014 point 7, second trigger). Bazel does not become correct at
+  that point.
 - **No task ever swallows a failure.** A task that runs a test suite propagates its exit code;
   `|| true`, a discarded status, or a loop that keeps going after a red suite turns the gate
   into decoration. `task test:client` iterating workspace members is the case to watch, because
@@ -33,6 +44,42 @@ The rules that keep the monorepo honest. Philosophy is in
 - Run `task doctor` after cloning. It distinguishes tools the Java build needs from the
   extra tools (`protoc`, `protoc-gen-dart`) that only Dart proto codegen needs — the
   Java build resolves `protoc` from Maven Central and needs no system install.
+
+## Scripting: sh and Python, one rule to pick
+
+`scripts/` holds both, and **neither is the default**. Which one a script is written in is decided
+by four ordered tests — first match wins. The reasoning is
+[`DECISIONS.md`](./DECISIONS.md) ADR-029.
+
+| # | Test | Language |
+|---|---|---|
+| 0 | Must it run *before* the toolchain is verified? | **sh** |
+| 1 | Does it start, background, signal, wait on, or kill a process — or export environment into its caller? | **sh** |
+| 2 | Does it only run commands and branch on exit codes or scalars a tool hands it? | **sh** |
+| 3 | Must it understand *content* — parse structure out of text, or construct structure safely into it? | **Python** |
+
+**Tiebreak:** Rule 3 work of ≲3 lines inside a Rule 1/2 script stays sh; if Rule 3 work *is the
+point* of the script, it is Python. In one sentence: **sh runs things; Python understands things.**
+
+- **Rule 0 has exactly one member, `doctor`, permanently.** The tool that verifies the toolchain
+  cannot depend on the toolchain — the same reason `task` itself is unpinnable (ADR-014).
+- **Rule 1 is structural, not stylistic.** `lib.sh`'s `ensure_supabase` exports into *its caller*
+  and `start_backend` relies on `java` inheriting that. A Python child cannot export into its
+  parent, so the launchers are sh by necessity rather than preference.
+- **Python is floored, not pinned: `>= 3.9`**, and **stdlib only** — no `pip`, no virtualenv, no
+  `requirements.txt`. A version is pinned here when it shapes a build artifact (`java`, `flutter`,
+  `node`, `pnpm`); Python returns verdicts and seeds a dev database, so `doctor` checks it in the
+  presence-only group. There is deliberately no `.python-version`: nothing but `pyenv` reads one,
+  so it would make a pin-shaped claim about a tool that is not pinned. The 3.9 floor is what lets
+  the scripts run on a Mac carrying only Xcode Command Line Tools.
+- **A `summary:` stays in the Taskfile when a body moves to `scripts/`.** It is the operator-facing
+  contract and is reachable as `task <name> --summary`; the script carries a module docstring about
+  implementation. Two audiences, no duplicated text.
+- **Moving a body into `scripts/` is bounded by this rule, not a habit.** Rules 0–2 do not merely
+  permit a body to stay in the Taskfile, they **require** it: bootstrap, process supervision and
+  tool invocation are sh, in place. Only Rule 3 work leaves. This is what makes the retired
+  `task`-vs-`make` trigger unreachable rather than just unmet (ADR-029) — the wholesale collapse it
+  anticipated cannot happen while this rule holds.
 
 ## Code generation
 

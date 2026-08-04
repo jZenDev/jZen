@@ -37,3 +37,12 @@ build/
 # the tracked source; `task generate:l10n` produces the rest, and `task sync:contracts` fails
 # if any of it is ever committed.
 **/l10n/generated/
+
+# ── Python (scripts/) ──
+# The dev-loop scripting runtime beside sh (DECISIONS.md ADR-029). Cheap insurance rather than a
+# live fix: a __main__ script is never byte-cached and today's scripts import only stdlib, so
+# nothing is produced yet. It starts mattering the moment a script imports scripts/lib.py, because
+# deploy:cloudrun derives GIT_DIRTY from `git status --porcelain`, where an untracked directory
+# counts — an uncommitted __pycache__/ would tag every image `-dirty`.
+__pycache__/
+*.py[cod]

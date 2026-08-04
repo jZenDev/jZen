@@ -2,9 +2,32 @@
 
 One-shot helpers for the local dev loop. They wrap the Taskfile targets and add the two things
 `task` cannot do alone: run the backend together with a frontend, and dodge a leftover Supabase
-stack from another project that shadows the local ports (notably `54321`/`54322`). Shared logic
-(colors, Supabase bring-up, backend start, health wait, port freeing) lives in `lib.sh`, which the
-runners source.
+stack from another project that shadows the local ports (notably `54321`/`54322`). Shared logic for
+the sh side (colors, Supabase bring-up, backend start, health wait, port freeing) lives in `lib.sh`,
+which the runners source.
+
+## Two languages, and which one a script is
+
+This directory holds **sh and Python, and neither is the default**. The full rule is
+[`STANDARDS.md`](../docs/architecture/STANDARDS.md) "Scripting" with the reasoning in
+[`DECISIONS.md`](../docs/architecture/DECISIONS.md) ADR-029, but it is short enough to state here —
+four ordered tests, first match wins:
+
+| # | Test | Language |
+|---|---|---|
+| 0 | Must it run *before* the toolchain is verified? | **sh** |
+| 1 | Does it start, background, signal, wait on, or kill a process — or export environment into its caller? | **sh** |
+| 2 | Does it only run commands and branch on exit codes or scalars a tool hands it? | **sh** |
+| 3 | Must it understand *content* — parse structure out of text, or construct structure safely into it? | **Python** |
+
+**sh runs things; Python understands things.** That is why the four runners below are sh — Rule 1,
+and structurally so: `lib.sh`'s `ensure_supabase` exports into *its caller* and `start_backend`
+relies on `java` inheriting that, which a Python child process cannot do for its parent. And it is
+why `pick-device.py` is Python: parsing `flutter devices --machine` JSON is Rule 3.
+
+Python here is **floored at 3.9, not pinned** (`task doctor` checks it), and **stdlib only** — no
+`pip`, no virtualenv, no `requirements.txt`. The floor is what keeps these scripts working on a Mac
+carrying nothing but Xcode's Command Line Tools.
 
 ## admin.sh — the admin panel stack
 

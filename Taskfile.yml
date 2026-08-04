@@ -586,7 +586,14 @@ tasks:
           exit 1
         fi
         echo "Building web bundle (WebAssembly) against $URL"
+        # --no-web-resources-cdn: load the renderer from this origin instead of
+        # www.gstatic.com/flutter-canvaskit. The bundle ALREADY contains a complete canvaskit/
+        # directory (~37M, staged either way) and the loader was ignoring it in favour of the CDN,
+        # so this costs nothing in size and is what lets the Content-Security-Policy keep
+        # script-src at 'self' (zen.transport.SecurityHeaders). Allow-listing a CDN in script-src
+        # is permission to execute whatever that host serves.
         ( cd {{.DEMO_CLIENT_DIR}} && flutter build web --wasm --release \
+            --no-web-resources-cdn \
             --dart-define=ZEN_ENV=prd --dart-define=ZEN_PLATFORM=web \
             --dart-define=ZEN_API_URL="$URL" )
         # Stage into the (gitignored) resources dir, replacing any stale bundle but keeping
@@ -876,11 +883,18 @@ tasks:
       - pnpm exec tsc -b
 
   test:scripts:
-    desc: Run the fixture tests for the Python dev scripts (today, the boundary gate)
+    desc: Run the fixture tests for the Python dev scripts (the boundary, docs and CVE gates)
     silent: true
     summary: |
-      Covers the scripts on the Python side of STANDARDS "Scripting" — today `verify:boundaries`,
-      as the other two conversions land.
+      Covers the scripts on the Python side of STANDARDS "Scripting" — `verify:boundaries`,
+      `verify:docs`, `seed-admin`, and `audit-maven`.
+
+      `audit-maven`'s tests are about one property above all: that the gate cannot report a clean
+      result when it checked nothing. That is not a hypothetical — it is what disqualified both
+      Maven plugins tried before it (ADR-034), one of which returned BUILD SUCCESS after the
+      advisory service answered 401. The fixtures cover the empty dependency list, Maven output
+      whose version field is not where a naive parser looks for it, and a suppression entry with
+      no stated reason.
 
       WHY A GATE NEEDS TESTS AT ALL. For its whole sh lifetime `verify:boundaries` could only be
       shown to work by planting a violation in the repository by hand and remembering to take it
@@ -1314,6 +1328,50 @@ tasks:
             || { printf '  \033[31mFAIL\033[0m %-24s %-9s %s (want 200)\n' "$ajs" admin "$ac"; fail=1; }
         else
           printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /admin/ admin "no entry script referenced"; fail=1
+        fi
+        # Security headers, on the three paths that take DIFFERENT routes through the stack:
+        # /api/ goes through JAX-RS, / and /admin/ are served by the Vert.x static handler and
+        # never reach it. That is why the headers are installed on the router
+        # (zen.transport.SecurityHeaders) and why checking one path would prove nothing about the
+        # other two. A missing CSP has no symptom at all until it is the reason an injection
+        # became an account takeover, so it is asserted against the real served artifact here.
+        for p in / /admin/ /api/v1/health; do
+          hdrs=$(curl -s -o /dev/null -D- "$URL$p" | tr -d '\r')
+          missing=''
+          for h in content-security-policy x-frame-options x-content-type-options referrer-policy; do
+            printf '%s' "$hdrs" | awk -F': ' -v want="$h" 'tolower($1)==want{found=1} END{exit !found}' || missing="$missing $h"
+          done
+          if [ -z "$missing" ]; then
+            printf '  \033[32mok\033[0m   %-24s %-9s %s\n' "$p" headers "CSP, frame, sniff, referrer"
+          else
+            printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' "$p" headers "missing:$missing"; fail=1
+          fi
+        done
+        # script-src must name no host but this one. The web app used to pull its renderer from
+        # www.gstatic.com; build:web now passes --no-web-resources-cdn so it serves the copy it
+        # was already shipping. A CDN back in script-src is permission to execute what it serves.
+        csp=$(curl -s -o /dev/null -D- "$URL/" | tr -d '\r' | awk -F': ' 'tolower($1)=="content-security-policy"{print $2}')
+        case "$csp" in
+          *"script-src 'self' 'wasm-unsafe-eval'"*)
+            printf '  \033[32mok\033[0m   %-24s %-9s %s\n' / csp "script-src is self-only" ;;
+          *) printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' / csp "script-src widened: '${csp:-none}'"; fail=1 ;;
+        esac
+        # /openapi is build tooling and must not be in the image (SECURITY-REMEDIATION F15). It
+        # publishes every route, verb, parameter and status code the service accepts. The DEFAULT
+        # build still serves it -- sync:contracts depends on that -- which OpenApiProfileTest
+        # asserts; asserting only one direction would pass on a build that lost it everywhere.
+        oc=$(curl -s -o /dev/null -w '%{http_code}' "$URL/openapi")
+        if [ "$oc" = "404" ]; then
+          printf '  \033[32mok\033[0m   %-24s %-9s %s\n' /openapi surface "404 (excluded from the image)"
+        else
+          printf '  \033[31mFAIL\033[0m %-24s %-9s %s (want 404)\n' /openapi surface "$oc"; fail=1
+        fi
+        # Swagger UI rides along with the OpenAPI extension, so it goes when the extension goes.
+        sc=$(curl -s -o /dev/null -w '%{http_code}' "$URL/q/swagger-ui/")
+        if [ "$sc" = "404" ]; then
+          printf '  \033[32mok\033[0m   %-24s %-9s %s\n' /q/swagger-ui/ surface "404"
+        else
+          printf '  \033[31mFAIL\033[0m %-24s %-9s %s (want 404)\n' /q/swagger-ui/ surface "$sc"; fail=1
         fi
         echo
         if [ "$fail" -eq 0 ]; then echo "Serves both transport modes, the WebAssembly web app, AND the admin panel — all same origin."; else
@@ -1924,3 +1982,67 @@ tasks:
       Implementation: `scripts/verify-docs.py`, covered by `task test:scripts`.
     cmds:
       - scripts/verify-docs.py
+
+  audit:
+    desc: Fail if any shipped dependency has a known CVE (Java + TypeScript). Needs network.
+    summary: |
+      The dependency vulnerability gate (SECURITY-REMEDIATION F20, which the audit recorded as
+      its one outright GAP: Maven dependencies had never been CVE-scanned at all).
+
+      WHY THIS IS NOT PART OF `task test`, and the choice is deliberate rather than an oversight.
+      It asks a REMOTE service (api.osv.dev, and npm's advisory database) a question about the
+      outside world, and the answer changes when nothing in this repository changed. `task test`
+      is the release gate and has to be a statement about the code: a suite that turns red
+      overnight because a new advisory was published — or because a developer is on a train —
+      teaches people to ignore it, which is how a gate stops being one. So this stands on its
+      own, is run in CI on a schedule and before a release, and says plainly that it needs a
+      network. STANDARDS "Failures surface" is satisfied either way: it fails, and it fails
+      loudly when it cannot reach the database.
+
+      WHY NOT A MAVEN PLUGIN. Both obvious answers were tried and measured:
+
+        - `ossindex-maven-plugin` needs no key on paper. Sonatype's OSS Index now returns 401 to
+          an anonymous request, and the plugin logs a WARNING and lets the build SUCCEED — a full
+          run over this repository's eight modules reported BUILD SUCCESS having checked nothing.
+        - `dependency-check-maven` fails properly and needs an NVD API key. A key is a credential
+          that cannot be committed, and without one the database sync is throttled into
+          uselessness; the usual remedy is a flag that makes the build pass regardless.
+
+      So Maven keeps the resolution (it is the only thing here that can resolve `zen:*` SNAPSHOT
+      modules correctly) and `scripts/audit-maven.py` understands the result and queries OSV,
+      which needs no key. That split is STANDARDS "Scripting" Rule 3 applied literally.
+
+      Suppressions live in `scripts/audit-suppressions.txt` and every entry must carry its reason
+      on the same line — the file does not parse otherwise, which is what stops it becoming the
+      quiet place findings go.
+    cmds:
+      - task: audit:server
+      - task: audit:admin
+
+  audit:server:
+    desc: Check every shipped Java dependency against the OSV database (needs network)
+    silent: true
+    cmds:
+      # Maven resolves; the script understands the result. Both reactors: the framework libraries
+      # and the assembled application, because an app pulls extensions the libraries never name.
+      - |
+        set -eu
+        list=$(mktemp)
+        trap 'rm -f "$list"' EXIT
+        {{.SERVER_DIR}}/mvnw -B -f {{.SERVER_DIR}}/pom.xml dependency:list > "$list"
+        {{.SERVER_DIR}}/mvnw -B -f {{.DEMO_SERVER_DIR}}/pom.xml dependency:list >> "$list"
+        scripts/audit-maven.py "$list"
+
+  audit:admin:
+    desc: Check the admin scaffold's and panel's npm dependencies (needs network)
+    silent: true
+    cmds:
+      # Both packages, because they resolve independently: `admin/` is the reusable scaffold the
+      # panel imports FROM SOURCE via a TypeScript paths alias rather than a pnpm dep edge
+      # (ADR-005), so a vulnerable package in one tree is invisible from the other. Checking only
+      # the panel missed the scaffold's own copy of the react-router advisory.
+      #
+      # pnpm audit already exits non-zero on a finding, so it is the gate as it stands. No
+      # --audit-level: raising the floor is the same move as a suppression with no reason.
+      - cd {{.ADMIN_DIR}} && pnpm audit
+      - cd {{.DEMO_ADMIN_DIR}} && pnpm audit

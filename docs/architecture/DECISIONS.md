@@ -15,6 +15,319 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-035 — The security headers sit on the Vert.x router, the app self-hosts its renderer, and HSTS stops short of the two additions that are one-way doors
+
+**Date:** 2026-08-04. **Status:** accepted. **Refines:** ADR-016 (the Wasm delivery target),
+ADR-027 (what "no edge" costs and buys), STANDARDS "Deployment model". **Closes:**
+`docs/plans/SECURITY-REMEDIATION.md` F8.
+
+### Context
+
+The audit found jZen serving no security headers at all: no `Content-Security-Policy`, no
+`Strict-Transport-Security`, no `X-Frame-Options`, no `X-Content-Type-Options`, no
+`Referrer-Policy`. Confirmed against the deployed service before this work began — the response to
+`GET /` carried `cache-control`, `content-type`, and nothing else jZen had chosen.
+
+Three questions had to be answered with evidence rather than convention, and each of them had an
+obvious answer that was wrong.
+
+### 1. Which layer, and the answer is not JAX-RS
+
+The instinct is a `ContainerResponseFilter`, because `zen-transport` already hosts JAX-RS
+providers. It would have covered the API — the part of the surface with no DOM, no frames and no
+scripts — and left bare the two responses that actually need a CSP: the Flutter web app at `/` and
+the admin panel at `/admin/`, both served by Quarkus's static-resource handler, which sits on the
+Vert.x router well before any JAX-RS provider runs.
+
+So the headers install as a Vert.x route at `Integer.MIN_VALUE` with an `addHeadersEndHandler`, and
+`SecurityHeadersTest` asserts all three path shapes separately rather than trusting the argument.
+
+**It is an `@Observes Router` route, not a `@RouteFilter`**, which the plan had proposed. Both are
+the Vert.x layer and the decision between them is not architectural: `@RouteFilter` would mean
+adding `quarkus-vertx-web` to `zen-transport` for a capability the router already exposes.
+`StaticCacheHeaders` established the pattern in this module and is the empirical evidence it
+reaches the static handler — its `Cache-Control: no-cache` override is observable on the deployed
+`/` today.
+
+### 2. The CSP, measured against the deployed page rather than a local `flutter run`
+
+This is the half that white-screens production if it is reasoned about instead of measured. The
+real page load fetched two things cross-origin:
+
+| Fetched from | What it is | Outcome |
+|---|---|---|
+| `www.gstatic.com/flutter-canvaskit/<rev>/skwasm.{js,wasm}` | the renderer | **removed**, not allow-listed |
+| `fonts.gstatic.com/s/roboto/…woff2` | the default typeface | **allow-listed**, in `font-src` only |
+
+**The renderer is self-hosted, and it costs nothing.** `flutter build web --wasm` already stages a
+complete `canvaskit/` directory (~37 MB) into the image and then ignored it, because the loader
+defaults to Google's CDN unless `useLocalCanvasKit` is set. `--no-web-resources-cdn` makes the app
+use the copy it was already shipping. The bundle does not grow; the image does not grow; what
+changes is that `script-src` stays `'self'`. Allow-listing a CDN in `script-src` is permission to
+execute whatever that host serves, which is the single thing a CSP exists to withhold.
+
+**The font is allow-listed**, and it is the only third-party host in the policy. There is no build
+flag for it the way there is for the renderer — removing it means bundling a typeface and setting
+the theme's family, which is application UI work. `font-src` grants no ability to execute anything,
+so this is the cheapest possible relaxation and it is scoped to the one directive.
+
+The three remaining relaxations are named in `SecurityHeaders`' javadoc with what each buys:
+`'wasm-unsafe-eval'` (without it the Wasm app does not start — and it exists precisely so Wasm need
+not be bought with `'unsafe-eval'`), `'unsafe-inline'` in `style-src` (Material UI and the Flutter
+engine both inject styles at runtime with no nonce available), and `blob:` in `worker-src` /
+`img-src` (the Wasm renderer rasterises on workers created from blob URLs).
+
+**Is a policy with those relaxations worth having?** Yes, and the reason is what remains closed
+rather than what is open: `script-src` names no host but this one, `object-src` and
+`frame-ancestors` are `'none'`, `base-uri` is `'self'` so an injected `<base>` cannot re-point every
+relative URL on the page, and `connect-src 'self'` means an injected script cannot exfiltrate
+anywhere. The relaxations are about *styling* and *how Wasm is loaded*; none of them re-admits
+remote code.
+
+### 3. HSTS: `max-age` only, and the omissions are the decision
+
+`Strict-Transport-Security: max-age=31536000`. **No `includeSubDomains`, no `preload`.**
+
+Cloud Run serves this application over HTTPS and nothing else, so the header is nearly free. The
+two usual additions are refused for one reason: **they are promises about a hostname that is not
+settled.** The service answers on a generated `*.run.app` address, and the domain question is open
+by decision (ADR-027 defers Cloudflare, and a domain arrives with it for App Links and mail).
+`includeSubDomains` would bind names that do not exist and cannot be tested. `preload` is worse: it
+is a submission to a list browser vendors ship, enforced by software this repository does not
+control and unwound over months rather than by a deploy. A one-way door is not something to walk
+through for a demo service on a generated hostname. Both become correct once there is a real
+domain, and are cheap to add then — which is why the assertion that they are *absent* is a test
+rather than a comment.
+
+**It is sent only when the client actually used TLS**, and that is not fussiness. On
+`localhost:8080` a browser honouring an HSTS header would pin the developer's machine to HTTPS for
+a year against a port with no TLS on it. In production TLS terminates at Cloud Run's frontend, so
+the connection Quarkus sees is plain and the truth arrives in `X-Forwarded-Proto` — which Vert.x
+reads into `scheme()` only because `%prod` sets `proxy-address-forwarding`. Both directions are
+asserted, because a gate that always closes and a gate that never opens look identical from the
+closed side.
+
+### Consequence
+
+- The route lives in `zen-transport`, which is Jandex-indexed, and is therefore silent if the index
+  is ever lost. `SecurityHeadersWiringTest` resolves it from the `BeanManager` for the same reason
+  `RateLimitWiringTest` resolves the limiter. Headers are a particularly bad thing to lose this
+  way: a missing rate limiter eventually shows up as abuse, a missing CSP shows up as nothing until
+  it is the reason an injection became an account takeover.
+- `task verify:endpoints` asserts the headers on `/`, `/admin/` and `/api/` against the **real
+  served artifact**, and asserts `script-src` names no host but this one. The `@QuarkusTest` cannot:
+  the web bundle is gitignored, so those paths 404 on a clean checkout.
+- **`--no-web-resources-cdn` is now load-bearing.** Removing it from `build:web` does not fail a
+  build or a test; it makes the deployed page request a script from a host the CSP refuses, and the
+  app renders nothing. The flag carries a comment saying so, and the `verify:endpoints` assertion on
+  `script-src` is what would catch the policy being widened to accommodate it.
+- ADR-027's "no edge" position gains a third thing depending on it, alongside the cookie path and
+  `.well-known`: an edge that injects its own CSP, or a challenge script, would break the page in a
+  way that looks like an application bug.
+
+---
+
+## ADR-034 — Dependency vulnerabilities get a gate that cannot pass quietly, and it is not part of `task test`
+
+**Date:** 2026-08-04. **Status:** accepted. **Refines:** STANDARDS "Orchestration" (a gate that
+needs a network), STANDARDS "Failures surface; nothing is swallowed". **Closes:**
+`docs/plans/SECURITY-REMEDIATION.md` F20.
+
+### Context
+
+The security audit named one outright **GAP** rather than a finding: jZen's Java dependencies had
+**never** been scanned for known vulnerabilities. Not scanned and clean — never scanned. The
+TypeScript side had `pnpm audit`; the Dart side has no equivalent worth running (pub has no
+advisory database of its own); the Java side, which is the entire server, had nothing.
+
+The first attempt to close it is the reason this entry exists, because the tool that looked like
+the obvious answer failed in the exact way this repository has a written rule against.
+
+### What was measured, and what it disqualified
+
+| Candidate | Needs a credential | Fails on a finding | **Fails when it cannot check** |
+|---|---|---|---|
+| `ossindex-maven-plugin` | yes, now | yes | **no** |
+| `dependency-check-maven` | yes (NVD API key) | yes | yes |
+| `osv-scanner` on `pom.xml` | no | yes | **no** |
+| Maven resolves + a script queries OSV | no | yes | yes |
+
+- **`ossindex-maven-plugin`** is the keyless option on paper and was tried first. Sonatype's OSS
+  Index now answers an anonymous request with `401 Unauthorized`, and the plugin logs
+  `[WARNING] Failed to fetch component-reports` and **lets the build succeed**. A full run across
+  this repository's eight modules reported `BUILD SUCCESS` having checked nothing. That is not a
+  weak gate, it is an anti-gate: it manufactures the evidence that no one needs to look.
+- **`dependency-check-maven`** is the industry standard and does fail properly. It needs an NVD API
+  key; without one the database sync is throttled into uselessness, and the documented remedy is a
+  flag that makes the build pass regardless. A key is a credential that cannot be committed, and
+  the same cost and secret discipline that produced ADR-027's rejection of Cloud Armor rules it out
+  here — not any doubt about the tool.
+- **`osv-scanner` pointed at `pom.xml`** resolves transitively against Maven Central, so it cannot
+  see the `zen:*` SNAPSHOT modules that are the whole point of this repository. It printed the
+  resolution failure, reported `0 packages`, and **exited 0**. The ossindex failure again, in a
+  different tool.
+
+### Decision
+
+- **Maven resolves; a script understands the result.** `mvn dependency:list` produces the real
+  graph — it is the only thing here that can, because it knows the local repository — and
+  `scripts/audit-maven.py` parses it, queries `api.osv.dev` (no key, no local database), and exits
+  non-zero. That split is STANDARDS "Scripting" Rule 3 applied literally, and ADR-032's rule
+  picked the language without anyone choosing it.
+- **It fails when it cannot answer.** A network error, an HTTP error, a malformed response, a
+  result count that does not line up with the query, an unreadable suppressions file, or an *empty
+  dependency list* all exit 1 with the reason. "We did not look" and "we looked and it was clean"
+  must not produce the same exit code. The empty-list case is the one that matters most and is the
+  one every tool above got wrong.
+- **Suppressions carry their reason inline, or the file does not parse.**
+  `scripts/audit-suppressions.txt` is `<ADVISORY-ID>  <why this is accepted>`, and a line without
+  the second half is a hard error. A suppression list rots because adding to it is cheaper than
+  justifying an entry, and the conventional shape — an XML file of bare `<suppress>` elements —
+  makes that exactly true. This makes the two cost the same. It is empty today, which is the
+  correct state.
+- **It is NOT part of `task test`, and that is the deliberate half.** `task test` is the release
+  gate and has to be a statement about the code. This task asks a remote service a question about
+  the outside world, and the answer changes when nothing in the repository changed — a suite that
+  goes red overnight because an advisory was published, or because a developer is on a train,
+  teaches people to ignore it. `task audit` stands alone, says in its own description that it needs
+  a network, and belongs in CI on a schedule and before a release.
+- **`task audit:admin` covers both TypeScript packages.** `admin/` (the scaffold) and
+  `apps/*/*_admin` (the panel) resolve independently — the panel imports the scaffold from source
+  via a TypeScript paths alias rather than a pnpm dep edge (ADR-005) — so a package vulnerable in
+  one tree is invisible from the other. Checking only the panel missed the scaffold's own copy of
+  the react-router advisory, which is how this was found.
+
+### What the gate found on its first run
+
+Not a formality. **14 vulnerable Java dependencies**, and two of them were about jZen's own
+guarantees rather than a transitive library: `quarkus-vertx-http` 3.32.2 carries
+**GHSA-qcxp-gm7m-4j5v** and **GHSA-rc95-pcm8-65v9**, both HIGH
+*authentication/authorization bypass* advisories, in the extension jZen's entire authorization
+model runs through. The deployed revision was running that version.
+
+Moving the platform to **3.38.0** closed those two and eleven of the rest (netty's codec, http,
+http2, handler and resolver-dns; vertx-core; pgjdbc; opentelemetry), because all of them arrive
+through that BOM. The last one, jackson 2.22.0, is pinned one patch forward to **2.22.1** by
+importing `jackson-bom` ahead of the platform's. The gate now reports **259 dependencies, no known
+vulnerabilities**.
+
+That result is the argument for the entry: a gate whose first run finds two HIGH auth bypasses in
+the running version is not a formality that was missing, it is a check that was missing.
+
+### What this supersedes, and why
+
+- **"Two areas are not covered and must not be read as clean: Maven dependencies have never been
+  CVE-scanned (F20)"** (`SECURITY-REMEDIATION.md` §, preamble) → **closed.** *Why:* it is covered
+  now, by a gate rather than by an audit, so it stays covered.
+- **"Baseline: Quarkus 3.32.2 on Java 25"** (`CLAUDE.md`) → **3.38.0 on Java 25.** *Why:* the
+  version moved for a security reason and the baseline sentence is the one place a reader looks
+  for it.
+
+### Consequence
+
+- The gate needs no new binary and no secret: `python3` was already a declared toolchain (ADR-032)
+  and `curl`-equivalent access to `api.osv.dev` is all it adds. `task doctor` is unchanged.
+- Test-scoped dependencies are excluded by default, and `--include-test-scope` asks the other
+  question. A vulnerable test library is a real finding about a developer's machine, but it is not
+  shipped, and one verdict cannot honestly mean both things at once.
+- **A green `task audit` is a statement with a date on it.** Nothing in this repository changes
+  when a new advisory is published, so the gate's value is entirely in being run again. That is
+  why it is wired for CI rather than left as a thing someone remembers.
+
+---
+
+## ADR-033 — A migration version is a timestamp: monotonic by construction, because a band cannot be
+
+**Date:** 2026-08-04. **Status:** accepted. **Supersedes:** ADR-008's version-band table, for every
+migration written from now on. **Refines:** STANDARDS "Database migrations", ADR-031 (which found
+the problem and solved one instance of it).
+
+### Context
+
+ADR-031 discovered, by the application failing to boot, that a reserved version band allocates
+ownership but does not stay reachable: production has run `V100` (zen-jobs) and `V200`
+(zen-ratelimit), so a new `V3` inside zen-identity's 1-99 band is out-of-order and Flyway refuses
+to start at all. It escaped by making that file **repeatable**, which was the right shape on the
+merits — grants and policies are a desired state, not a step.
+
+Wave 4 has a migration that cannot take the same exit. Adding `UNIQUE` to `users.email` is a schema
+**step**: it happens once, it is checksummed, and expressing it as an `R__` file that re-runs on
+every checksum change would be a lie about what it is. It needs a version, and the version has to
+be above every version any database has already applied.
+
+**A band cannot express that.** "Above everything applied" is a fact about the whole repository over
+time; a band is an allocation to one module. The two are not the same kind of statement, and
+ADR-008's table silently implied they were.
+
+### What was rejected, and why
+
+- **Extend the band scheme — give zen-identity a second, higher range.** It fails on the second
+  occurrence, not the first. Say zen-identity gets 2000-2099 and zen-jobs 2100-2199; the moment
+  zen-jobs ships a `V2100`, zen-identity's *next* migration is out-of-order again. Every scheme
+  that allocates contiguous per-module ranges has this property, because interleaving over time is
+  exactly what ranges cannot represent. Moving the trap further away is not removing it.
+- **A hand-assigned globally monotonic integer** — `V201`, then `V202`. It works, and it re-creates
+  the collision the bands were invented to prevent: two libraries developed on parallel branches
+  both pick the next free number, and the merge produces two `V201` files. Flyway catches that
+  loudly, so it is a nuisance rather than a hazard — but it is a nuisance on every branch forever,
+  and it needs a human to look up "what is the highest number anywhere" before writing a file.
+- **`out-of-order=true` / `ignoreMigrationPatterns`.** Both work by making Flyway stop checking, the
+  same shape of change as `validate-on-migrate=false`, which STANDARDS already refuses. Not
+  considered further, and named here so nobody has to consider them again.
+
+### Decision
+
+- **A new versioned migration is named `V<UTC timestamp>__<module>_<what>.sql`**, timestamp as
+  `YYYYMMDDHHMMSS`. The first is `V20260804113000__identity_email_unique.sql`.
+- **This is monotonic by construction and needs no coordination.** Two branches cannot collide
+  without being written in the same second, and whichever merges second is still ordered after
+  whatever shipped in between. It is the industry-standard answer to this exact problem for the
+  same reason.
+- **The owning module moves into the description**, which is where `R__` migrations already carry
+  it (`R__identity_application_role.sql`). Nothing is lost: the band never appeared in a query, a
+  log line or an error message — the file name is what a human reads, and the file name still says
+  `identity`.
+- **The applied migrations keep their numbers and their meaning.** `V1`, `V2`, `V100`, `V200` are
+  immutable, and the band table stays in STANDARDS as the record of what they are. It stops being
+  an instruction for new work.
+- **Applications keep 1000+ as a floor, and it is now advisory.** A timestamp is above 1000 by
+  several orders of magnitude, so the "no library can grow into an application's numbering" rule is
+  satisfied automatically rather than by discipline.
+
+### What this supersedes, and why
+
+- **"Each framework library owns a reserved version band, and never numbers outside it"**
+  (STANDARDS "Database migrations", ADR-008) → **superseded for new migrations.** *Why:* the rule
+  solves the collision problem correctly and does not solve the ordering problem at all, and the
+  second one is the one that stops a deployment from booting. A timestamp solves both. The table
+  is retained as history, because four applied migrations are described by it.
+- **"A library's second migration either takes a number above every applied version, or … is
+  repeatable"** (STANDARDS "Database migrations", ADR-031) → **refined into a rule that does not
+  need judgement.** *Why:* it is accurate and it leaves the number to be chosen correctly each
+  time, by a person, against a fact they have to go and look up. "Use a timestamp" needs no lookup
+  and cannot be got wrong by omission.
+
+### Consequence
+
+- STANDARDS "Database migrations" gains the timestamp rule and marks the band table historical.
+- Verified rather than assumed: on a fresh database Flyway applies
+  `1, 2, 100, 200, 20260804113000` in that order and then the repeatable, and reports
+  `now at version v20260804113000`. Ordering across the boundary is the property this entry rests
+  on, so it is the one that was watched.
+- **pgcrypto was not dropped, and F18 is therefore half-closed on purpose** — recorded here because
+  it is a decision and not an omission. The audit paired the `UNIQUE` constraint with dropping the
+  unused `pgcrypto` extension `V1` creates. Measured against the live database: on Supabase, in
+  production and locally alike, **pgcrypto is provisioned by the platform in the `extensions`
+  schema before jZen's first migration runs**, so `V1`'s guard has never fired there and jZen has
+  never created it. Dropping it would delete platform infrastructure out of a schema this
+  application neither owns nor migrates. On plain PostgreSQL — Dev Services, the native smoke
+  container — `V1` does create it, unused, and dropping it only there would make the migration
+  behave differently depending on which database it met. It is left alone in both places. The
+  reasoning is in the migration's own header, where the next person to reach for `DROP EXTENSION`
+  will be standing.
+
+---
+
 ## ADR-032 — `scripts/` is bilingual by rule: sh runs things, Python understands things
 
 **Date:** 2026-08-04. **Status:** accepted. **Refines:** ADR-014.

@@ -58,7 +58,7 @@ and `install`s the libraries; an app server (e.g. `apps/zen_demo/zen_demo_server
 resolves the libraries from the local repository. See [`DECISIONS.md`](./DECISIONS.md)
 ADR-001 for the framework/apps split and its Maven mechanics.
 
-The baseline is **Quarkus 3.32.2 on Java 25**. The Maven wrapper is committed so the build
+The baseline is **Quarkus 3.38.0 on Java 25**. The Maven wrapper is committed so the build
 is reproducible without a system Maven.
 
 | Module | Holds | Notes |

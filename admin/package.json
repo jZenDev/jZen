@@ -20,7 +20,13 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
-    ]
+    ],
+    "//overrides": {
+      "react-router": "GHSA-qwww-vcr4-c8h2. ra-core's peer range is ^6.28.1 || ^7.1.1 and the fix only exists in 8.3.0, so this pin is deliberately outside what react-admin declares. Kept because the panel typechecks, builds and runs on it, and verified in a browser rather than inferred from a green tsc."
+    },
+    "overrides": {
+      "react-router": "^8.3.0"
+    }
   },
   "devDependencies": {
     "@types/react": "^19.2.0",

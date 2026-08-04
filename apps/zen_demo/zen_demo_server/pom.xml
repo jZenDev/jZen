@@ -93,13 +93,9 @@
       <artifactId>quarkus-hibernate-validator</artifactId>
     </dependency>
 
-    <!-- Derives openapi.json from the annotated resources. It cannot introspect
-         protobuf-generated classes cleanly, so model schemas are merged in from a static
-         META-INF/openapi.yaml instead. See STANDARDS.md "OpenAPI and the REST surface". -->
-    <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-smallrye-openapi</artifactId>
-    </dependency>
+    <!-- quarkus-smallrye-openapi is NOT here. It is a build-tooling dependency, not a runtime one,
+         so it lives in the `openapi` profile below and is absent from the native image prod ships.
+         See that profile for the whole reasoning. -->
 
     <dependency>
       <groupId>io.quarkus</groupId>
@@ -183,4 +179,54 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <!--
+      OpenAPI is BUILD TOOLING, and the profile is what makes that true rather than merely said.
+
+      quarkus-smallrye-openapi exists in this repository to produce one file: the merged
+      openapi.json that `task generate:api:schema` writes to target/openapi and that
+      openapi-typescript turns into the admin panel's schema.generated.ts (STANDARDS "Source of
+      truth"). That is a build-time job. Shipping the extension additionally serves /openapi to
+      the internet for the life of every deployed revision, which the audit found it doing
+      (SECURITY-REMEDIATION F15): a complete, always-current map of every route, verb, parameter
+      and status code the service accepts, published to anyone who asks. Nothing needs it there.
+
+      WHY A PROFILE AND NOT A CONFIG SWITCH. quarkus.smallrye-openapi.enable=false would stop the
+      endpoint and still bake the extension, its scanner and its dependencies into the image, so
+      the attack surface argument survives and the cold-start one is untouched. Removing the
+      dependency removes the code.
+
+      WHY THE DEFAULT KEEPS IT, and why getting this backwards is expensive. The activation is
+      inverted deliberately: this profile is ON unless -Dnative is passed, so every ordinary
+      build, every test run and every contract regeneration still has the extension. Excluding it
+      from the default build instead would break `task sync:contracts` — generate:api:schema would
+      package cleanly, write no openapi.json, and generate:api:ts would then SKIP (its `status:`
+      guard is "does openapi.json exist?"), leaving the committed schema.generated.ts stale while
+      the gate reported success. The eventual symptom is a TypeScript error in the admin panel
+      about a field that does exist, and nothing in it mentions OpenAPI.
+
+      WHY IT IS SAFE TO DIFFER. The extension contributes no runtime behaviour to this
+      application: no bean any resource injects, no filter, no provider. Resources are annotated
+      with @APIResponse/@Schema from the MicroProfile OpenAPI API, which is compile-time metadata
+      — those annotations are simply not read when nothing is there to read them. The native and
+      default builds therefore serve identical traffic, and test:native proves it by running the
+      full verify:endpoints assertion set against the real image.
+    -->
+    <profile>
+      <id>openapi</id>
+      <activation>
+        <property><name>!native</name></property>
+      </activation>
+      <dependencies>
+        <!-- Derives openapi.json from the annotated resources. It cannot introspect
+             protobuf-generated classes cleanly, so model schemas are merged in from a static
+             META-INF/openapi.yaml instead. See STANDARDS.md "OpenAPI and the REST surface". -->
+        <dependency>
+          <groupId>io.quarkus</groupId>
+          <artifactId>quarkus-smallrye-openapi</artifactId>
+        </dependency>
+      </dependencies>
+    </profile>
+  </profiles>
 </project>

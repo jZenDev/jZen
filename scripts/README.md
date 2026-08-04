@@ -131,6 +131,33 @@ nothing, and then printed its success line — "All README task references resol
 statement about zero READMEs, and "All 0 module LICENSE copies are byte-identical" is a gate that
 has stopped looking.
 
+## audit-maven.py — the Java dependency CVE gate
+
+Run by `task audit:server` (and `task audit`, which adds `pnpm audit` for both TypeScript
+packages). It reads `mvn dependency:list` output, queries [OSV](https://osv.dev) — no API key, no
+local database — and exits non-zero on a finding.
+
+**Maven resolves; this understands the result.** That split is not stylistic. The obvious answers
+were Maven plugins and both were measured and rejected, because both **report success after
+checking nothing** (`DECISIONS.md` ADR-034): `ossindex-maven-plugin` returns `BUILD SUCCESS` after
+OSS Index answers its now-anonymous request with `401`, and `osv-scanner` pointed at `pom.xml`
+exits `0` after failing to resolve the `zen:*` SNAPSHOT modules. `dependency-check-maven` fails
+properly and needs an NVD API key, which is a credential this repository cannot hold.
+
+**It fails when it cannot answer**, which is the property all of the above lack: a network error,
+an HTTP error, a malformed response, a result count that does not match the query, an unreadable
+suppression, or an *empty dependency list* each exit 1 with the reason. "We did not look" and "we
+looked and it was clean" must not share an exit code.
+
+Suppressions live in `audit-suppressions.txt` as `<ADVISORY-ID>  <why this is accepted>`, and a
+line without the second half is a **parse error**. A suppression list rots because adding to it is
+cheaper than justifying an entry; requiring the sentence makes the two cost the same. The file is
+empty, which is the correct state.
+
+Test scope is excluded by default (`--include-test-scope` asks the other question): a vulnerable
+test library is a real finding about a developer's machine, but it is not shipped, and one verdict
+cannot honestly mean both things.
+
 ## pick-device.py — which device a native run targets
 
 Used by `task run:demo:native`. Prints `<device-id>\t<platform>` on stdout and everything a human

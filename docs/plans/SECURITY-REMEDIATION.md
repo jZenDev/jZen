@@ -20,6 +20,15 @@ Two areas are **not** covered and must not be read as clean: Maven dependencies 
 CVE-scanned (F20), and the GCP pricing behind the Cloud Armor rejection comes from model knowledge
 rather than a live pricing page — though the margin is wide enough that the conclusion holds.
 
+> **Execution status (2026-08-04): all four waves are implemented.** Wave 4 closed F20 with a
+> standing gate (`task audit`, **ADR-034**), and that gate's first run found what the audit could
+> not: Quarkus 3.32.2 — the version deployed — carried two HIGH *authentication/authorization
+> bypass* advisories in `quarkus-vertx-http`, the extension jZen's entire authorization model runs
+> through. The platform moved to 3.38.0 and the gate now reports **259 Java dependencies, no known
+> vulnerabilities**; `pnpm audit` is clean on both TypeScript packages. What that says about this
+> document is worth stating plainly: the preamble above was right to call F20 a gap rather than a
+> clean area, and the gap was hiding a real one.
+
 ---
 
 ## 1. What is already correct — do not touch
@@ -203,6 +212,27 @@ radius of whatever comes later.
 | 4.6 | Batch limits on retention queries | F14 |
 | 4.7 | Cache or drop the per-request `to_regclass` probe | F16 |
 | 4.8 | Add `UNIQUE` on `users.email` (after 2.3); drop the unused `pgcrypto` extension | F18 |
+
+**Where Wave 4 departed from what this table says**, and why — each recorded in an ADR rather than
+here, because this document is disposable and those are not:
+
+- **4.1 is an `@Observes Router` route, not a `@RouteFilter`.** Both are the Vert.x layer, which was
+  the actual decision in §3, and `@RouteFilter` would have meant adding `quarkus-vertx-web` to
+  `zen-transport` for a capability the router already exposes. §3's request for empirical
+  confirmation was met: `StaticCacheHeaders` already proves this mechanism reaches the static
+  handler on the deployed `/`. The CSP question resolved by **self-hosting the renderer** rather
+  than allow-listing `gstatic.com` — the bundle already shipped a `canvaskit/` directory it was
+  ignoring, so `script-src` stays `'self'` at no cost. **ADR-035**.
+- **4.2 needed a fix one layer down.** Excluding the extension in the app profile changed nothing,
+  because `zen-identity` and `zen-jobs` each depended on `quarkus-smallrye-openapi` when what they
+  use is `microprofile-openapi-api`. A library was handing the scanner and the published endpoint to
+  every application transitively. STANDARDS "OpenAPI and the REST surface".
+- **4.3 expanded, as anticipated.** Both keyless Maven options were disqualified for *reporting
+  success after checking nothing*; the gate is Maven-resolves-plus-a-script, and it is not part of
+  `task test`. **ADR-034**.
+- **4.8 kept `pgcrypto`.** Measured on the live database: Supabase provisions it in the `extensions`
+  schema, so `V1` never created it there and dropping it would delete platform infrastructure. The
+  migration version also forced a numbering decision — **ADR-033**.
 
 ---
 

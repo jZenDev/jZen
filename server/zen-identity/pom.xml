@@ -53,10 +53,19 @@
     </dependency>
     <!-- The reusable AuthResource is a JAX-RS resource (quarkus-rest arrives transitively via
          zen-transport) annotated with MicroProfile OpenAPI (@APIResponse/@Schema). This supplies
-         those annotation classes; the app module runs the SmallRye scan and merges the schemas. -->
+         those annotation classes; the app module runs the SmallRye scan and merges the schemas.
+
+         The ANNOTATION API, not quarkus-smallrye-openapi. The sentence above was already the
+         intent and the dependency did not match it: the extension is the scanner and the /openapi
+         endpoint, and pulling it here put both into every application that depends on
+         zen-identity, transitively and invisibly. That is why excluding the extension in the app's
+         native profile appeared to do nothing at first — the app stopped asking for it and this
+         module kept handing it over. A library that only writes annotations needs only the jar the
+         annotations live in; whether anything reads them is the application's decision (see the
+         `openapi` profile in apps/zen_demo/zen_demo_server/pom.xml). -->
     <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-smallrye-openapi</artifactId>
+      <groupId>org.eclipse.microprofile.openapi</groupId>
+      <artifactId>microprofile-openapi-api</artifactId>
     </dependency>
     <!-- SupabaseAuthClient is a @RegisterRestClient interface. -->
     <dependency>

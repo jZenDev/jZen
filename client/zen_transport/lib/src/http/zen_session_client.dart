@@ -20,6 +20,22 @@ abstract class ZenSessionClient extends http.BaseClient {
 
   /// Ends the session in this client and in any persistent store behind it.
   Future<void> clear();
+
+  /// Headers that carry this client's session onto a WebSocket handshake.
+  ///
+  /// A WebSocket upgrade is an ordinary HTTP request, so a server can require the same session
+  /// cookie there that it requires everywhere else — and jZen's does. Whether the cookie is
+  /// *attached* is where the platforms diverge sharply, which is why this is a method on the
+  /// session client rather than something a caller assembles:
+  ///
+  /// - **Native** has to send it explicitly. Nothing shares state between the cookie jar and a
+  ///   `dart:io` WebSocket, so without this the handshake is anonymous and the server closes it.
+  /// - **Web** must send nothing. The browser attaches its own cookies to a same-origin
+  ///   handshake automatically, and the browser WebSocket API accepts no custom headers at all —
+  ///   so the default below is not a gap, it is the only correct answer there.
+  ///
+  /// Empty by default for exactly that reason: a platform with nothing to add returns nothing.
+  Map<String, String> handshakeHeaders() => const {};
 }
 
 /// A [ZenSessionClient] that just forwards to [inner]: the shape for platforms where session

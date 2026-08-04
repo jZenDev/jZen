@@ -6,6 +6,9 @@ import 'package:zen_transport/zen_transport.dart';
 import 'package:zen_demo_client/src/demo_repository.dart';
 
 /// Unit tests for DemoRepository with a stubbed http.Client (the injectable session client),
+/// wrapped in a PassthroughSessionClient because the repository now takes a ZenSessionClient:
+/// its WebSocket handshake has to carry the session, and only that type can produce it.
+/// Passthrough adds nothing to these HTTP assertions - it forwards to the MockClient unchanged.
 /// The live stack is exercised by the e2e suite;
 /// here we assert the wiring: correct path, method, Accept-Language, forced transport format,
 /// and typed parse/error handling. No live server.
@@ -21,7 +24,7 @@ void main() {
           headers: {'content-type': 'application/json', 'x-zen-transport': 'json'},
         );
       });
-      final repo = DemoRepository(baseUrl: 'http://localhost:8080', session: client);
+      final repo = DemoRepository(baseUrl: 'http://localhost:8080', session: PassthroughSessionClient(client));
 
       final result = await repo.ping(format: ZenTransportFormat.json, language: 'en');
 
@@ -44,7 +47,7 @@ void main() {
           headers: {'content-type': 'application/x-protobuf', 'x-zen-transport': 'protobuf'},
         );
       });
-      final repo = DemoRepository(baseUrl: 'http://localhost:8080', session: client);
+      final repo = DemoRepository(baseUrl: 'http://localhost:8080', session: PassthroughSessionClient(client));
 
       final result = await repo.ping(format: ZenTransportFormat.protobuf, language: 'uk');
 
@@ -63,7 +66,7 @@ void main() {
           headers: {'content-type': 'application/json', 'x-zen-transport': 'json'},
         );
       });
-      final repo = DemoRepository(baseUrl: 'http://localhost:8080', session: client);
+      final repo = DemoRepository(baseUrl: 'http://localhost:8080', session: PassthroughSessionClient(client));
 
       final result = await repo.terms(language: 'uk');
 
@@ -80,7 +83,7 @@ void main() {
           headers: {'content-type': 'application/json', 'x-zen-transport': 'json'},
         );
       });
-      final repo = DemoRepository(baseUrl: 'http://localhost:8080', session: client);
+      final repo = DemoRepository(baseUrl: 'http://localhost:8080', session: PassthroughSessionClient(client));
 
       final result = await repo.profile();
 

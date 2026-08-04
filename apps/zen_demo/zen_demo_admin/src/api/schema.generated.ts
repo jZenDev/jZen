@@ -357,7 +357,9 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path?: never;
-                cookie?: never;
+                cookie?: {
+                    zen_access_token?: string;
+                };
             };
             requestBody?: never;
             responses: {

@@ -119,7 +119,8 @@ class EmailFailureTest {
                 "uk",
                 "welcome",
                 "Subject",
-                Map.of("email", "nobody@example.com", "siteUrl", "http://localhost:8080")));
+                Map.of("email", "nobody@example.com", "siteUrl", "http://localhost:8080"),
+                UUID.randomUUID().toString()));
 
     assertFalse(sent, "an SMTP failure is reported, never thrown");
   }

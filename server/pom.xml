@@ -65,6 +65,7 @@
     <module>zen-identity</module>
     <module>zen-email</module>
     <module>zen-jobs</module>
+    <module>zen-ratelimit</module>
   </modules>
 
   <properties>
@@ -150,6 +151,11 @@
       <dependency>
         <groupId>zen</groupId>
         <artifactId>zen-jobs</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>zen</groupId>
+        <artifactId>zen-ratelimit</artifactId>
         <version>${project.version}</version>
       </dependency>
     </dependencies>

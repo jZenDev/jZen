@@ -57,6 +57,14 @@
       <groupId>zen</groupId>
       <artifactId>zen-jobs</artifactId>
     </dependency>
+    <!-- The abuse layer: per-address rate limiting on the API surface, plus the cleanup ZenJob
+         that bounds its counter table. Assembling it is all an application does - the limits are
+         production values by default, so an app that says nothing about zen.ratelimit.* still
+         gets protection rather than an open door. See DECISIONS ADR-029. -->
+    <dependency>
+      <groupId>zen</groupId>
+      <artifactId>zen-ratelimit</artifactId>
+    </dependency>
 
     <dependency>
       <groupId>io.quarkus</groupId>

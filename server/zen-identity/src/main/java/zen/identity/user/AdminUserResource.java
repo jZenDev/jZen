@@ -55,6 +55,17 @@ public class AdminUserResource {
   private static final String CONTENT_RANGE_HEADER = "Content-Range";
   /** Default page size when react-admin sends no range (its default perPage is also this). */
   private static final int DEFAULT_PAGE_SIZE = 25;
+  /**
+   * Hard ceiling on how many rows one request may ask for. The range arrives from the client, so
+   * without this {@code range=[0,999999999]} is a single authenticated GET that materialises the
+   * whole {@code users} table as entities AND as a JSON string in the same heap — on a container
+   * sized at 256Mi (Taskfile {@code SERVICE_MEMORY}), which is an out-of-memory kill, not a slow
+   * query. An over-large range is CLAMPED rather than rejected: react-admin's export button asks
+   * for a very wide range by design, and answering it with the first 1000 rows plus a truthful
+   * {@code Content-Range} is a partial answer the pagination convention already expresses, while a
+   * 400 would just break the button.
+   */
+  private static final int MAX_PAGE_SIZE = 1000;
   /** Panache property the list falls back to when the sort field is absent or not whitelisted. */
   private static final String DEFAULT_SORT_PROPERTY = "createdAt";
   /** ra-data-simple-rest order token for a descending sort (the ascending token is anything else). */
@@ -204,8 +215,11 @@ public class AdminUserResource {
     return Response.status(Response.Status.NOT_FOUND).entity(error).build();
   }
 
-  /** Parses the ra-data-simple-rest {@code range=[start,end]} (inclusive), defaulting to page 0. */
-  private static int[] parseRange(String range) throws Exception {
+  /**
+   * Parses the ra-data-simple-rest {@code range=[start,end]} (inclusive), defaulting to page 0 and
+   * clamping the width to {@link #MAX_PAGE_SIZE}.
+   */
+  static int[] parseRange(String range) throws Exception {
     if (range == null || range.isBlank()) {
       return new int[] {0, DEFAULT_PAGE_SIZE - 1};
     }
@@ -214,6 +228,13 @@ public class AdminUserResource {
     int end = parsed.length > 1 ? parsed[1] : start + DEFAULT_PAGE_SIZE - 1;
     if (end < start) {
       end = start;
+    }
+    /* Clamped in long arithmetic: start + MAX_PAGE_SIZE - 1 overflows int for a start near
+     * Integer.MAX_VALUE, and a negative ceiling would silently widen the page instead of
+     * narrowing it — the exact failure this bound exists to prevent. */
+    long ceiling = (long) start + MAX_PAGE_SIZE - 1;
+    if (end > ceiling) {
+      end = (int) Math.min(ceiling, Integer.MAX_VALUE);
     }
     return new int[] {start, end};
   }

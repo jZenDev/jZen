@@ -8,6 +8,7 @@
 // The {id,status,data,error} envelope is dropped: the caller sends and receives typed
 // protobuf messages directly. HTTP status carries the status, X-Request-ID carries the id,
 // and the shared ZenError proto carries errors.
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
@@ -20,6 +21,11 @@ import 'zen_http_method.dart';
 import 'zen_proto_codec.dart';
 import 'zen_transport_error.dart';
 import 'zen_transport_header.dart';
+
+/// Marks the async context of a session-recovery attempt, so requests made by the recovery
+/// callback itself are not themselves treated as recoverable. A zone rather than a flag because it
+/// propagates across the callback's `await`s and reaches nothing else.
+const Object _recoveryZoneKey = #zenSessionRecovery;
 
 /// Standard HTTP header for request IDs.
 const String requestIdHeaderName = 'X-Request-ID';
@@ -55,6 +61,7 @@ class ZenClient {
     ZenTransportFormat? format,
     http.Client? httpClient,
     this.language,
+    this.recoverSession,
   }) : format = format ?? selectDefaultCodec(),
        _httpClient = httpClient ?? http.Client();
 
@@ -79,8 +86,34 @@ class ZenClient {
   /// `headers:` entry still wins, so a caller that needs a specific locale can override it.
   final String Function()? language;
 
+  /// Given a 401, tries to make the session usable again; returns whether it worked.
+  ///
+  /// The access token lives an hour and the refresh token behind it lives seven days, so for most
+  /// of a session's life the correct answer to a 401 is "renew and try again" rather than "the user
+  /// is signed out". Nothing was doing that: `refreshSession()` was called once at launch on
+  /// native and never on the web, which left the seven-day token unreachable the moment the hour
+  /// ran out mid-session, and every later call failing until the app was restarted.
+  ///
+  /// It is a callback rather than a built-in `POST /auth/refresh` because this package owns the
+  /// transport and not the identity surface — the endpoint, its payload, and what counts as
+  /// recovered all belong to whoever wired the client. Leave it null and behaviour is exactly as
+  /// before: a 401 is returned to the caller.
+  ///
+  /// **Replaying is safe.** A 401 is decided before the resource runs, so the original request had
+  /// no effect to repeat — which is why even a POST can be re-sent without asking whether it is
+  /// idempotent.
+  final Future<bool> Function()? recoverSession;
+
   final http.Client _httpClient;
   int _requestCounter = 0;
+
+  /// The recovery in flight, shared by every request that hit a 401 at the same moment.
+  ///
+  /// One in-flight attempt, not one per request. A screen that fires five calls at once would
+  /// otherwise fire five refreshes at once — and the refresh endpoint sits in the rate limiter's
+  /// credential bucket at 10/min, so a client trying to recover would throttle itself out of
+  /// recovering. Later arrivals await this future instead of starting their own.
+  Future<bool>? _recovery;
 
   /// Generates a unique request ID.
   String _generateRequestId() {
@@ -101,11 +134,72 @@ class ZenClient {
     GeneratedMessage? body,
     Map<String, String>? headers,
   }) async {
-    final requestId = _generateRequestId();
     final uri = Uri.parse('$baseUrl$path');
-    final requestHeaders = _buildHeaders(headers, requestId);
     final Uint8List? encodedBody = body == null ? null : ZenProtoCodec.encode(body, format);
 
+    var response = await _sendOnce(method, uri, headers, encodedBody);
+    if (response != null && response.statusCode == 401 && await _tryRecoverSession()) {
+      // Renewed: replay exactly once. A second 401 is the real answer - the session is over, and
+      // retrying again would only spend the caller's rate-limit budget on a lost cause.
+      response = await _sendOnce(method, uri, headers, encodedBody);
+    }
+    if (response == null) {
+      // Network / I/O failure never yields a null payload.
+      return ZenResult.err(
+        ZenTransportError(
+          pb.ZenError(
+            code: ZenTransportErrorCode.network.wire,
+            message: 'Request failed: $_lastNetworkError',
+          ),
+        ),
+      );
+    }
+    return _buildResult(response, createEmpty);
+  }
+
+  /// Runs the recovery callback at most once at a time, and reports whether the session is usable.
+  ///
+  /// A request arriving while an attempt is already in flight **joins** it rather than starting
+  /// another or giving up: it needs the same answer, and one renewal is what everyone was waiting
+  /// for. Only the requests the callback itself makes are excluded, and they are recognised by the
+  /// zone they run in rather than by "is an attempt in progress" — the two look identical from
+  /// outside, and conflating them makes concurrent callers surface a 401 they could have survived.
+  Future<bool> _tryRecoverSession() {
+    final recover = recoverSession;
+    if (recover == null || Zone.current[_recoveryZoneKey] == true) {
+      return Future.value(false);
+    }
+    final inFlight = _recovery;
+    if (inFlight != null) {
+      return inFlight;
+    }
+    final started = runZoned<Future<bool>>(
+      () async {
+        try {
+          return await recover();
+        } finally {
+          _recovery = null;
+        }
+      },
+      zoneValues: {_recoveryZoneKey: true},
+    );
+    _recovery = started;
+    return started;
+  }
+
+  /// The last transport-level failure, kept so the error message can name it.
+  Object? _lastNetworkError;
+
+  /// One attempt. Null means the request never reached the server.
+  Future<http.Response?> _sendOnce(
+    ZenHttpMethod method,
+    Uri uri,
+    Map<String, String>? headers,
+    Uint8List? encodedBody,
+  ) async {
+    // A fresh request id per attempt: a replay is a new request, and giving it the original's id
+    // would make two entries in the server's logs indistinguishable.
+    final requestHeaders = _buildHeaders(headers, _generateRequestId());
     final http.Response response;
     try {
       response = switch (method) {
@@ -123,14 +217,12 @@ class ZenClient {
         ),
       };
     } catch (e) {
-      // Network / I/O failure never yields a null payload.
-      return ZenResult.err(
-        ZenTransportError(
-          pb.ZenError(code: ZenTransportErrorCode.network.wire, message: 'Request failed: $e'),
-        ),
-      );
+      // Recorded rather than thrown away: send() turns it into a ZenError, so a transport failure
+      // still surfaces with its cause instead of becoming a null payload.
+      _lastNetworkError = e;
+      return null;
     }
-    return _buildResult(response, createEmpty);
+    return response;
   }
 
   /// Sends a GET request and decodes the response into [T].

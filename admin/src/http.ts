@@ -40,8 +40,30 @@ export const Transport = {
   json: "json",
 } as const;
 
-/** The JS-readable CSRF cookie the backend issues. */
+/**
+ * The JS-readable CSRF cookie the backend issues, beside the httpOnly session cookie.
+ *
+ * It is readable on purpose: the backend enforces a double-submit check, so the panel has to echo
+ * this value in {@link HttpHeader.Csrf} on every mutating call. A page on another origin can make
+ * the browser send the cookie but cannot read it, which is what the check turns into a refusal.
+ */
 export const CSRF_COOKIE = "XSRF-TOKEN";
+
+/**
+ * Reads a cookie value by name; returns undefined off-DOM or when absent.
+ *
+ * Absent is an ordinary answer, not an error: the token expires with the access token it was
+ * issued alongside, and the backend only enforces the echo while that access cookie is present.
+ */
+export function readCookie(name: string): string | undefined {
+  if (typeof document === "undefined") {
+    return undefined;
+  }
+  const match = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.slice(name.length + 1)) : undefined;
+}
 
 /** Authority roles; mirrors zen.identity.user.UserRole.Names. */
 export enum Role {

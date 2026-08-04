@@ -34,16 +34,27 @@ void main() {
   final email = 'zen-e2e-${DateTime.now().microsecondsSinceEpoch}@example.com';
   const password = 'secret123';
 
-  late http.Client session;
+  late ZenSessionClient session;
   late SupabaseIdentityRepository identity;
   late DemoRepository demo;
 
   setUpAll(() async {
     session = createSessionClient();
+    // Wired exactly as main.dart wires it, including the 401 -> renew -> replay loop: a gate that
+    // exercised a differently assembled client would prove less than it appears to.
+    Future<bool> recoverSession() async => (await identity.refreshSession()).isSuccess;
     identity = SupabaseIdentityRepository(
-      client: ZenClient(baseUrl: baseUrl, httpClient: session),
+      client: ZenClient(
+        baseUrl: baseUrl,
+        httpClient: session,
+        recoverSession: recoverSession,
+      ),
     );
-    demo = DemoRepository(baseUrl: baseUrl, session: session);
+    demo = DemoRepository(
+      baseUrl: baseUrl,
+      session: session,
+      recoverSession: recoverSession,
+    );
 
     // Register a fresh user; with local Supabase auto-confirm this logs in and sets the cookies.
     final registered = await identity.registerWithEmail(email: email, password: password);
@@ -102,6 +113,10 @@ void main() {
   });
 
   test('the WebSocket echoes a message back', () async {
+    // Also the proof that the authenticated handshake works on native: DemoWebSocket is
+    // @Authenticated, and nothing attaches the session cookie to a dart:io upgrade unless
+    // ZenWebSocket is handed the cookie jar's handshakeHeaders(). If that seam breaks, this
+    // reads as a closed socket rather than as a wrong echo.
     final socket = demo.connectWebSocket();
     addTearDown(() => socket.close());
     final echoes = socket.responses(WebSocketMessage.new);
@@ -110,6 +125,33 @@ void main() {
     final reply = await first.timeout(const Duration(seconds: 10));
     expect(reply.type, 'echo');
     expect(reply.payload, 'hello-e2e');
+  });
+
+  test('an anonymous WebSocket handshake is refused', () async {
+    // The socket used to be the one route into the application that needed no credential at
+    // all. It is also the one route the rate limiter cannot police after the upgrade, since the
+    // limiter is a JAX-RS filter and the connection leaves JAX-RS behind - so the handshake is
+    // where it has to be stopped. An anonymous client has no cookie jar entry to send.
+    // A bare dart:io WebSocket rather than ZenWebSocket, deliberately: a refused upgrade errors
+    // the WebSocketChannel's stream AND its sink, and the sink's error escapes the test zone as
+    // an unhandled async error no matter how the stream's is caught. dart:io's connect() is a
+    // single Future with nothing dangling behind it, and the status code is the assertion anyway.
+    // The authenticated half of the same seam is covered by the echo test above.
+    final wsUrl = Uri.parse(baseUrl).replace(
+      scheme: Uri.parse(baseUrl).scheme == 'https' ? 'wss' : 'ws',
+      path: '/api/v1/demo/ws',
+    );
+
+    await expectLater(
+      WebSocket.connect(wsUrl.toString()),
+      throwsA(
+        // Matched on toString rather than .message: dart:io appends the status code there, and
+        // the code is the assertion — a socket that failed to open for any other reason would
+        // pass a bare isA<WebSocketException> while proving nothing about authentication.
+        isA<WebSocketException>().having((e) => e.toString(), 'toString', contains('401')),
+      ),
+      reason: 'the server must refuse an unauthenticated upgrade rather than serve it',
+    );
   });
 
   test('an anonymous demo profile returns a ZenError', () async {
@@ -156,6 +198,108 @@ void main() {
       // what makes a run visible after the fact.
       expect(tick['startedAtMs'], isNotNull);
       expect(tick['skippedOverlap'] ?? false, isFalse);
+    });
+  });
+
+  // An expired access cookie against a real provider-issued session. All three of these answered
+  // 401 before SessionCookieAuthenticationMechanism existed, because proactive auth rejected the
+  // unverifiable cookie before any route ran — measured on a live server, not inferred.
+  //
+  // A garbage value stands in for an expired one: to the JWT layer they fail identically, and a
+  // genuinely expired Supabase token would mean waiting an hour inside a test.
+  group('a session cookie that no longer verifies', () {
+    String cookiesWithDeadAccessToken() {
+      final jar = session.handshakeHeaders()['cookie'] ?? session.handshakeHeaders()['Cookie'];
+      expect(jar, isNotNull, reason: 'the jar must hold the registration cookies');
+      return jar!
+          .split('; ')
+          .map((c) => c.startsWith('zen_access_token=') ? 'zen_access_token=expired.or.garbage' : c)
+          .join('; ');
+    }
+
+    test('refresh still works, so the seven-day token is reachable', () async {
+      // The sharpest of the three. This endpoint exists to be called once the access token has
+      // died, and its credential is the refresh cookie — but the dead access cookie travelling
+      // beside it used to kill the request first, stranding a session that had six more days.
+      final client = http.Client();
+      addTearDown(client.close);
+
+      final refreshed = await client.post(
+        Uri.parse('$baseUrl/api/v1/auth/refresh'),
+        headers: {'Cookie': cookiesWithDeadAccessToken(), 'X-Zen-Transport': 'json'},
+      );
+
+      expect(refreshed.statusCode, 200);
+      expect(
+        refreshed.headers['set-cookie'],
+        contains('zen_access_token'),
+        reason: 'a successful refresh must re-issue the session cookies',
+      );
+    });
+
+    test('the identity probe answers anonymous rather than refusing', () async {
+      final client = http.Client();
+      addTearDown(client.close);
+
+      final probe = await client.get(
+        Uri.parse('$baseUrl/api/v1/auth/identity'),
+        headers: {'Cookie': cookiesWithDeadAccessToken(), 'X-Zen-Transport': 'json'},
+      );
+
+      expect(probe.statusCode, 204);
+    });
+
+    test('an authenticated route still refuses, so it fails closed', () async {
+      // The other direction, and the one that matters most: reclassifying the failure produces no
+      // identity, never an assumed one.
+      final client = http.Client();
+      addTearDown(client.close);
+
+      final profile = await client.get(
+        Uri.parse('$baseUrl/api/v1/demo/profile'),
+        headers: {'Cookie': cookiesWithDeadAccessToken(), 'X-Zen-Transport': 'json'},
+      );
+
+      expect(profile.statusCode, 401);
+    });
+  });
+
+  // The only place the CSRF check can be exercised against a session the identity provider
+  // actually issued. Everywhere else it is either a unit test of the decision (CsrfFilterTest) or
+  // a bean-discovery assertion (CsrfWiringTest): with proactive auth on, a fabricated cookie is
+  // refused with a 401 before any JAX-RS filter runs, so only a real session reaches the filter.
+  group('the CSRF check', () {
+    test('refuses a mutating call that carries the session but a wrong token', () async {
+      // What a cross-site page could manage at best. The browser would attach the cookies for it;
+      // the same-origin policy stops it reading XSRF-TOKEN, so the header is a guess.
+      final attacker = http.Client();
+      addTearDown(attacker.close);
+
+      // handshakeHeaders() is the jar's cookies as a `Cookie:` header - the same set a browser
+      // would attach on its own, which is what makes this a faithful stand-in for the forgery.
+      final forged = await attacker.post(
+        Uri.parse('$baseUrl/api/v1/auth/logout'),
+        headers: {
+          ...session.handshakeHeaders(),
+          'X-CSRF-Token': 'not-the-token',
+          'X-Zen-Transport': 'json',
+        },
+      );
+
+      expect(forged.statusCode, 403);
+      expect(forged.body, contains('csrf_failed'));
+
+      // And the session it tried to end is still live, which is the actual claim.
+      final current = await identity.getCurrentIdentity();
+      expect(current.dataOrNull, isNotNull, reason: 'a refused forgery must not end the session');
+    });
+
+    test('permits the same call when the client echoes the real token', () async {
+      // The client half of the seam, end to end: nothing in the app sets this header by hand -
+      // the session client reads XSRF-TOKEN from its own jar and echoes it on every mutating
+      // request. A read is never asked for it.
+      final profile = await demo.profile();
+      expect(profile.isSuccess, isTrue, reason: 'a GET carries no token and must not be refused');
     });
   });
 

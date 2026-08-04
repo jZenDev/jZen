@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:zen_core/zen_core.dart';
 
+import 'csrf.dart';
 import 'token_store.dart';
 import 'zen_session_client.dart';
 
@@ -126,6 +127,22 @@ class CookieJarClient extends ZenSessionClient {
     }
   }
 
+  /// The jar's cookies as a `Cookie:` request header, for a WebSocket handshake.
+  ///
+  /// The handshake is an ordinary HTTP request and jZen's socket endpoint requires the same
+  /// session as every other route, but a `dart:io` WebSocket shares nothing with this jar — so
+  /// without this the upgrade goes out anonymous and the server closes it. Returns an empty map
+  /// when there is no session, rather than an empty `Cookie:` header, because a header present
+  /// but blank is not the same thing as no header and some servers treat it differently.
+  @override
+  Map<String, String> handshakeHeaders() {
+    if (_jar.isEmpty) return const {};
+    return {
+      HttpHeaders.cookieHeader:
+          _jar.values.map((c) => '${c.name}=${c.value}').join('; '),
+    };
+  }
+
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     final bodyBytes = await request.finalize().toBytes();
@@ -136,6 +153,24 @@ class CookieJarClient extends ZenSessionClient {
 
     request.headers.forEach(ioRequest.headers.set);
     ioRequest.cookies.addAll(_jar.values);
+
+    // Echo the CSRF cookie back as a header on mutating requests.
+    //
+    // Native gains no protection from this: there is no other origin to forge a request from and
+    // no ambient cookie store a hostile page could ride. What it buys is on the server, which can
+    // then enforce one rule for every client instead of exempting a platform - and a per-platform
+    // exemption is the kind that quietly becomes the way in, since the exemption cannot check
+    // which platform is really calling.
+    //
+    // A caller's own header wins, so an explicit per-call value is never overwritten.
+    final csrf = _jar[csrfCookieName]?.value;
+    if (csrf != null &&
+        csrf.isNotEmpty &&
+        isMutatingMethod(request.method) &&
+        !request.headers.keys.any((k) => k.toLowerCase() == csrfHeaderName.toLowerCase())) {
+      ioRequest.headers.set(csrfHeaderName, csrf);
+    }
+
     if (bodyBytes.isNotEmpty) {
       ioRequest.add(bodyBytes);
     }

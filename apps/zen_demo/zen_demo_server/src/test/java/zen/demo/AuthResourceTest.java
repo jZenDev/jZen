@@ -454,14 +454,28 @@ class AuthResourceTest {
   }
 
   @Test
-  void logout_clearsCookies() {
+  void logout_withNoSession_clearsCookiesAndCallsNothing() {
+    // The HTTP contract: all three cookies are expired, whatever the caller had. The *revocation*
+    // half of logout is asserted in IdentityServiceTest, for the reason that class's javadoc
+    // already gives about the password change - proving it here would mean presenting a session
+    // cookie, and a fabricated JWT is not a session (proactive auth rejects it before the resource
+    // runs), so the test would be a statement about the fake rather than about the code.
     Response resp = given().header(HEADER, "json").when().post("/api/v1/auth/logout").andReturn();
 
     assertEquals(204, resp.statusCode());
+    // Nothing to revoke, so nothing is asked of Supabase: a stranger cannot make the backend make
+    // an outbound call just by hitting logout.
+    verify(authClient, never()).logout(any(), any());
     List<String> setCookies = resp.getHeaders().getValues("Set-Cookie");
     assertTrue(
         setCookies.stream()
             .anyMatch(c -> c.startsWith(SessionService.ACCESS_COOKIE + "=") && c.contains("Max-Age=0")));
+    assertTrue(
+        setCookies.stream()
+            .anyMatch(c -> c.startsWith(SessionService.REFRESH_COOKIE + "=") && c.contains("Max-Age=0")));
+    assertTrue(
+        setCookies.stream()
+            .anyMatch(c -> c.startsWith(SessionService.CSRF_COOKIE + "=") && c.contains("Max-Age=0")));
   }
 
   @Test

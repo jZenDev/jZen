@@ -58,6 +58,9 @@ public interface ZenStatus {
   /** 409 Conflict. */
   String CONFLICT = "409";
 
+  /** 429 Too Many Requests — the caller exceeded a rate limit (zen-ratelimit). */
+  String TOO_MANY_REQUESTS = "429";
+
   /** 500 Internal Server Error. */
   String INTERNAL_SERVER_ERROR = "500";
 }

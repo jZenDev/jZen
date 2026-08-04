@@ -16,6 +16,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
 import java.util.UUID;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
+import org.jboss.logging.Logger;
 
 /**
  * Orchestrates the identity flows over Supabase Auth: call Supabase, reconcile the local
@@ -27,6 +28,20 @@ import org.eclipse.microprofile.rest.client.inject.RestClient;
  */
 @ApplicationScoped
 public class IdentityService {
+
+  private static final Logger LOG = Logger.getLogger(IdentityService.class);
+
+  /**
+   * GoTrue logout scope. {@code local} revokes the presented session only; {@code global} revokes
+   * every session the user holds anywhere.
+   *
+   * <p>Local, because that is what a sign-out button means. A user ending a session on one device
+   * does not expect their phone to be signed out too, and a framework that made every logout a
+   * global one would be making a product decision on the application's behalf. "Sign out
+   * everywhere" is a separate, deliberate action; when an application wants it, it passes
+   * {@code global} — the seam is here for it.
+   */
+  private static final String LOGOUT_SCOPE_LOCAL = "local";
 
   private final SupabaseAuthClient authClient;
   private final UserStore userStore;
@@ -177,6 +192,64 @@ public class IdentityService {
 
   private static String bearer(String accessToken) {
     return "Bearer " + accessToken;
+  }
+
+  /**
+   * Revokes the session upstream, so signing out actually ends it instead of only clearing
+   * cookies.
+   *
+   * <p>Returns whether the revocation landed. <strong>A caller must clear its cookies either
+   * way.</strong> The user pressed sign out; if Supabase is unreachable, the honest outcome is
+   * "signed out here, still live upstream" — not "we could not sign you out". Failing the request
+   * would leave the session cookie in place as well, which is strictly worse on every axis.
+   *
+   * <p>So the failure is neither fatal nor hidden: it is logged at WARN as the security-relevant
+   * event it is, because for the rest of the refresh token's seven days that session can still be
+   * resumed by anyone holding it. The log line names the user id and nothing else — no token, no
+   * email — the identifier Wave 0 settled on for exactly this purpose.
+   *
+   * @param accessToken the raw access-token cookie; blank when the caller had no session, in which
+   *     case there is nothing upstream to revoke and no call is made
+   * @param userId the session's subject, for the log line only; null when it could not be resolved
+   */
+  public boolean logout(String accessToken, UUID userId) {
+    if (accessToken == null || accessToken.isBlank()) {
+      // Logging out without a session is not a failure and not an event: a client that has already
+      // lost its cookie still calls this, and a stranger can call it at any time.
+      return false;
+    }
+    try {
+      authClient.logout(bearer(accessToken), LOGOUT_SCOPE_LOCAL);
+      return true;
+    } catch (WebApplicationException e) {
+      /*
+       * The provider refuses a token it will not accept with 401 or 403 - which spelling depends on
+       * how it failed, and neither is a problem here: both mean the session is already gone, which
+       * is the outcome logout wanted. Treating 403 as a failure logged a security warning on the
+       * most ordinary path there is (it was observed doing exactly that against a live server).
+       * Reachable as a race even now that an unauthenticated caller skips this call entirely: the
+       * token can expire between the request being authenticated and this call going out.
+       */
+      int status = e.getResponse() == null ? -1 : e.getResponse().getStatus();
+      if (status == 401 || status == 403) {
+        return true;
+      }
+      LOG.warnf(
+          e,
+          "Upstream logout was refused for user %s (HTTP %d): local cookies are cleared, but the"
+              + " refresh token stays valid until it expires",
+          userId,
+          status);
+      return false;
+    } catch (RuntimeException e) {
+      // Timeout, open circuit breaker, DNS, TLS - Supabase is unreachable rather than refusing.
+      LOG.warnf(
+          e,
+          "Upstream logout failed for user %s: local cookies are cleared, but the session is still"
+              + " live upstream and can be resumed with the refresh token",
+          userId);
+      return false;
+    }
   }
 
   /** Silent refresh using the refresh-token cookie. Throws {@link AuthException} (401) if rejected. */

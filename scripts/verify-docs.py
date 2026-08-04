@@ -101,9 +101,26 @@ def readme_refs(root: Path) -> "list[tuple[str, str]]":
         for pattern in (INLINE_REF, FENCE_REF):
             for m in pattern.finditer(text):
                 for token in m.group(1).split():
-                    if not token.startswith("-"):
-                        refs.append((rel, token))
+                    if _is_argument(token):
+                        continue
+                    refs.append((rel, token))
     return refs
+
+
+def _is_argument(token: str) -> bool:
+    """True for a token that is an argument to a task rather than the name of one.
+
+    Two shapes, and deliberately only two. A leading `-` is a flag, which the sh version already
+    skipped. All digits is a flag's *value* — `task run:demo --port 8085` documents one task and a
+    port, and the sh version reported the port as a missing task. Nothing here reads position, so
+    a value that is not numeric (`--email admin`) is still taken for a task name; that stays a
+    known limitation rather than becoming a guess about which flags take arguments.
+
+    Skipping every all-digit token costs nothing, because a task name cannot be all digits and be
+    reachable: `task --list` reports 51 tasks and none begins with a digit. Multiple task names on
+    one line remain checked — `task build test` is two real tasks and both are still verified.
+    """
+    return token.startswith("-") or token.isdigit()
 
 
 def check_task_refs(root: Path, valid: "set[str]") -> "list[Problem]":

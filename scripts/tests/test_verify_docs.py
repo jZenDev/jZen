@@ -93,25 +93,38 @@ class DocsGateTest(unittest.TestCase):
         self.assertIn("'task nope:gone'", out)
         self.assertNotIn("--port", out)
 
-    def test_a_numeric_argument_is_treated_as_a_task_name_KNOWN_QUIRK(self) -> None:
-        """Faithfully ported, NOT fixed here — and locked so a fix is a deliberate act.
+    def test_a_numeric_argument_is_not_a_task_name(self) -> None:
+        """The deliberate deviation from the sh implementation.
 
-        The extraction captures a whole command line and then splits it, skipping only tokens that
-        begin with `-`. A numeric argument survives that filter and is checked as though it were a
-        task, so documenting `task run:demo --port 8085` in a code fence fails the gate with
-        "references 'task 8085'".
-
-        This is pre-existing sh behaviour, not something the port introduced — POSIX sh
-        word-splits the unquoted `$refs`, and only `-*` is filtered. It is latent today because no
-        README documents a task command with a numeric argument. Changing it would make the gate
-        more permissive, which is a different kind of change from the vacuity guards this
-        conversion exists to add, so it is recorded rather than smuggled in.
+        The sh version split a captured command line and skipped only `-*`, so a flag's numeric
+        value survived and was checked as though it were a task: documenting
+        `task run:demo --port 8085` failed with "references 'task 8085'". That is a false positive
+        that would block a legitimate README, and it is safe to drop because a task name cannot be
+        all digits and still be reachable — none of the 51 tasks begins with one.
         """
         self.write("README.md", "```\ntask run:demo --port 8085\n```\n")
         code, out = self.run_gate()
+        self.assertEqual(0, code)
+        self.assertNotIn("8085", out)
+
+    def test_multiple_task_names_on_one_line_are_all_checked(self) -> None:
+        """The fix must not narrow the gate: `task build test` is two real tasks."""
+        self.write("README.md", "```\ntask build nope:gone\n```\n")
+        code, out = self.run_gate()
         self.assertEqual(1, code)
-        self.assertIn("references 'task 8085'", out)
-        self.assertNotIn("'task run:demo'", out)  # the real task still resolves
+        self.assertIn("'task nope:gone'", out)
+
+    def test_a_non_numeric_flag_value_is_still_taken_for_a_task_KNOWN_LIMIT(self) -> None:
+        """Locked, not fixed: nothing here reads position.
+
+        `--email admin` leaves `admin` looking exactly like a task name, and distinguishing them
+        would mean encoding which flags take arguments — a guess that would rot. Numeric values
+        are the case that actually occurs (ports), and they are unambiguous.
+        """
+        self.write("README.md", "```\ntask run:demo --email admin\n```\n")
+        code, out = self.run_gate()
+        self.assertEqual(1, code)
+        self.assertIn("references 'task admin'", out)
 
     def test_bare_task_word_in_prose_is_not_a_reference(self) -> None:
         self.write("README.md", "The `task` runner orchestrates everything.\n")

@@ -1903,7 +1903,11 @@ tasks:
         1. Every `task <name>` a README mentions must exist in `task --list`. This is what would
            have caught a README promising `task run:all` brings up more than it does. Only
            commands are checked - inline-code spans and code-fence command lines - so a bare
-           `task` in prose or a flag like `task --list` is skipped.
+           `task` in prose or a flag like `task --list` is skipped. A flag's numeric value is
+           skipped too: `task run:demo --port 8085` documents one task and a port, and no task
+           name is all digits. Several names on one line stay checked, because `task build test`
+           really is two tasks. A non-numeric value (`--email admin`) is still read as a name -
+           telling them apart would mean encoding which flags take arguments, and that would rot.
         2. Every module LICENSE (the copies beside each pubspec/pom, git ls-files '*/LICENSE')
            must be byte-identical to the root LICENSE. A licence that differs from the one it
            claims to be is a legal defect, and sixteen copies of a 190-line file is a drift

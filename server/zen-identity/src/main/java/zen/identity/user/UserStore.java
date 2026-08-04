@@ -38,6 +38,10 @@ public class UserStore {
    * unrenderable value. That column is the sole locale source for email, which has no request to
    * read a header from.
    *
+   * <p>The email address and the confirmation flag go the other way: they belong to Supabase, so
+   * they are reconciled on <em>every</em> call. Language is the user's own setting and is seeded
+   * once; an address is not a setting jZen owns at all.
+   *
    * <p>Signing in also clears any pending data-retention warnings: the account is demonstrably
    * active again, so it must fall out of the deletion pipeline. Leaving the stamps set would
    * anonymise an account whose owner had demonstrably come back.
@@ -50,22 +54,39 @@ public class UserStore {
     if (created) {
       user = new User();
       user.id = id;
-      user.email = payload.email();
       user.role = UserRole.USER;
       user.language = ZenLocales.resolve(preferredLanguage);
       user.isPrivate = false;
       user.acceptedTerms = false;
       user.isPremium = false;
       user.createdAt = OffsetDateTime.now();
-      user.persist();
     }
-    // Kept in sync from Supabase's confirmation state on every call: a user who confirms after
-    // registering has emailVerified flip true on their next authenticated request, without a
-    // separate reconciliation path.
+    // Both of these are Supabase's to state, so both are reconciled on every call rather than
+    // written once at creation - a profile that drifts from the identity provider is a profile
+    // nobody can trust.
+    //
+    // The address is the one that used to be written only on creation, which meant a user who
+    // changed it in Supabase kept the old one here forever: every email jZen sent went to an
+    // address the user had abandoned, and the admin panel showed one that was simply wrong.
+    // Confirmation state is the same reconciliation one line down - a user who confirms after
+    // registering has emailVerified flip true on their next authenticated request.
+    //
+    // Blank is not a value to copy. The column is NOT NULL, and GoTrue's bare-user shape can
+    // arrive without an address; overwriting a known address with nothing would turn a stale row
+    // into an unusable one and take the constraint down with it.
+    if (payload.email() != null && !payload.email().isBlank()) {
+      user.email = payload.email();
+    }
     user.emailVerified = payload.emailVerified();
     user.lastLoginAt = OffsetDateTime.now();
     user.deletionWarningSentAt = null;
     user.finalWarningSentAt = null;
+    if (created) {
+      // Persisted last, after the provider fields are on the instance. A row is built and then
+      // written once; persisting a half-filled entity and patching it afterwards writes an INSERT
+      // with a null email, which the NOT NULL column refuses.
+      user.persist();
+    }
     return new Upsert(user, created);
   }
 

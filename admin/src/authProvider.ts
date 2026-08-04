@@ -1,9 +1,11 @@
 import type { AuthProvider } from "react-admin";
 import {
+  CSRF_COOKIE,
   HttpHeader,
   HttpMethod,
   HttpStatus,
   MediaType,
+  readCookie,
   Role,
   Transport,
 } from "./http";
@@ -41,8 +43,18 @@ export function createAuthProvider(authBase: string): AuthProvider {
   }
 
   async function clearSession(): Promise<void> {
+    // Logout is a mutating call carrying the session cookie, so it is one the backend enforces
+    // CSRF on - it now revokes the session upstream rather than only clearing cookies, which is
+    // exactly the kind of thing a forged request should not be able to trigger. Without the header
+    // this returns 403 and the panel would appear to sign out while the session stayed alive.
+    const headers = new Headers();
+    const csrf = readCookie(CSRF_COOKIE);
+    if (csrf) {
+      headers.set(HttpHeader.Csrf, csrf);
+    }
     await fetch(`${authBase}/logout`, {
       method: HttpMethod.Post,
+      headers,
       credentials: "include",
     });
   }

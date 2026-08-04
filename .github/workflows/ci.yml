@@ -70,7 +70,7 @@ jobs:
           version: "3.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # The scripting runtime beside sh (DECISIONS.md ADR-029). verify:boundaries and verify:docs
+      # The scripting runtime beside sh (DECISIONS.md ADR-032). verify:boundaries and verify:docs
       # below are the two gates whose bodies move into scripts/*.py, so this job executes Python
       # even though no other job does. Floored, not pinned, exactly as `task doctor` checks it:
       # 3.9 is the floor these scripts are written to, so CI runs the oldest thing they support

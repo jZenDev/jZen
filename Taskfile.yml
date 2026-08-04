@@ -42,6 +42,25 @@ vars:
   SERVICE_NAME: '{{.SERVICE_NAME | default "zen-demo-server"}}'
   AR_REPO: '{{.AR_REPO | default "jzen"}}'
 
+  # Cloud Run CAPACITY. These are the APPLICATION's choice, not the framework's (ADR-028):
+  # the repo root is language- and application-neutral, so hardcoding one app's cost envelope
+  # here would fix it for every app that will ever assemble jZen. Today's values are the
+  # defaults, so zen_demo's posture is unchanged — but an operator may override any of them,
+  # and `task deploy:cloudrun --summary` states what each one silently invalidates.
+  SERVICE_MEMORY: '{{.SERVICE_MEMORY | default "256Mi"}}'
+  SERVICE_CPU: '{{.SERVICE_CPU | default "1"}}'
+  SERVICE_MIN_INSTANCES: '{{.SERVICE_MIN_INSTANCES | default "0"}}'
+  SERVICE_MAX_INSTANCES: '{{.SERVICE_MAX_INSTANCES | default "1"}}'
+  SERVICE_CONCURRENCY: '{{.SERVICE_CONCURRENCY | default "200"}}'
+  # 60s, not Cloud Run's 300s default. The timeout is a denial-of-service lever: holding all
+  # SERVICE_CONCURRENCY slots costs an attacker concurrency/timeout requests per second, so
+  # 300s made saturation cost 0.67 req/s — one slow connection. Sized by MEASUREMENT, not
+  # guess: the heaviest operation in the service (the hourly retention trigger) completes in
+  # 3.7s including a 3.0s cold boot, so under a second of actual work (ADR-027). Cloud Run's
+  # timeout is per SERVICE, not per route, so this one value has to cover that job too — 60s
+  # is two orders of magnitude of headroom over it.
+  SERVICE_TIMEOUT: '{{.SERVICE_TIMEOUT | default "60s"}}'
+
   # Where build:web stages the Flutter bundle so the native build bakes it in and Quarkus
   # serves the web app same-origin with the API. Gitignored (see the .gitignore there).
   WEB_RESOURCES: apps/zen_demo/zen_demo_server/src/main/resources/META-INF/resources
@@ -168,7 +187,7 @@ tasks:
         check supabase "supabase --version"  "a local dev service, not a build input: brew install supabase/tap/supabase"
         check docker   "docker --version"    "a daemon, not a toolchain version: https://docs.docker.com/get-docker"
         check gcloud   "gcloud --version"    "a deploy-time client, expected to self-update: https://cloud.google.com/sdk/docs/install"
-        # Floored, not pinned (STANDARDS "Scripting", DECISIONS.md ADR-029). The interpreter is
+        # Floored, not pinned (STANDARDS "Scripting", DECISIONS.md ADR-032). The interpreter is
         # asked for its own version rather than having it parsed out of --version text. Until this
         # line existed, run:demo:native failed with a raw `env: python3: No such file` — the only
         # tool in the repository doctor could not see.
@@ -821,7 +840,17 @@ tasks:
       - ./mvnw -B -f ../{{.DEMO_SERVER_DIR}}/pom.xml test
 
   test:client:matrix:
-    desc: Recompile-per-env/platform matrix for the transport codec selector
+    desc: Recompile-per-env/platform matrix for the compile-time client seams
+    summary: |
+      The half of the client that `task test` cannot see. Every compile-time seam in zen_transport
+      picks its implementation with a conditional import, so the default VM suite compiles exactly
+      one branch of each and never even parses the other. A web-only mistake is therefore a green
+      `task test` and a broken app, which is why these rows exist as their own gate.
+
+      Two seams are covered. The codec selector, which resolves per ZEN_ENV and platform; and the
+      session client, whose web branch reads the CSRF cookie through dart:js_interop - run under
+      BOTH web compilers, because dart2js and dart2wasm accept different things and the app ships
+      as WebAssembly.
     dir: "{{.CLIENT_DIR}}/zen_transport"
     silent: true
     cmds:
@@ -835,6 +864,10 @@ tasks:
         dart --define=ZEN_ENV=prd test test/zen_codec_selector_test.dart
         echo ">> ZEN_ENV=prd  (web)  -> json"
         dart --define=ZEN_ENV=prd test test/zen_codec_selector_test.dart -p chrome
+        echo ">> session client (web, dart2js)   -> reads XSRF-TOKEN"
+        dart test test/session_client_web_test.dart -p chrome
+        echo ">> session client (web, dart2wasm) -> reads XSRF-TOKEN"
+        dart test test/session_client_web_test.dart -p chrome --compiler dart2wasm
 
   test:admin:
     desc: Typecheck the admin panel (also typechecks the @jzen/admin-core scaffold it imports)
@@ -857,7 +890,7 @@ tasks:
       hits is indistinguishable from a clean repository — the gate reported green having examined
       nothing. `test_stale_scope_is_a_failure` is the regression test for exactly that.
 
-      `unittest`, not pytest: the Python side is stdlib-only by rule (ADR-029), so the runner is
+      `unittest`, not pytest: the Python side is stdlib-only by rule (ADR-032), so the runner is
       too. Runs in well under a second and needs no toolchain beyond the 3.9 floor `doctor` checks.
 
       Discovery is rooted at `scripts/tests`; a failing test exits non-zero and fails the suite,
@@ -1310,16 +1343,73 @@ tasks:
           two dirty builds still collide with each other, by design and not by accident.
         - No `firebase deploy`: jZen serves Cloud Run directly with no Firebase Hosting
           edge, which is what lets it use normal cookie names and proactive auth.
-        - --max-instances=1, --min-instances=0: a deliberate cost floor. The native-image
-          server handles the target load (~2K MAU) on a single instance at concurrency
-          200, and min=0 means no warm instance to pay for (cold starts are accepted).
-          Because there is at most one instance, in-process state (rate limiting, caches)
-          is valid by construction. Raising max above 1 is the trigger to move such state
-          to Postgres/Redis, not the other way around. See STANDARDS.md.
         - Scheduled work is triggered from OUTSIDE the container. min-instances=0 means
           there is no thread alive to run an in-process cron, so zen-jobs exposes
           POST /api/v1/jobs/trigger and one Cloud Scheduler entry calls it. One entry, one
           container start, N jobs: N entries would mean N cold starts.
+
+      ═══════════════════════════════════════════════════════════════════════════════════
+      CAPACITY — the six knobs, and what each one BREAKS. Read before changing any of them.
+      ═══════════════════════════════════════════════════════════════════════════════════
+
+      These are `vars`, not literals: capacity is the APPLICATION's decision, and jZen is a
+      framework (ADR-028). The defaults below are zen_demo's deployment and are unchanged.
+      Override per deploy, e.g.:
+
+          SERVICE_MAX_INSTANCES=10 SERVICE_MIN_INSTANCES=1 \
+            GCP_PROJECT=my-project task deploy:cloudrun
+
+      The framework's obligation in exchange for the freedom is to say what each knob
+      invalidates — because EVERY consequence below fails silently. Nothing errors, nothing
+      warns, and the test suite stays green.
+
+        SERVICE_MEMORY (256Mi) / SERVICE_CPU (1)
+          No invariant. Pure cost/headroom. 256Mi is why the admin list endpoint bounds its
+          page size — an unbounded range is an OOM at this size, not a slow query.
+
+        SERVICE_MIN_INSTANCES (0)
+          A deliberate cost floor: no warm instance to pay for, cold starts accepted.
+          MEASURED (ADR-027): a cold request costs 2.9-4.8s end to end against 26ms warm,
+          and this service is cold for practically every real visitor, because its only
+          recurring traffic is one scheduler tick an hour.
+          Raising it to 1 or more INVALIDATES NOTHING. It is the opposite axis: it removes
+          cold starts and would make an in-process @Scheduled viable again — but zen-jobs
+          stays correct either way, so there is no reason to undo it. A warm instance buys
+          latency, not a simpler architecture.
+          Note what min=0 itself already breaks, and why zen-jobs exists: an in-process cron
+          provably does not fire when no process is alive, so scheduled work is triggered
+          from outside (above).
+
+        SERVICE_MAX_INSTANCES (1)
+          The one that carries invariants. At most one instance runs, so in-process state is
+          valid BY CONSTRUCTION. Raising it above 1 invalidates three things, none loudly:
+            1. The burst tier of the rate limiter. N instances keep N independent counters,
+               so the effective limit becomes N x the configured one. (The DURABLE tier is
+               unaffected — it lives in Postgres precisely so it depends neither on how many
+               instances run nor on any one of them surviving. Under min-instances=0 the
+               live process is replaced hourly (ADR-027), so a window longer than an hour
+               cannot be held in memory whatever max-instances says.)
+            2. JobScheduler's overlap guard. The `AtomicBoolean ticking` flag is per-instance,
+               so two instances can run the same tick concurrently. The tick runs retention,
+               which means concurrent ACCOUNT ANONYMISATION. The retention queries exclude
+               already-anonymised rows, so the operation is idempotent and the damage is
+               bounded — but that is a property to verify before relying on it, not assume.
+               JobScheduler's own javadoc names the remedy: a Postgres advisory lock.
+            3. Any in-memory cache, which diverges per instance.
+          Raising it also opts out of ADR-027's acceptance of the 200-slot ceiling, and out
+          of its cost floor: with max=1 an attack costs availability, not money. Above 1 it
+          can cost money.
+
+        SERVICE_CONCURRENCY (200) / SERVICE_TIMEOUT (60s)
+          No invariant — capacity and latency trade-offs. But the PRODUCT of them is the
+          denial-of-service surface: saturating every slot costs an attacker
+          concurrency/timeout requests per second. At the old 300s that was 0.67 req/s, one
+          slow connection; at 60s it is ~3.3 req/s, which is a rate the per-address limiter
+          can see and act on. Raising the timeout back up lowers that cost again.
+          60s is not a guess: the heaviest operation in the service, the hourly retention
+          trigger, completes in 3.7s INCLUDING a 3.0s cold boot (ADR-027). Cloud Run's
+          timeout is per service, not per route, so this single value must cover that job —
+          it does, with two orders of magnitude to spare.
 
       Requires: gcloud auth, GCP_PROJECT set, and everything under ONE-TIME SETUP below.
       Run it as `GCP_PROJECT=my-project task deploy:cloudrun` — this task never changes your
@@ -1435,6 +1525,63 @@ tasks:
                 separate from the backend's own SMTP_* (which zen-email uses for welcome/retention
                 mail); this one is Supabase sending the confirmation email itself.
 
+        1c. THE LEAST-PRIVILEGE DATABASE ROLE (optional, and the only step here that cannot be
+            automated from inside the repository). Skipping it leaves the deployment exactly as
+            it was: the application keeps serving as the DDL role, and the deploy says so.
+
+            R__identity_application_role.sql creates the role `zen_runtime` NOLOGIN and grants it
+            what the application needs — DML on public, nothing on the auth schema, nothing on
+            flyway_schema_history, no DDL. What the migration deliberately does NOT do is give it
+            a password. A credential written into a migration is plaintext in git, readable by
+            everyone who can read the repository, and rotated only by editing source. That is the
+            whole of why this step is manual.
+
+            Against the SESSION POOLER, as the DDL user, once:
+
+              psql "postgresql://postgres.<ref>:<db-password>@<pooler-host>:5432/postgres" \
+                -c "ALTER ROLE zen_runtime WITH LOGIN PASSWORD '<new-strong-password>'"
+
+            Then store the credentials and redeploy:
+
+              mk APP_DB_USERNAME "zen_runtime.<ref>"
+              mk APP_DB_PASSWORD "<the same password>"
+
+            THE USERNAME FORM. The pooler multiplexes projects and reads the tenant from the
+            suffix after the last dot, which is why the DDL user is `postgres.<ref>` rather than
+            `postgres` (see DB_URL above). The same form works for a custom role — MEASURED
+            against a live Supabase project on 2026-08-04, where `zen_runtime.<ref>` connected and
+            `current_user` answered `zen_runtime`. Prove it on YOUR project anyway; it costs one
+            command and the failure modes below are all silent or misleading:
+
+              psql "postgresql://zen_runtime.<ref>:<password>@<pooler-host>:5432/postgres" \
+                -c "SELECT current_user, count(*) FROM users"
+
+            Two things to read from that one command. `current_user` must say `zen_runtime` — if the
+            pooler ignored the role and connected you as postgres, the split is not in effect
+            and nothing else would tell you. And the count must MATCH what the DDL role sees: a
+            zero on one side and not the other means row-level security matched nothing, which is
+            the one failure in this area that looks like success (compare against the same query
+            as postgres.<ref>; on an empty table, insert a row first or the comparison proves
+            nothing). If instead you get "tenant/user not found", the pooler did not accept the
+            role and the split cannot be done this way — do not work around it by switching
+            DB_URL to the direct host, which resolves to IPv6 only while Cloud Run egress is IPv4
+            (see DB_URL above). Report it and leave the split off.
+
+            Rotation note: the DDL role's password and the runtime role's password are now two
+            independent secrets. Rotating DB_PASSWORD no longer rotates the credential the
+            application serves with, and vice versa.
+
+            If you ever need to REMOVE the role, `DROP OWNED BY zen_runtime` is refused with
+            "Only roles with privileges of role zen_runtime may drop objects owned by it" — even
+            as the role that created it. PostgreSQL 16 gives a CREATEROLE creator membership with
+            ADMIN but with inherit and set both off, so the DDL role may administer the runtime
+            role without being able to act as it. That is the right default and worth keeping;
+            the one-off escape is:
+
+              GRANT zen_runtime TO current_user WITH SET TRUE, INHERIT TRUE;
+              DROP POLICY users_application ON public.users;
+              DROP OWNED BY zen_runtime; DROP ROLE zen_runtime;
+
         2. Let the runtime service account read those secrets. Without this the revision is
            created and then fails to start, because --set-secrets is resolved at boot.
 
@@ -1508,16 +1655,36 @@ tasks:
           -f {{.DEMO_SERVER_DIR}}/src/main/docker/Dockerfile.native-micro \
           -t "$IMAGE" {{.DEMO_SERVER_DIR}}
         docker push "$IMAGE"
+        # The least-privilege database role (ADR-031) is OPTIONAL and provisioned out of band,
+        # so it is attached only when both of its secrets exist. Which branch was taken is
+        # printed rather than assumed: a deploy that quietly kept serving as the owner because
+        # a secret was misnamed is exactly the silent regression this whole wave is about.
+        SECRETS="SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,DB_URL=DB_URL:latest,DB_USERNAME=DB_USERNAME:latest,DB_PASSWORD=DB_PASSWORD:latest,CORS_ORIGINS=CORS_ORIGINS:latest,AUTH_REDIRECT_URI=AUTH_REDIRECT_URI:latest,AUTH_REDIRECT_URIS=AUTH_REDIRECT_URIS:latest,SITE_URL=SITE_URL:latest,SMTP_HOST=SMTP_HOST:latest,SMTP_PORT=SMTP_PORT:latest,SMTP_USERNAME=SMTP_USERNAME:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,SMTP_FROM=SMTP_FROM:latest,ZEN_JOBS_TRIGGER_TOKEN=ZEN_JOBS_TRIGGER_TOKEN:latest"
+        have_role=1
+        for s in APP_DB_USERNAME APP_DB_PASSWORD; do
+          gcloud secrets describe "$s" --project={{.GCP_PROJECT}} >/dev/null 2>&1 || have_role=0
+        done
+        if [ "$have_role" = "1" ]; then
+          SECRETS="$SECRETS,APP_DB_USERNAME=APP_DB_USERNAME:latest,APP_DB_PASSWORD=APP_DB_PASSWORD:latest"
+          echo "Database privilege split ON: the app will serve as the least-privilege role."
+        else
+          echo "Database privilege split OFF: APP_DB_USERNAME/APP_DB_PASSWORD are not both in"
+          echo "Secret Manager, so the app serves as the DDL role. See summary step 1c."
+        fi
         gcloud run deploy {{.SERVICE_NAME}} \
           --image="$IMAGE" \
           --project={{.GCP_PROJECT}} \
           --region={{.GCP_REGION}} \
-          --memory=256Mi --cpu=1 \
-          --min-instances=0 --max-instances=1 \
-          --timeout=300s --port=8080 --concurrency=200 \
+          --memory={{.SERVICE_MEMORY}} \
+          --cpu={{.SERVICE_CPU}} \
+          --min-instances={{.SERVICE_MIN_INSTANCES}} \
+          --max-instances={{.SERVICE_MAX_INSTANCES}} \
+          --concurrency={{.SERVICE_CONCURRENCY}} \
+          --timeout={{.SERVICE_TIMEOUT}} \
+          --port=8080 \
           --allow-unauthenticated \
           --set-env-vars="^@^APPLINKS_ANDROID_PACKAGE=${APPLINKS_ANDROID_PACKAGE:-}@APPLINKS_ANDROID_FINGERPRINTS=${APPLINKS_ANDROID_FINGERPRINTS:-}@APPLINKS_APPLE_APP_IDS=${APPLINKS_APPLE_APP_IDS:-}" \
-          --set-secrets=SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,DB_URL=DB_URL:latest,DB_USERNAME=DB_USERNAME:latest,DB_PASSWORD=DB_PASSWORD:latest,CORS_ORIGINS=CORS_ORIGINS:latest,AUTH_REDIRECT_URI=AUTH_REDIRECT_URI:latest,AUTH_REDIRECT_URIS=AUTH_REDIRECT_URIS:latest,SITE_URL=SITE_URL:latest,SMTP_HOST=SMTP_HOST:latest,SMTP_PORT=SMTP_PORT:latest,SMTP_USERNAME=SMTP_USERNAME:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,SMTP_FROM=SMTP_FROM:latest,ZEN_JOBS_TRIGGER_TOKEN=ZEN_JOBS_TRIGGER_TOKEN:latest
+          --set-secrets="$SECRETS"
 
   destroy:cloudrun:
     desc: Tear down EVERYTHING the deploy created — GCP project, Supabase, local images. No leftovers.
@@ -1695,15 +1862,33 @@ tasks:
            The anon key is public by design, which is exactly why its absence has to be checked:
            shipping it is harmless-looking and is how the second door gets built.
         C. No absolute URL literal in client library code, except the one compile-time base URL
-           (`zen_identity_config.dart`). Comments and generated code are exempt; tests are too,
-           since a test server's URL is not a call the product makes.
+           (`zen_identity_config.dart`, and `config.ts` on the TypeScript side). Comments and
+           generated code are exempt; tests are too, since a test server's URL is not a call the
+           product makes.
 
-      Scope is `client/*/lib` and `apps/*/*/lib`. The SERVER is where the provider is reached —
-      `SupabaseAuthClient`, `@RegisterRestClient(configKey = "supabase-auth")` — and it is meant
-      to be the only place.
+      THE ADMIN PANEL IS A CLIENT. Scope is `client/*/lib` and `apps/*/*/lib` for Dart, and
+      `admin/src` and `apps/*/*_admin/src` for TypeScript. Covering only Dart read as a statement
+      that the rule was about Flutter, and it is not: react-admin is a browser application holding
+      a session cookie, and `@supabase/supabase-js` is one `pnpm add` away and better documented
+      than the Dart SDK. A panel that talked to the provider directly would break the same
+      property in the same silent way — roles are resolved from the `users` table on the server,
+      and nothing that bypasses the server gets them.
 
-      A scope that matches NOTHING is a failure, not a pass. Renaming a directory under `client/`
-      used to leave every scan empty, which read as a clean repository and reported green forever.
+      Two TypeScript-specific exemptions, both deliberate:
+        - `apps/*/*_admin/src/api/schema.generated.ts` is generated from the backend's own
+          OpenAPI document. It is the Dart `/generated/` exclusion by another name, and a
+          hand-edit there is already a defect the contract-sync gate catches.
+        - `apps/*/*_admin/src/config.ts` is the TypeScript analogue of `zen_identity_config.dart`:
+          the one place allowed to name the API base. It resolves to the relative `/api/v1` today,
+          so check C would pass without the exemption — it is here because the exemption belongs
+          to the file's role, not to what the file currently happens to contain.
+
+      The SERVER is where the provider is reached — `SupabaseAuthClient`,
+      `@RegisterRestClient(configKey = "supabase-auth")` — and it is meant to be the only place.
+
+      A scope that matches NOTHING is a failure, not a pass. Renaming a directory under
+      `client/`, or the admin panel moving out of `admin/src`, used to leave a scan empty —
+      which read as a clean repository and reported green forever.
     cmds:
       - scripts/verify-boundaries.py
 

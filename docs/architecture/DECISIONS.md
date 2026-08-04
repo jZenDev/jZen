@@ -15,7 +15,7 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
-## ADR-029 — `scripts/` is bilingual by rule: sh runs things, Python understands things
+## ADR-032 — `scripts/` is bilingual by rule: sh runs things, Python understands things
 
 **Date:** 2026-08-04. **Status:** accepted. **Refines:** ADR-014.
 
@@ -29,7 +29,7 @@ is measurable: every other toolchain is pinned in the file its own ecosystem rea
 — while `python3` is pinned nowhere, checked nowhere, and set up in no CI job. `run:demo:native`
 fails with a raw `env: python3: No such file` on a machine without it.
 
-The question that forced the issue was a different one: `Taskfile.yml` has reached 1767 lines, and
+The question that forced the issue was a different one: `Taskfile.yml` has reached 1976 lines, and
 the maintainer is fluent in Java, Dart and TypeScript but not in sh. Two answers suggested
 themselves and both are wrong.
 
@@ -40,12 +40,13 @@ toolchain. A Java runner needs a JDK resolve before it can report that the JDK i
 elevates one of three peer product languages to the language that builds the other two, which is
 the language-neutral-root rule (ADR-014 point 4) arriving from the inside.
 
-**Converting the shell to Python wholesale** fails on measurement. Of the 1767 lines, 464 are
-`summary:` prose, 265 are YAML structure, and 159 are comments and `desc:`; only **507 are shell
-logic**, and 105 of those are bare tool invocations (`gcloud run deploy …`, `./mvnw …`) that read
+**Converting the shell to Python wholesale** fails on measurement. Of the 1976 lines, 605 are
+`summary:` prose, 271 are YAML structure, and 171 are comments and `desc:`; only **539 are shell
+logic**, and 109 of those are bare tool invocations (`gcloud run deploy …`, `./mvnw …`) that read
 identically in any language. The lines that genuinely cannot be reviewed by inspection — nested
-`grep` pipelines, the `awk` comment-stripper in `verify:boundaries`, and in `verify:docs` a backtick
-smuggled past command substitution as `bt=$(printf '\140')` — amount to **55 lines in two tasks**.
+`grep` pipelines, the `awk` comment-strippers, and the backtick smuggled past command substitution
+as `bt=$(printf '\140')` because a literal one would be command substitution before `grep` saw it —
+amount to **72 lines in two tasks**.
 
 So the real problem was never the volume of sh, and never the number of languages. It was that a
 small, identifiable subset of the shell implements *algorithms* whose correctness is not visible
@@ -136,8 +137,8 @@ fingerprinting, then affected-detection, then Moon. Closing `make` is not closin
      magic". ADR-014 already called this "the objection this entry finds hardest to answer", and it
      is exactly as hard when every body is one line.
   2. **The phony tax does not evaporate.** All 51 targets need `.PHONY` regardless of body length.
-  3. **`summary:` was never weighed, and is now the largest loss.** The Taskfile carries **17
-     `summary:` blocks spanning 464 lines — 26% of the file** — reachable as
+  3. **`summary:` was never weighed, and is now the largest loss.** The Taskfile carries **18
+     `summary:` blocks spanning 605 lines — 31% of the file** — reachable as
      `task <name> --summary`. That is the operator-facing contract for things like
      `deploy:cloudrun`'s capacity knobs (ADR-028), and `make` has no equivalent at any body length.
      This surface barely existed when ADR-014 was written and has since become load-bearing.
@@ -147,8 +148,8 @@ fingerprinting, then affected-detection, then Moon. Closing `make` is not closin
      documented references above, `CLAUDE.md`, and `ci.yml`. Body length has no bearing on this.
 
   The direction of travel confirms it independently: the Taskfile has gone from **12 multi-line
-  blocks across 40 tasks** (ADR-014, 2026-07-24) to **23 across 51**, and stands at **21** after
-  this entry's conversions — accreting inline logic roughly twice as fast as this removes it. The
+  blocks across 40 tasks** (ADR-014, 2026-07-24) to **23 across 51**, and stands at **22** after
+  this entry's first conversion — accreting inline logic roughly twice as fast as this removes it. The
   trigger anticipated a collapse that is not happening and, per Rules 0–2, is not permitted to: a
   body that supervises a process or invokes a tool is *required* to stay in the Taskfile. The
   condition is therefore not merely unmet, it is unreachable while this rule holds, and a condition
@@ -195,7 +196,423 @@ fingerprinting, then affected-detection, then Moon. Closing `make` is not closin
 check, the `.gitignore` line, the CI step, and `scripts/README.md`; no task body, module, or
 generated artifact is touched. What was measured on the delivery machine: `/usr/bin/python3` reports
 3.9.6 and parses `pick-device.py` clean, Homebrew's reports 3.14.6 and wins `PATH`; the Taskfile
-holds 23 multi-line shell blocks and 19 `dir:` declarations across 51 tasks.
+holds 23 multi-line shell blocks and 19 `dir:` declarations across 51 tasks, 44 of whose names
+contain `:`.
+
+---
+
+## ADR-031 — The application stops being the database owner, and row-level security is Supabase-side only
+
+**Date:** 2026-08-04. **Status:** accepted. **Supersedes:** `V2__row_level_security.sql`'s
+implication that the `users_owner` policy is a line of defence the application path receives.
+**Refines:** STANDARDS "Database migrations" (a fourth zen-identity migration; migrations may now
+carry grants), STANDARDS "The client talks to one server" (the gate's language coverage).
+
+### Context
+
+The audit's F5 (`docs/plans/SECURITY-REMEDIATION.md`): the application connects to PostgreSQL as
+the owner. **Nothing exploits this today** — every admin filter uses named Panache parameters,
+sort is whitelisted, and `UserRoleLoader`'s native query takes no user input, all of it verified
+during the audit. This entry is therefore blast-radius reduction and not a fix, and it is worth
+being plain about which of the two it is.
+
+What it changes is what a *future* injection, or a leaked `DB_PASSWORD`, is worth. Supabase's
+`auth` schema lives in the same database as the application's `public` schema, so under the owner
+role the answer is "`auth.users`, password hashes, and the ability to forge identities". Under a
+role that holds DML on `public` and nothing else, the answer is the application's own data.
+
+The second half of F5 is the more interesting one. `V2` enables row-level security on `users` and
+creates `users_owner` (`id = auth.uid()`), and its own header already says the owner connection
+bypasses it. So the migration reads as a second line of defence that the application path does not
+get — and that ambiguity is not merely cosmetic, because **the two halves of this wave interact in
+a way that fails silently.** `auth.uid()` reads a request-scoped Supabase JWT claim. jZen reaches
+Postgres over a plain pooled JDBC connection carrying no such claim, so `auth.uid()` is NULL and
+the predicate matches nothing. Give the application a non-owner role while that policy stands and
+every query against `users` returns **zero rows** — not an error, an empty result. `RoleAugmentor`
+fails closed on every request, `@RolesAllowed` refuses everything, the admin panel dies, and the
+whole thing reads as a permissions bug rather than a database one.
+
+### Decision
+
+- **Two roles, one database.** `zen_runtime` serves traffic; the existing DDL role migrates. The
+  name is deliberate: it is the role the running server *connects as*, the counterpart of the DDL
+  role. The first draft called it `zen_app`, which reads as "the zen application" in a repository
+  whose `apps/` directory holds exactly that — a name inviting the misreading is a defect even
+  when the code is right. One role serves every application, the way one `users` table does.
+- **The migration lives in `zen-identity`, and the role is framework-wide.** Worth stating rather
+  than leaving to be noticed, because they are in tension: the role needs privileges over
+  zen-jobs' and zen-ratelimit's tables too. It sits in zen-identity because that library owns the
+  schema baseline and every application depends on it, so the role exists before anything needs
+  it — and because the grants are **schema-wide** and never name a sibling's table, so no library
+  reaches into another. A `zen-db` module for one repeatable migration and no code was considered
+  and rejected as more layering than the problem has.
+  `R__identity_application_role.sql` creates `zen_runtime` **NOLOGIN** and grants it `CONNECT`,
+  `USAGE` on `public`, and `SELECT/INSERT/UPDATE/DELETE` on that schema's tables — plus `ALTER
+  DEFAULT PRIVILEGES` so tables from later migrations are covered. It gets nothing on `auth`,
+  nothing on `flyway_schema_history`, and no DDL.
+- **The migration is repeatable, and that is forced rather than stylistic** — see the next section.
+- **Flyway holds its own credentials.** `quarkus.flyway.jdbc-url` / `username` / `password`
+  (Quarkus 3.32.2; all three are required together, and Quarkus only opens a separate Flyway
+  connection when `jdbc-url` is present). `%test` sets none of them, so Dev Services is unchanged.
+- **The migration deliberately does not create a usable credential.** A password written into a
+  migration is plaintext in git, readable by everyone who can read the repository, and rotated
+  only by editing source. `ALTER ROLE zen_runtime WITH LOGIN PASSWORD …` is **operator work, outside
+  the repository**, and `deploy:cloudrun`'s summary step 1c carries the commands alongside the other
+  fourteen secrets.
+- **The split is opt-in, and the deploy says which branch it took.** `APP_DB_USERNAME` /
+  `APP_DB_PASSWORD` fall back to `DB_USERNAME` / `DB_PASSWORD` when absent, and `deploy:cloudrun`
+  attaches them only when both exist in Secret Manager, printing "privilege split ON/OFF" either
+  way. Refusing to boot without them would break a deploy on configuration the deploy itself
+  cannot supply; printing nothing would be the silent regression this wave exists to remove.
+- **Row-level security on `users` is Supabase-side only, and says so in the schema.** The migration
+  adds `users_application` (`FOR ALL TO zen_runtime USING (true) WITH CHECK (true)`). `FORCE ROW LEVEL
+  SECURITY` is **not** set, and that is now a decision rather than an omission.
+
+### A version band allocates ownership, and does not stay reachable
+
+Discovered by the migration failing to boot, not by reading the rule. The obvious name for this
+file was `V3`, inside zen-identity's band 1-99. Every database that has run `V100` (zen-jobs) and
+`V200` (zen-ratelimit) — which is production, and the local dev database — is already past
+version 3, so a new `V3` is **out-of-order** and Flyway refuses to start the application at all:
+
+```
+Caused by: org.flywaydb.core.api.exception.FlywayValidateException: Validate failed:
+Detected resolved migration not applied to database: 3.
+```
+
+The band scheme (ADR-008) does exactly what it was designed to do — it stops two libraries
+colliding on a version — and it silently implies something it never guaranteed, that a library can
+keep adding migrations inside its band. It cannot, once a higher band has shipped. Flyway offers
+`out-of-order=true` and `ignoreMigrationPatterns` as the remedies, and both work by making Flyway
+stop checking, which is the same shape of change as `validate-on-migrate=false` that STANDARDS
+already refuses.
+
+So this file is **repeatable** (`R__`), which is also what it should have been on the merits.
+Repeatables run after every versioned migration — so `GRANT … ON ALL TABLES IN SCHEMA public`
+reaches every band's tables, on a fresh database and an existing one alike — they are keyed by
+description rather than version, and they re-run when their checksum changes. What that buys is
+the honest semantic for this content: grants and policies are a **desired state**, not a step, and
+a privilege model that can be edited and re-applied is better than one frozen by a checksum. The
+price is idempotence, which every statement in the file is written for. Nothing here weakens
+validation: the versioned migrations remain immutable and validated exactly as before.
+
+### Measured against the live database
+
+Taken 2026-08-04 against `jzen-prod`'s Supabase project, through the **session pooler** — the same
+connection Cloud Run uses. Three of these were open questions that reasoning could not close, and
+one of them changed the migration.
+
+| Question | Measured |
+|---|---|
+| Does the pooler accept a non-`postgres` role in the `<role>.<ref>` form? | **Yes.** `current_user` and `session_user` both answer `zen_runtime`. |
+| Is the production database past the identity band? | **Yes** — `V1, V2, V100, V200` applied, so a `V3` refuses to boot. |
+| Does `zen_runtime` still see rows with RLS on and `users_owner` present? | **Yes** — 8 of 8, then 9 of 9 after seeding one. Owner and application counts agree. |
+| Can the DDL role revoke on the `auth` schema? | **No.** `auth` is owned by `supabase_admin`; `postgres` holds `USAGE` without grant option. |
+| Can the DDL role drop or impersonate the runtime role? | **No, by default.** PostgreSQL 16+ gives a `CREATEROLE` creator membership with `ADMIN` but `inherit_option = f, set_option = f`, so `DROP OWNED BY` is refused until the membership is re-granted `WITH SET TRUE, INHERIT TRUE`. |
+
+Every denial was exercised rather than assumed: `auth.users` (schema denied), `flyway_schema_history`
+(select and delete denied), `CREATE TABLE`, `ALTER TABLE users`, `DROP TABLE users` — and the
+permitted side too, insert/update/delete on `users` and reads of `zen_jobs` and
+`zen_rate_limit_counters`.
+
+**The `auth` measurement changed the migration.** It originally revoked — `REVOKE ALL ON SCHEMA
+auth`, and on its tables, sequences and functions. PostgreSQL answers a revoke the caller is not
+entitled to make with a **warning, not an error**, one per object and per *column* for tables, so
+that version printed dozens of "no privileges could be revoked" lines on every boot while changing
+nothing. It now **asserts** instead: if `zen_runtime` ever holds `USAGE` on `auth`, the migration
+raises and the application refuses to start. That is strictly better than what was intended — the
+revoke was always a no-op on a freshly created role, and the property that matters is that it
+stays true. A control that cannot enforce itself should fail closed rather than warn.
+
+### Why RLS cannot be the application's second line
+
+The tempting reading is that `FORCE ROW LEVEL SECURITY` plus a policy the application can satisfy
+would make this a real defence. It would not, and the reason is about access patterns rather than
+plumbing: **the application legitimately reads rows it does not own.** The admin panel lists every
+user; `UserRetentionService` scans every user. Any policy the application path can satisfy is
+therefore a policy that permits everything the application path does. Making the application
+satisfy `id = auth.uid()` would additionally require binding a per-request identity onto a pooled
+connection (`SET LOCAL request.jwt.claims` per transaction), which is real architecture bought for
+a predicate that then has to be widened until it protects nothing.
+
+RLS is genuinely load-bearing for the client Postgres *does* know per request — PostgREST's `anon`
+and `authenticated` roles, where the JWT claim is present by construction. That is the surface
+`users_owner` defends, and this entry narrows the claim to it rather than deleting it.
+
+### What this supersedes, and why
+
+- **"The Quarkus JDBC connection uses the postgres/service role, which is the table owner and
+  bypasses RLS (no FORCE ROW LEVEL SECURITY); the policy guards direct Supabase-side access"**
+  (`V2__row_level_security.sql`, header) → **narrowed and made enforceable.** *Why:* the sentence
+  is accurate and was always honest about the bypass; what it left open is whether the bypass was
+  intended or pending. It was pending, and an undecided middle is the worst of the three available
+  positions — it is the state in which someone tightens the role, gets zero rows, and spends a day
+  in the wrong subsystem. **The file itself is not edited**: `V2` has run on production and Flyway
+  checksums comments along with DDL, so correcting it is indistinguishable from rewriting its DDL
+  and would refuse to boot every database that already ran it (STANDARDS "Database migrations").
+  `V3`'s header and this entry carry the correction, which is exactly the mechanism that rule
+  prescribes.
+- **"A dedicated least-privilege database role for the application … Coordinate with Supabase
+  project setup"** (SECURITY-REMEDIATION §4.3, task 3.1) → **refined.** *Why:* it reads as
+  repository work and it is not entirely. The role's password cannot live in a migration, so
+  provisioning is operator work by construction, and `deploy:cloudrun`'s summary step 1c is where
+  those commands belong. The pooler's `<role>.<ref>` form was the open question the task rested on
+  and it is now measured (above), so the arrangement the plan assumed is the one that ships — no
+  direct-connection fallback, and therefore no collision with the IPv4/IPv6 constraint.
+- **"Scope is `client/*/lib` and `apps/*/*/lib`"** (`verify:boundaries`, summary) → **extended to
+  TypeScript.** *Why:* covering only Dart read as a statement that the boundary rule was about
+  Flutter. It is about clients, and react-admin is one — a browser application holding a session
+  cookie, for which `@supabase/supabase-js` is one `pnpm add` away and better documented than the
+  Dart SDK. `schema.generated.ts` is excluded as generated output, and `config.ts` is the
+  TypeScript analogue of `zen_identity_config.dart`.
+
+### Consequence
+
+- `zen-identity` still owns `V1` and `V2` in band 1-99 and now also ships one repeatable. STANDARDS
+  "Database migrations" gains two rules: a band allocates ownership but does not stay reachable,
+  and repeatables are named with the owning module's prefix and must be idempotent.
+- **Production is unaffected until an operator acts.** The migration applies cleanly to the running
+  database and changes nothing about how the application connects, because `zen_runtime` cannot log
+  in. That is what makes this deployable in the same release as the rest of Wave 3.
+- **`%test` still runs as the Dev Services owner**, because those credentials are generated and
+  there is nothing to point at `zen_runtime`. `DatabasePrivilegeTest` therefore proves the *privileges*
+  by opening its own connection as the role and trying — reading `auth.users`, creating a table,
+  editing Flyway history, all refused with SQLSTATE 42501 — rather than proving the application
+  path end to end. Stated here so the coverage is not read as more than it is; the end-to-end half
+  was measured against the live database instead (above).
+- The migration re-runs cleanly (it is repeatable, so "runs twice" is ordinary), and the
+  auth-schema assertion is itself asserted: granting `zen_runtime` `USAGE` on `auth` makes the
+  migration refuse, and revoking it makes it migrate again.
+- `jzen-prod` is **provisioned but not yet cut over**: `zen_runtime` exists with its login, and
+  `APP_DB_USERNAME` / `APP_DB_PASSWORD` are in Secret Manager. The deployed revision does not
+  reference them, so the split takes effect on the next deploy and can be undone by removing two
+  secrets.
+- The zero-rows trap is asserted **in both directions**: with RLS enabled and a stand-in for
+  `users_owner` in place, the application role still reads its rows; dropping `users_application`
+  makes the same query return 0. The second half is what stops the first from passing for some
+  unrelated reason, and it is why the assertion is on rows returned rather than on the absence of
+  an exception.
+- Verified green: `task test` (111 backend tests, including the nine above, and the live e2e gate
+  at 16), `task sync:contracts`, `task test:admin`, `task verify:docs`. `verify:boundaries`'
+  TypeScript extension was verified by planting a violation of each of its three checks and
+  confirming it fails, then confirming both exemptions (`schema.generated.ts`, `config.ts`) hold.
+
+---
+
+## ADR-030 — An unverifiable session cookie means anonymous, not an error: the ambient-credential rule
+
+**Date:** 2026-08-03. **Status:** accepted. **Supersedes:** the implicit rule in
+`application.properties` that `quarkus.http.auth.proactive=true` may reject any bad credential
+before routing. **Corrects:** ADR-029's coverage claim for the rate limiter. **Refines:** ADR-027
+(the perimeter), STANDARDS "Deployment model" (the cookie path).
+
+### Context
+
+jZen keeps proactive authentication on, so every request is authenticated before it reaches JAX-RS.
+Quarkus's default answer to a `zen_access_token` cookie that does not verify is an
+`AuthenticationFailedException`, which proactive auth turns into a 401 **immediately** — before any
+resource, filter or provider.
+
+For a token offered in an `Authorization` header that is the right answer: the caller deliberately
+presented a credential and it was bad. For a cookie it is the wrong answer, and the distinction is
+the whole of this entry. **A cookie is ambient.** The browser attaches it with nobody deciding to,
+so "the cookie in your jar is an hour old" is the most ordinary state a session ever reaches — not
+an error condition, and not a statement of intent by anyone.
+
+Three failures followed from treating it as one. All three were **measured against a running
+server**, not inferred:
+
+| Request (with an unverifiable access cookie) | Was | Should be |
+|---|---|---|
+| `POST /api/v1/auth/logout` | 401 | 204, cookies cleared |
+| `POST /api/v1/auth/refresh` | 401 | 200, session renewed |
+| `GET /api/v1/auth/identity` | 401 | 204, anonymous |
+
+- **Sign-out was impossible.** The one action that ends a stale session was the one action a stale
+  session could not perform — and after Wave 2 it is also where upstream revocation happens, so the
+  refresh token stayed live for its remaining days.
+- **Recovery was impossible.** `/auth/refresh` exists to be called *after* the access token dies,
+  and its credential is the refresh cookie — but the expired access cookie travelling beside it
+  killed the request first. A seven-day refresh token was unreachable from any client still holding
+  the dead one, which on native is every client until the process restarts.
+- **The rate limiter was bypassable**, and this is the one that changes a shipped decision.
+  `RateLimitFilter` is a JAX-RS filter, so a request rejected before JAX-RS is never counted.
+  Measured on the durable counter: three calls carrying a junk `zen_access_token` moved it by
+  **0**; three identical calls without the cookie moved it by **3**. Attaching any junk value made
+  a request unmetered on **every** endpoint while still occupying one of the 200 concurrency slots
+  that are the entire capacity of the service.
+
+### Decision
+
+- **`SessionCookieAuthenticationMechanism`** (zen-identity) wraps Quarkus's `JWTAuthMechanism` as an
+  `@Alternative @Priority(1)` bean and recovers an authentication *failure* into **no identity**.
+  The request proceeds as anonymous. Everything else — challenge, credential types, transport — is
+  delegated unchanged.
+- **It fails closed.** Recovery yields no identity, never a partial or assumed one, so
+  `@Authenticated` and `@RolesAllowed` still answer 401 through the delegated challenge and
+  `RoleAugmentor` has nothing to augment. What changes is *when* the 401 is decided and *by whom* —
+  the route, on its own terms, rather than the transport layer on everyone's. Refusing later is not
+  refusing less.
+- **The CSRF check keys on the identity, not on a cookie being present.** Forgery rides on an
+  ambient credential the server *accepts*; a request it does not accept has nothing to forge with.
+  The earlier rule — enforce when the access cookie is present — was only safe because an
+  unverifiable cookie 401'd first, and would now answer 403 to a client whose session had merely
+  aged out, with no way to clear it (the CSRF cookie expires alongside the access token). Signing
+  out would have been impossible for exactly the sessions that most need to end.
+- **The client renews and replays.** `ZenClient.recoverSession` is an optional callback: on a 401 it
+  runs once, and on success the request is replayed once. Safe because a 401 is decided before the
+  resource runs, so the original had no effect to repeat. Concurrent 401s **join** one in-flight
+  attempt rather than each starting their own — the refresh endpoint sits in the limiter's
+  credential bucket at 10/min, so a client recovering in parallel would throttle itself out of
+  recovering. The callback's own requests are excluded by the `Zone` they run in, not by "is an
+  attempt in progress", because those two look identical from outside.
+
+### What was rejected, and why
+
+- **`quarkus.http.auth.proactive=false`** — the documented lever, and far broader: it changes the
+  posture of every route at once. It also **does not fix this**, because any `@PermitAll` route that
+  touches `SecurityIdentity` (`AuthResource` does) forces the same failure lazily.
+- **A path-scoped `quarkus.http.auth.permission.<n>.policy=permit`** — measured, and it does not
+  suppress the challenge. Config alone cannot fix this.
+
+### What this supersedes, and why
+
+- **"Coverage is three buckets … and everything else under `/api/`"** (ADR-029, Consequence) →
+  **corrected.** *Why:* it described the buckets accurately and the coverage optimistically. Any
+  request carrying an unverifiable session cookie reached none of them, so the limiter shipped with
+  a one-cookie opt-out. `RateLimitFilter`'s own javadoc already stated the intended rule — "the 429
+  is charged before authentication, not after" — and this is what makes it true.
+- **"proactive=false so login and register are not 401'd before it runs"** (`application.properties`,
+  the JWT block) → **refined.** *Why:* the comment names proactive auth's blast radius correctly but
+  treats it as a property of a hypothetical packed-cookie future. It is a property of *today's*
+  cookie path, and the narrow fix is one credential source reclassified rather than the whole
+  posture inverted.
+
+### Consequence
+
+- An expired session now behaves the way a client can act on: 401 on the routes that need a user,
+  204 from the identity probe, and a refresh that works. The seven-day refresh token is reachable
+  for the first time on the web at all.
+- Enforcement widened where it should: an authenticated mutation without a CSRF token is refused
+  even when the caller never presented a cookie. `AdminUserResourceTest.update_persistsEditableFields`
+  was updated to send the pair the real panel sends, and a new
+  `update_withoutTheCsrfToken_isRefused` asserts the omission is refused and writes nothing —
+  the assertion is stronger than the one it replaced, not weaker.
+- Verified green: `task test` (102 backend tests including the bean-discovery guard, the
+  dead-cookie behaviour in both directions, and the limiter counting a dead-cookie request;
+  every client suite; the live e2e gate at 16 tests, three of which drive an unverifiable cookie
+  against a real provider-issued session), `task test:client:matrix` under dart2js **and**
+  dart2wasm, `task test:admin`, `task verify:docs`.
+- The mechanism lives in a Jandex-indexed module and is therefore silent if lost.
+  `ExpiredSessionCookieTest` resolves it from the `BeanManager` for the same reason
+  `RateLimitWiringTest` resolves the limiter: without the index the default returns, and nothing
+  else would say so.
+
+---
+
+## ADR-029 — The rate limiter is two tiers: in-memory burst, PostgreSQL for anything that outlives a process
+
+**Date:** 2026-08-03. **Status:** accepted. **Supersedes:** STANDARDS "Deployment model", the
+bullet *"One instance makes in-process state valid"*. **Refines:** ADR-027 (the perimeter),
+ADR-028 (what each capacity knob invalidates), ADR-020 (the max-instances trigger).
+
+### Context
+
+A security audit found the backend had no rate limiting anywhere
+(`docs/plans/SECURITY-REMEDIATION.md`, F1). ADR-027 already accepted that the perimeter is the
+application's own limiter and nothing else, so this is the component that decision was resting on.
+
+The obvious place to put counters is memory, and STANDARDS said so in as many words:
+
+> **One instance makes in-process state valid.** Because at most one instance ever runs, in-process
+> state — rate limiting, in-memory caches, login-attempt counters — is correct by construction.
+> […] **The trigger to externalize state (Postgres/Redis) is the decision to raise
+> `--max-instances` above 1**.
+
+That is right about sharing and **wrong about lifetime**, and the second half is what a rate
+limiter depends on. ADR-027's measurement is the evidence: under `--min-instances=0` the container
+exists only while it is serving, and the live service's process is replaced **about every hour** —
+zen_demo's only recurring traffic is one scheduler tick an hour, so it starts, serves, and scales
+back to zero, twenty-four times a day.
+
+A login counter with a one-hour window, held in memory, therefore resets itself roughly as often as
+an attacker fills it. It is not weakened by scale-to-zero; it is *defeated* by it, silently, while
+looking exactly like a working control. Raising `--max-instances` was never the trigger for that
+one — `--min-instances=0` already was, and STANDARDS stated the very same constraint correctly one
+bullet later for *scheduling* ("Scale-to-zero makes in-process scheduling invalid") without
+carrying it to counters.
+
+### Decision
+
+- **Two tiers, split on how long the window is.**
+  - **Burst — in memory.** Fixed windows, second- to minute-scale. Valid because at most one
+    instance runs, and valid *in time* because a window shorter than the process's life is one the
+    attacker's own traffic keeps alive: the flood that would exceed it is what stops the instance
+    scaling to zero.
+  - **Durable — PostgreSQL.** Hour-scale windows, in a Flyway-migrated table
+    (`zen_rate_limit_counters`, `V200`, band 200-299 claimed for `zen-ratelimit`). Incremented with
+    a single `INSERT … ON CONFLICT DO UPDATE … RETURNING`, because a read-then-write is a lost
+    update and a rate limiter that loses updates has whatever limit concurrency happens to produce.
+- **Redis rejected.** Memorystore has no free tier (~$35/month floor); Upstash adds a vendor, a
+  secret, a network hop and a failure mode. Postgres is already provisioned, already under Flyway,
+  already migrated at start, and costs $0 incrementally. The application cannot serve an
+  authenticated request without it anyway, since roles are loaded from the `users` table on every
+  one — so it adds no new dependency, only a new table.
+- **The client address is resolved by counting `X-Forwarded-For` from the right**, by a configured
+  number of trusted hops (`zen.ratelimit.forwarded-hops`, default **0** = ignore the header
+  entirely). The conventional leftmost reading — which is what `quarkus.http.proxy.allow-x-forwarded`
+  does — is attacker input, because a proxy appends rather than replaces. `%prod` sets 1: Cloud Run
+  is itself a proxy and its frontend appends the real peer. **An edge in front of Cloud Run changes
+  this number**, which is one more thing ADR-027's "no edge" position is holding up.
+- **Two guards, because all three failure modes here are silent.**
+  `RateLimitAddressGuard` refuses to boot when `proxy-address-forwarding` and `forwarded-hops`
+  contradict each other (either pairing throttles nobody). `RateLimitWiringTest` resolves the
+  filter from the `BeanManager`, so losing `jandex-maven-plugin` from the module fails the build
+  rather than producing a limiter that permits everything.
+- **Cleanup is a `zen-jobs` `ZenJob`, never `@Scheduled`** — the rule this ADR is restating, applied
+  to itself.
+- **Production limits are the framework's defaults**, shipped in the module's
+  `META-INF/microprofile-config.properties`. `%dev` and `%test` deliberately run looser ones, and
+  the reason is recorded next to them: a suite drives hundreds of requests from `127.0.0.1` in
+  seconds, so production values would test the limiter instead of the endpoint. `%dev` needs looser
+  *durable* limits for a further reason `%test` does not have — it points at the persistent local
+  Postgres, so an hour-scale counter accumulates across every `task test:e2e` run in that hour.
+  Enforcement is not taken on trust: `RateLimitEnforcementTest` boots its own `@TestProfile` with
+  deliberately tiny limits and asserts a real 429.
+
+### What this supersedes, and why
+
+- **"One instance makes in-process state valid […] The trigger to externalize state
+  (Postgres/Redis) is the decision to raise `--max-instances` above 1"** (STANDARDS "Deployment
+  model") → **refined, and one constraint added.** *Why:* it names one of two constraints.
+  `--max-instances > 1` governs whether state is *shared*; `--min-instances = 0` governs whether it
+  *survives*, and only the second is measurable — ADR-027 measured it. The corrected rule is that
+  the state's window decides where it lives: minute-scale in memory, hour-scale in Postgres. The
+  original claim stays true for caches and for `JobScheduler`'s overlap flag, which only has to
+  outlive a tick.
+- **"Rate limiting" as an example of valid in-process state** (same bullet) → **split.** *Why:* it
+  was the one example in that list where the lifetime constraint bites, and it was leading by
+  example toward a limiter that could not work.
+
+### Consequence
+
+- `zen-ratelimit` is the sixth framework library and claims Flyway band **200-299**; STANDARDS
+  "Database migrations" updated. The next library takes 300-399.
+- Coverage is three buckets, tightest first: `POST /api/v1/jobs/trigger` (20/hour durable — its
+  real caller is one Cloud Scheduler entry once an hour, and a successful call anonymises
+  accounts), the credential-bearing auth endpoints (10/min, 100/hour), and everything else under
+  `/api/` (120/min burst only — below the ~3.3 req/s that saturates all 200 slots per ADR-027,
+  and far above any real client).
+- The counter table stores a **salted hash** of the address, never the address: an IP is personal
+  data under GDPR Recital 30 and the limiter only ever needs equality.
+- ADR-027's residual risk is unchanged. This closes the single-source attack; a distributed one
+  still saturates 200 slots, and that remains accepted rather than closed.
+- Verified green: the app's `@QuarkusTest` suite (80 tests, including the 429 enforcement proof and
+  the bean-discovery guard), `zen-ratelimit`'s own 31 unit tests, and the live `task test:e2e` gate.
+  One existing assertion changed and was made *stronger*, not weaker:
+  `JobTriggerResourceTest` asserted `due == 1`, which encoded "this application has exactly one
+  job"; it now identifies the retention job by id among the due runs and additionally asserts that
+  nothing failed.
 
 ---
 

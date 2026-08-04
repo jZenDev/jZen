@@ -7,6 +7,7 @@ import 'package:meta/meta.dart';
 import 'package:protobuf/protobuf.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
+import 'ws_channel.dart';
 import 'zen_codec_selector.dart';
 import 'zen_proto_codec.dart';
 import 'zen_transport_header.dart';
@@ -20,9 +21,16 @@ class ZenWebSocket {
   /// Creates a WebSocket connection to the given [uri].
   ///
   /// Optionally specify a [format] to override automatic codec selection.
-  ZenWebSocket(Uri uri, {ZenTransportFormat? format})
+  ///
+  /// [headers] are sent on the HTTP upgrade request. A jZen socket endpoint may require the
+  /// same session as any other route, and on native nothing attaches it for you — pass
+  /// `session.handshakeHeaders()` from the [ZenSessionClient] the rest of the app talks
+  /// through, and the cookie jar's session reaches the handshake. On web the argument is
+  /// ignored because the browser sends its own cookies and its WebSocket API takes no headers;
+  /// `handshakeHeaders()` returns an empty map there, so one call site is correct on both.
+  ZenWebSocket(Uri uri, {ZenTransportFormat? format, Map<String, String> headers = const {}})
     : _format = format ?? selectDefaultCodec(),
-      _channel = WebSocketChannel.connect(uri);
+      _channel = connectChannel(uri, headers);
 
   /// Alternative constructor that accepts an existing [WebSocketChannel].
   ///

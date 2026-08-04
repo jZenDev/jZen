@@ -330,4 +330,150 @@ void main() {
       expect(ids[2], endsWith('-3'));
     });
   });
+
+  group('ZenClient session recovery on 401', () {
+    /// A server that answers 401 until [renewed] is set, then 200. Records every path it saw.
+    ZenClient clientAgainstExpiringSession({
+      required List<String> seen,
+      required bool Function() renewed,
+      Future<bool> Function()? recover,
+    }) {
+      final mock = MockClient((request) async {
+        seen.add(request.url.path);
+        if (!renewed()) {
+          return _encodedResponse(ZenError(code: 'unauthorized'), ZenTransportFormat.json, 401);
+        }
+        return _encodedResponse(
+          HealthStatus(status: 'ok', service: 'zen-demo-server'),
+          ZenTransportFormat.json,
+          200,
+        );
+      });
+      return ZenClient(
+        baseUrl: 'http://host',
+        format: ZenTransportFormat.json,
+        httpClient: mock,
+        recoverSession: recover,
+      );
+    }
+
+    test('a 401 is renewed and the request replayed once', () async {
+      // The gap this closes: the access token lives an hour, the refresh token seven days, and
+      // nothing spent the difference. Mid-session the hour would run out and every later call
+      // failed until the app was restarted - on the web, until the user signed in again.
+      var renewed = false;
+      final seen = <String>[];
+      final client = clientAgainstExpiringSession(
+        seen: seen,
+        renewed: () => renewed,
+        recover: () async {
+          renewed = true;
+          return true;
+        },
+      );
+
+      final result = await client.get(HealthStatus.new, '/api/v1/demo/profile');
+
+      expect(result.isSuccess, isTrue, reason: 'the replay after renewal must succeed');
+      expect(seen, ['/api/v1/demo/profile', '/api/v1/demo/profile']);
+    });
+
+    test('a failed renewal surfaces the original 401 without a second attempt', () async {
+      final seen = <String>[];
+      final client = clientAgainstExpiringSession(
+        seen: seen,
+        renewed: () => false,
+        recover: () async => false,
+      );
+
+      final result = await client.get(HealthStatus.new, '/api/v1/demo/profile');
+
+      // The session really is over. Replaying anyway would spend the caller's rate-limit budget
+      // proving it twice.
+      expect(result.isFailure, isTrue);
+      expect(seen, ['/api/v1/demo/profile']);
+    });
+
+    test('a persistent 401 is not retried forever', () async {
+      var recoveries = 0;
+      final seen = <String>[];
+      final client = clientAgainstExpiringSession(
+        seen: seen,
+        renewed: () => false,
+        recover: () async {
+          recoveries++;
+          return true; // claims success, but the server keeps refusing
+        },
+      );
+
+      final result = await client.get(HealthStatus.new, '/api/v1/demo/profile');
+
+      expect(result.isFailure, isTrue);
+      expect(recoveries, 1);
+      expect(seen.length, 2, reason: 'one original, one replay, and then it stops');
+    });
+
+    test('without a callback the 401 is returned exactly as before', () async {
+      final seen = <String>[];
+      final client = clientAgainstExpiringSession(seen: seen, renewed: () => false);
+
+      final result = await client.get(HealthStatus.new, '/api/v1/demo/profile');
+
+      expect(result.isFailure, isTrue);
+      expect(seen.length, 1);
+    });
+
+    test('concurrent 401s share one renewal', () async {
+      // Five screens firing at once must not fire five refreshes: the refresh endpoint sits in the
+      // rate limiter's credential bucket at 10/min, so a client recovering in parallel would
+      // throttle itself out of recovering.
+      var renewed = false;
+      var recoveries = 0;
+      final seen = <String>[];
+      final client = clientAgainstExpiringSession(
+        seen: seen,
+        renewed: () => renewed,
+        recover: () async {
+          recoveries++;
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+          renewed = true;
+          return true;
+        },
+      );
+
+      final results = await Future.wait([
+        client.get(HealthStatus.new, '/a'),
+        client.get(HealthStatus.new, '/b'),
+        client.get(HealthStatus.new, '/c'),
+      ]);
+
+      expect(results.every((r) => r.isSuccess), isTrue);
+      expect(recoveries, 1);
+    });
+
+    test('the renewal call itself is not caught in the retry loop', () async {
+      // The recovery callback goes back through this same client (that is how an app wires it), so
+      // its own 401 must not trigger another recovery - otherwise a dead session recurses.
+      var recoveries = 0;
+      late final ZenClient client;
+      final mock = MockClient((request) async {
+        return _encodedResponse(ZenError(code: 'unauthorized'), ZenTransportFormat.json, 401);
+      });
+      client = ZenClient(
+        baseUrl: 'http://host',
+        format: ZenTransportFormat.json,
+        httpClient: mock,
+        recoverSession: () async {
+          recoveries++;
+          final refreshed = await client.post(HealthStatus.new, '/api/v1/auth/refresh');
+          return refreshed.isSuccess;
+        },
+      );
+
+      final result = await client.get(HealthStatus.new, '/api/v1/demo/profile');
+
+      expect(result.isFailure, isTrue);
+      expect(recoveries, 1, reason: 'the nested refresh must not start a second recovery');
+    });
+  });
 }

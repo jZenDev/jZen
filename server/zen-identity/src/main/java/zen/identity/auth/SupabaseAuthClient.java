@@ -84,6 +84,31 @@ public interface SupabaseAuthClient {
   @Timeout(2000)
   SupabaseSessionResponse.UserPayload getUser(@HeaderParam("Authorization") String bearer);
 
+  /**
+   * Revokes the session a bearer token belongs to, so the refresh token stops working
+   * <em>upstream</em> rather than merely being forgotten by the browser.
+   *
+   * <p>Clearing cookies ends a session only on the device that asked. The refresh token behind it
+   * lives seven days and rotates on use, so without this call a token lifted from a device — or a
+   * session left open on someone else's machine — stays usable for the rest of that week no matter
+   * how many times the owner presses sign out. Only Supabase can invalidate it.
+   *
+   * <p>{@code scope} is GoTrue's: {@code local} revokes the presented session alone,
+   * {@code global} revokes every session the user has. jZen sends {@code local} — see
+   * {@code IdentityService#logout} for why — and the parameter exists because the upstream API has
+   * it, not because a second caller is planned.
+   *
+   * <p>Returns 204 with no body. A 401 (the token already expired or was already revoked) means
+   * the session is gone, which is the outcome the caller wanted; {@code IdentityService} treats it
+   * as such rather than as an error to propagate.
+   */
+  @POST
+  @Path("/logout")
+  @CircuitBreaker(requestVolumeThreshold = 10, failureRatio = 0.5, delay = 5000, skipOn = WebApplicationException.class)
+  @Retry(maxRetries = 2, delay = 500, abortOn = WebApplicationException.class)
+  @Timeout(2000)
+  void logout(@HeaderParam("Authorization") String bearer, @QueryParam("scope") String scope);
+
   /** Updates the authenticated user (e.g. sets a new password) using their bearer token. */
   @PUT
   @Path("/user")

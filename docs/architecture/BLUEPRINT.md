@@ -173,6 +173,27 @@ reads the access cookie directly (`mp.jwt.token.cookie`, `proactive=true`), so a
 authenticated request is a plain cookie request; `POST /auth/refresh` exchanges the refresh
 cookie via Supabase (`grant_type=refresh_token`) and re-issues the cookies.
 
+**An expired cookie means anonymous, not an error** (ADR-030). A cookie is *ambient* — the browser
+attaches it with nobody deciding to — so `SessionCookieAuthenticationMechanism` (zen-identity) wraps
+Quarkus's JWT mechanism and turns a cookie that does not verify into **no identity** rather than a
+401 raised before routing. It fails closed: `@Authenticated` and `@RolesAllowed` still answer 401
+through the delegated challenge. Without it, sign-out and `refresh` were both impossible from a
+stale session, and any request carrying a junk cookie bypassed the rate limiter entirely.
+
+**`XSRF-TOKEN` is checked, and `logout` revokes.** `CsrfFilter` (zen-identity) requires the token
+echoed in `X-CSRF-Token` on a mutating `/api/` request **from an authenticated caller** — forgery
+rides on an ambient credential the server *accepts*, and a request it does not accept has nothing to
+forge with. `CsrfRules` holds the exemptions (the endpoints that run before a session exists,
+`refresh`, and the machine-called job trigger) with the reason for each. This is defence in depth,
+not an open hole being closed: all four cookies are `SameSite=Lax`, so a cross-site POST carries no
+session in the first place. On the client, `ZenClient.recoverSession` turns a 401 into one renewal
+and one replay, so the hour-long access token is renewed from the seven-day refresh token instead of
+ending the session. Separately, `POST /auth/logout` now calls
+GoTrue `POST /logout?scope=local` with the caller's access token, so the refresh token behind the
+cleared cookie stops working upstream instead of staying valid for its remaining seven days. A
+failed revocation is logged and does **not** block the cookie clearing — a user who presses sign
+out ends up signed out locally even when the provider is unreachable.
+
 **Why each token gets its own cookie.** jZen serves Cloud Run directly, so nothing strips or
 renames cookies in transit, and the standard SmallRye-JWT path works as designed: normally-named
 cookies, `mp.jwt.token.cookie`, and `proactive=true`, with no session filter and nothing to

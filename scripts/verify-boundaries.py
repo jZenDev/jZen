@@ -5,10 +5,19 @@ WHAT this enforces and WHY it is a gate is in the Taskfile's `verify:boundaries`
 the operator-facing contract and stays there (`task verify:boundaries --summary`). This docstring
 covers only HOW, and the two things about the how that are worth knowing.
 
-**Why this is Python and the launchers beside it are sh** (STANDARDS "Scripting", ADR-029): the
+**Why this is Python and the launchers beside it are sh** (STANDARDS "Scripting", ADR-032): the
 three checks below read source and return a verdict, which is Rule 3 work. In sh they were a nest
-of `grep` pipelines feeding an `awk` program that stripped Dart comments by field-splitting on `:`
-— correct, but not correct *by inspection*, which is the property a gate most needs.
+of `grep` pipelines feeding an `awk` program that stripped comments by field-splitting on `:` —
+correct, but not correct *by inspection*, which is the property a gate most needs. The TypeScript
+half made the point sharper still: a template literal is the most natural way to write a URL there,
+so the quote set has to include a backtick, and a backtick cannot be *typed* into a sh gate because
+it is command substitution before `grep` ever sees it. It had to be built as `$(printf '\140')`.
+Here it is a character in a character class.
+
+**Both languages, one rule.** Each check spans Dart (`client/*/lib`, `apps/*/*/lib`) and TypeScript
+(`admin/src`, `apps/*/*_admin/src`), because the admin panel is a client: react-admin is a browser
+application holding a session cookie, and a panel that reached the provider directly would break
+the same property in the same silent way.
 
 **The defect this conversion closes.** The sh version ended every scan with `2>/dev/null … ||
 true`. That is load-bearing in sh, because a glob matching nothing is an error there — but it also
@@ -36,25 +45,46 @@ import lib  # noqa: E402  (sibling module; sys.path is set immediately above)
 # a call the product makes.
 DART_LIB_SCOPES = ("client/*/lib", "apps/*/*/lib")
 
-# Check A reads dependency manifests, which are not under `lib/`, so it scans whole trees.
+# THE ADMIN PANEL IS A CLIENT, and scoped exactly the way the Dart side is: source only, generated
+# output excluded, tests excluded. react-admin is a browser application holding a session cookie,
+# and `@supabase/supabase-js` is one `pnpm add` away and better documented than the Dart SDK — a
+# panel that talked to the provider directly would break the same property in the same silent way.
+TS_SRC_SCOPES = ("admin/src", "apps/*/*_admin/src")
+
+# Check A reads dependency manifests, which are not under `lib/` or `src/`, so it scans separately.
 PUBSPEC_ROOTS = ("client", "apps")
+TS_PACKAGE_GLOBS = ("admin/package.json", "apps/*/*_admin/package.json")
 
-# Generated Dart is exempt everywhere: it is a derived artifact, and editing it is already a defect
-# the contract-sync gate catches (CLAUDE.md, "A tracked generated file is never hand-edited").
-GENERATED = "/generated/"
+# Generated code is exempt on both sides: it is a derived artifact, and editing it is already a
+# defect the contract-sync gate catches (CLAUDE.md, "A tracked generated file is never
+# hand-edited"). Dart marks it by directory, TypeScript by filename.
+GENERATED_DIR = "/generated/"
+GENERATED_TS_SUFFIX = ".generated.ts"
 
-# The one file allowed to name the API base, and the reason check C can be strict everywhere else.
-CONFIG_FILE = "zen_identity_config.dart"
+# The two files allowed to name the API base, and the reason check C can be strict everywhere else.
+# `config.ts` is the TypeScript analogue of `zen_identity_config.dart`; it resolves to a relative
+# `/api/v1` today, so the exemption belongs to the file's role rather than to what it contains.
+DART_CONFIG_FILE = "zen_identity_config.dart"
+TS_CONFIG_SUFFIX = "_admin/src/config.ts"
 
-PROVIDER_SDK = re.compile(
+PROVIDER_SDK_DART = re.compile(
     r"^[ \t]{2}(supabase|gotrue|postgrest|realtime_client|storage_client|functions_client)"
     r"[a-z_]*[ \t]*:"
+)
+PROVIDER_SDK_TS = re.compile(
+    r"^\s*\"(@supabase/[^\"]+|gotrue[^\"]*|postgrest[^\"]*|realtime-js|storage-js|functions-js)\"\s*:"
 )
 PROVIDER_SECRET = re.compile(
     r"supabase\.co|:54321|apikey|anon_key|service_role|SUPABASE_(URL|KEY)", re.IGNORECASE
 )
-ABSOLUTE_URL = re.compile(r"['\"]https?://")
+ABSOLUTE_URL_DART = re.compile(r"['\"]https?://")
+# The quote set gains the template literal's backtick, which is how a URL would most naturally be
+# written in TypeScript. In sh this delimiter had to be built with `printf '\140'` rather than
+# typed, because a literal backtick is command substitution before grep ever sees it.
+ABSOLUTE_URL_TS = re.compile(r"['\"`]https?://")
 DART_COMMENT = re.compile(r"^\s*//")
+# JSDoc blocks mean a continuation line starting with `*` is comment too.
+TS_COMMENT = re.compile(r"^\s*(//|/\*|\*)")
 
 
 class StaleScope(Exception):
@@ -77,25 +107,38 @@ def _read_lines(path: Path) -> "list[str]":
     return path.read_text(encoding="utf-8", errors="replace").splitlines()
 
 
-def dart_sources(root: Path) -> "list[Path]":
-    """Every Dart library source in scope, generated output excluded.
+def _sources(root: Path, scopes, patterns, exclude) -> "list[Path]":
+    """Every source file under `scopes` matching `patterns`, minus `exclude`.
 
     Raises StaleScope if a scope pattern matches no directory — see the module docstring.
     """
     files: "list[Path]" = []
-    for scope in DART_LIB_SCOPES:
+    for scope in scopes:
         dirs = [d for d in root.glob(scope) if d.is_dir()]
         if not dirs:
             raise StaleScope(f"scope '{scope}' matched no directory under {root}")
         for d in dirs:
-            files.extend(
-                f for f in d.rglob("*.dart") if GENERATED not in f.as_posix() and f.is_file()
-            )
+            for pattern in patterns:
+                files.extend(f for f in d.rglob(pattern) if f.is_file() and not exclude(f))
     return sorted(files)
 
 
+def dart_sources(root: Path) -> "list[Path]":
+    """Every Dart library source in scope, generated output excluded."""
+    return _sources(
+        root, DART_LIB_SCOPES, ("*.dart",), lambda f: GENERATED_DIR in f.as_posix()
+    )
+
+
+def ts_sources(root: Path) -> "list[Path]":
+    """Every admin panel source in scope, generated output excluded."""
+    return _sources(
+        root, TS_SRC_SCOPES, ("*.ts", "*.tsx"), lambda f: f.name.endswith(GENERATED_TS_SUFFIX)
+    )
+
+
 def pubspecs(root: Path) -> "list[Path]":
-    """Every package manifest under the client and app trees."""
+    """Every Dart package manifest under the client and app trees."""
     found: "list[Path]" = []
     for name in PUBSPEC_ROOTS:
         tree = root / name
@@ -104,6 +147,21 @@ def pubspecs(root: Path) -> "list[Path]":
         found.extend(p for p in tree.rglob("pubspec.yaml") if ".dart_tool" not in p.as_posix())
     if not found:
         raise StaleScope(f"no pubspec.yaml found under {PUBSPEC_ROOTS} in {root}")
+    return sorted(found)
+
+
+def ts_packages(root: Path) -> "list[Path]":
+    """The admin scaffold's and each panel's package.json.
+
+    Globbed rather than walked: `node_modules` is full of manifests that are somebody else's
+    dependencies, and a recursive scan would report those as this repository's choices.
+    """
+    found: "list[Path]" = []
+    for pattern in TS_PACKAGE_GLOBS:
+        hits = [p for p in root.glob(pattern) if p.is_file()]
+        if not hits:
+            raise StaleScope(f"pattern '{pattern}' matched no package.json under {root}")
+        found.extend(hits)
     return sorted(found)
 
 
@@ -118,46 +176,52 @@ def _scan(files: "list[Path]", root: Path, keep) -> "list[Hit]":
 
 
 def check_provider_sdk(root: Path) -> "list[Hit]":
-    """A. No client or app package may depend on an identity-provider SDK."""
-    return _scan(pubspecs(root), root, lambda rel, text: PROVIDER_SDK.search(text) is not None)
+    """A. No client, app, or admin package may depend on an identity-provider SDK."""
+    dart = _scan(pubspecs(root), root, lambda rel, t: PROVIDER_SDK_DART.search(t) is not None)
+    ts = _scan(ts_packages(root), root, lambda rel, t: PROVIDER_SDK_TS.search(t) is not None)
+    return dart + ts
 
 
 def check_provider_secret(root: Path) -> "list[Hit]":
-    """B. No client library source may name a provider host or credential.
+    """B. No client or admin source may name a provider host or credential.
 
     The anon key is public by design, which is exactly why its absence is checked: shipping it
     looks harmless and is how a second door into the provider gets built.
     """
-    return _scan(
-        dart_sources(root), root, lambda rel, text: PROVIDER_SECRET.search(text) is not None
-    )
+    hit = lambda rel, t: PROVIDER_SECRET.search(t) is not None  # noqa: E731
+    return _scan(dart_sources(root), root, hit) + _scan(ts_sources(root), root, hit)
 
 
 def check_absolute_url(root: Path) -> "list[Hit]":
-    """C. No absolute URL literal in client library code, except the one compile-time base URL.
+    """C. No absolute URL literal in client or admin source, except the one compile-time base.
 
-    Comments are exempt: `ZenClient(baseUrl: 'http://...')` in a doc block is documentation, not a
-    call the product makes.
+    Comments are exempt on both sides: `ZenClient(baseUrl: 'http://...')` in a doc block is
+    documentation, not a call the product makes.
     """
 
-    def keep(rel: str, text: str) -> bool:
-        if rel.endswith(CONFIG_FILE) or DART_COMMENT.match(text):
+    def keep_dart(rel: str, text: str) -> bool:
+        if rel.endswith(DART_CONFIG_FILE) or DART_COMMENT.match(text):
             return False
-        return ABSOLUTE_URL.search(text) is not None
+        return ABSOLUTE_URL_DART.search(text) is not None
 
-    return _scan(dart_sources(root), root, keep)
+    def keep_ts(rel: str, text: str) -> bool:
+        if rel.endswith(TS_CONFIG_SUFFIX) or TS_COMMENT.match(text):
+            return False
+        return ABSOLUTE_URL_TS.search(text) is not None
+
+    return _scan(dart_sources(root), root, keep_dart) + _scan(ts_sources(root), root, keep_ts)
 
 
 CHECKS = (
     (check_provider_sdk,
      "a client package depends on an identity-provider SDK:",
-     "no client package depends on a provider SDK"),
+     "no client or admin package depends on a provider SDK"),
     (check_provider_secret,
      "client code names a provider host or credential:",
-     "no provider host or credential in client code"),
+     "no provider host or credential in client or admin code"),
     (check_absolute_url,
-     "client code hard-codes an absolute URL (the base URL is zenApiUrl):",
-     "the only base URL in client code is the compile-time zenApiUrl"),
+     "client code hard-codes an absolute URL (the base is zenApiUrl / config.ts):",
+     "the only base URL in client and admin code is the compile-time one"),
 )
 
 

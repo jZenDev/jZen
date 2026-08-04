@@ -43,8 +43,22 @@ dependencies:
 """
 
 
+CLEAN_PACKAGE_JSON = """\
+{
+  "name": "@jzen/admin-core",
+  "dependencies": {
+    "react-admin": "^5.4.0"
+  }
+}
+"""
+
+
 def build_tree(root: Path) -> None:
-    """A minimally realistic client tree: one framework package, one app client."""
+    """A minimally realistic client tree: Dart packages, an app client, and the admin panels.
+
+    The admin side mirrors the real layout, because both TypeScript exemptions are path-shaped:
+    `*.generated.ts` anywhere, and `config.ts` only under `*_admin/src`.
+    """
     core = root / "client" / "zen_core"
     ident = root / "client" / "zen_identity"
     app = root / "apps" / "zen_demo" / "zen_demo_client"
@@ -56,6 +70,16 @@ def build_tree(root: Path) -> None:
         "const zenApiUrl = String.fromEnvironment('ZEN_API_URL');\n"
     )
     (app / "lib" / "main.dart").write_text("void main() {}\n")
+
+    scaffold = root / "admin"
+    panel = root / "apps" / "zen_demo" / "zen_demo_admin"
+    for ts in (scaffold, panel):
+        (ts / "src").mkdir(parents=True)
+        (ts / "package.json").write_text(CLEAN_PACKAGE_JSON)
+    (scaffold / "src" / "dataProvider.ts").write_text("export const dp = {};\n")
+    (panel / "src" / "config.ts").write_text("export const apiBase = '/api/v1';\n")
+    (panel / "src" / "api").mkdir()
+    (panel / "src" / "api" / "schema.generated.ts").write_text("export type Paths = {};\n")
 
 
 class BoundaryGateTest(unittest.TestCase):
@@ -151,6 +175,74 @@ class BoundaryGateTest(unittest.TestCase):
         cfg.write_text("const zenApiUrl = 'https://api.jzen.dev';\n")
         self.assertEqual([], vb.check_absolute_url(self.root))
 
+    # ── the admin panel is a client too ─────────────────────────────────────────────────────
+    def test_admin_provider_sdk_dependency_is_caught(self) -> None:
+        (self.root / "admin" / "package.json").write_text(
+            CLEAN_PACKAGE_JSON.replace(
+                '"react-admin": "^5.4.0"',
+                '"react-admin": "^5.4.0",\n    "@supabase/supabase-js": "^2.45.0"',
+            )
+        )
+        hits = vb.check_provider_sdk(self.root)
+        self.assertEqual(1, len(hits))
+        self.assertIn("@supabase/supabase-js", hits[0].text)
+
+    def test_admin_scoped_provider_clients_are_caught(self) -> None:
+        for dep in ("gotrue-js", "postgrest-js", "realtime-js", "storage-js", "functions-js"):
+            with self.subTest(dep=dep):
+                (self.root / "admin" / "package.json").write_text(
+                    CLEAN_PACKAGE_JSON.replace(
+                        '"react-admin": "^5.4.0"', f'"{dep}": "^2.0.0"'
+                    )
+                )
+                self.assertEqual(1, len(vb.check_provider_sdk(self.root)))
+
+    def test_admin_credential_is_caught(self) -> None:
+        (self.root / "admin" / "src" / "dataProvider.ts").write_text(
+            "const key = 'service_role';\n"
+        )
+        self.assertEqual(1, len(vb.check_provider_secret(self.root)))
+
+    def test_tsx_is_in_scope(self) -> None:
+        (self.root / "admin" / "src" / "Login.tsx").write_text(
+            "export const url = 'https://xyz.supabase.co';\n"
+        )
+        self.assertEqual(1, len(vb.check_provider_secret(self.root)))
+
+    def test_generated_typescript_is_exempt(self) -> None:
+        gen = self.root / "apps" / "zen_demo" / "zen_demo_admin" / "src" / "api"
+        (gen / "schema.generated.ts").write_text("const k = 'anon_key';\n")
+        self.assertEqual([], vb.check_provider_secret(self.root))
+
+    def test_template_literal_url_is_caught(self) -> None:
+        """A backtick URL is the natural TypeScript spelling — and the one sh could not type."""
+        (self.root / "admin" / "src" / "dataProvider.ts").write_text(
+            "const base = `https://api.example.com/v1`;\n"
+        )
+        hits = vb.check_absolute_url(self.root)
+        self.assertEqual(1, len(hits))
+        self.assertIn("`https://", hits[0].text)
+
+    def test_url_in_a_jsdoc_block_is_documentation(self) -> None:
+        (self.root / "admin" / "src" / "dataProvider.ts").write_text(
+            "/**\n * See `https://api.example.com` for the shape.\n */\n"
+            "// const base = 'https://api.example.com';\n"
+        )
+        self.assertEqual([], vb.check_absolute_url(self.root))
+
+    def test_the_admin_config_file_may_name_the_base_url(self) -> None:
+        cfg = self.root / "apps" / "zen_demo" / "zen_demo_admin" / "src" / "config.ts"
+        cfg.write_text("export const apiBase = 'https://api.jzen.dev';\n")
+        self.assertEqual([], vb.check_absolute_url(self.root))
+
+    def test_a_config_ts_outside_an_admin_panel_is_not_exempt(self) -> None:
+        # The exemption is `*_admin/src/config.ts`, not any file called config.ts: the scaffold
+        # under admin/src is schema-generic and names no API base.
+        (self.root / "admin" / "src" / "config.ts").write_text(
+            "export const base = 'https://api.example.com';\n"
+        )
+        self.assertEqual(1, len(vb.check_absolute_url(self.root)))
+
     # ── the defect this conversion closes ───────────────────────────────────────────────────
     def test_stale_scope_is_a_failure(self) -> None:
         """A scope that matches nothing must fail, not pass.
@@ -181,6 +273,26 @@ class BoundaryGateTest(unittest.TestCase):
         with self.assertRaises(vb.StaleScope):
             vb.check_provider_sdk(self.root)
         self.assertEqual(1, self.run_gate(self.root)[0])
+
+    def test_stale_typescript_scope_is_a_failure(self) -> None:
+        """The admin half needs its own guard: the Dart scopes can be perfectly healthy.
+
+        Without this, moving the panel out of `admin/src` would silently narrow the gate to Dart
+        and every Dart scope would still resolve, so nothing would look wrong.
+        """
+        (self.root / "admin" / "src").rename(self.root / "admin" / "source")
+
+        self.assertEqual([], vb.check_provider_sdk(self.root))  # Dart side unaffected
+        with self.assertRaises(vb.StaleScope):
+            vb.ts_sources(self.root)
+        with self.assertRaises(vb.StaleScope):
+            vb.check_provider_secret(self.root)
+        self.assertEqual(1, self.run_gate(self.root)[0])
+
+    def test_a_missing_admin_package_json_is_a_failure(self) -> None:
+        (self.root / "admin" / "package.json").unlink()
+        with self.assertRaises(vb.StaleScope):
+            vb.ts_packages(self.root)
 
 
 if __name__ == "__main__":

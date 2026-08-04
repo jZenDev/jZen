@@ -1,9 +1,11 @@
 package zen.demo;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
@@ -11,10 +13,16 @@ import zen.identity.AuthException;
 import zen.identity.IdentityService;
 import zen.identity.auth.RedirectTargets;
 import zen.identity.auth.SupabaseAuthClient;
+import zen.identity.auth.SupabaseSessionResponse;
 import zen.identity.auth.UserUpdateRequest;
+import zen.identity.user.User;
+import zen.identity.user.UserStore;
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.WebApplicationException;
+import java.util.Map;
+import java.util.UUID;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.junit.jupiter.api.Test;
 
@@ -35,6 +43,10 @@ class IdentityServiceTest {
 
   @Inject IdentityService identityService;
   @Inject RedirectTargets redirectTargets;
+  @Inject UserStore userStore;
+
+  /** Stands in for a session's subject; it only ever reaches a log line. */
+  private static final UUID USER_ID = UUID.fromString("00000000-0000-4000-8000-000000000001");
 
   @Test
   void setPassword_changesThePasswordOfWhoeverTheTokenBelongsTo() {
@@ -52,6 +64,83 @@ class IdentityServiceTest {
 
     assertEquals("weak_password", thrown.code());
     verify(authClient, never()).updateUser(any(), any());
+  }
+
+  @Test
+  void logout_revokesTheSessionUpstreamWithTheLocalScope() {
+    assertTrue(identityService.logout("session-jwt", USER_ID));
+
+    // The whole of F4: without this call the refresh token behind the cleared cookie stays valid
+    // upstream for its full seven days, so signing out on a borrowed machine changes nothing.
+    // Local scope, not global - a sign-out button ends this session, not every device the user owns.
+    verify(authClient).logout("Bearer session-jwt", "local");
+  }
+
+  @Test
+  void logout_withNoToken_callsNothing() {
+    assertFalse(identityService.logout(null, USER_ID));
+    assertFalse(identityService.logout("   ", USER_ID));
+
+    verify(authClient, never()).logout(any(), any());
+  }
+
+  @Test
+  void logout_whenSupabaseIsUnreachable_reportsFailureInsteadOfThrowing() {
+    // A throw here would propagate out of AuthResource and take the cookie clearing with it,
+    // leaving a user who pressed sign out still signed in locally *and* upstream. So it returns
+    // false - and logs, because a session that is still live upstream is a security event.
+    doThrow(new IllegalStateException("supabase unreachable"))
+        .when(authClient)
+        .logout(any(), any());
+
+    assertFalse(identityService.logout("session-jwt", USER_ID));
+  }
+
+  @Test
+  void logout_whenTheTokenWasAlreadyRevoked_countsAsRevoked() {
+    // The provider refuses a token it will not accept with 401 or 403 - which spelling depends on
+    // how it failed. Both mean the session is already gone, which is exactly what was asked for.
+    // Treating 403 as a failure logged a security warning on the most ordinary path there is, which
+    // is how it was found: against a live local Supabase, an unverifiable token came back 403.
+    for (int refusal : new int[] {401, 403}) {
+      doThrow(new WebApplicationException(refusal)).when(authClient).logout(any(), any());
+
+      assertTrue(identityService.logout("session-jwt", USER_ID), "HTTP " + refusal);
+    }
+  }
+
+  @Test
+  void upsertOnLogin_syncsTheEmailAddressOnEveryLogin() {
+    UUID id = UUID.randomUUID();
+
+    userStore.upsertOnLogin(payload(id, "before@example.com"), null);
+    User afterFirst = userStore.findById(id);
+    assertEquals("before@example.com", afterFirst.email);
+
+    // The user changes their address with the identity provider. Before this was synced, the local
+    // profile kept the old one for good: every email jZen sent went somewhere the user had left,
+    // and the admin panel displayed an address that was simply wrong.
+    userStore.upsertOnLogin(payload(id, "after@example.com"), null);
+    assertEquals("after@example.com", userStore.findById(id).email);
+  }
+
+  @Test
+  void upsertOnLogin_aPayloadWithNoEmailDoesNotEraseTheStoredOne() {
+    // users.email is NOT NULL, and GoTrue's bare-user shape can arrive without an address.
+    // Copying that blank over would turn a stale row into an unusable one.
+    UUID id = UUID.randomUUID();
+    userStore.upsertOnLogin(payload(id, "kept@example.com"), null);
+
+    userStore.upsertOnLogin(payload(id, null), null);
+    assertEquals("kept@example.com", userStore.findById(id).email);
+
+    userStore.upsertOnLogin(payload(id, "  "), null);
+    assertEquals("kept@example.com", userStore.findById(id).email);
+  }
+
+  private static SupabaseSessionResponse.UserPayload payload(UUID id, String email) {
+    return new SupabaseSessionResponse.UserPayload(
+        id.toString(), email, "authenticated", "2024-01-01T00:00:00Z", Map.of());
   }
 
   @Test

@@ -65,7 +65,9 @@ public class DemoMailer {
             event.language(),
             WELCOME_TEMPLATE,
             bundle(event.language()).welcomeSubject(),
-            Map.of("email", event.email(), "siteUrl", siteUrl)));
+            Map.of("email", event.email(), "siteUrl", siteUrl),
+            // The id, not the address: this is the only thing EmailService puts in a log line.
+            event.userId().toString()));
   }
 
   /**
@@ -85,7 +87,8 @@ public class DemoMailer {
                 event.language(),
                 isFinal ? FINAL_WARNING_TEMPLATE : DELETION_WARNING_TEMPLATE,
                 isFinal ? bundle.finalWarningSubject(days) : bundle.deletionWarningSubject(days),
-                Map.of("email", event.email(), "siteUrl", siteUrl, "days", days)));
+                Map.of("email", event.email(), "siteUrl", siteUrl, "days", days),
+                event.userId().toString()));
     if (sent) {
       event.receipt().confirm();
     }

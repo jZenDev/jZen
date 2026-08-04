@@ -10,7 +10,7 @@ which the runners source.
 
 This directory holds **sh and Python, and neither is the default**. The full rule is
 [`STANDARDS.md`](../docs/architecture/STANDARDS.md) "Scripting" with the reasoning in
-[`DECISIONS.md`](../docs/architecture/DECISIONS.md) ADR-029, but it is short enough to state here —
+[`DECISIONS.md`](../docs/architecture/DECISIONS.md) ADR-032, but it is short enough to state here —
 four ordered tests, first match wins:
 
 | # | Test | Language |
@@ -97,14 +97,16 @@ Run by `task verify:boundaries`, which is the first thing `task test` and CI do.
 and why is the task's own summary (`task verify:boundaries --summary`); the script's docstring
 covers how.
 
-Three checks over `client/*/lib` and `apps/*/*/lib`: no client package depends on an
-identity-provider SDK, no client source names a provider host or credential, and no client source
-hard-codes an absolute URL except the one compile-time base in `zen_identity_config.dart`.
+Three checks, each spanning both client languages — Dart under `client/*/lib` and `apps/*/*/lib`,
+TypeScript under `admin/src` and `apps/*/*_admin/src`, because the admin panel is a client too. No
+package depends on an identity-provider SDK, no source names a provider host or credential, and no
+source hard-codes an absolute URL except the two compile-time bases (`zen_identity_config.dart`,
+and `config.ts` under a panel).
 
 **A scope that matches nothing fails.** The sh version ended each scan with `2>/dev/null … ||
-true`, so renaming a directory under `client/` left every scan empty — which reads as a clean
-repository, and reported green forever. `task test:scripts` covers this and each of the three
-checks with planted violations.
+true`, so renaming a directory under `client/` — or moving the panel out of `admin/src` — left a
+scan empty, which reads as a clean repository and reported green forever. `task test:scripts`
+covers that on both sides, plus each check and each exemption, with planted violations.
 
 ## pick-device.py — which device a native run targets
 

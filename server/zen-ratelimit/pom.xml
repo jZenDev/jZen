@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  zen-ratelimit :: the abuse layer (DECISIONS ADR-029).
+
+  Two tiers, for a measured reason rather than a taste for belt and braces:
+
+    - The BURST tier is in memory. Valid because at most one instance ever runs (max-instances
+      is 1); ADR-028 states what raising that silently costs. Its windows are second- to
+      minute-scale, which is exactly the range where an attacker's own traffic is what keeps
+      the instance alive.
+    - The DURABLE tier is Postgres. Not a precaution: with min-instances at 0 the live
+      service's process is replaced roughly every hour (ADR-027), so a counter whose window
+      outlives an hour CANNOT be held in memory - it would reset itself faster than it fills.
+
+  No Redis. Memorystore has no free tier and Upstash adds a vendor, a secret, a network hop and
+  a failure mode for a workload Postgres already carries for nothing.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>zen</groupId>
+    <artifactId>zen-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>zen-ratelimit</artifactId>
+  <name>jZen :: ratelimit</name>
+
+  <dependencies>
+    <dependency>
+      <groupId>zen</groupId>
+      <artifactId>zen-core</artifactId>
+    </dependency>
+    <!-- The 429 body is a ZenError proto, written by zen-transport's writers like every other
+         response body. Depending on zen-transport (rather than only zen-proto) is deliberate:
+         this module's filter must sit inside the same negotiation seam, so a 429 answers in
+         whichever format the caller asked for. -->
+    <dependency>
+      <groupId>zen</groupId>
+      <artifactId>zen-transport</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>zen</groupId>
+      <artifactId>zen-proto</artifactId>
+    </dependency>
+    <!-- The cleanup pass is a ZenJob, not @Scheduled: with min-instances at 0 an in-process cron
+         provably does not fire, which is the entire reason zen-jobs exists. -->
+    <dependency>
+      <groupId>zen</groupId>
+      <artifactId>zen-jobs</artifactId>
+    </dependency>
+
+    <!-- The durable counter is a Panache active-record entity over zen_rate_limit_counters,
+         migrated by Flyway from this module's own db/migration (version band 200-299,
+         STANDARDS "Database migrations"). -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-hibernate-orm-panache</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-jdbc-postgresql</artifactId>
+    </dependency>
+    <!-- CurrentVertxRequest, for the socket peer address the client-IP resolver falls back to. -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-vertx-http</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Generates META-INF/jandex.idx so Quarkus discovers this module's beans (the
+           RateLimitFilter @Provider, the limiters, the @ConfigMapping, the counter @Entity and
+           the cleanup ZenJob) from the jar when it is a dependency of an app server.
+
+           This is not boilerplate. Without the index the classes are on the classpath, compile,
+           import fine, and are never instantiated - no error, no warning, a green suite, and a
+           rate limiter that permits everything. RateLimitWiringTest in the app module exists to
+           fail the build if this plugin is ever removed. zen-transport is the reference. -->
+      <plugin>
+        <groupId>io.smallrye</groupId>
+        <artifactId>jandex-maven-plugin</artifactId>
+        <version>3.2.7</version>
+        <executions>
+          <execution>
+            <id>make-index</id>
+            <goals>
+              <goal>jandex</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

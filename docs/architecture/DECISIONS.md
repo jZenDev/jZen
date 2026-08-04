@@ -15,6 +15,272 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-037 — A deploy performs the privilege cutover whether or not the plan said so, and a build define that silently does not apply must fail the build
+
+**Date:** 2026-08-04. **Status:** accepted. **Corrects:** ADR-036's consequence "this is not the
+`zen_runtime` cutover, and deliberately ships without it". **Refines:** ADR-031 (the cutover),
+`build:web`.
+
+Two things the deploy of ADR-036 taught, neither of which was visible from the repository.
+
+### The separation ADR-036 described was not the deploy's to make
+
+ADR-036 states that the Data API fix ships without ADR-031's `zen_runtime` cutover, so that a wrong
+policy and a wrong role could not produce the same zero-rows symptom in one deploy. That was the
+right reasoning and it did not survive contact with `deploy:cloudrun`, which **enables the privilege
+split whenever `APP_DB_USERNAME` and `APP_DB_PASSWORD` exist in Secret Manager**. They had existed
+since ADR-031 provisioned them. The deploy printed `Database privilege split ON: the app will serve
+as the least-privilege role` and the cutover happened in the same revision as the migrations.
+
+**The lesson is not "add a flag".** It is that a sequencing decision recorded only in a plan is not a
+sequencing decision — the tooling had already decided, months earlier, that the presence of a secret
+means "use it", and no document outranks that. Either the tool takes the switch or the plan should
+not claim the property.
+
+It was verified rather than assumed, and it is healthy. Measured against the deployed database
+immediately after, which is ADR-031 step 1c's own check:
+
+| As `zen_runtime` | As the DDL role |
+|---|---|
+| `current_user` = **`zen_runtime`** | — |
+| `users` = **8** | `users` = **8** |
+| `zen_jobs` = **2** | `zen_jobs` = **2** |
+| `zen_rate_limit_counters` = **35** | `zen_rate_limit_counters` = **35** |
+
+Equal counts on every table is the whole point: it means `users_application`, `zen_jobs_application`
+and `zen_rate_limit_counters_application` all cover the runtime role, and the zero-rows trap ADR-036
+was written around is absent. The application path was exercised too — a job forced due by hand ran
+on the next trigger and its `run_count` went **17 → 18** with `last_status = SUCCESS`, which required
+reading `zen_jobs` under RLS, deleting from `zen_rate_limit_counters` under RLS, and writing the
+outcome back.
+
+**Why a job had to be forced due, and it is worth keeping.** The first trigger returned `200` and
+changed nothing, because nothing was due. "Nothing due" and "the table read zero rows" are the same
+observation from outside — the exact indistinguishability the policy exists to prevent — so the
+trigger alone proves nothing. Making a job due is what turns a silent success into a measurable one.
+
+### A build define that silently does not apply must fail the build
+
+The deployed web app could not log in. The browser refused
+`http://localhost:18080/api/v1/auth/login` under the Content-Security-Policy — correctly, because
+the bundle was asking for a foreign origin.
+
+**Flutter's web build cache does not invalidate on a `--dart-define` change.** A build differing only
+in `ZEN_API_URL` is answered from cache and keeps whatever URL the previous build baked in.
+`test:native` builds against its smoke container at `http://localhost:18080`; every deploy after that
+reused the output. Measured: **818ms cached against 18.9s real**, and the staged `main.dart.wasm`
+carried a timestamp four hours older than the deploy shipping it. Revision `00016` shipped it too, so
+this was not new to the ADR-036 deploy — it was inherited by it.
+
+**Nothing caught it, and the reason generalises.** `build:web` printed the correct URL, because it
+prints what it *requested*. `flutter` reported success. `deploy:cloudrun` succeeded. `verify:deploy`
+passed every check — and every check it makes is unauthenticated: the shell loads, the wasm is served
+as `application/wasm`, the CSP is right. The app is broken only at the first API call a user makes,
+in a browser. A gate that only exercises anonymous surfaces cannot see a broken client config.
+
+So `build:web` now discards `build/web` and `.dart_tool/flutter_build` before compiling, and then
+**reads the bundle it just staged and fails if the host is absent**. The printed line says what was
+asked for; only the assertion is evidence. The check is a byte search in Python rather than
+`strings | grep`, because dart2wasm packs string literals without the terminators `strings` looks
+for — it finds nothing and would pass vacuously, which is the failure mode being fixed, reintroduced
+inside the fix. Asserted both ways: the correct host passes, a wrong host exits 1.
+
+### Consequence
+
+- STANDARDS "Frontend split" gains the rule: a compile-time client define that reaches a deployed
+  artifact is asserted in that artifact, not trusted to the build tool.
+- `verify:deploy` remains unauthenticated by design, and this entry records what that costs: it is a
+  deployment gate, not a client-correctness gate. The thing that catches a bad client config is the
+  build asserting its own output.
+- ADR-036's separation stands as reasoning and is withdrawn as a description of what shipped. Both
+  changes went out together in revision `00017`, and the cutover is measured above.
+- The web bundle regression is fixed in revision `00018`, verified by byte-searching the **served**
+  bundle (`tovqpjhspa` present, `localhost:18080` absent) and by the page making its first call
+  same-origin: `GET /api/v1/auth/identity` → `204`. The macOS client reaches the same service:
+  `Dart/3.12 (dart:io)` → `/api/v1/auth/identity` → `204`.
+- **A real macOS login closed the loop that no database query could.** Read out of the deployed
+  service's request log: `POST /api/v1/auth/login` → **200**, then `/api/v1/demo/ping` → 200,
+  `/api/v1/demo/terms` → 200, `/api/v1/demo/ping` → 200. An authenticated request is the one path
+  that makes `RoleAugmentor` read `users` — under row-level security, as `zen_runtime`, on the real
+  application path rather than through a psql session standing in for it. The counts in the table
+  above say the policy is right; this says the application agrees.
+- The same run reproduced ADR-023's macOS exception, and it is worth naming so it is not read as a
+  regression of this work: `PlatformException(..., Code: -34018, A required entitlement isn't
+  present)` from the Keychain write, logged as *"Could not persist the session; it will not survive
+  a restart"*. It is caught, the login proceeds — the four `200`s above are after it — and it is the
+  documented consequence of the MVP's no-signing boundary, not a fault in the session path.
+- Note the service answers on two hostnames — the configured origin (`SITE_URL`, `CORS_ORIGINS`,
+  `AUTH_REDIRECT_URI`, and `gcloud run services describe` all agree on
+  `zen-demo-server-tovqpjhspa-lm.a.run.app`) and the newer name `deploy:cloudrun` prints on success.
+  The bundle is built for the configured one, so **that is the URL to open**; the other serves the
+  same app and then blocks its own API calls as cross-origin. Recorded because the deploy's final
+  line invites exactly that mistake.
+
+---
+
+## ADR-036 — Every table jZen creates is exposed to the Supabase Data API until two independent layers say otherwise
+
+**Date:** 2026-08-04. **Status:** accepted. **Corrects:** ADR-031, which identified PostgREST's
+`anon`/`authenticated` roles as the surface row-level security defends in jZen and then defended
+only one table on it. **Refines:** STANDARDS "Database migrations".
+
+### What was found, and it was live
+
+A Supabase project publishes a REST interface (PostgREST) over the `public` schema, reached with the
+project's anon key — a key Supabase publishes on purpose and documents as public. Three tables jZen
+migrates into that schema had no row-level security: `zen_jobs` (`V100`),
+`zen_rate_limit_counters` (`V200`), and Flyway's own `flyway_schema_history`. Only `users` was
+covered, by `V2`'s `users_owner` policy.
+
+This was not a theoretical gap. **Measured against the deployed project on 2026-08-04, before any
+change**, using the `SUPABASE_KEY` the deployment already holds:
+
+| Request, as `anon` | Result |
+|---|---|
+| `GET /rest/v1/zen_jobs` | **200**, every job row — id, enabled, interval, last run |
+| `GET /rest/v1/zen_rate_limit_counters` | **200**, live counters with their subject hashes |
+| `GET /rest/v1/flyway_schema_history` | **200**, the full migration history |
+| `GET /rest/v1/users` | **200 `[]`** — `users_owner` matching nothing, exactly as designed |
+| `PATCH /rest/v1/zen_jobs` (filter matching no row) | **204** — the UPDATE was accepted |
+| `DELETE /rest/v1/zen_rate_limit_counters` (filter matching no row) | **204** — accepted |
+
+The two write probes used filters that match nothing on purpose: a `204` proves the statement was
+executed and zero rows qualified, while a missing privilege answers `401` with SQLSTATE `42501`.
+The privilege is what was being measured, and it was there, without touching a row.
+
+**The `users` row is the control that makes the rest legible.** The same key, the same schema, the
+same request shape — and an empty array, because that table had a policy. Nothing about the
+transport or the key was ever the problem.
+
+### Why this is severe, and it is not about the rows
+
+None of these tables holds a secret. `zen_rate_limit_counters` stores salted hashes by design
+(ADR-029), and a job's schedule is not confidential. What they hold is **control**:
+
+- One `UPDATE` setting `zen_jobs.enabled = false` stops the retention job. Retention is the whole
+  of how jZen discharges its GDPR obligation (ADR-008), and nothing raises when it stops — the next
+  tick simply finds nothing due and reports success. Setting `interval_seconds` to something
+  enormous is the same attack with a slower fuse.
+- A `DELETE` against `zen_rate_limit_counters` clears an attacker's own window on demand. That
+  table exists precisely because the hour-scale windows cannot live in memory under
+  `--min-instances=0`, where the process is replaced about hourly (ADR-027). A limiter whose
+  counters anyone may erase is decoration. The mirror case is worse: rows written against someone
+  else's subject hash lock a legitimate address out.
+- `flyway_schema_history` decides what the schema *claims* to be. ADR-031 already revoked it from
+  `zen_runtime` for that reason; it was reachable over HTTPS the entire time.
+
+### The decision: two independent layers, and neither is the other's backstop
+
+**Layer one — row-level security on the tables, shipped by the module that owns each.**
+`R__jobs_row_level_security.sql` and `R__ratelimit_row_level_security.sql` enable RLS and create a
+`FOR ALL TO zen_runtime USING (true) WITH CHECK (true)` policy, the same shape `users_application`
+has. No `FORCE ROW LEVEL SECURITY`, for ADR-031's unchanged reason: the owner must keep bypassing.
+
+**The policy is not decoration, and its absence is the trap this decision most had to avoid.** The
+deployed application still connects as the owner, so RLS does not apply to it *today*. The moment
+ADR-031's cutover happens it does — and an RLS table with no policy for `zen_runtime` returns **zero
+rows, not an error**. `JobScheduler` would find nothing due, run nothing, and report a successful
+tick, forever. That is why both migrations ship the policy in the same file as the `ENABLE`, and why
+`DatabasePrivilegeTest` asserts the row count in both directions rather than asserting that no
+exception was thrown.
+
+**Layer two — the Data API roles lose their privileges on the schema.**
+`R__identity_data_api_lockdown.sql` revokes ALL on all tables, sequences and functions in `public`
+from `anon` and `authenticated`, and revokes the `ALTER DEFAULT PRIVILEGES` that would otherwise
+re-grant every future table. It ships from `zen-identity` because it names *roles* and never a
+sibling module's table — the same rule `R__identity_application_role.sql` states for its
+schema-wide grants.
+
+They are independent on purpose. RLS protects the tables that exist and says nothing about the next
+one someone adds; the revoke covers tables not yet written and would be undone by one `GRANT` typed
+into the dashboard. `DatabasePrivilegeTest` therefore proves each **with the other switched off**:
+`rowLevelSecurityAloneStopsTheDataApiRoles` holds the grants and toggles RLS, and
+`theDataApiRolesLoseEveryPrivilegeOnThePublicSchema` disables RLS and runs the lockdown.
+
+### Two things the measurement changed about the plan
+
+**The first draft revoked `USAGE ON SCHEMA public`, and that was wrong in both directions.** Schema
+usage is held by `PUBLIC`, not only by the Data API roles — measured on a stock Supabase database,
+`nspacl` contains `=U/pg_database_owner`. So revoking it from `anon` changes nothing at all, and
+revoking it from `PUBLIC` would strip every role holding no explicit grant, which includes
+PostgREST's own `authenticator` login role. A control that either does nothing or breaks an
+unrelated component is not a control. **Table privileges are the lever**: PostgREST needs `SELECT`
+on a table whatever it holds on the schema, and without it answers `42501` before a row is read.
+
+**The exposure is version-dependent, which is the argument for establishing the property rather than
+inheriting it.** A Supabase stack started from today's CLI grants `anon` only `Dxtm` — TRUNCATE,
+REFERENCES, TRIGGER, MAINTAIN — so its PostgREST already refuses a read. The deployed project,
+created earlier, carries `arwd` as well, and that is why it answered `200`. A second stock database
+inspected the same day still showed `postgres | r | {anon=arwdDxtm/postgres}` in `pg_default_acl`,
+so this is not a setting that has been retired. Depending on which defaults a project happened to be
+created under is exactly the kind of inheritance jZen does not accept, and it is also why the revoke
+says `ALL` rather than naming the four DML verbs: **`TRUNCATE` is granted even on the "safe"
+defaults**, and it empties a table without deleting a row.
+
+### What this does not cover, said plainly
+
+The default-privileges revoke names the role Flyway connects as, because that is the role which
+creates jZen's tables. A table created by something else — the dashboard's table editor runs as
+`supabase_admin` — takes that role's defaults instead, which still grant `anon` everything, and
+altering another role's default privileges requires membership in it. So a table created outside
+these migrations is exposed until someone revokes it, and per-table RLS is what stands in for this
+layer there. That is a limit of the mechanism, not an oversight.
+
+`flyway_schema_history` deliberately gets no policy. Flyway owns that table, takes its migration
+lock on it and rewrites it on every run; RLS there is a way to break the lock rather than a way to
+protect anything, and the revoke already removes the Data API's reach.
+
+### What this supersedes, and why
+
+- **"RLS is genuinely load-bearing for the client Postgres *does* know per request — PostgREST's
+  `anon` and `authenticated` roles … That is the surface `users_owner` defends, and this entry
+  narrows the claim to it rather than deleting it"** (ADR-031) → **corrected in scope, not in
+  reasoning.** *Why:* every word of it is right, and it was applied to one table. `zen_jobs` and
+  `zen_rate_limit_counters` are on the same surface, reached by the same roles, with the same key,
+  and nothing in the repository noticed — because the modules that own them were written after the
+  entry that would have covered them, and no rule connected the two. A decision that holds only for
+  the tables that existed when it was written is a decision with a expiry date nobody wrote down.
+  The rule added to STANDARDS is the durable half of this correction.
+- **STANDARDS "Database migrations"** → **gains a rule**: a table added to `public` is exposed to
+  the Data API until something says otherwise, so every new table ships RLS and an application
+  policy in the same change. *Why:* the band table and the timestamp rule govern how a migration is
+  *named*; nothing governed what a migration must *contain*. This gap was created by ordinary,
+  careful work — two modules each adding a table the normal way — which is the signature of a
+  missing rule rather than a missing review.
+
+### Consequence
+
+- Three repeatable migrations, one per owning module. Repeatable and not versioned for the reason
+  `R__identity_application_role.sql` records: these are desired state, they must reach tables from
+  any band, and a low version is out-of-order on any database past it (ADR-033).
+- **`DatabasePrivilegeTest` grows a third stand-in.** Dev Services is plain PostgreSQL with no
+  `anon` role, so the test creates `anon` and `authenticated` **and grants them what Supabase grants
+  them**, including the `ALTER DEFAULT PRIVILEGES` half — otherwise "a new table anon cannot read"
+  would be true of a database where nothing ever granted anything, and would prove nothing.
+- Verified green: `DatabasePrivilegeTest` 14/14, the backend suite **136** tests, and the live
+  release gate `task test:e2e` **16/16** against real Supabase + Quarkus.
+  `verify:boundaries`, `verify:docs` and `sync:contracts` all pass.
+- **Measured before and after on one local Supabase database**, which is the evidence that the
+  migrations do what the prose says. Before: `anon=Dxtm,authenticated=Dxtm` on all four tables,
+  `relrowsecurity = false` on the three. After: **neither role appears in any table's ACL at all**,
+  `relrowsecurity = true` on `zen_jobs` and `zen_rate_limit_counters`, both `_application` policies
+  present, and PostgREST answering `401 / 42501` on all four — including `users`, which had
+  previously answered `200 []`. `service_role` is untouched, by design: it is the operator's key,
+  not a client's.
+- The application path is unaffected, which is the other half of what had to be true: `/api/v1/health`
+  and `/api/v1/demo/terms` answer normally against the locked-down database, and the e2e gate covers
+  the rest.
+- **This is not the `zen_runtime` cutover**, and deliberately ships without it. ADR-031's role and
+  its secrets exist in `jzen-prod` but the revision does not reference them, so the application still
+  connects as owner and the new policies are inert until it does. Shipping both at once would give
+  a wrong policy and a wrong role the identical symptom — zero rows, no error — and one deploy in
+  which to hide. The cutover is its own deploy, with one variable changed.
+- A third layer exists and is operator-side rather than schema: stop exposing `public` through the
+  Data API at all. It is now `deploy:cloudrun`'s ONE-TIME SETUP step 1d, outside this repository
+  because it is a project setting.
+
+---
+
 ## ADR-035 — The security headers sit on the Vert.x router, the app self-hosts its renderer, and HSTS stops short of the two additions that are one-way doors
 
 **Date:** 2026-08-04. **Status:** accepted. **Refines:** ADR-016 (the Wasm delivery target),

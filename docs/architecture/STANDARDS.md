@@ -193,6 +193,26 @@ Two rules the walking skeleton established, both mandatory for every backend mod
   The application floor survives as a statement rather than a discipline: a timestamp is above 1000
   by several orders of magnitude, so no library can grow into an application's numbering by
   construction. The original band reasoning is [`DECISIONS.md`](./DECISIONS.md) ADR-008.
+- **A table created in `public` is exposed to the Supabase Data API until something says
+  otherwise, so every new table ships row-level security and an application policy in the same
+  change.** PostgREST serves the `public` schema to anyone holding the project's anon key — a key
+  Supabase publishes on purpose — and Supabase's default privileges grant `anon` and
+  `authenticated` everything on tables created there. A migration that adds a table and stops is
+  therefore a migration that publishes it, and nothing in the build, the suite or the application
+  will say so. Ship three things together or none:
+
+  1. `ALTER TABLE <t> ENABLE ROW LEVEL SECURITY`;
+  2. a `CREATE POLICY <t>_application ON <t> FOR ALL TO zen_runtime USING (true) WITH CHECK (true)`
+     — **not optional.** RLS with no policy for the application role does not raise; it returns
+     **zero rows**, and a subsystem reading an empty table reports success while doing nothing;
+  3. no `FORCE ROW LEVEL SECURITY` — the owner must keep bypassing (ADR-031).
+
+  The schema-wide revoke in `R__identity_data_api_lockdown.sql` is a second, independent layer, not
+  a reason to skip this one: it covers tables this repository's migrations create, and a single
+  `GRANT` typed into the dashboard undoes it while RLS still holds. Neither layer is the other's
+  backstop. See [`DECISIONS.md`](./DECISIONS.md) ADR-036, which found three tables published this
+  way, live, on the deployed project.
+
 - **Repeatable migrations (`R__`) are keyed by description, not version**, so their name carries
   the owning module the way a band otherwise would: `R__identity_application_role.sql`. They run
   after every versioned migration, they re-run whenever their checksum changes — so unlike a
@@ -523,6 +543,16 @@ provider is only made meaningful by the backend.
   under `apps/<app>/<app>_admin` (ADR-005), consuming the same OpenAPI-documented REST
   API via generated `openapi-typescript` types.
 - Admin always speaks `X-Zen-Transport: json`; Protobuf binary is for native apps only.
+- **A compile-time define that reaches a deployed artifact is asserted in that artifact, not
+  trusted to the build tool.** Client config is compile-time by rule, which means a wrong value is
+  baked in and cannot be corrected at runtime — and the build tool is not reliable here: Flutter's
+  web build cache does **not** invalidate on a `--dart-define` change, so a build differing only in
+  `ZEN_API_URL` is answered from cache and keeps the previous URL while reporting success. That
+  shipped a bundle calling `http://localhost:18080` to Cloud Run. `build:web` therefore clears the
+  build output first and then reads the staged bundle for the host it was told to use, failing if it
+  is absent: printing the requested value is not evidence, reading the produced artifact is. Note
+  the check must understand the file — `strings | grep` finds nothing in a dart2wasm bundle and
+  would pass vacuously. See [`DECISIONS.md`](./DECISIONS.md) ADR-037.
 
 ## Authorization (RBAC)
 
@@ -538,4 +568,6 @@ on the next request. Enforce with standard `@RolesAllowed(UserRole.Names.…)` /
 - **RLS is not the app's authorization.** The `V2` owner policy guards direct Supabase-side access;
   the Quarkus app connects as `postgres` and bypasses it, so `@RolesAllowed` is the only authz layer
   for backend queries. Multi-role, fine-grained permissions, and tenant scoping are application
-  policy until a second app needs them (ADR-017, ADR-010).
+  policy until a second app needs them (ADR-017, ADR-010). What RLS *is* for is the Supabase Data
+  API, and there it is load-bearing on **every** table rather than on `users` alone — see "Database
+  migrations" above and ADR-036.

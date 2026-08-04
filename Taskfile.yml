@@ -586,6 +586,14 @@ tasks:
           exit 1
         fi
         echo "Building web bundle (WebAssembly) against $URL"
+        # DISCARD THE PREVIOUS WEB BUILD FIRST, and this is not hygiene — it is correctness.
+        # Flutter's web build cache does NOT invalidate on a --dart-define change: a build whose
+        # only difference is ZEN_API_URL is answered from cache in under a second, and the bundle
+        # keeps whatever URL the LAST build baked in. That is how a bundle built for
+        # test:native's smoke container (http://localhost:18080) reached a Cloud Run deploy: the
+        # task printed the right URL, flutter reported success, and the shipped app called
+        # localhost. Nothing anywhere failed. Measured: 818ms cached vs 18.9s real.
+        ( cd {{.DEMO_CLIENT_DIR}} && rm -rf build/web .dart_tool/flutter_build )
         # --no-web-resources-cdn: load the renderer from this origin instead of
         # www.gstatic.com/flutter-canvaskit. The bundle ALREADY contains a complete canvaskit/
         # directory (~37M, staged either way) and the loader was ignoring it in favour of the CDN,
@@ -601,6 +609,33 @@ tasks:
         # build:web:admin, which --delete would otherwise wipe when only build:web runs).
         rsync -a --delete --exclude=openapi.yaml --exclude=.gitignore --exclude=admin \
           {{.DEMO_CLIENT_DIR}}/build/web/ {{.WEB_RESOURCES}}/
+        # ASSERT THE URL IS ACTUALLY IN THE BUNDLE. The line above prints what was REQUESTED;
+        # this reads what was BUILT. They came apart once (see the rm -rf above) and the failure
+        # was invisible from every side — flutter succeeded, the deploy succeeded, verify:deploy
+        # passed, and the app was broken only for a logged-in user, in the browser, at the first
+        # request the page makes. A build define that silently does not apply must fail the build.
+        #
+        # Byte search rather than `strings`: dart2wasm packs string literals without the
+        # terminators `strings` looks for, so it finds nothing and would pass vacuously. Python
+        # understands the file, sh runs the build — the ADR-032 split.
+        python3 - "$URL" {{.WEB_RESOURCES}}/main.dart.wasm <<'PYEOF'
+        import sys
+        url, bundle = sys.argv[1], sys.argv[2]
+        host = url.split("//", 1)[-1].split("/", 1)[0]
+        blob = open(bundle, "rb").read()
+        if host.encode() in blob:
+            print(f"  verified: the bundle calls {host}")
+            sys.exit(0)
+        stale = [c for c in (b"localhost:18080", b"localhost:8080") if c in blob]
+        print(f"FAIL: the built bundle does not contain {host}.", file=sys.stderr)
+        if stale:
+            print(f"       It still calls {stale[0].decode()} — a cached build was shipped.",
+                  file=sys.stderr)
+        print("       The app would load and then fail its first API call, blocked by the",
+              file=sys.stderr)
+        print("       Content-Security-Policy for calling a foreign origin.", file=sys.stderr)
+        sys.exit(1)
+        PYEOF
         echo "Staged web bundle -> {{.WEB_RESOURCES}} ($(du -sh {{.WEB_RESOURCES}} | cut -f1))"
 
   run:demo:native:
@@ -1639,6 +1674,35 @@ tasks:
               GRANT zen_runtime TO current_user WITH SET TRUE, INHERIT TRUE;
               DROP POLICY users_application ON public.users;
               DROP OWNED BY zen_runtime; DROP ROLE zen_runtime;
+
+        1d. THE DATA API (in the Supabase dashboard, and the one check worth running on a project
+            you did not create). Supabase serves the `public` schema over PostgREST to anyone
+            holding the anon key, which is published on purpose. jZen never uses that interface --
+            the client talks to one server and it is ours -- so the correct state is that it
+            reaches nothing.
+
+            The migrations already establish two layers of this and need no operator step:
+            R__identity_data_api_lockdown.sql strips anon and authenticated of every privilege in
+            public, and each module enables row-level security on its own tables. This step is the
+            third, outside the repository because it is a project setting rather than schema:
+
+              Settings -> API -> Exposed schemas: remove `public` if nothing needs it.
+
+            Then verify from a terminal, because the dashboard reports configuration and this
+            reports reality. Any 200 here is a finding, whatever the settings page says:
+
+              curl -s -o /dev/null -w '%{http_code}\n' \
+                "$SUPABASE_URL/rest/v1/zen_jobs?select=id" \
+                -H "apikey: $SUPABASE_KEY" -H "Authorization: Bearer $SUPABASE_KEY"
+
+            Want: 401. Before ADR-036 this project answered 200 with every job row, and a PATCH
+            was accepted -- which is one UPDATE away from switching off the retention job that
+            discharges the GDPR obligation, silently, with the next tick reporting success.
+
+            Note the dashboard's advisor flags "RLS disabled in public" for a table with no policy
+            and says nothing about privileges, so it is necessary reading and not sufficient: a
+            table can be fully locked down by grants and still be flagged, and a table can be
+            flagged for years while genuinely readable. Trust the curl.
 
         2. Let the runtime service account read those secrets. Without this the revision is
            created and then fails to start, because --set-secrets is resolved at boot.

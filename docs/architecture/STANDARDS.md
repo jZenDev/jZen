@@ -543,6 +543,16 @@ provider is only made meaningful by the backend.
   under `apps/<app>/<app>_admin` (ADR-005), consuming the same OpenAPI-documented REST
   API via generated `openapi-typescript` types.
 - Admin always speaks `X-Zen-Transport: json`; Protobuf binary is for native apps only.
+- **A compile-time define that reaches a deployed artifact is asserted in that artifact, not
+  trusted to the build tool.** Client config is compile-time by rule, which means a wrong value is
+  baked in and cannot be corrected at runtime — and the build tool is not reliable here: Flutter's
+  web build cache does **not** invalidate on a `--dart-define` change, so a build differing only in
+  `ZEN_API_URL` is answered from cache and keeps the previous URL while reporting success. That
+  shipped a bundle calling `http://localhost:18080` to Cloud Run. `build:web` therefore clears the
+  build output first and then reads the staged bundle for the host it was told to use, failing if it
+  is absent: printing the requested value is not evidence, reading the produced artifact is. Note
+  the check must understand the file — `strings | grep` finds nothing in a dart2wasm bundle and
+  would pass vacuously. See [`DECISIONS.md`](./DECISIONS.md) ADR-037.
 
 ## Authorization (RBAC)
 

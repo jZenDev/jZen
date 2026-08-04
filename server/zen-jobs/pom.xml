@@ -46,10 +46,15 @@
     <!-- The reusable JobTriggerResource is a JAX-RS resource (quarkus-rest arrives transitively
          via zen-transport) annotated with MicroProfile OpenAPI (@APIResponse/@Schema). This
          supplies those annotation classes; the app module runs the SmallRye scan and merges the
-         schemas from its static META-INF/openapi.yaml. -->
+         schemas from its static META-INF/openapi.yaml.
+
+         The ANNOTATION API, not quarkus-smallrye-openapi — same reasoning as zen-identity's copy
+         of this dependency. The extension is the scanner and the published /openapi endpoint, and
+         a library that only writes annotations must not decide that every application depending on
+         it publishes its own route map. -->
     <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-smallrye-openapi</artifactId>
+      <groupId>org.eclipse.microprofile.openapi</groupId>
+      <artifactId>microprofile-openapi-api</artifactId>
     </dependency>
     <!-- @PermitAll on the trigger: the endpoint carries its own shared-secret credential and must
          not be reachable through the Supabase session path (ADR-008). -->

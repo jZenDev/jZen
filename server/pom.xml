@@ -75,7 +75,20 @@
 
     <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
     <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
-    <quarkus.platform.version>3.32.2</quarkus.platform.version>
+    <!--
+      3.32.2 to 3.38.0 is a security bump, not a routine one, and `task audit` is what found it.
+      Quarkus 3.32.2 carries two HIGH authentication/authorization BYPASS advisories against
+      quarkus-vertx-http (GHSA-qcxp-gm7m-4j5v, GHSA-rc95-pcm8-65v9), fixed at 3.36.3 and 3.37.0 on
+      the branches that lead here. jZen's entire authorization model runs through that extension's
+      path matching, so this is the one finding in the batch that is about jZen's own guarantees
+      rather than about a transitive library.
+
+      The bump also clears the rest of what the gate reported at 3.32.2: netty (codec, http, http2,
+      handler, resolver-dns), jackson-databind, vertx-core, pgjdbc and opentelemetry. All of them
+      arrive through this BOM and are therefore fixed by moving it, rather than by pinning any of
+      them individually.
+    -->
+    <quarkus.platform.version>3.38.0</quarkus.platform.version>
 
     <protobuf.version>4.29.3</protobuf.version>
     <mapstruct.version>1.6.3</mapstruct.version>
@@ -89,6 +102,33 @@
 
   <dependencyManagement>
     <dependencies>
+      <!--
+        Jackson, pinned one patch ahead of what the Quarkus platform manages, and FIRST on purpose:
+        for imported BOMs Maven takes the earliest import, so this has to precede quarkus-bom to
+        have any effect at all. Quarkus 3.38.0 brings jackson 2.22.0, which `task audit` reports
+        against GHSA-5gvw-p9qm-jgwh and GHSA-5jmj-h7xm-6q6v (both @JsonView / @JsonIgnoreProperties
+        deserialization bypasses); 2.22.1 fixes both.
+
+        The whole BOM rather than jackson-databind alone, because the databind, core and
+        annotations artifacts are released together and are not designed to be mixed. Pinning one
+        of three is how a NoSuchMethodError arrives months later.
+
+        Jackson reaches this build through quarkus-rest-client-jackson in zen-identity, which
+        serializes the outbound Supabase calls. There is deliberately no server-side
+        quarkus-rest-jackson (STANDARDS "Backend multi-module rules"), so nothing jZen SERVES is
+        deserialized by it. The provider's responses are, though, and that is enough to want the
+        fixed version rather than an argument about reachability.
+
+        Remove this block once the platform's own jackson passes the gate; it is a patch-level
+        override, not a fork.
+      -->
+      <dependency>
+        <groupId>com.fasterxml.jackson</groupId>
+        <artifactId>jackson-bom</artifactId>
+        <version>2.22.1</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <dependency>
         <groupId>${quarkus.platform.group-id}</groupId>
         <artifactId>${quarkus.platform.artifact-id}</artifactId>

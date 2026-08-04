@@ -1,0 +1,15 @@
+# Accepted vulnerability findings for `task audit:server`.
+#
+# One per line: <ADVISORY-ID>  <why this one is accepted here>
+#
+# THE REASON IS NOT OPTIONAL. audit-maven.py refuses to parse a line without one, and that is the
+# entire point of this file's format. A suppression list rots when adding to it is cheaper than
+# justifying an entry, and the usual shape — an XML file of bare <suppress> elements — makes that
+# exactly true. Requiring the sentence makes the two cost the same, and leaves the next reader
+# something to disagree with. The same discipline as CsrfRules' documented exemptions.
+#
+# A suppression is an accepted risk, not a fix. Write what makes the advisory not apply to jZen
+# (an unreachable code path, a scope that is never shipped), or what the plan is and by when.
+# "Not exploitable" with nothing after it is not a reason.
+#
+# Empty is the correct state. It is empty now.

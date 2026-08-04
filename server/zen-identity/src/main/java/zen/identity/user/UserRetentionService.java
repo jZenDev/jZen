@@ -32,6 +32,23 @@ import zen.identity.event.DeliveryReceipt;
  * {@code IdentityService}'s outbound Supabase call outside {@link UserStore}'s transaction.
  *
  * <p>Premium accounts are never touched, and an already-anonymised row is never reprocessed.
+ *
+ * <p><strong>Every query is bounded, and the bound does not touch the ordering above.</strong> All
+ * three used to load whatever matched, in full, into a list on a 256Mi instance — a shape whose
+ * cost is set by how many dormant accounts exist rather than by anything the code does. Each now
+ * reads at most {@code zen.identity.retention.batch-size} rows, <em>oldest first</em>, and the
+ * phase order is unchanged: still find, then warn, then stamp only what was delivered. That is the
+ * whole reason batching is safe here — a batch is a smaller find, not an earlier stamp, and an
+ * account that does not fit in this cycle's batch is simply found again next cycle exactly as an
+ * account whose warning failed to send already is.
+ *
+ * <p>Oldest-first is what makes the bound fair rather than arbitrary. Without an order, PostgreSQL
+ * may return any matching rows, so a limit could keep handing back the same ones and starve the
+ * rest indefinitely; ordering by the timestamp each phase measures dormancy from means the most
+ * overdue account is always in the batch.
+ *
+ * <p>A saturated batch is logged at INFO with what remains implied, because a backlog that drains
+ * silently over many cycles and a backlog that never drains look identical from outside.
  */
 @ApplicationScoped
 public class UserRetentionService {
@@ -67,16 +84,30 @@ public class UserRetentionService {
   int anonymiseOffsetDays;
 
   /**
-   * Finds every account dormant longer than the configured window that has not been warned yet.
-   * Read-only: nothing is stamped until the warning is confirmed delivered.
+   * The most rows any one phase of one cycle will read. Bounds memory on a 256Mi instance; the
+   * remainder is picked up by the next cycle, which is safe precisely because the job is
+   * idempotent and a find is not a stamp.
+   */
+  @ConfigProperty(name = "zen.identity.retention.batch-size")
+  int batchSize;
+
+  /**
+   * Finds up to one batch of accounts dormant longer than the configured window that have not been
+   * warned yet, most overdue first. Read-only: nothing is stamped until the warning is confirmed
+   * delivered.
    */
   @Transactional
   public List<AccountDeletionWarning> findAccountsDueFirstWarning() {
     OffsetDateTime cutoff = OffsetDateTime.now().minusDays(warningDays);
     List<User> due =
-        User.list(
-            "lastLoginAt < ?1 and deletionWarningSentAt is null" + NOT_PREMIUM + NOT_ANONYMISED,
-            cutoff);
+        User.find(
+                "lastLoginAt < ?1 and deletionWarningSentAt is null"
+                    + NOT_PREMIUM
+                    + NOT_ANONYMISED
+                    + " order by lastLoginAt asc",
+                cutoff)
+            .page(0, batchSize)
+            .list();
 
     List<AccountDeletionWarning> warnings = new ArrayList<>(due.size());
     for (User user : due) {
@@ -84,21 +115,28 @@ public class UserRetentionService {
     }
     if (!warnings.isEmpty()) {
       LOG.infof("Data retention: first warning due for %d dormant accounts", warnings.size());
+      logIfBatchWasFull(warnings.size(), "first warning");
     }
     return warnings;
   }
 
   /**
-   * Finds every already-warned account that stayed dormant past the grace period and has not had
-   * its final warning yet. Read-only, for the same reason as above.
+   * Finds up to one batch of already-warned accounts that stayed dormant past the grace period and
+   * have not had their final warning yet, most overdue first. Read-only, for the same reason as
+   * above.
    */
   @Transactional
   public List<AccountDeletionWarning> findAccountsDueFinalWarning() {
     OffsetDateTime cutoff = OffsetDateTime.now().minusDays(finalWarningOffsetDays);
     List<User> due =
-        User.list(
-            "deletionWarningSentAt < ?1 and finalWarningSentAt is null" + NOT_PREMIUM + NOT_ANONYMISED,
-            cutoff);
+        User.find(
+                "deletionWarningSentAt < ?1 and finalWarningSentAt is null"
+                    + NOT_PREMIUM
+                    + NOT_ANONYMISED
+                    + " order by deletionWarningSentAt asc",
+                cutoff)
+            .page(0, batchSize)
+            .list();
 
     List<AccountDeletionWarning> warnings = new ArrayList<>(due.size());
     for (User user : due) {
@@ -106,6 +144,7 @@ public class UserRetentionService {
     }
     if (!warnings.isEmpty()) {
       LOG.infof("Data retention: final warning due for %d dormant accounts", warnings.size());
+      logIfBatchWasFull(warnings.size(), "final warning");
     }
     return warnings;
   }
@@ -146,9 +185,19 @@ public class UserRetentionService {
   public int anonymiseExpiredAccounts() {
     OffsetDateTime cutoff = OffsetDateTime.now().minusDays(anonymiseOffsetDays);
     List<User> expired =
-        User.list("finalWarningSentAt < ?1" + NOT_PREMIUM + NOT_ANONYMISED, cutoff);
+        User.find(
+                "finalWarningSentAt < ?1"
+                    + NOT_PREMIUM
+                    + NOT_ANONYMISED
+                    + " order by finalWarningSentAt asc",
+                cutoff)
+            .page(0, batchSize)
+            .list();
 
     for (User user : expired) {
+      // The user id, which is the primary key, is what makes the placeholder unique. A constant
+      // here would make every anonymised row collide with every other one under the UNIQUE
+      // constraint on users.email, and the second account of a batch could never be anonymised.
       user.email = ANONYMISED_EMAIL_PREFIX + user.id + ANONYMISED_EMAIL_DOMAIN;
       user.nickname = ANONYMISED_NICKNAME;
       user.displayName = null;
@@ -157,8 +206,23 @@ public class UserRetentionService {
     }
     if (!expired.isEmpty()) {
       LOG.infof("Data retention: anonymised %d expired accounts", expired.size());
+      logIfBatchWasFull(expired.size(), "anonymisation");
     }
     return expired.size();
+  }
+
+  /**
+   * Says so when a phase filled its batch, because from outside a backlog that drains over the next
+   * few hourly cycles and a backlog that never drains look exactly alike. Retention windows are
+   * measured in hundreds of days, so waiting a cycle costs nothing; not knowing does.
+   */
+  private void logIfBatchWasFull(int found, String phase) {
+    if (found >= batchSize) {
+      LOG.infof(
+          "Data retention: the %s batch was full at %d; the remainder is carried to the next"
+              + " cycle (zen.identity.retention.batch-size)",
+          phase, batchSize);
+    }
   }
 
   private AccountDeletionWarning warning(User user, Stage stage, int daysUntilAnonymisation) {

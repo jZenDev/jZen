@@ -104,7 +104,7 @@ static `META-INF/openapi.yaml` (paths scanned from annotations merge over it).
 management) **and** the aggregator that builds+`install`s the framework libraries. App servers
 (e.g. `apps/zen_demo/zen_demo_server`, the **only** `quarkus`-packaged module) inherit `zen-parent`
 across directories via `<relativePath>` and resolve libs from the local Maven repo — never by
-relative source paths. Baseline: **Quarkus 3.32.2 on Java 25**.
+relative source paths. Baseline: **Quarkus 3.38.0 on Java 25**.
 
 Library modules: `zen-proto` (generated DTOs, leaf, only `protobuf-java`), `zen-core`
 (`ZenResult`/`ZenError`/`ZenStatus`/`AcceptLanguage`, no Quarkus deps), `zen-transport` (the seam),

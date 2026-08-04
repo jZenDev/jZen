@@ -41,6 +41,16 @@ The rules that keep the monorepo honest. Philosophy is in
   performance feature rather than a discarded exit code. Skipping is only ever safe for a task
   no gate depends on, and the native tools already do that better for their own languages
   ([`DECISIONS.md`](./DECISIONS.md) ADR-014).
+- **A gate that asks the outside world a question stays out of `task test`.** `task audit` checks
+  every shipped Java and TypeScript dependency against published advisories, and its answer changes
+  when nothing in this repository changed. Folding that into the release gate would make the suite
+  go red overnight because someone else published something — which is how a gate stops being read.
+  It stands alone, says in its own description that it needs a network, and belongs in CI on a
+  schedule and before a release. This does **not** loosen "no task swallows a failure": `task audit`
+  fails on a finding *and* fails when it cannot reach the advisory database, because "we did not
+  look" and "we looked and it was clean" must never share an exit code. See
+  [`DECISIONS.md`](./DECISIONS.md) ADR-034, including the two tools that were rejected for reporting
+  success after checking nothing.
 - Run `task doctor` after cloning. It distinguishes tools the Java build needs from the
   extra tools (`protoc`, `protoc-gen-dart`) that only Dart proto codegen needs — the
   Java build resolves `protoc` from Maven Central and needs no system install.
@@ -151,27 +161,38 @@ Two rules the walking skeleton established, both mandatory for every backend mod
   on it. Splitting locations per module does **not** avoid collisions and is not the answer: Flyway
   versions must be unique across every location that shares a schema-history table, so a per-module
   location would still need the rule below, plus per-application configuration.
-- **Each framework library owns a reserved version band**, and never numbers outside it:
+- **A new versioned migration is named with a UTC timestamp**, `V<YYYYMMDDHHMMSS>__<module>_<what>.sql`
+  — e.g. `V20260804113000__identity_email_unique.sql`. The owning module lives in the description,
+  the way it already does for repeatables. See [`DECISIONS.md`](./DECISIONS.md) ADR-033.
 
-  | Owner | Band | Today |
+  *Why not a per-module number.* A version has to satisfy two things at once: no two libraries may
+  collide, and every new migration must sort **above every version already applied anywhere**. A
+  reserved band does the first and cannot do the second, because "above everything applied" is a
+  fact about the repository over time and a band is an allocation to one module. A hand-picked next
+  integer does the second and re-opens the first on any parallel branch. A timestamp does both,
+  needs no lookup before writing a file, and cannot be got wrong by omission.
+
+- **A band allocates ownership; it does not stay reachable — which is why bands are historical.**
+  Once a higher version has migrated a database, a *new* lower version is out-of-order and **Flyway
+  refuses to start the application** — "Detected resolved migration not applied to database: N".
+  zen-identity cannot add a `V3` to any database that has run `V100` or `V200`, and that is not a
+  defect to be fixed with `out-of-order=true` or `ignoreMigrationPatterns`, both of which work by
+  making Flyway stop checking. See [`DECISIONS.md`](./DECISIONS.md) ADR-031, which found this by
+  failing to boot, and ADR-033, which replaced the scheme.
+
+- **The band table below is the record of what is applied, not an instruction for new work.**
+
+  | Owner | Band | Applied |
   |---|---|---|
-  | `zen-identity` | 1-99 | `V1__init_identity.sql`, `V2__row_level_security.sql` |
-  | `zen-jobs` | 100-199 | `V100__init_jobs.sql` |
-  | `zen-ratelimit` | 200-299 | `V200__init_rate_limit.sql` |
-  | the next framework library | 300-399, 400-499, … | — |
-  | applications (`apps/*/*_server`) | 1000+ | — |
+  | `zen-identity` | 1-99 *(historical)* | `V1__init_identity.sql`, `V2__row_level_security.sql` |
+  | `zen-jobs` | 100-199 *(historical)* | `V100__init_jobs.sql` |
+  | `zen-ratelimit` | 200-299 *(historical)* | `V200__init_rate_limit.sql` |
+  | any module, from ADR-033 on | UTC timestamp | `V20260804113000__identity_email_unique.sql` |
+  | applications (`apps/*/*_server`) | 1000+, now advisory | — |
 
-  A new library claims the next free hundred *in this table* as part of its first migration, so two
-  libraries developed in parallel cannot both land a `V3`. Applications start at 1000 so no library
-  can ever grow into an application's numbering. See [`DECISIONS.md`](./DECISIONS.md) ADR-008.
-- **A band allocates ownership; it does not stay reachable.** Once a higher band has migrated a
-  database, a *new* version inside a lower band is out-of-order and **Flyway refuses to start the
-  application** — "Detected resolved migration not applied to database: N". zen-identity cannot
-  add a `V3` to any database that has run `V100` or `V200`, and that is not a defect to be fixed
-  with `out-of-order=true` or `ignoreMigrationPatterns`, both of which work by making Flyway stop
-  checking. A library's second migration either takes a number above every applied version, or —
-  when what it expresses is a desired state rather than a step — is repeatable. See
-  [`DECISIONS.md`](./DECISIONS.md) ADR-031.
+  The application floor survives as a statement rather than a discipline: a timestamp is above 1000
+  by several orders of magnitude, so no library can grow into an application's numbering by
+  construction. The original band reasoning is [`DECISIONS.md`](./DECISIONS.md) ADR-008.
 - **Repeatable migrations (`R__`) are keyed by description, not version**, so their name carries
   the owning module the way a band otherwise would: `R__identity_application_role.sql`. They run
   after every versioned migration, they re-run whenever their checksum changes — so unlike a
@@ -236,6 +257,30 @@ same shape:
 The result is an `openapi.json` carrying exactly the declared schemas, which
 `openapi-typescript` turns into usable TS types. A bare-proto return type also fails at
 runtime, not just in the docs: it triggers Quarkus's build-time Jackson writer and 500s.
+
+**OpenAPI is build tooling, and the dependency split says so.** A library that annotates a resource
+depends on `microprofile-openapi-api` — the annotation classes, and nothing else. The extension that
+*reads* them, `quarkus-smallrye-openapi`, is the application's dependency and lives in the app's
+`openapi` Maven profile, which is active unless `-Dnative` is passed. So the default build, every
+test run and `task sync:contracts` all have it, and the native image prod ships does not: `/openapi`
+publishes a complete, always-current map of every route, verb, parameter and status code the service
+accepts, and nothing needs that at runtime (`SECURITY-REMEDIATION` F15). `quarkus-swagger-ui` rides
+along with the extension and goes with it.
+
+Two ways to get this wrong, both quiet:
+
+- **A library depending on the extension instead of the API** hands the scanner and the published
+  endpoint to every application that depends on it, transitively. The app can then exclude it and
+  nothing changes, which is exactly what happened the first time this was tried.
+- **Inverting the profile** — excluding OpenAPI from the default build — breaks `sync:contracts`
+  without failing it. `generate:api:schema` would package cleanly and write no `openapi.json`;
+  `generate:api:ts` is guarded by `status: test ! -f …/openapi.json`, so it would **skip** rather
+  than fail; and the gate would then diff a `schema.generated.ts` nobody regenerated and report the
+  contracts in sync. The symptom arrives later as a TypeScript error about a field that does exist.
+
+Both directions are asserted: `OpenApiProfileTest` proves the default build serves `/openapi` with
+the real surface in it, and `task verify:endpoints` proves the image does not. Asserting one
+direction would pass on a build that lost it everywhere.
 
 ## Package modularity (hybrid, not monolith)
 

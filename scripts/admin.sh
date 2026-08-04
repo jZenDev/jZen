@@ -36,5 +36,5 @@ wait_for_health "$API" "$LOG"
 
 # Vite proxies /api to the backend on $ZEN_APP_PORT (same-origin, so the session cookie flows).
 info "Starting admin panel on http://localhost:5173 (proxies /api to ${API})"
-info "Need a login? Run scripts/seed-admin.sh in another shell."
+info "Need a login? Run scripts/seed-admin.py in another shell."
 ( cd apps/zen_demo/zen_demo_admin && pnpm dev )

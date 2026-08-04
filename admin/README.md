@@ -70,4 +70,4 @@ task run:admin       # dev server on http://localhost:5173, proxying /api to the
 (or the combined `scripts/admin.sh`, which also seeds an admin login — see
 [`../scripts/README.md`](../scripts/README.md)). Roles are loaded from the `users` table, never
 the JWT, so a freshly registered user must have its `users.role` set to `admin` before it can
-sign in to the panel (`scripts/seed-admin.sh`).
+sign in to the panel (`scripts/seed-admin.py`).

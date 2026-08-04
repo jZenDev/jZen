@@ -20,10 +20,15 @@ four ordered tests, first match wins:
 | 2 | Does it only run commands and branch on exit codes or scalars a tool hands it? | **sh** |
 | 3 | Must it understand *content* — parse structure out of text, or construct structure safely into it? | **Python** |
 
-**sh runs things; Python understands things.** That is why the four runners below are sh — Rule 1,
-and structurally so: `lib.sh`'s `ensure_supabase` exports into *its caller* and `start_backend`
-relies on `java` inheriting that, which a Python child process cannot do for its parent. And it is
-why `pick-device.py` is Python: parsing `flutter devices --machine` JSON is Rule 3.
+**sh runs things; Python understands things.** That is why the three runners below (`admin.sh`,
+`demo.sh`, `stop.sh`) are sh — Rule 1, and structurally so: `lib.sh`'s `ensure_supabase` exports
+into *its caller* and `start_backend` relies on `java` inheriting that, which a Python child
+process cannot do for its parent. And it is why `pick-device.py` is Python: parsing
+`flutter devices --machine` JSON is Rule 3.
+
+`seed-admin.py` is the case that shows the line is about the *job*, not the directory. It sits
+among the runners and reads like one, but it supervises nothing — it builds a JSON body and a SQL
+statement, which is Rule 3.
 
 Python here is **floored at 3.9, not pinned** (`task doctor` checks it), and **stdlib only** — no
 `pip`, no virtualenv, no `requirements.txt`. The floor is what keeps these scripts working on a Mac
@@ -55,15 +60,21 @@ Supabase + backend + the `zen_demo` Flutter client in Chrome on `http://localhos
 (`--web-port`). The script form of `task run:demo`, with the same robust Supabase handling as
 `admin.sh`.
 
-## seed-admin.sh — create an admin login
+## seed-admin.py — create an admin login
 
 ```
-scripts/seed-admin.sh [--email E] [--password P] [--port N]
+scripts/seed-admin.py [--email E] [--password P] [--port N]
 ```
 
 Registers a user against the running backend, then flips its `users.role` to `admin` (roles live in
 the table, loaded by `RoleAugmentor`, never the JWT). Defaults: `admin@jzen.local` / `password123`.
 Log in with the printed credentials at `http://localhost:5173`.
+
+Both payloads are built by things that understand the format — `json.dumps` for the body, psql's
+`:'email'` interpolation for the statement — so an address with an apostrophe or a password with a
+quote is data, not syntax. The sh version assembled both by string interpolation and broke on
+either. Note the statement arrives on **stdin**, not via `psql -c`: `-c` skips psql's own lexer, so
+`:'email'` would never expand and the server would reject it outright.
 
 ## stop.sh — stop the stack
 
@@ -84,7 +95,7 @@ stack (CLI reports "running" but the db container has exited) with a `stop` befo
 
 ```
 scripts/admin.sh            # terminal 1: Supabase + backend + admin panel
-scripts/seed-admin.sh       # terminal 2: one-time, create the admin login
+scripts/seed-admin.py       # terminal 2: one-time, create the admin login
 # ... open http://localhost:5173, log in ...
 scripts/stop.sh --supabase  # tear everything down
 

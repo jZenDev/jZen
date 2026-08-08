@@ -1340,6 +1340,17 @@ tasks:
           printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /main.dart.wasm web "HTTP $wcode, type '${wtype:-none}' (want 200 application/wasm)"
           fail=1
         fi
+        # ...and it must arrive COMPRESSED. quarkus.http.compress-media-types is one line whose
+        # default list omits application/wasm; lose it and every visitor pays 2,488,178 bytes
+        # instead of ~910,000, with nothing failing anywhere. A config value that can silently
+        # revert needs a gate, not a one-time check — the same defect class as ADR-037's build
+        # define. GET, never HEAD: HEAD against this server answers text/html and no encoding
+        # headers for every path, so a HEAD-based check would pass on a broken configuration.
+        wenc=$(curl -s -o /dev/null -D- -H 'Accept-Encoding: gzip' "$URL/main.dart.wasm" | tr -d '\r' | awk -F': ' 'tolower($1)=="content-encoding"{print tolower($2)}')
+        case "$wenc" in
+          *gzip*) printf '  \033[32mok\033[0m   %-24s %-9s %s\n' /main.dart.wasm gzip "content-encoding: $wenc" ;;
+          *) printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /main.dart.wasm gzip "'${wenc:-none}' — wasm is not compressed"; fail=1 ;;
+        esac
         # Entry files (fixed names, not content-hashed) must NOT be immutable, or a redeploy is
         # invisible to returning browsers for a day. They must revalidate (StaticCacheHeaders).
         wcache=$(curl -s -o /dev/null -D- "$URL/main.dart.wasm" | tr -d '\r' | awk -F': ' 'tolower($1)=="cache-control"{print $2}')

@@ -1,7 +1,7 @@
 # Security Remediation Plan
 
 A working document, not a source of truth. The architecture docs in
-[`../architecture/`](../architecture/) remain authoritative; where this plan proposes changing one
+[`../../architecture/`](../../architecture/) remain authoritative; where this plan proposes changing one
 of them, it says so and names the ADR that has to record it.
 
 **Audit date:** 2026-08-03

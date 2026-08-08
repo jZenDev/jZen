@@ -1,7 +1,7 @@
 # The Supabase Data API exposure
 
 A working document, not a source of truth. The architecture docs in
-[`../architecture/`](../architecture/) remain authoritative; the decision this plan produced is
+[`../../architecture/`](../../architecture/) remain authoritative; the decision this plan produced is
 recorded as **ADR-036**.
 
 **Found:** 2026-08-04

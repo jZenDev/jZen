@@ -42,8 +42,8 @@ vars:
   SERVICE_NAME: '{{.SERVICE_NAME | default "zen-demo-server"}}'
   AR_REPO: '{{.AR_REPO | default "jzen"}}'
   # The one-shot Cloud Run Job that migrates the schema before a revision goes live (ADR-038).
-  # Created once (deploy:cloudrun summary, step 1e); every deploy points it at the image it just
-  # pushed and runs it.
+  # deploy:cloudrun creates-or-updates it on every deploy, pointed at the image it just pushed —
+  # there is no setup step to forget. See that task's summary, ONE-TIME SETUP note 1e.
   MIGRATE_JOB_NAME: '{{.MIGRATE_JOB_NAME | default "zen-demo-migrate"}}'
 
   # Cloud Run CAPACITY. These are the APPLICATION's choice, not the framework's (ADR-028):
@@ -1926,46 +1926,46 @@ tasks:
             table can be fully locked down by grants and still be flagged, and a table can be
             flagged for years while genuinely readable. Trust the curl.
 
-        1e. THE MIGRATION JOB. Since ADR-038 the application does not migrate at boot in %prod,
-            so nothing creates or updates the schema unless this job exists. Skip it and the
-            first deploy comes up against an empty database: every authenticated request is
-            refused (UserRoleLoader's to_regclass latch degrades rather than crashing), and no
-            other check here notices.
+        1e. THE MIGRATION JOB — NOTHING TO DO. Listed here because it is part of the environment
+            and you should know it exists, not because it is a step: the deploy creates it.
 
-            It is a Cloud Run JOB running THE SAME IMAGE with zen.migrate-only=true — the same
-            binary, the same Flyway, the same db/migration classpath location the application
-            carries. Not a Flyway CLI container: that would be a second migration runner and a
+            Since ADR-038 the application does not migrate at boot in %prod, so a Cloud Run JOB
+            running THE SAME IMAGE with zen.migrate-only=true is what creates and updates the
+            schema — the same binary, the same Flyway, the same db/migration classpath location.
+            Not a Flyway CLI container: that would be a second migration runner and a
             version-drift risk against STANDARDS "Database migrations", which allows exactly one
             authority. And a job rather than a `docker run` from the deploying machine, so the
             production database password stays in Secret Manager instead of on a laptop.
 
-            It takes the DDL credentials (DB_USERNAME / DB_PASSWORD) and deliberately NOT
-            APP_DB_*: ADR-031 gave Flyway its own connection precisely because migrating and
-            serving are different privileges, and zen_runtime holds neither DDL nor even a read
-            of flyway_schema_history. The rest of the secrets are the service's, because the job
-            boots the same application and its startup guards read the same configuration.
+            WHY THIS ONE IS AUTOMATED AND ITS NEIGHBOURS ARE NOT. Every other step here needs
+            something the deploy cannot know — a database password, an SMTP key, a minted token,
+            a project number. This needs only the image just pushed, the region, and the same
+            secret list the service is about to get, so `gcloud run jobs deploy` (create-or-
+            update) runs it on every deploy and there is no setup step to forget. ADR-037 is the
+            precedent: a sequencing decision recorded only in a document is not a sequencing
+            decision, because the tooling decides in the end.
 
-              gcloud run jobs create zen-demo-migrate \
-                --project=PROJECT --region=REGION \
-                --image=REGION-docker.pkg.dev/PROJECT/jzen/zen-demo-server:bootstrap \
-                --max-retries=0 --task-timeout=10m --memory=256Mi --cpu=1 \
-                --set-env-vars=ZEN_MIGRATE_ONLY=true,QUARKUS_HTTP_HOST_ENABLED=false \
-                --set-secrets="SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,DB_URL=DB_URL:latest,DB_USERNAME=DB_USERNAME:latest,DB_PASSWORD=DB_PASSWORD:latest,CORS_ORIGINS=CORS_ORIGINS:latest,AUTH_REDIRECT_URI=AUTH_REDIRECT_URI:latest,AUTH_REDIRECT_URIS=AUTH_REDIRECT_URIS:latest,SITE_URL=SITE_URL:latest,SMTP_HOST=SMTP_HOST:latest,SMTP_PORT=SMTP_PORT:latest,SMTP_USERNAME=SMTP_USERNAME:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,SMTP_FROM=SMTP_FROM:latest,ZEN_JOBS_TRIGGER_TOKEN=ZEN_JOBS_TRIGGER_TOKEN:latest"
+            What the deploy sets, and why each one:
+              --image             the image JUST PUSHED. The old image carries the old
+                                  migrations; running it would migrate to the previous schema
+                                  and report success.
+              --set-env-vars      ZEN_MIGRATE_ONLY=true, QUARKUS_HTTP_HOST_ENABLED=false, and
+                                  ZEN_ALLOW_SCHEMA_ROLLBACK written EVERY time — `set`, not
+                                  `update`, so an override from a previous deploy cannot linger
+                                  and silently disable the schema gate for every deploy after it.
+              --set-secrets       the service's list, minus APP_DB_*. Flyway runs on the DDL
+                                  credentials because ADR-031 made migrating and serving
+                                  different privileges; zen_runtime holds neither DDL nor even a
+                                  read of flyway_schema_history.
+              --max-retries=0     a retry would re-run a migration that already failed halfway,
+                                  against a schema Flyway has recorded as failed, turning one
+                                  legible error into two.
 
-            --image is a placeholder here and is overwritten on every deploy: the deploy points
-            the job at the image it JUST PUSHED before executing it, because the new image is
-            what carries the new migrations. Running the job with the old image would migrate to
-            the previous schema and report success.
-
-            --max-retries=0 is deliberate. A retry would re-run a migration that has already
-            failed halfway, against a schema Flyway has recorded as failed, and turn one legible
-            error into two.
-
-            Nothing else needs creating: `gcloud run jobs execute` is what the deploy calls, and
-            job and service share the runtime service account, so step 2's secret binding covers
-            both. If you run the job as a DIFFERENT service account (--service-account), that
-            account needs its own roles/secretmanager.secretAccessor binding or every execution
-            fails at boot with a secret it cannot read.
+            The one thing that IS environmental: job and service share the runtime service
+            account, so step 2's secret binding covers both. If you run the job as a different
+            service account (--service-account), that account needs its own
+            roles/secretmanager.secretAccessor binding or every execution fails at boot on a
+            secret it cannot read.
 
         2. Let the runtime service account read those secrets. Without this the revision is
            created and then fails to start, because --set-secrets is resolved at boot. The same
@@ -2042,6 +2042,11 @@ tasks:
           -t "$IMAGE" {{.DEMO_SERVER_DIR}}
         docker push "$IMAGE"
 
+        # The secret set both the job and the service read. Declared here because the migration
+        # job needs it too and must not drift from the service's: they are the same application,
+        # booting the same startup guards, from the same image.
+        SECRETS="SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,DB_URL=DB_URL:latest,DB_USERNAME=DB_USERNAME:latest,DB_PASSWORD=DB_PASSWORD:latest,CORS_ORIGINS=CORS_ORIGINS:latest,AUTH_REDIRECT_URI=AUTH_REDIRECT_URI:latest,AUTH_REDIRECT_URIS=AUTH_REDIRECT_URIS:latest,SITE_URL=SITE_URL:latest,SMTP_HOST=SMTP_HOST:latest,SMTP_PORT=SMTP_PORT:latest,SMTP_USERNAME=SMTP_USERNAME:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,SMTP_FROM=SMTP_FROM:latest,ZEN_JOBS_TRIGGER_TOKEN=ZEN_JOBS_TRIGGER_TOKEN:latest"
+
         # ═══ MIGRATE, THEN DEPLOY. Never the other way round, and never with the old image. ═══
         #
         # %prod does not migrate at boot any more (ADR-038), so this is the only thing that
@@ -2049,9 +2054,23 @@ tasks:
         # carries the new migrations. Pointing the job at whatever it ran last time would migrate
         # to the previous schema and report success.
         #
-        # ZEN_ALLOW_SCHEMA_ROLLBACK is set on EVERY deploy, to false unless overridden. An
-        # override that stuck on the job from a previous deploy would silently disable the gate
-        # for every deploy after it, which is the shape of failure this whole wave is about.
+        # THE DEPLOY CREATES THE JOB RATHER THAN ASKING AN OPERATOR TO. Every other ONE-TIME
+        # SETUP step is manual because it needs something this task cannot know — a database
+        # password, an SMTP key, a minted token, a project number. This one needs nothing but the
+        # image just pushed, the region, and the same secret list being handed to the service, so
+        # `jobs deploy` (create-or-update) is used and there is no setup step to forget. ADR-037
+        # is the precedent and it is stated as a rule there: a sequencing decision recorded only
+        # in a document is not a sequencing decision, because the tooling decides in the end.
+        #
+        # DDL credentials, and deliberately NOT APP_DB_*: ADR-031 gave Flyway its own connection
+        # because migrating and serving are different privileges, and zen_runtime holds neither
+        # DDL nor a read of flyway_schema_history. The APP_DB_* pair is appended below, for the
+        # service only.
+        #
+        # --set-env-vars, not --update-env-vars, and that is the load-bearing choice here:
+        # ZEN_ALLOW_SCHEMA_ROLLBACK is written on EVERY deploy. An override left behind by a
+        # previous deploy would disable the gate for every deploy after it, silently — the exact
+        # shape of failure this wave exists to remove.
         if [ -n "${ALLOW_SCHEMA_ROLLBACK:-}" ]; then
           echo "ALLOW_SCHEMA_ROLLBACK set: the schema gate will not stop a rollback onto a newer"
           echo "schema. Nothing after this checks that the image and the database agree."
@@ -2059,19 +2078,14 @@ tasks:
         else
           ROLLBACK=false
         fi
-        if ! gcloud run jobs update {{.MIGRATE_JOB_NAME}} \
-               --project={{.GCP_PROJECT}} --region={{.GCP_REGION}} \
-               --image="$IMAGE" \
-               --update-env-vars="ZEN_MIGRATE_ONLY=true,QUARKUS_HTTP_HOST_ENABLED=false,ZEN_ALLOW_SCHEMA_ROLLBACK=$ROLLBACK" \
-               >/dev/null; then
-          echo
-          echo "Could not point the migration job at the new image. If the job does not exist"
-          echo "yet, create it once — see ONE-TIME SETUP step 1e in this task's summary:"
-          echo "    task deploy:cloudrun --summary"
-          echo "Nothing was deployed. Deploying without it would serve against a schema that"
-          echo "nothing migrates, because %prod does not migrate at boot (ADR-038)."
-          exit 1
-        fi
+        gcloud run jobs deploy {{.MIGRATE_JOB_NAME}} \
+          --project={{.GCP_PROJECT}} --region={{.GCP_REGION}} \
+          --image="$IMAGE" \
+          --max-retries=0 --task-timeout=10m --tasks=1 \
+          --memory={{.SERVICE_MEMORY}} --cpu={{.SERVICE_CPU}} \
+          --set-env-vars="ZEN_MIGRATE_ONLY=true,QUARKUS_HTTP_HOST_ENABLED=false,ZEN_ALLOW_SCHEMA_ROLLBACK=$ROLLBACK" \
+          --set-secrets="$SECRETS" \
+          >/dev/null
         echo "Migrating with $IMAGE (job {{.MIGRATE_JOB_NAME}}, schema gate: $([ "$ROLLBACK" = true ] && echo OVERRIDDEN || echo on))..."
         if gcloud run jobs execute {{.MIGRATE_JOB_NAME}} \
              --project={{.GCP_PROJECT}} --region={{.GCP_REGION}} --wait >/dev/null; then
@@ -2098,7 +2112,8 @@ tasks:
         # so it is attached only when both of its secrets exist. Which branch was taken is
         # printed rather than assumed: a deploy that quietly kept serving as the owner because
         # a secret was misnamed is exactly the silent regression this whole wave is about.
-        SECRETS="SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,DB_URL=DB_URL:latest,DB_USERNAME=DB_USERNAME:latest,DB_PASSWORD=DB_PASSWORD:latest,CORS_ORIGINS=CORS_ORIGINS:latest,AUTH_REDIRECT_URI=AUTH_REDIRECT_URI:latest,AUTH_REDIRECT_URIS=AUTH_REDIRECT_URIS:latest,SITE_URL=SITE_URL:latest,SMTP_HOST=SMTP_HOST:latest,SMTP_PORT=SMTP_PORT:latest,SMTP_USERNAME=SMTP_USERNAME:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,SMTP_FROM=SMTP_FROM:latest,ZEN_JOBS_TRIGGER_TOKEN=ZEN_JOBS_TRIGGER_TOKEN:latest"
+        # Appended to the SERVICE's secrets only — the migration job above deliberately runs
+        # without it, on the DDL role.
         have_role=1
         for s in APP_DB_USERNAME APP_DB_PASSWORD; do
           gcloud secrets describe "$s" --project={{.GCP_PROJECT}} >/dev/null 2>&1 || have_role=0

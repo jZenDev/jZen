@@ -45,6 +45,13 @@ vars:
   # deploy:cloudrun creates-or-updates it on every deploy, pointed at the image it just pushed —
   # there is no setup step to forget. See that task's summary, ONE-TIME SETUP note 1e.
   MIGRATE_JOB_NAME: '{{.MIGRATE_JOB_NAME | default "zen-demo-migrate"}}'
+  # 512Mi and NOT the service's SERVICE_MEMORY (256Mi), because Cloud Run refuses the smaller
+  # value here: a JOB always runs with CPU allocated (gen2, unthrottled) and that combination has
+  # a 512Mi floor, while the service gets away with 256Mi by being throttled between requests.
+  # Measured by the API rejecting it — "Total memory < 512 Mi is not supported with gen2 execution
+  # environment with cpu always allocated". It is a floor, not a sizing decision: the job runs the
+  # same image for a few seconds and never serves a request.
+  MIGRATE_JOB_MEMORY: '{{.MIGRATE_JOB_MEMORY | default "512Mi"}}'
 
   # Cloud Run CAPACITY. These are the APPLICATION's choice, not the framework's (ADR-028):
   # the repo root is language- and application-neutral, so hardcoding one app's cost envelope
@@ -2082,7 +2089,7 @@ tasks:
           --project={{.GCP_PROJECT}} --region={{.GCP_REGION}} \
           --image="$IMAGE" \
           --max-retries=0 --task-timeout=10m --tasks=1 \
-          --memory={{.SERVICE_MEMORY}} --cpu={{.SERVICE_CPU}} \
+          --memory={{.MIGRATE_JOB_MEMORY}} --cpu={{.SERVICE_CPU}} \
           --set-env-vars="ZEN_MIGRATE_ONLY=true,QUARKUS_HTTP_HOST_ENABLED=false,ZEN_ALLOW_SCHEMA_ROLLBACK=$ROLLBACK" \
           --set-secrets="$SECRETS" \
           >/dev/null

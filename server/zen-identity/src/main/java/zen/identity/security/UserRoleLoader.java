@@ -13,16 +13,26 @@ import java.util.UUID;
  *
  * <p>Extracted so {@link RoleAugmentor} calls a properly proxied CDI method that activates a
  * Hibernate session via {@code @Transactional}. The {@code to_regclass} guard lets role
- * augmentation degrade gracefully before Flyway has created the table (e.g. very early boot).
+ * augmentation degrade gracefully when the table is not there yet.
  *
  * <p><strong>The guard is latched, not repeated.</strong> It used to run on every authenticated
  * request, which is a second round trip to PostgreSQL on the hottest path in the application —
- * paid forever to answer a question that can only change once. A table's absence is a startup
- * condition: {@code quarkus.flyway.migrate-at-start=true} creates it before the HTTP server
- * accepts anything, and a {@code users} table that vanished mid-flight is not a state this class
- * could usefully degrade into anyway. So the probe runs until it first answers yes and never
- * again; while the answer is no it keeps asking, because that is the path that is still waiting
- * for something to change.
+ * paid forever to answer a question that can only change once. So the probe runs until it first
+ * answers yes and never again; while the answer is no it keeps asking, because that is the path
+ * that is still waiting for something to change.
+ *
+ * <p><strong>Since ADR-038 this guard carries more weight than it used to.</strong> The absence of
+ * the table was a startup condition the process resolved itself: {@code migrate-at-start=true}
+ * created it before the HTTP server accepted anything, so the "no" branch was reachable for
+ * milliseconds at most. In {@code %prod} Flyway no longer runs at boot at all — migration is a step
+ * of the deploy, run as a one-shot job on this same image before the revision goes live
+ * ({@code zen.identity.schema.MigrateOnlyRunner}). A process now assumes its schema is already
+ * there. If a deploy ever ran in the wrong order, or migrated a different database than the one it
+ * deployed against, this latch is the only thing between that and a confusing failure: role
+ * augmentation degrades to "no such user" — every authenticated request is refused — instead of
+ * every request dying inside Hibernate on a missing relation. It is a legible failure rather than a
+ * safe one, and it self-heals the moment the table appears, because the latch only ever latches on
+ * a yes.
  *
  * <p><strong>The latch is an instance field on purpose, and a {@code static} one would be a
  * defect.</strong> GraalVM snapshots static state into the native image at build time, so a

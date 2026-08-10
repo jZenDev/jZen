@@ -253,9 +253,11 @@ lib/src/l10n/demo_{en,uk}.arb                          ▶  DemoLocalizations
 ## Persistence
 
 PostgreSQL via Hibernate Panache, **active-record: entities extend `PanacheEntityBase` and
-there are no repository classes.** Flyway migrates at start and is the single migration
-authority — `supabase/migrations/` stays empty so there is never a second migration system on
-one database. `zen-identity` ships `V1__init_identity.sql` (the `users` table) and
+there are no repository classes.** Flyway is the single migration authority —
+`supabase/migrations/` stays empty so there is never a second migration system on one database.
+It runs **at the deploy, not at boot** (ADR-038): `%dev` and `%test` still migrate at start
+against their throwaway databases, while `%prod` neither migrates nor validates and
+`deploy:cloudrun` runs the image it just pushed as a one-shot migration job first. `zen-identity` ships `V1__init_identity.sql` (the `users` table) and
 `V2__row_level_security.sql`; each framework library owns a reserved version band
 (STANDARDS "Database migrations").
 The local database is the Supabase stack on port 54322 (`supabase/config.toml`).

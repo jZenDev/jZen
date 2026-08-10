@@ -15,6 +15,132 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-038 — Migration runs at the deploy, and the binary-and-schema agreement check is abandoned at boot rather than moved
+
+**Date:** 2026-08-10. **Status:** accepted. **Supersedes:** STANDARDS "Deployment model" and
+"Database migrations" in respect of *when* Flyway runs, and STANDARDS "Deployment model"'s boot
+figures (ADR-027's 2.9–4.8 s / 3.0 s boot), which the performance audit re-measured.
+**Refines:** ADR-031, whose separate Flyway connection now leaves the boot path entirely as a side
+effect. ADR-008's version-band reasoning and ADR-033's timestamp versions are untouched: this entry
+changes *when* migrations are applied, not what they are or how they are named.
+
+### Context, and the measurement the decision was taken on
+
+`quarkus.flyway.migrate-at-start=true` was unprofiled, so every cold start migrated and validated.
+Production is `--min-instances=0`, so the container is replaced around two dozen times a day, and
+each of those boots paid the full cost to conclude there was nothing to do. Measured in the
+performance audit (2026-08-08, 173 cold starts out of seven days of logs; the `Database:` →
+`Schema "public" is up to date` window was **1.423 s** median over 44 boots of one revision and
+**1.434 s** over 36 of another — flat to within 25 ms, i.e. a fixed charge):
+
+| Configuration | DB round trips at boot | Connections | Saving |
+|---|---|---|---|
+| As shipped: migrate + validate at start | 53 | 4 | — |
+| `migrate-at-start=false`, `validate-at-start=true` | 41 | 4 | ~420 ms |
+| **`migrate-at-start=false`, `validate-at-start=false`** | **12** | **2** | **~2,100 ms** |
+
+**Validation is ~80% of that cost, and validation is the guarantee.** So the decision the owner took
+on 2026-08-08, with this split in front of them, is not "move migration": relocating migration alone
+buys ~420 ms and needs all of the deploy machinery anyway. It is to take the full ~2,100 ms, which
+means **giving up the boot-time check that a running binary and its schema agree**. Recording it as
+a relocation would misdescribe it.
+
+**What it is worth, honestly.** ~2.1 s of cold start and **$0.05/month**. It is the largest task in
+the remediation and its smallest saving. The case for it is the 2.1 seconds a visitor waits for a
+first request, not the bill, and a report of this work that presents it as a cost saving is
+misrepresenting it.
+
+### Decision
+
+- **`%prod` neither migrates nor validates at start.** `%dev` and `%test` still migrate at boot and
+  must: Dev Services provisions a throwaway database per run, `task test:e2e` depends on it, and the
+  database is a sibling container ~0.1 ms away, so there is nothing to save.
+- **A migrate-only mode on the same image.** `zen.identity.schema.MigrateOnlyRunner` observes
+  `StartupEvent`; when `zen.migrate-only=true` it runs Flyway and terminates. **The same binary, the
+  same Flyway, the same `db/migration` location.** A Flyway CLI container was rejected: it is a
+  second migration runner and a version-drift risk against "Flyway is the single migration
+  authority", which is the rule this design exists to preserve.
+  - **It lives in `zen-identity`**, which owns the schema baseline every application inherits — the
+    same reasoning that puts `AuthResource` there. The cost is stated rather than hidden:
+    zen-identity now declares `quarkus-flyway`, having previously shipped migrations without the
+    migrator. An app module would have made every future application re-implement the deploy step.
+  - **Exit codes are distinct because the deploy reads them:** 0 migrated or already current, 1
+    Flyway raised, 2 the schema gate refused. Nothing returns 0 on a failure.
+  - **`Quarkus.asyncExit`, not `System.exit`** — measured, not assumed. `System.exit` from a startup
+    observer *deadlocks*: the calling thread blocks in `Runtime.exit` awaiting the shutdown hooks
+    while Quarkus's own hook waits in `Application.awaitShutdown()` for a startup that can no longer
+    finish. Reproduced here with a thread dump, with the migration already applied — the worst
+    outcome available, because Cloud Run would then hold the deploy open until the task timeout for
+    a job that was done. The job also sets `quarkus.http.host-enabled=false` so no port is bound.
+- **A Cloud Run Job runs it** (`deploy:cloudrun` ONE-TIME SETUP step 1e), on the **DDL** credentials
+  and deliberately not `APP_DB_*`: ADR-031 gave Flyway its own connection precisely because
+  migrating and serving are different privileges, and `zen_runtime` cannot even read
+  `flyway_schema_history`. A job rather than a local `docker run`, so the production database
+  password stays in Secret Manager instead of on a developer's machine.
+- **The deploy order is build → push → migrate with the image just pushed → `gcloud run deploy`.**
+  Migration must not run with the old image, which does not carry the new migrations, and the
+  service must not go live in front of a schema that is not ready. The job's exit code aborts the
+  deploy, and the deploy prints which branch it took, the habit ADR-031's privilege-split line set.
+- **A deploy-time schema gate replaces the boot-time one.** Before migrating, the job compares its
+  own migration set against `flyway_schema_history` and refuses when the database has applied
+  migrations this image does not carry (`MISSING_*` / `FUTURE_*`) — the rollback case, and the one
+  thing boot validation caught that nothing else did. `ALLOW_SCHEMA_ROLLBACK=1` overrides it in the
+  shape `ALLOW_DIRTY=1` already establishes: explicit, loud, and it says what it gives up. The
+  override reaches Flyway too (`ignoreMigrationPatterns=*:missing,*:future`), scoped to those two
+  states only — a checksum mismatch on a migration this image *does* carry still fails, because that
+  is a rewritten migration rather than a rollback.
+
+### What this supersedes, and why
+
+- **"Flyway migrates at start and is the single migration authority"** (BLUEPRINT "Persistence") →
+  **changed in half.** Single authority is untouched and is the constraint that shaped the design;
+  "at start" is now true only of `%dev` and `%test`.
+- **STANDARDS "Database migrations"** → **refined.** It gains the rule that migration is an act of
+  the deploy, the three properties that hold it together, and a plain statement of what is given up.
+- **STANDARDS "Deployment model"**'s boot decomposition, quoting ADR-027's 2.9–4.8 s cold request
+  and 2.6–3.3 s boot → **superseded by measurement.** The audit's decomposition of 173 cold starts
+  puts a cold request at ≈4.51 s, of which 726 ms is platform. *Why:* ADR-027 sampled twelve
+  wake-ups by hand; the audit read the recorded logs and attributed the phases.
+- **ADR-031** → **refined, not reversed.** Its Flyway connection was an unpriced ~660 ms on every
+  boot (audit F8). That cost disappears here as a consequence of Flyway leaving the boot path, which
+  is the whole of F8 resolved without touching the privilege split. ADR-031 stands exactly as
+  written.
+
+### Consequence
+
+- **A `%prod` process now assumes its schema is already there.** `UserRoleLoader`'s `to_regclass`
+  latch stops being a millisecond-wide startup nicety and becomes the only thing between a
+  mis-ordered deploy and a confusing failure: role augmentation degrades to "no such user" — every
+  authenticated request refused — instead of every request dying on a missing relation. Its javadoc,
+  which asserted `migrate-at-start=true` creates the table "before the HTTP server accepts
+  anything", is corrected.
+- **A deploy now has two failure points instead of one**, and neither is allowed to be quiet. The
+  job exits non-zero and the deploy stops; `task test:native` asserts the migration container's exit
+  code, that it bound no port, that it created the schema, and that the serving container's log
+  contains no Flyway at all.
+- **The local release gate runs the production sequence.** `test:native` used to rely on
+  migrate-at-start to create its schema; it now migrates in a separate container first, exactly as
+  the deploy does, and exercises the schema gate in both directions. Special-casing the smoke
+  container would have left the real path untested by anything.
+- **Discovery is asserted.** `MigrateOnlyWiringTest` fails if `zen-identity` ever stops running
+  `jandex-maven-plugin` — without the index the bean is never instantiated, and the job would boot,
+  migrate nothing and exit 0, letting a deploy ship over a schema that was never created. Same
+  reasoning, same shape, as `RateLimitWiringTest` (ADR-029).
+- **Verified locally, and only locally** — this entry records no deployment. Measured against a
+  Postgres with `log_connections`/`log_statement` on, `%prod` profile, steady-state schema: boot
+  goes from **3 connections and 52 round trips** to **1 connection and 11 round trips**, and the
+  boot log contains no `DbMigrate`/`DbValidate`. (Three, not the audit's four, because Wave 0's
+  `jdbc.min-size=1` had already landed; the 41 round trips and 2 connections removed here are
+  exactly the audit's attribution.) Local `started in` moves 1.63 s → 1.38 s and that number means
+  nothing: the local database is 0.1 ms away where production's pooler is ~35 ms per round trip and
+  ~332 ms per connection. **The counts are the measurement.** The migrate-only mode was exercised
+  against an empty database (exit 0, schema created, no port bound), an unreachable one (exit 1,
+  naming the refused connection), a database ahead of the image (exit 2, naming the migration and
+  the override), and with the override (exit 0). `task test` (155 backend tests, 8 Dart suites, the
+  admin typecheck, `test:e2e`) and `task test:native` are green.
+
+---
+
 ## ADR-037 — A deploy performs the privilege cutover whether or not the plan said so, and a build define that silently does not apply must fail the build
 
 **Date:** 2026-08-04. **Status:** accepted. **Corrects:** ADR-036's consequence "this is not the

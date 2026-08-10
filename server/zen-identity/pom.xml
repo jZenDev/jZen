@@ -88,6 +88,16 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-jdbc-postgresql</artifactId>
     </dependency>
+    <!-- This module ships db/migration and now also declares the runner that applies it
+         (MigrateOnlyRunner, ADR-038). It shipped the migrations without the migrator before, which
+         left every application to remember quarkus-flyway for a schema it did not author. Since
+         %prod no longer migrates at boot, the deploy runs this image as a one-shot job instead —
+         so the class that does it has to be somewhere every application inherits, and that is
+         here, beside the baseline it applies. -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-flyway</artifactId>
+    </dependency>
     <!-- No quarkus-scheduler: UserRetentionJob no longer schedules itself (ADR-008). An
          in-process cron cannot fire on a scale-to-zero runtime, so runCycle() is a plain callable
          that an application registers with zen-jobs, and this module keeps no scheduling

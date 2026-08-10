@@ -41,6 +41,10 @@ vars:
   GCP_REGION: '{{.GCP_REGION | default "europe-central2"}}'
   SERVICE_NAME: '{{.SERVICE_NAME | default "zen-demo-server"}}'
   AR_REPO: '{{.AR_REPO | default "jzen"}}'
+  # The one-shot Cloud Run Job that migrates the schema before a revision goes live (ADR-038).
+  # Created once (deploy:cloudrun summary, step 1e); every deploy points it at the image it just
+  # pushed and runs it.
+  MIGRATE_JOB_NAME: '{{.MIGRATE_JOB_NAME | default "zen-demo-migrate"}}'
 
   # Cloud Run CAPACITY. These are the APPLICATION's choice, not the framework's (ADR-028):
   # the repo root is language- and application-neutral, so hardcoding one app's cost envelope
@@ -1153,11 +1157,22 @@ tasks:
       @QuarkusIntegrationTest, since that launches the runner as a host process. Running the
       container has no such problem and tests the exact artifact that will be deployed.
 
-      WHY PLAIN POSTGRES AND NOT SUPABASE. The app migrates at startup, so it needs a
-      database, but not Supabase specifically: V2__row_level_security.sql is guarded on
-      `to_regprocedure('auth.uid()')` precisely so it is a no-op off Supabase. A disposable
-      container is therefore enough, it cannot collide with a Supabase stack another project
-      left running, and it keeps this gate free of network dependencies.
+      WHY PLAIN POSTGRES AND NOT SUPABASE. The app needs a database, but not Supabase
+      specifically: V2__row_level_security.sql is guarded on `to_regprocedure('auth.uid()')`
+      precisely so it is a no-op off Supabase. A disposable container is therefore enough, it
+      cannot collide with a Supabase stack another project left running, and it keeps this
+      gate free of network dependencies.
+
+      WHY IT MIGRATES IN A SEPARATE CONTAINER FIRST. The image runs the %prod profile, and
+      since ADR-038 %prod does not migrate at boot — so a serving container started against an
+      empty database would fail its smoke assertions in a way that looks like a bug in the
+      app. The answer is not to force migrate-at-start back on for the smoke: that would leave
+      the sequence production actually runs untested by anything. So this gate runs the SAME
+      sequence deploy:cloudrun runs — the same image with zen.migrate-only=true, to completion,
+      and only then the serving container — and asserts what each half must be true of: the
+      migration container terminates on its own with exit 0, and the serving container's log
+      contains no Flyway at all. The deploy-time schema gate is exercised here too, in both
+      directions, because a gate nothing has ever seen refuse is a claim rather than a gate.
 
       WHY BOTH TRANSPORT MODES. The first deployed revision served protobuf perfectly and
       500'd on every JSON response — binary serialisation uses generated code, while
@@ -1175,7 +1190,7 @@ tasks:
         IMG=zen-native-smoke:local
         NET=zen-smoke-net
         cleanup() {
-          docker rm -f zen-smoke-app zen-smoke-db >/dev/null 2>&1 || true
+          docker rm -f zen-smoke-app zen-smoke-migrate zen-smoke-db >/dev/null 2>&1 || true
           docker network rm "$NET" >/dev/null 2>&1 || true
         }
         trap cleanup EXIT
@@ -1195,16 +1210,95 @@ tasks:
         # Config values are deliberately fake except the datasource: this gate proves the
         # image boots, migrates and serialises. Anything needing real Supabase or SMTP is
         # covered by test:e2e on the JVM and by verify:deploy against the real environment.
+        # One definition, used by both the migration container and the serving one, because the
+        # whole point is that they are the same image with the same configuration.
+        smoke_env() {
+          printf '%s ' \
+            -e DB_URL=jdbc:postgresql://zen-smoke-db:5432/postgres \
+            -e DB_USERNAME=postgres -e DB_PASSWORD=smoke \
+            -e SUPABASE_URL=http://localhost:54321 -e SUPABASE_KEY=smoke \
+            -e SITE_URL=http://localhost:18080 \
+            -e AUTH_REDIRECT_URI=http://localhost:18080/auth/callback \
+            -e CORS_ORIGINS=http://localhost:18080 \
+            -e SMTP_HOST=localhost -e SMTP_PORT=1025 -e SMTP_USERNAME=x -e SMTP_PASSWORD=x \
+            -e SMTP_FROM=x@example.com -e ZEN_JOBS_TRIGGER_TOKEN=smoke-token
+        }
+        # Runs the image in migrate-only mode to completion and returns ITS exit code. No -p:
+        # the mode must never bind a port, and no -d: a job that does not terminate on its own
+        # is the failure mode this shape exists to prevent, so it is run in the foreground and
+        # allowed to prove it. QUARKUS_HTTP_HOST_ENABLED=false is the second half of that —
+        # the same two variables the Cloud Run Job carries.
+        migrate_only() {
+          docker rm -f zen-smoke-migrate >/dev/null 2>&1 || true
+          docker run --name zen-smoke-migrate --network "$NET" --platform=linux/amd64 \
+            $(smoke_env) -e ZEN_MIGRATE_ONLY=true -e QUARKUS_HTTP_HOST_ENABLED=false \
+            "$@" "$IMG" >/dev/null 2>&1
+        }
+        psql_smoke() { docker exec -i zen-smoke-db psql -qtAX -U postgres -d postgres -c "$1"; }
+
+        # ── The deploy's first half: migrate, with the same image, before anything serves. ──
+        set +e
+        migrate_only
+        rc=$?
+        set -e
+        if [ "$rc" -ne 0 ]; then
+          echo "Migrate-only exited $rc against an empty database. Log:"
+          docker logs zen-smoke-migrate 2>&1 | tail -30
+          exit 1
+        fi
+        applied=$(docker logs zen-smoke-migrate 2>&1 | grep -c 'Successfully applied' || true)
+        if [ "$applied" -lt 1 ]; then
+          echo "Migrate-only exited 0 without applying anything to an EMPTY database."
+          echo "That is the shape of an undiscovered bean (zen-identity's Jandex index), and it"
+          echo "would let a deploy ship over a schema that was never created."
+          docker logs zen-smoke-migrate 2>&1 | tail -30
+          exit 1
+        fi
+        if docker logs zen-smoke-migrate 2>&1 | grep -q 'Listening on: http'; then
+          echo "The migration job bound an HTTP port. It must not: a job that serves is a job"
+          echo "that can be reached, and QUARKUS_HTTP_HOST_ENABLED=false is what stops it."
+          docker logs zen-smoke-migrate 2>&1 | grep 'Listening on' | head -3
+          exit 1
+        fi
+        printf '  \033[32mok\033[0m   %-24s %-9s %s\n' migrate-only empty-db "created the schema, exit 0, no port bound"
+
+        # ── The deploy-time schema gate, in both directions. ──
+        # Boot validation used to refuse an image whose migrations are BEHIND the database. That
+        # protection now lives in the migrate step, so it is asserted the only way a gate can be:
+        # by making the condition true. A migration row above everything the image carries is
+        # exactly what a rollback onto a newer schema looks like.
+        psql_smoke "insert into flyway_schema_history
+            (installed_rank, version, description, type, script, checksum, installed_by,
+             execution_time, success)
+          values (9001, '99999999999999', 'a future migration this image does not carry', 'SQL',
+                  'V99999999999999__future.sql', 0, 'postgres', 0, true)" >/dev/null
+        set +e
+        migrate_only
+        rc=$?
+        set -e
+        if [ "$rc" -ne 2 ]; then
+          echo "The schema gate did NOT refuse a database ahead of the image (exit $rc, want 2)."
+          echo "This is the one case boot-time validation used to catch, and nothing else does."
+          docker logs zen-smoke-migrate 2>&1 | tail -30
+          exit 1
+        fi
+        printf '  \033[32mok\033[0m   %-24s %-9s %s\n' migrate-only schema-gate "refused a newer schema with exit 2"
+        set +e
+        migrate_only -e ZEN_ALLOW_SCHEMA_ROLLBACK=true
+        rc=$?
+        set -e
+        if [ "$rc" -ne 0 ]; then
+          echo "The deliberate override did not let the rollback through (exit $rc, want 0)."
+          docker logs zen-smoke-migrate 2>&1 | tail -30
+          exit 1
+        fi
+        printf '  \033[32mok\033[0m   %-24s %-9s %s\n' migrate-only override "ZEN_ALLOW_SCHEMA_ROLLBACK=true proceeds"
+        psql_smoke "delete from flyway_schema_history where installed_rank = 9001" >/dev/null
+        docker rm -f zen-smoke-migrate >/dev/null 2>&1 || true
+
+        # ── The deploy's second half: the same image, serving, against the migrated schema. ──
         docker run -d --name zen-smoke-app --network "$NET" -p 18080:8080 --platform=linux/amd64 \
-          -e DB_URL=jdbc:postgresql://zen-smoke-db:5432/postgres \
-          -e DB_USERNAME=postgres -e DB_PASSWORD=smoke \
-          -e SUPABASE_URL=http://localhost:54321 -e SUPABASE_KEY=smoke \
-          -e SITE_URL=http://localhost:18080 \
-          -e AUTH_REDIRECT_URI=http://localhost:18080/auth/callback \
-          -e CORS_ORIGINS=http://localhost:18080 \
-          -e SMTP_HOST=localhost -e SMTP_PORT=1025 -e SMTP_USERNAME=x -e SMTP_PASSWORD=x \
-          -e SMTP_FROM=x@example.com -e ZEN_JOBS_TRIGGER_TOKEN=smoke-token \
-          "$IMG" >/dev/null
+          $(smoke_env) "$IMG" >/dev/null
 
         up=0
         for _ in $(seq 1 60); do
@@ -1217,6 +1311,18 @@ tasks:
           docker logs zen-smoke-app 2>&1 | tail -40
           exit 1
         fi
+
+        # The other half of ADR-038, and the half that can silently revert: a serving %prod boot
+        # must touch Flyway not at all. Reinstating migrate-at-start would still pass every other
+        # assertion here — the app would work — while handing back the ~2,100 ms and the two
+        # connections this cost on every one of the ~24 daily cold starts.
+        if docker logs zen-smoke-app 2>&1 | grep -qE 'DbMigrate|DbValidate'; then
+          printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' serving-boot flyway "Flyway ran at boot in %prod"
+          docker logs zen-smoke-app 2>&1 | grep -E 'DbMigrate|DbValidate' | head -5
+          echo "Migration is the deploy's job now (ADR-038). Check %prod.quarkus.flyway.*."
+          exit 1
+        fi
+        printf '  \033[32mok\033[0m   %-24s %-9s %s\n' serving-boot flyway "no migration and no validation at boot"
 
         SERVICE_URL=http://localhost:18080 task verify:endpoints
 
@@ -1538,6 +1644,18 @@ tasks:
           ALLOW_DIRTY=1 overrides deliberately and tags `<sha>-dirty` so the image never
           impersonates the commit. That escape hatch is for a throwaway experiment only:
           two dirty builds still collide with each other, by design and not by accident.
+        - It MIGRATES BEFORE IT DEPLOYS, and stops if that fails. The order is build → push →
+          run the migration job with the image just pushed → gcloud run deploy. Since ADR-038
+          the application does not migrate at boot, so this step is the only thing that ever
+          changes the schema, and the service must not go live in front of a schema that is not
+          ready. The job's exit code is read and acted on: a failed migration aborts the deploy
+          rather than being reported alongside a successful one.
+        - It REFUSES A DEPLOY WHOSE MIGRATIONS ARE BEHIND THE DATABASE. Boot-time validation
+          used to catch that — an image rolled back onto a newer schema would not start — and
+          nothing at boot catches it any more, so the migration job checks it first and exits 2.
+          `ALLOW_SCHEMA_ROLLBACK=1` overrides deliberately, the way ALLOW_DIRTY=1 does, and says
+          what it gives up: after it, nothing checks that the running binary and its schema
+          agree.
         - No `firebase deploy`: jZen serves Cloud Run directly with no Firebase Hosting
           edge, which is what lets it use normal cookie names and proactive auth.
         - Scheduled work is triggered from OUTSIDE the container. min-instances=0 means
@@ -1808,8 +1926,50 @@ tasks:
             table can be fully locked down by grants and still be flagged, and a table can be
             flagged for years while genuinely readable. Trust the curl.
 
+        1e. THE MIGRATION JOB. Since ADR-038 the application does not migrate at boot in %prod,
+            so nothing creates or updates the schema unless this job exists. Skip it and the
+            first deploy comes up against an empty database: every authenticated request is
+            refused (UserRoleLoader's to_regclass latch degrades rather than crashing), and no
+            other check here notices.
+
+            It is a Cloud Run JOB running THE SAME IMAGE with zen.migrate-only=true — the same
+            binary, the same Flyway, the same db/migration classpath location the application
+            carries. Not a Flyway CLI container: that would be a second migration runner and a
+            version-drift risk against STANDARDS "Database migrations", which allows exactly one
+            authority. And a job rather than a `docker run` from the deploying machine, so the
+            production database password stays in Secret Manager instead of on a laptop.
+
+            It takes the DDL credentials (DB_USERNAME / DB_PASSWORD) and deliberately NOT
+            APP_DB_*: ADR-031 gave Flyway its own connection precisely because migrating and
+            serving are different privileges, and zen_runtime holds neither DDL nor even a read
+            of flyway_schema_history. The rest of the secrets are the service's, because the job
+            boots the same application and its startup guards read the same configuration.
+
+              gcloud run jobs create zen-demo-migrate \
+                --project=PROJECT --region=REGION \
+                --image=REGION-docker.pkg.dev/PROJECT/jzen/zen-demo-server:bootstrap \
+                --max-retries=0 --task-timeout=10m --memory=256Mi --cpu=1 \
+                --set-env-vars=ZEN_MIGRATE_ONLY=true,QUARKUS_HTTP_HOST_ENABLED=false \
+                --set-secrets="SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,DB_URL=DB_URL:latest,DB_USERNAME=DB_USERNAME:latest,DB_PASSWORD=DB_PASSWORD:latest,CORS_ORIGINS=CORS_ORIGINS:latest,AUTH_REDIRECT_URI=AUTH_REDIRECT_URI:latest,AUTH_REDIRECT_URIS=AUTH_REDIRECT_URIS:latest,SITE_URL=SITE_URL:latest,SMTP_HOST=SMTP_HOST:latest,SMTP_PORT=SMTP_PORT:latest,SMTP_USERNAME=SMTP_USERNAME:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,SMTP_FROM=SMTP_FROM:latest,ZEN_JOBS_TRIGGER_TOKEN=ZEN_JOBS_TRIGGER_TOKEN:latest"
+
+            --image is a placeholder here and is overwritten on every deploy: the deploy points
+            the job at the image it JUST PUSHED before executing it, because the new image is
+            what carries the new migrations. Running the job with the old image would migrate to
+            the previous schema and report success.
+
+            --max-retries=0 is deliberate. A retry would re-run a migration that has already
+            failed halfway, against a schema Flyway has recorded as failed, and turn one legible
+            error into two.
+
+            Nothing else needs creating: `gcloud run jobs execute` is what the deploy calls, and
+            job and service share the runtime service account, so step 2's secret binding covers
+            both. If you run the job as a DIFFERENT service account (--service-account), that
+            account needs its own roles/secretmanager.secretAccessor binding or every execution
+            fails at boot with a secret it cannot read.
+
         2. Let the runtime service account read those secrets. Without this the revision is
-           created and then fails to start, because --set-secrets is resolved at boot.
+           created and then fails to start, because --set-secrets is resolved at boot. The same
+           binding is what lets the migration job in 1e read them.
 
              gcloud projects add-iam-policy-binding PROJECT --condition=None \
                --member="serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
@@ -1881,6 +2041,59 @@ tasks:
           -f {{.DEMO_SERVER_DIR}}/src/main/docker/Dockerfile.native-micro \
           -t "$IMAGE" {{.DEMO_SERVER_DIR}}
         docker push "$IMAGE"
+
+        # ═══ MIGRATE, THEN DEPLOY. Never the other way round, and never with the old image. ═══
+        #
+        # %prod does not migrate at boot any more (ADR-038), so this is the only thing that
+        # changes the schema — and it runs the image just pushed, because that image is what
+        # carries the new migrations. Pointing the job at whatever it ran last time would migrate
+        # to the previous schema and report success.
+        #
+        # ZEN_ALLOW_SCHEMA_ROLLBACK is set on EVERY deploy, to false unless overridden. An
+        # override that stuck on the job from a previous deploy would silently disable the gate
+        # for every deploy after it, which is the shape of failure this whole wave is about.
+        if [ -n "${ALLOW_SCHEMA_ROLLBACK:-}" ]; then
+          echo "ALLOW_SCHEMA_ROLLBACK set: the schema gate will not stop a rollback onto a newer"
+          echo "schema. Nothing after this checks that the image and the database agree."
+          ROLLBACK=true
+        else
+          ROLLBACK=false
+        fi
+        if ! gcloud run jobs update {{.MIGRATE_JOB_NAME}} \
+               --project={{.GCP_PROJECT}} --region={{.GCP_REGION}} \
+               --image="$IMAGE" \
+               --update-env-vars="ZEN_MIGRATE_ONLY=true,QUARKUS_HTTP_HOST_ENABLED=false,ZEN_ALLOW_SCHEMA_ROLLBACK=$ROLLBACK" \
+               >/dev/null; then
+          echo
+          echo "Could not point the migration job at the new image. If the job does not exist"
+          echo "yet, create it once — see ONE-TIME SETUP step 1e in this task's summary:"
+          echo "    task deploy:cloudrun --summary"
+          echo "Nothing was deployed. Deploying without it would serve against a schema that"
+          echo "nothing migrates, because %prod does not migrate at boot (ADR-038)."
+          exit 1
+        fi
+        echo "Migrating with $IMAGE (job {{.MIGRATE_JOB_NAME}}, schema gate: $([ "$ROLLBACK" = true ] && echo OVERRIDDEN || echo on))..."
+        if gcloud run jobs execute {{.MIGRATE_JOB_NAME}} \
+             --project={{.GCP_PROJECT}} --region={{.GCP_REGION}} --wait >/dev/null; then
+          echo "Migration job succeeded; the schema is ready for this image."
+        else
+          echo
+          echo "MIGRATION FAILED — nothing was deployed, and the previous revision keeps serving."
+          echo "The job exits 1 when Flyway raised and 2 when the schema gate refused, i.e. when"
+          echo "the database has migrations this image does not carry (a rollback onto a newer"
+          echo "schema — the case boot-time validation used to catch and no longer can)."
+          echo
+          echo "Read which it was:"
+          echo "    gcloud logging read \\"
+          echo "      'resource.type=cloud_run_job AND resource.labels.job_name={{.MIGRATE_JOB_NAME}}' \\"
+          echo "      --project={{.GCP_PROJECT}} --limit=50 --format='value(textPayload)'"
+          echo
+          echo "If it was the gate and the rollback is deliberate, override it:"
+          echo "    ALLOW_SCHEMA_ROLLBACK=1 GCP_PROJECT={{.GCP_PROJECT}} task deploy:cloudrun"
+          echo "which deploys an image that does not understand its own schema, on purpose."
+          exit 1
+        fi
+
         # The least-privilege database role (ADR-031) is OPTIONAL and provisioned out of band,
         # so it is attached only when both of its secrets exist. Which branch was taken is
         # printed rather than assumed: a deploy that quietly kept serving as the owner because
@@ -1930,8 +2143,8 @@ tasks:
       not finish all three:
 
       1. THE ENTIRE GCP PROJECT — `gcloud projects delete`, not a resource-by-resource sweep.
-         Deleting the project removes the Cloud Run service, the scheduler job, all fifteen
-         secrets, the Artifact Registry repo, every IAM binding and enabled API, AND unlinks
+         Deleting the project removes the Cloud Run service, the migration job, the scheduler
+         job, all fifteen secrets, the Artifact Registry repo, every IAM binding and enabled API, AND unlinks
          billing, in one atomic operation. An empty project left behind is exactly the "$0 so
          leave it" leftover this task exists to reject. It is recoverable for 30 days, which
          is the safety net.
@@ -2000,7 +2213,7 @@ tasks:
         # --- 2. The whole GCP project: one atomic delete, takes everything with it.
         if gcloud projects describe "${GCP_PROJECT}" >/dev/null 2>&1; then
           gcloud projects delete "${GCP_PROJECT}" --quiet \
-            && echo "  deleted GCP project ${GCP_PROJECT} (service, scheduler, 14 secrets, registry, IAM, APIs; billing unlinked)" \
+            && echo "  deleted GCP project ${GCP_PROJECT} (service, migration job, scheduler, 14 secrets, registry, IAM, APIs; billing unlinked)" \
             || { echo "  FAILED to delete GCP project ${GCP_PROJECT}."; incomplete=1; }
         else
           echo "  GCP project ${GCP_PROJECT} already gone."

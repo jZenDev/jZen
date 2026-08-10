@@ -1,7 +1,7 @@
 # Execution plan: the architectural performance & hosting-cost audit
 
 A working document, not a source of truth. The architecture docs in
-[`../architecture/`](../architecture/) remain authoritative, and ADRs win on conflict.
+[`../../architecture/`](../../architecture/) remain authoritative, and ADRs win on conflict.
 
 **Written:** 2026-08-05
 **Briefed by:** [`PERFORMANCE-AUDIT-PROMPT.md`](PERFORMANCE-AUDIT-PROMPT.md) — that file states *what*

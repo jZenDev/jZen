@@ -382,3 +382,206 @@ Each item is part of the wave that causes it, not a follow-up.
   runs.
 - **Write the ADR after the wave is verified, never before.** An ADR records a decision that was
   taken and proved, not one that is intended.
+
+---
+
+## 8. Verification against revision `00019-lk8`, 2026-08-10
+
+Measured after Waves 0–3 shipped, against `https://zen-demo-server-tovqpjhspa-lm.a.run.app`
+(the origin `gcloud run services describe` returns — **not** the hostname `services list` prints,
+which is what the scheduler calls). Deployed commit `e774290`, confirmed by the running
+revision's `ZEN_BUILD_ID`.
+
+**§5's numbers are predictions and stay as written. This section records what was measured.**
+The audit's numbers are dated observations of `00018-mn5` and remain true of it.
+
+**Wave 4 (`06fc93e`) is committed and NOT deployed.** Everything below is a Waves 0–3 measurement.
+`startup-cpu-boost=true` and the service-level `maxScale=20` are both still set out of band, so
+every boot figure here is a *boosted* boot and F11 is still live.
+
+**Production request budget: 8 allowed, 5 spent.** Everything else came from Cloud Logging, the
+Cloud Monitoring v3 API and the Cloud Billing Catalog API, which cost nothing and wake no container.
+
+### 8.1 The predictions, and what they measured
+
+| Metric | Baseline `00018` | Predicted | **Measured `00019`** | |
+|---|---|---|---|---|
+| `started in`, median | 3.873 s | ~1.4 s | **1.084 s** (n=3; mean 1.229, range 1.017–1.587) | **hit, beat** |
+| DB round trips at boot | 53 | ~11–12 | **not re-measured** — see 8.4 | — |
+| Connections at boot | 4 | 1 | **not re-measured** — see 8.4 | — |
+| `startup_latencies` mean | 4,514 ms | lower, by more than the app's share | **1,493 ms** (n=3) — −3,021 ms against an app share of −2,801 ms | **hit** |
+| Flyway log lines | present | absent | **absent** — no `DbMigrate`/`DbValidate` in any `00019` boot | **hit** |
+| `billable_instance_time` | 110–158 s/day | — | **2.93 s/instance** vs 5.74 (`00018`); ≈70 s/day projected | −47% |
+| `memory/utilizations` p99 | — | expected to fall | **0.5994** vs `00018`'s concurrent 0.5573 | **miss — see 8.2** |
+| Artifact Registry total | 906.058 MB | — | **915.567 MB** (+9.5 MB for a whole revision) | — |
+
+`00018`'s own window (n=71 boots, 2026-08-08 → 2026-08-10) reads median **3.885 s**, mean 3.823 s,
+range 3.310–4.194 s — which is where the audit's single 3.873 s tick sits, so the baseline holds.
+
+**N is 3, not the 12 the brief asked for, and that is a limitation of the measurement, not a
+finding.** `00019` was deployed at 18:27 UTC on the measurement day and boots once an hour; only
+three had occurred by the close of the session. All three sit far below every one of `00018`'s 71
+samples, so the direction is not in doubt, but the median is thin. Re-read the log after a full day
+before quoting it as settled.
+
+The spread is itself informative: the two **scheduler-tick** boots are 1.017 s and 1.084 s, within
+67 ms of each other, while the 1.587 s outlier is the **first boot after the deploy**, when no image
+layer was warm anywhere. Steady-state cold start is the tighter pair, not the mean.
+
+### 8.2 The one miss: memory utilisation went up, not down
+
+p99 memory rose from 0.5573 to 0.5997 of 256 MiB. **The prediction was wrong, not the change.**
+Wave 2 pruned renderer variants and `.symbols` maps out of the *image*; those are files on disk that
+no boot ever reads, so shrinking them was never going to move resident memory. Nothing in Waves 0–3
+frees heap. At n=2, on a 256 MiB limit, this is noise around a flat line — but it is recorded as a
+miss because the prediction was stated and did not hold.
+
+Note also that the audit's baseline p99 of 0.73 does not reproduce: `00018` over the same recent
+window reads 0.557. The two are different aggregation windows over the same revision; the
+`00018`-vs-`00019` comparison above is the like-for-like one.
+
+### 8.3 The frontend, on the wire
+
+The two findings worth real money, verified on the deployed native image rather than a local
+container. `HEAD` is useless against this server, so every check is a `GET`.
+
+| # | Request | Result |
+|---|---|---|
+| 1 | `GET /main.dart.wasm` | **200, 909,639 wire bytes** (was 2,488,203 — **−63.4%**), `content-encoding: gzip`, `content-type: application/wasm` intact, `etag: "e774290"` |
+| 2 | same, `If-None-Match: "e774290"`, same container | **304, 0 bytes** |
+| 3 | same, **across a container replacement** | **304, 0 bytes** — where the audit measured 200 and 2,488,178 bytes |
+| 4 | `GET /canvaskit/skwasm.wasm` | **200, 1,546,647 wire bytes** gzip; still shipped, so Wave 2 did not over-prune |
+| 5 | `GET /` | **200, 768 wire bytes**, gzip, `text/html;charset=UTF-8` |
+
+**F1 holds in production.** The audit predicted ≈910,000 bytes for `main.dart.wasm`; the wire
+carried 909,639. Compression survived the native image and Google's frontend, and the
+`application/wasm` content type was not damaged by adding it to `compress-media-types`.
+
+**F2 is fixed, and the container replacement was proved from the logs, not assumed.** A 304 from the
+same process would prove nothing — it is the easiest way to declare victory falsely here — so the
+replacement was established before the request was spent:
+
+```
+19:00:05.697  started in 1.084s          <- the process that issued the ETag (requests 1, 2, 4, 5)
+19:29:46.122  zen-demo-server stopped in 0.005s
+20:00:04.157  Starting new instance. Reason: AUTOSCALING
+20:00:05.669  started in 1.017s          <- a different process
+20:02:15      request 3  ->  304, 0 bytes
+```
+
+The process holding the original response was dead for 32 minutes before the conditional request was
+replayed. This is precisely the scenario the audit measured at 200 and 2,488,178 bytes.
+
+**The `ETag` busts correctly across builds.** `ZEN_BUILD_ID` is set by `deploy:cloudrun` to the git
+short SHA plus a dirty marker, so a new deploy always mints a new validator. It is a *commit*
+identifier and not a content hash, which means redeploying the same clean commit reuses the ETag —
+correct, because the same source produces the same bytes, but worth knowing if a build is ever
+non-reproducible.
+
+**`Last-Modified` is worse than the audit recorded, and it no longer matters.** The audit found it
+to be container-start time. On `00019` it is *request* time: requests 1, 4 and 5 hit one container
+(started 19:00:05) yet reported 19:13:11, 19:14:39 and 19:14:40. It is useless as a validator either
+way; the `ETag` is now the one that works, which is exactly what Wave 1 was for.
+
+### 8.4 What was not re-measured, and why
+
+Boot **round-trip and connection counts were measured in the audit against local containers with
+`log_connections=on`**, not against production, and there is no free way to read them off the
+deployed service. They were not re-measured here. What was verified instead:
+
+- The configuration that produces them is present in the deployed commit `e774290`:
+  `quarkus.datasource.jdbc.min-size=1`, `%prod.quarkus.flyway.migrate-at-start=false`,
+  `%prod.quarkus.flyway.validate-at-start=false`.
+- No Flyway line appears in any `00019` boot, which is the direct observable for the 41 round trips
+  and 2 connections Wave 3 removed.
+- The production boot fell **2,549 ms** against a predicted 2,430 ms (2,100 from Wave 3, 330 from
+  F5). The change applied; the estimate was, if anything, slightly conservative.
+
+Anyone wanting the counts themselves should re-run the audit's local ablation, not spend a
+production request on it.
+
+### 8.5 Recomputed cost
+
+Rates **re-read from the Cloud Billing Catalog API on 2026-08-10**, filtered to `europe-central2`.
+**Every one of the eight is unchanged** from the audit's 2026-08-06 read.
+
+| | Audit baseline | §5 predicted | **Measured 2026-08-10** |
+|---|---|---|---|
+| Cold start (`startup_latencies` mean) | 4.51 s | ~2.1 s | **1.49 s** — beat by ~0.6 s |
+| First visit | 5.84 MiB | 2.39 MiB | **2.36–2.40 MiB** |
+| Returning visit | 2.38 MiB | ~12 KB | **~12 KB** — mechanism proved, model unchanged |
+| Bill today | $1.25/mo | ~$0.86/mo | **~$0.78/mo** |
+| Bill at 2K MAU | $6.82/mo | ~$1.75/mo | **~$1.34/mo** |
+
+**First visit was recomputed, not re-measured in a browser.** The audit established which 11 files a
+browser fetches and that two of them are 99.1% of the bytes. Both were measured on the wire above
+(909,639 + 1,546,647 = 2,456,286 B). The remaining nine totalled 56,791 B uncompressed in the audit
+and were carried at that figure as an **upper bound**, giving 2,513,077 B = 2.396 MiB; at a
+plausible 3:1 on the compressible ones the floor is 2.361 MiB. §5's 2.39 MiB sits inside the band.
+
+**Returning visit** is the audit's own four-304 header model, unchanged. What is new is that the
+304 now actually happens: the measured response header block is 727 bytes with a zero-byte body.
+
+**Today's bill**, with measured usage:
+
+| Line | Arithmetic | $/mo |
+|---|---|---|
+| Secret Manager, versions | **17 enabled − 6 free = 11** × $0.06 | **0.6600** |
+| Cloud Run CPU | 70 s/day × 30.44 = 2,131 vCPU-s × $3.36e-5 | 0.0716 |
+| Artifact Registry | 0.853 − 0.5 free = 0.353 GiB × $0.10 | 0.0353 |
+| Secret Manager, ops | 2,419 billable × $3e-6 | 0.0073 |
+| Cloud Run egress | ~0.016 GiB × $0.105 | 0.0017 |
+| Cloud Run memory | 2,131 s × 0.25 GiB × $3.5e-6 | 0.0019 |
+| Requests / Scheduler / Logging / Supabase | inside free tiers | 0.0000 |
+| **Total** | | **$0.778** |
+
+The 70 s/day is deliberately conservative: `00019`'s measured 2.93 s/instance includes the five
+verification requests this session sent, which kept one container alive longer than a bare tick
+would. The true steady-state figure is lower.
+
+**At 2K MAU**, on the audit's visit model (2,000 first + 18,000 returning), egress lands at the
+audit's 4.88 GiB = $0.512; secrets are now $0.66 rather than $1.02; compute falls with the shorter
+cold start. Total **≈$1.34/mo**. It beats §5's $1.75 for one unglamorous reason: §5's 2K MAU row
+still carried the secret line at 17 billable versions, and the operator task has since removed six.
+
+**Read the units honestly, still.** Of the ~$0.48/month saved today, **$0.36 is the six destroyed
+secret versions** — an operator action, not an engineering one. Wave 3 is worth ~$0.07/month here
+and remains a latency change, exactly as §5 insisted.
+
+### 8.6 The operator task (D2), done
+
+Six secrets carried a superseded version 1. Every Cloud Run reference is `latest`, and `latest`
+resolves to the highest enabled version, so version 2 was live in all six and version 1 was
+destroyable by construction — verified per secret before each destroy, then verified after.
+
+`APP_DB_PASSWORD`, `APP_DB_USERNAME`, `AUTH_REDIRECT_URI`, `CORS_ORIGINS`, `SITE_URL`,
+`ZEN_JOBS_TRIGGER_TOKEN` — version 1 destroyed, one at a time. **Enabled versions 23 → 17.**
+Irreversible, as D2 chose.
+
+**The next hourly tick then succeeded, which is the check that matters** and cost no request budget:
+
+```
+20:00:04  Starting new instance
+20:00:05  started in 1.017s
+20:00:06  Removed 2 rate-limit counter row(s) whose window closed before 2026-08-08T20:00:06Z
+20:00:06  Job tick ran 1 due job(s): 1 succeeded, 0 failed
+```
+
+That single line exercises all three of the risky secrets end to end: Cloud Scheduler authenticated
+against `ZEN_JOBS_TRIGGER_TOKEN`, and the cleanup performed a real **write** against Postgres using
+`APP_DB_USERNAME`/`APP_DB_PASSWORD`. A wrong version destroyed on any of the three would have shown
+up here as a failed tick rather than a silent one.
+
+### 8.7 F10 answered: a free Supabase project does pause
+
+**Yes.** Supabase pauses a Free Plan project after roughly a week of insufficient database activity,
+with a warning email about a week ahead; "a few user requests to the database each day over the
+previous week" is enough to prevent it. Restoring is a one-click dashboard action available for up
+to a year. This is now documentation, not model knowledge.
+
+**The hourly tick is what keeps the database awake, and it does so with enormous margin.** The tick
+runs `RateLimitCleanupJob`, which issues a Panache delete — a real database write, not just an HTTP
+touch — 24 times a day against a threshold of "a few per day". Its frequency is therefore safe to
+reduce a long way on the Supabase axis. Any such change must keep the job's *database* call, not
+merely an endpoint hit: an endpoint that stops touching Postgres would let the project pause while
+every check still looked green.

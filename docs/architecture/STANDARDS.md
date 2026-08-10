@@ -156,6 +156,30 @@ Two rules the walking skeleton established, both mandatory for every backend mod
 
 - **Flyway is the single migration authority.** `supabase/migrations/` stays empty; there is never
   a second migration system on one database.
+- **Migration is an act of the deploy, not of a boot** ([`DECISIONS.md`](./DECISIONS.md) ADR-038).
+  In `%prod` the application neither migrates nor validates at start; `deploy:cloudrun` runs the
+  image it has just pushed as a one-shot Cloud Run Job with `zen.migrate-only=true`, on the DDL
+  credentials, and deploys the service only if that job exits 0. `%dev` and `%test` still migrate at
+  boot, because Dev Services provisions a throwaway database per run and nothing is saved by a
+  sibling container 0.1 ms away.
+
+  Three properties hold this together, and each one is a rule rather than an implementation detail:
+
+  1. **The same binary, the same Flyway, the same migrations.** The migrate-only mode is a bean in
+     `zen-identity` (`MigrateOnlyRunner`), not a Flyway CLI container — a second runner would be a
+     second authority and a version-drift risk against the rule above.
+  2. **The job's exit code is read and acted on.** A migration that fails must abort the deploy; a
+     zero returned over a failed migration would let a revision serve a schema that was never
+     created, which is the swallowed failure this document forbids elsewhere.
+  3. **The deploy refuses an image whose migrations are behind the database.** This is what boot
+     validation used to catch and nothing at boot catches now: a rollback onto a newer schema. The
+     job compares its own migration set against `flyway_schema_history` before migrating and exits
+     2 if the database is ahead. `ALLOW_SCHEMA_ROLLBACK=1` overrides it deliberately and says what
+     it gives up — after it, nothing checks that the running binary and its schema agree.
+
+  **What is given up, stated plainly rather than implied:** the guarantee that a running process and
+  its schema agree is no longer checked at process start. It is checked once, at the deploy. A
+  database changed by anything other than a deploy is not noticed until a query fails.
 - **Every module ships its migrations to the same classpath location** (`db/migration`, the value
   of `quarkus.flyway.locations`), so an application inherits a library's schema simply by depending
   on it. Splitting locations per module does **not** avoid collisions and is not the answer: Flyway
@@ -468,13 +492,29 @@ provider is only made meaningful by the backend.
   `--min-instances=0`, `--concurrency=200`. This is a deliberate cost floor, not a
   scaling limit: the native-image server is fast and small enough to serve the target
   load (~2K MAU) on one instance, and `min=0` means there is no always-warm instance to
-  pay for — cold starts are accepted as the cost/latency trade. **Measured on the live
-  service** (2026-08-03, twelve consecutive hourly wake-ups): a cold request completes in
-  **2.9–4.8s, mean 3.7s**, of which the Quarkus native boot is **2.6–3.3s, mean 3.0s** and
-  the remainder is container scheduling. A warm request is **~26ms** to first byte. An
-  earlier claim of a "sub-second start" here was never measured and was wrong by three to
-  five times; whether a ~3.7s first request stays an acceptable trade is a product
-  decision, not a property of the image.
+  pay for — cold starts are accepted as the cost/latency trade. A warm request is **~26ms**
+  to first byte.
+
+  **The cold start, as most recently measured.** ADR-027's figures (2.9–4.8s end to end, a
+  2.6–3.3s boot, from twelve hourly wake-ups on 2026-08-03) were superseded by the
+  performance audit of 2026-08-08, which decomposed 173 cold starts out of seven days of
+  logs: a cold request is **≈4.51s** end to end, of which the platform (image pull, sandbox,
+  17 secret injections) is 726ms and the rest is the process. Three of its phases were
+  charges nobody had priced, and each is now removed:
+
+  | Phase | Was | Now |
+  |---|---|---|
+  | Flyway migrate + validate, 41 round trips over 2 connections | 1,434 ms | **0** — migration runs at deploy (ADR-038) |
+  | Datasource pool opening 2 eager connections | ~664 ms | ~332 ms — `jdbc.min-size=1` |
+  | Platform, native init, Hibernate/JAX-RS/CDI, `zen_jobs` read | ~2,416 ms | unchanged |
+
+  A production connection to the Supabase pooler costs ~332ms and a round trip on an
+  established one ~35ms, which is why counts, not local timings, are the measurement here:
+  the local database is 0.1ms away and makes the whole difference invisible. **The
+  post-change figure is arithmetic on measured parts, not itself a measurement** — the next
+  audit should read it off `started in` rather than trust this row. Whether the remaining
+  first-request latency is an acceptable trade is a product decision, not a property of the
+  image.
 - **One instance makes in-process state valid — but only for as long as the process
   lives.** Because at most one instance ever runs, in-process state (in-memory caches, a
   burst rate-limit counter) is correct by construction as far as *sharing* goes, and

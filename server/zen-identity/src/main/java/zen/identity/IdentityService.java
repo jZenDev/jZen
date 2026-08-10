@@ -8,8 +8,10 @@ import zen.identity.auth.SupabaseSignupRequest;
 import zen.identity.auth.SupabaseTokenRequest;
 import zen.identity.auth.UserUpdateRequest;
 import zen.identity.event.UserRegistered;
+import zen.identity.security.RoleAugmentor;
 import zen.identity.user.User;
 import zen.identity.user.UserStore;
+import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
@@ -48,16 +50,25 @@ public class IdentityService {
   private final Event<UserRegistered> registrations;
   private final RedirectTargets redirectTargets;
 
+  /**
+   * The caller's identity, for {@link #currentUser(UUID)} to read the row authentication already
+   * loaded. A request-scoped proxy, so it is the current request's identity and nothing outlives
+   * the request.
+   */
+  private final SecurityIdentity securityIdentity;
+
   @Inject
   public IdentityService(
       @RestClient SupabaseAuthClient authClient,
       UserStore userStore,
       Event<UserRegistered> registrations,
-      RedirectTargets redirectTargets) {
+      RedirectTargets redirectTargets,
+      SecurityIdentity securityIdentity) {
     this.authClient = authClient;
     this.userStore = userStore;
     this.registrations = registrations;
     this.redirectTargets = redirectTargets;
+    this.securityIdentity = securityIdentity;
   }
 
   /** The tokens plus the reconciled local user, returned from every session-issuing flow. */
@@ -262,8 +273,26 @@ public class IdentityService {
     return toSession(response);
   }
 
-  /** Loads the local profile for an already-authenticated user id, or {@code null} if none. */
+  /**
+   * The local profile for an already-authenticated user id, or {@code null} if none.
+   *
+   * <p>Authenticating the caller already read this row: {@link RoleAugmentor} loads it to resolve
+   * the role, and attaches it to the identity. Reading it again here was a second round trip to the
+   * database — identical SQL, same parameter, a second transaction and so a second persistence
+   * context — for ~135 ms of nothing on every authenticated request. So the attached row is used
+   * when it is the row being asked for.
+   *
+   * <p>The identity match is on the id, not merely on the attribute's presence: the framework
+   * exposes this method by user id, and an id that is not the authenticated caller's must never be
+   * answered with the caller's own row. The fallback is the plain load, which also covers every
+   * path where no augmentation happened — a service identity, a caller whose profile did not exist
+   * when the request began, or a failed load that was logged and skipped.
+   */
   public User currentUser(UUID id) {
+    if (id != null && securityIdentity.getAttribute(RoleAugmentor.LOADED_USER) instanceof User user
+        && id.equals(user.id)) {
+      return user;
+    }
     return userStore.findById(id);
   }
 

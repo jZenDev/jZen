@@ -1,0 +1,6 @@
+A stand-in for a long-cached static resource (canvaskit/*, assets/*), used by
+StaticCacheHeadersWiringTest. Test-scoped, so it is never served by a real deploy.
+
+It exists because the real bundle under src/main/resources/META-INF/resources is produced by
+`task build:web` and is gitignored: a test that keyed on main.dart.wasm would pass or fail
+depending on whether someone had built the frontend, which is not a property of this code.

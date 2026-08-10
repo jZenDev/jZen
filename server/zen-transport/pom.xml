@@ -66,7 +66,39 @@
   </dependencies>
 
   <build>
+    <!-- Only microprofile-config.properties is filtered, so no other resource can have a stray
+         ${...} rewritten out from under it. -->
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>true</filtering>
+        <includes>
+          <include>META-INF/microprofile-config.properties</include>
+        </includes>
+      </resource>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>false</filtering>
+        <excludes>
+          <exclude>META-INF/microprofile-config.properties</exclude>
+        </excludes>
+      </resource>
+    </resources>
+
     <plugins>
+      <!-- overwrite=true because the point of the filtered file is that it changes on every
+           build. maven-resources-plugin otherwise copies only when the SOURCE is newer than the
+           output, and the source never changes - so an incremental rebuild would keep shipping
+           the first build's timestamp and every deploy after the first would reuse a validator
+           for bytes it no longer describes. That is the F2 defect wearing a different hat. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <configuration>
+          <overwrite>true</overwrite>
+        </configuration>
+      </plugin>
+
       <!-- Generates META-INF/jandex.idx so Quarkus discovers this module's JAX-RS
            providers (the transport filters and MessageBodyWriter/Readers) when it is a
            dependency of an app server. Without an index, @Provider classes in a dependency jar

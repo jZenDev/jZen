@@ -420,8 +420,16 @@ tasks:
       # Install the framework libs, then build the app natively via the shared wrapper.
       # Container build, pinned to amd64 so the image matches Cloud Run regardless of arch.
       - ./mvnw -B install -DskipTests
+      # `clean` on the APP MODULE, and it is correctness rather than hygiene. Maven copies
+      # src/main/resources into target/classes but never deletes from it, so a file REMOVED from
+      # the staged web bundle survives in target/classes and is baked into the image anyway. That
+      # is not a stale-cache annoyance: build:web prunes ~8.2 MiB of renderer symbol maps, and
+      # without this the prune is a silent no-op on every warm working tree — the staging
+      # directory measures smaller, the build succeeds, and the image still ships the files.
+      # Measured here: the pruned maps were served with a 200 by a freshly built native image.
+      # It costs one javac of the app module; the GraalVM step already dominates by minutes.
       - >-
-        ./mvnw -B package -Dnative -DskipTests
+        ./mvnw -B clean package -Dnative -DskipTests
         -Dquarkus.native.container-build=true
         -Dquarkus.native.container-runtime-options=--platform=linux/amd64
         -f ../{{.DEMO_SERVER_DIR}}/pom.xml
@@ -607,7 +615,25 @@ tasks:
         # Stage into the (gitignored) resources dir, replacing any stale bundle but keeping
         # the tracked openapi.yaml, the .gitignore, and the admin/ subtree (staged by
         # build:web:admin, which --delete would otherwise wipe when only build:web runs).
+        # The debug symbol maps Flutter emits beside each renderer (canvaskit/**/*.symbols,
+        # ~8.2 MiB, 18% of the staged bundle) are dropped from the STAGING and left in
+        # build/web/, where a local debugger can still find them. Nothing asks for them:
+        # flutter_bootstrap.js, flutter.js and main.dart.mjs contain no reference to `symbols`,
+        # and a browser's network panel never requests one. A PATTERN, never a list of the six
+        # current filenames — a Flutter upgrade renames them, and a stale list would keep
+        # passing while pruning nothing. What would invalidate this: a future Flutter whose
+        # loader actually fetches a symbol map at runtime; a 404 in the console is the symptom.
+        # This prunes the maps ONLY — the renderer variants and main.dart.js stay, because the
+        # loader picks a renderer per browser and dart2js is ADR-016's deliberate fallback, so
+        # neither can be pruned on the evidence of one browser.
+        #
+        # `--filter='-s ...'` and NOT `--exclude=...`, and the difference is the whole fix: a
+        # plain --exclude applies to both sides, so it also protects an already-staged copy from
+        # --delete. Written that way this prunes nothing on any machine that has staged a bundle
+        # before — rsync succeeds, the task prints success, and the 8.2 MiB ships anyway. The
+        # `s` modifier scopes the rule to the sender, so the receiver still deletes them.
         rsync -a --delete --exclude=openapi.yaml --exclude=.gitignore --exclude=admin \
+          --filter='-s *.symbols' \
           {{.DEMO_CLIENT_DIR}}/build/web/ {{.WEB_RESOURCES}}/
         # ASSERT THE URL IS ACTUALLY IN THE BUNDLE. The line above prints what was REQUESTED;
         # this reads what was BUILT. They came apart once (see the rm -rf above) and the failure

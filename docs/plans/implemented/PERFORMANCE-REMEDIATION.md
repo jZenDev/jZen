@@ -1,7 +1,7 @@
 # Performance & cost remediation
 
 A working document, not a source of truth. The architecture docs in
-[`../architecture/`](../architecture/) remain authoritative, and ADRs win on conflict.
+[`../../architecture/`](../../architecture/) remain authoritative, and ADRs win on conflict.
 
 **Written:** 2026-08-08
 **Evidence:** [`PERFORMANCE-AUDIT.md`](PERFORMANCE-AUDIT.md) — every number below comes from it. This
@@ -64,9 +64,12 @@ cost — that is a mitigation, not a reversal, and it does not require the decis
 | **1** | F2, F4 — code, no new infrastructure | no | no | yes |
 | **2** | F6 — build-time bundle pruning | no | no | yes |
 | **3** | F7 — migration moves to the deploy | **yes, Invariant 6** | **yes** | **no** |
+| **4** | F11 — the deploy sets the capacity it runs on | no | no (ADR-028 already covers it) | yes |
 
 Waves 0–2 are independent of each other and of Wave 3. **Wave 3 is the only one that can break a
-deploy**, so it ships alone, after the others are green.
+deploy**, so it ships alone, after the others are green. Wave 4 was added after the fact: F11 was
+recorded in the audit and never assigned to a wave. It is `Taskfile.yml`-only and changes no
+deployed behaviour.
 
 F8 (ADR-031's privilege split adding a connection to every boot) **needs no work of its own**: Wave 3
 removes Flyway from the boot path entirely, which removes both of its connections. That is the whole
@@ -272,7 +275,40 @@ task test:native && task test          # test:e2e included; %dev/%test still mig
 
 ---
 
-### 4.5 Wave 0-op — operator work, outside the repository (D2)
+### 4.5 Wave 4 — the deploy sets the capacity it runs on (F11)
+
+`Taskfile.yml` only: two flags, two vars, and the summary that documents them. **It changes no
+deployed behaviour** — it stops the deployed behaviour depending on settings made outside the repo.
+
+- `SERVICE_CPU_BOOST` (default `true`) → `--cpu-boost` / `--no-cpu-boost`. Boost was already on in
+  production, set out of band; the deploy never passed the flag, so the first deploy that recreated
+  the service would have dropped it silently. Every cold-start number in the audit and in ADR-027
+  is therefore *already* a boosted boot.
+- `SERVICE_EXECUTION_ENVIRONMENT` (default **empty**) → `--execution-environment=gen1|gen2`, or no
+  flag at all. **Left unpinned deliberately.** This closes Q2 as *unanswerable from the control
+  plane*: `gcloud run revisions describe`, the Cloud Run v2 API and the Console's revision detail
+  all report the request, not the resolution (the Console prints the literal word "Default"). A pin
+  is not inert — the wrong one migrates production to a different runtime, with different
+  cold-start and syscall behaviour, on the next deploy.
+
+Each var maps to one complete flag or fails the deploy; neither can render a bare flag or a dangling
+backslash. No ADR: ADR-028 already rules that capacity knobs are the application's `vars` and that
+the framework must document what each invalidates. This applies that decision to two knobs it had
+not yet reached.
+
+**Verification for Wave 4** (this wave cannot be verified by deploying, and must not be):
+
+```
+task deploy:cloudrun --summary                              # says eight knobs, documents both
+grep -n 'cpu-boost\|execution-environment' Taskfile.yml     # was 0 before this wave
+gcloud run deploy --help | grep -E 'cpu-boost|execution-environment'
+task deploy:cloudrun --dry                                  # render, both default and overridden
+task test
+```
+
+---
+
+### 4.6 Wave 0-op — operator work, outside the repository (D2)
 
 Six secret versions are superseded and unreferenced (`deploy:cloudrun` pins `:latest`). **D2 destroys
 them, which is irreversible.**
@@ -326,6 +362,7 @@ Each item is part of the wave that causes it, not a follow-up.
 | STANDARDS "Deployment model" | The boot decomposition it quotes (ADR-027's 3.0 s) is superseded by the audit's measurements | Waves 0–3 |
 | `deploy:cloudrun` summary | The Cloud Run Job, the new ordering, and the schema gate | Wave 3 |
 | `DECISIONS.md` | One new ADR (§4.4). **Never edit an accepted entry** | Wave 3 |
+| `deploy:cloudrun` summary | CAPACITY grows from six knobs to eight; each new one states what it invalidates, per ADR-028 | Wave 4 |
 | ADR-031 | Untouched — it is accepted and sealed. Its unpriced boot cost is recorded in the audit and in the new ADR | — |
 
 ---

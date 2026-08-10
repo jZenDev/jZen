@@ -1,7 +1,7 @@
 # The architectural performance & hosting-cost audit
 
 A working document, not a source of truth. The architecture docs in
-[`../architecture/`](../architecture/) remain authoritative, and ADRs win on conflict. **No decision
+[`../../architecture/`](../../architecture/) remain authoritative, and ADRs win on conflict. **No decision
 is taken here** — an audit accepts nothing on its own. If the owner takes one, it is recorded with
 the `add-adr` skill.
 
@@ -375,6 +375,28 @@ this document is *already* a boosted boot. **The next `gcloud run deploy` that r
 loses it silently.** The execution environment is likewise unannotated, so the service runs on
 whatever generation Cloud Run currently defaults to — an unpinned generation is a reproducibility gap.
 
+**Closed by Wave 4** (`PERFORMANCE-REMEDIATION.md` §4.5). The deploy now passes `--cpu-boost`
+(`SERVICE_CPU_BOOST`, default `true` — today's production value, so nothing changes) and wires
+`--execution-environment` behind `SERVICE_EXECUTION_ENVIRONMENT`, which ships **empty on purpose**
+because the resolved generation could not be established (see Q2). The consequence of each is
+documented in `task deploy:cloudrun --summary`, per ADR-028.
+
+#### F11a — the rest of the diff, recorded and NOT fixed
+
+Wave 4 also diffed every flag `deploy:cloudrun` passes against what `gcloud run services describe`
+and the Cloud Run **v2 API** report for the live service, since nobody had. F11 is about two specific
+flags and nothing below was changed. One item is worth a decision later; the rest are platform
+defaults the repo is content to inherit.
+
+| Production setting | Repo sets it? | Note |
+|---|---|---|
+| **Service-level `scaling.maxInstanceCount = 20`** (annotation `run.googleapis.com/maxScale: "20"`; the Console header reads *"Scaling: Auto (Min: 0, Max: 20)"*) | **no** | The deploy's `--max-instances=1` sets the **revision** template (`autoscaling.knative.dev/maxScale: "1"`), which is what caps the service today. A *second* max-instances value, of 20, exists one level up and was set out of band. It is the same defect class as the boost annotation, and it sits directly on ADR-020/ADR-028's `--max-instances=1` invariant — the one knob in the CAPACITY list that carries invariants. **Worth a decision; deliberately out of Wave 4's scope.** |
+| Service account `807939740716-compute@developer.gserviceaccount.com` | no | The project's default compute SA. The deploy passes no `--service-account`. A least-privilege runtime identity is a security question, not a performance one |
+| Ingress `all` | no | Platform default, and `--allow-unauthenticated` already implies a public service |
+| CPU throttling (annotation absent → throttled between requests) | no | The default, and the one this cost model wants: an always-allocated CPU is billed continuously |
+| Startup probe: TCP :8080, 240 s | no | Platform default (`run.googleapis.com/startupProbeType: Default`) |
+| Default URL enabled; Sandbox launcher (Preview) disabled | no | Platform defaults |
+
 ---
 
 ## 6. Open questions
@@ -382,7 +404,7 @@ whatever generation Cloud Run currently defaults to — an unpinned generation i
 | # | Question | The exact command / action |
 |---|---|---|
 | Q1 | Actual spend by SKU | Console → Billing → account **`01625D-FE6351-130968`** ("jLogic Software") → Reports; group by **SKU**, filter project `jzen-prod`. **No full month exists** — `jzen-prod` was created `2026-07-24T17:44:48Z`, so the honest range is 2026-07-24 → today. At ~$1.25/mo the report may round to $0.00 per SKU per day, which is itself corroboration |
-| Q2 | Which Cloud Run execution environment serves | `gcloud run services describe zen-demo-server --project=jzen-prod --region=europe-central2 --format='value(spec.template.metadata.annotations)'` — confirms the annotation is absent |
+| Q2 | Which Cloud Run execution environment serves | **Investigated in Wave 4 and left open — the control plane does not answer it.** Three reads were tried against revision `00019-lk8`, and all three report the *request* rather than the *resolution*: `gcloud run revisions describe` omits the field entirely; the Cloud Run **v2 API** (`GET .../services/zen-demo-server` and `.../revisions/zen-demo-server-00019-lk8`) returns no `executionEnvironment` on either the service template or the revision; the **Console** revision detail prints the literal word `Default`. The `run.googleapis.com/execution-environment` annotation is confirmed absent. Wave 4 therefore wires the flag and ships it **unpinned**, documented as such, rather than guessing — a wrong pin migrates production to a different runtime on the next deploy |
 | Q3 | Lead 5: can 200 concurrent requests actually be served by 1 vCPU / 256Mi against a 10-connection pool? | **Deliberately left open.** It needs load generation, which the ROE forbids against production, and no local instrument is representative when the local database is 0.1 ms away and production's is ~35 ms. The only headroom number this audit produced: **peak memory 73% of 256Mi** (`memory/utilizations` p99) at one request per hour |
 | Q4 | Supabase free-tier quotas | Owner/dashboard. These are quotas, not bills — a breach is an interruption, not a charge |
 | Q5 | The +283 ms of revision `00014` | **Unattributed.** No extra connections, one extra round trip, n=18 with one 4.294 s outlier. Stated rather than distributed |

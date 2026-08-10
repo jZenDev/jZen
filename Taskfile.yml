@@ -71,6 +71,24 @@ vars:
   # timeout is per SERVICE, not per route, so this one value has to cover that job too — 60s
   # is two orders of magnitude of headroom over it.
   SERVICE_TIMEOUT: '{{.SERVICE_TIMEOUT | default "60s"}}'
+  # Startup CPU boost. `true` is not a new posture — it is what the deployed service already
+  # runs with, set out of band by a human rather than by this repository. That is the defect
+  # this var closes: the flag was never passed, so the next deploy that RECREATES the service
+  # (a rebuilt project, a new region, a restored teardown) would silently drop it, and nothing
+  # would fail — `verify:deploy` checks that endpoints answer, not how fast the container
+  # reached them. A capacity choice must be committed for exactly the reason a service URL must
+  # not be (STANDARDS "Deployment model"): teardown makes a URL stale, and erases a capacity
+  # choice. `true`/`false` only; deploy:cloudrun refuses anything else rather than guessing.
+  SERVICE_CPU_BOOST: '{{.SERVICE_CPU_BOOST | default "true"}}'
+  # Cloud Run execution environment: `gen1`, `gen2`, or EMPTY for the platform default.
+  # Empty is the shipped default ON PURPOSE, and it is not an oversight — see the CAPACITY
+  # section of `task deploy:cloudrun --summary`. The live service carries no
+  # run.googleapis.com/execution-environment annotation and no read of the control plane will
+  # say which generation it therefore resolves to, so pinning one would be a guess, and a wrong
+  # guess MIGRATES PRODUCTION to a different runtime with different cold-start and syscall
+  # behaviour on the next deploy. The flag is wired and overridable; the value is left to
+  # whoever can establish it. Empty passes no flag at all — not a bare `--execution-environment`.
+  SERVICE_EXECUTION_ENVIRONMENT: '{{.SERVICE_EXECUTION_ENVIRONMENT | default ""}}'
 
   # Where build:web stages the Flutter bundle so the native build bakes it in and Quarkus
   # serves the web app same-origin with the API. Gitignored (see the .gitignore there).
@@ -1671,7 +1689,7 @@ tasks:
           container start, N jobs: N entries would mean N cold starts.
 
       ═══════════════════════════════════════════════════════════════════════════════════
-      CAPACITY — the six knobs, and what each one BREAKS. Read before changing any of them.
+      CAPACITY — the eight knobs, and what each one BREAKS. Read before changing any of them.
       ═══════════════════════════════════════════════════════════════════════════════════
 
       These are `vars`, not literals: capacity is the APPLICATION's decision, and jZen is a
@@ -1732,6 +1750,48 @@ tasks:
           trigger, completes in 3.7s INCLUDING a 3.0s cold boot (ADR-027). Cloud Run's
           timeout is per service, not per route, so this single value must cover that job —
           it does, with two orders of magnitude to spare.
+
+        SERVICE_CPU_BOOST (true)
+          Startup CPU boost: extra CPU for the duration of the boot only. It INVALIDATES NO
+          INVARIANT and, on a scale-to-zero service, costs nothing — you are billed for the
+          boosted CPU only during a boot you were already paying for. There is no reason to
+          turn it off here.
+          What matters is what turning it OFF costs, and it is not the latency: EVERY
+          cold-start figure this repository quotes was measured with boost ON — ADR-027's
+          2.9-4.8s cold request and 3.0s boot, the decomposition in STANDARDS "Deployment
+          model", and every number in docs/plans/implemented/PERFORMANCE-AUDIT.md. Set it to
+          false and all of them become wrong at once, silently, because nothing re-measures
+          them. The honest position is that the UNBOOSTED cold start has never been measured,
+          so if you disable this, measure it before quoting any of those figures again.
+          Why it is a var at all: boost was ON in production without this repository asking
+          for it — enabled out of band, carried by an annotation on the service. The deploy
+          never passed the flag, so the first deploy to RECREATE the service would have
+          dropped it and nothing would have failed. Default `true` therefore changes nothing
+          about the running service; it stops the running service depending on a setting that
+          lives outside the repo. Same defect class as ADR-037's build define: a deployed fact
+          the tooling does not assert succeeds while being wrong.
+
+        SERVICE_EXECUTION_ENVIRONMENT (empty — DELIBERATELY UNPINNED, not an oversight)
+          Cloud Run's gen1/gen2 runtime. Pinning buys REPRODUCIBILITY: the platform default
+          has changed before and can change again, so an unpinned service is one whose runtime
+          generation is decided by Google on the day you recreate it. Changing it risks the
+          two things this service is most exposed to — cold-start characteristics (the whole
+          cost model rests on them; see SERVICE_MIN_INSTANCES) and Linux syscall
+          compatibility, where gen1 and gen2 genuinely differ.
+          Which generation is pinned: NONE, and the reason is that the live service's actual
+          generation could not be established. It carries no
+          run.googleapis.com/execution-environment annotation, and every read of the control
+          plane reports the request rather than the resolution: `gcloud run revisions
+          describe` omits it entirely, the Cloud Run v2 API returns no executionEnvironment
+          field on either the service template or the revision, and the Console's revision
+          detail prints the literal word "Default". Pinning on that evidence would be a guess,
+          and a wrong guess is not inert — it MIGRATES production to a different runtime on
+          the next deploy. So the flag is wired and overridable while the value stays empty,
+          which passes no flag at all and leaves today's behaviour exactly as it is.
+          To close it: establish the generation by some means that reports the RESOLVED value,
+          then set SERVICE_EXECUTION_ENVIRONMENT to it. That is a deliberate, inert pin. An
+          unpinned generation documented as unpinned beats a pin nobody verified; what is not
+          acceptable is leaving a reader unable to tell which of the two this is (ADR-031).
 
       Requires: gcloud auth, GCP_PROJECT set, and everything under ONE-TIME SETUP below.
       Run it as `GCP_PROJECT=my-project task deploy:cloudrun` — this task never changes your
@@ -2138,6 +2198,33 @@ tasks:
         # the same identity, so "which bytes is the browser holding" and "which image is running"
         # answer with one value. The -dirty suffix rides along for the same reason it tags the
         # image: a build that no commit describes must not claim to be that commit.
+        # Both capacity flags below resolve to a COMPLETE argument here, or the deploy stops.
+        # A var interpolated into a flag NAME (`--{{`{{`}}...}}cpu-boost`) or into a value that may be
+        # empty is how a typo becomes a malformed command or, worse, a silently dropped flag —
+        # gcloud would deploy happily and the service would come up on a posture nobody chose.
+        # So each var maps to one exact flag, and an unrecognised value is a failure, not a
+        # default. Empty EXEC_ENV_FLAG expands to no argument at all, which is the documented
+        # "platform default" position, not a bare --execution-environment.
+        case "{{.SERVICE_CPU_BOOST}}" in
+          true)  CPU_BOOST_FLAG=--cpu-boost ;;
+          false) CPU_BOOST_FLAG=--no-cpu-boost ;;
+          *)
+            echo "SERVICE_CPU_BOOST must be 'true' or 'false', got '{{.SERVICE_CPU_BOOST}}'." >&2
+            exit 1 ;;
+        esac
+        case "{{.SERVICE_EXECUTION_ENVIRONMENT}}" in
+          "")
+            EXEC_ENV_FLAG=
+            EXEC_ENV_SHOWN="platform default (UNPINNED — see the summary's CAPACITY section)" ;;
+          gen1|gen2)
+            EXEC_ENV_FLAG=--execution-environment={{.SERVICE_EXECUTION_ENVIRONMENT}}
+            EXEC_ENV_SHOWN="{{.SERVICE_EXECUTION_ENVIRONMENT}}" ;;
+          *)
+            echo "SERVICE_EXECUTION_ENVIRONMENT must be 'gen1', 'gen2', or empty, got" \
+                 "'{{.SERVICE_EXECUTION_ENVIRONMENT}}'." >&2
+            exit 1 ;;
+        esac
+        echo "Startup CPU boost: {{.SERVICE_CPU_BOOST}}; execution environment: $EXEC_ENV_SHOWN."
         gcloud run deploy {{.SERVICE_NAME}} \
           --image="$IMAGE" \
           --project={{.GCP_PROJECT}} \
@@ -2148,6 +2235,7 @@ tasks:
           --max-instances={{.SERVICE_MAX_INSTANCES}} \
           --concurrency={{.SERVICE_CONCURRENCY}} \
           --timeout={{.SERVICE_TIMEOUT}} \
+          $CPU_BOOST_FLAG $EXEC_ENV_FLAG \
           --port=8080 \
           --allow-unauthenticated \
           --set-env-vars="^@^ZEN_BUILD_ID={{.GIT_SHA}}{{.GIT_DIRTY}}@APPLINKS_ANDROID_PACKAGE=${APPLINKS_ANDROID_PACKAGE:-}@APPLINKS_ANDROID_FINGERPRINTS=${APPLINKS_ANDROID_FINGERPRINTS:-}@APPLINKS_APPLE_APP_IDS=${APPLINKS_APPLE_APP_IDS:-}" \

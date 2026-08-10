@@ -1194,6 +1194,44 @@ tasks:
 
         SERVICE_URL=http://localhost:18080 task verify:endpoints
 
+        # THE ONE ASSERTION THAT NEEDS A SECOND PROCESS.
+        #
+        # Static resources are validated by a build stamp rather than by anything the running
+        # process knows (zen.transport.StaticCacheHeaders), and the whole point of that is that the
+        # validator outlives the container. It has to: production runs at --min-instances=0, where
+        # the container is replaced around two dozen times a day, and the old validator — this
+        # process's start time — moved with every one of them, so a returning browser's conditional
+        # request could never succeed and it re-downloaded the app every visit.
+        #
+        # No in-process test can assert that. This can: take the validator, replace the process,
+        # replay it, and require an empty 304 from the container that did not issue it.
+        etag=$(curl -s -o /dev/null -D- http://localhost:18080/main.dart.wasm | tr -d '\r' \
+          | awk -F': ' 'tolower($1)=="etag"{print $2}')
+        if [ -z "$etag" ]; then
+          echo "No ETag on /main.dart.wasm; verify:endpoints should already have failed."
+          exit 1
+        fi
+        docker restart zen-smoke-app >/dev/null
+        up=0
+        for _ in $(seq 1 60); do
+          curl -sf http://localhost:18080/api/v1/health >/dev/null 2>&1 && { up=1; break; }
+          sleep 1
+        done
+        if [ "$up" -ne 1 ]; then
+          echo "The container did not come back after restart. Log:"
+          docker logs zen-smoke-app 2>&1 | tail -40
+          exit 1
+        fi
+        after=$(curl -s -o /dev/null -w '%{http_code} %{size_download}' \
+          -H "If-None-Match: $etag" http://localhost:18080/main.dart.wasm)
+        if [ "$after" = "304 0" ]; then
+          printf '  \033[32mok\033[0m   %-24s %-9s %s\n' /main.dart.wasm restart "304 0 across a container replacement"
+        else
+          printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /main.dart.wasm restart "$after (want 304 0)"
+          echo "The validator did not survive the process that issued it — this is F2, returned."
+          exit 1
+        fi
+
   verify:deploy:
     desc: Smoke the DEPLOYED service — both transport modes must answer, not just one
     summary: |
@@ -1359,6 +1397,35 @@ tasks:
           *no-cache*|*no-store*|*max-age=0*) printf '  \033[32mok\033[0m   %-24s %-9s %s\n' /main.dart.wasm cache "$wcache" ;;
           *) printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /main.dart.wasm cache "'${wcache:-none}' — expected no-cache"; fail=1 ;;
         esac
+        # ...and "revalidate" is only worth asking for if the revalidation can come back EMPTY. The
+        # static handler sends no ETag of its own and a Last-Modified that is this process's start
+        # time, so before StaticCacheHeaders supplied a build-stable validator every conditional
+        # request returned the whole 2.4 MB body — 93% of every byte this service had ever sent.
+        # GET, never HEAD: HEAD against this server answers text/html with no validator for every
+        # path, so a HEAD-based check would pass on a server sending nothing at all.
+        etag=$(curl -s -o /dev/null -D- "$URL/main.dart.wasm" | tr -d '\r' | awk -F': ' 'tolower($1)=="etag"{print $2}')
+        if [ -n "$etag" ]; then
+          printf '  \033[32mok\033[0m   %-24s %-9s %s\n' /main.dart.wasm etag "$etag"
+        else
+          printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /main.dart.wasm etag "no ETag — revalidation cannot succeed"; fail=1
+        fi
+        # The long-cached resources carry it too: when their day of `immutable` expires they
+        # revalidate, and that revalidation used to re-send 3.58 MiB of canvaskit/.
+        ck=$(curl -s -o /dev/null -D- "$URL/canvaskit/skwasm.wasm" | tr -d '\r' | awk -F': ' 'tolower($1)=="etag"{print $2}')
+        [ -n "$ck" ] && printf '  \033[32mok\033[0m   %-24s %-9s %s\n' /canvaskit/skwasm.wasm etag "$ck" \
+          || { printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /canvaskit/skwasm.wasm etag "no ETag on the long-cached bundle"; fail=1; }
+        # A real browser revalidates with BOTH headers. RFC 9110 §13.2.2 says If-None-Match wins and
+        # If-Modified-Since must be ignored; if it did not, the static handler's process-start
+        # Last-Modified would turn every 304 back into a 200 and this whole mechanism would be
+        # decoration. The date below is 1970, which on its own certainly produces a 200.
+        if [ -n "$etag" ]; then
+          both=$(curl -s -o /dev/null -w '%{http_code} %{size_download}' \
+            -H "If-None-Match: $etag" -H 'If-Modified-Since: Thu, 01 Jan 1970 00:00:00 GMT' "$URL/main.dart.wasm")
+          case "$both" in
+            "304 0") printf '  \033[32mok\033[0m   %-24s %-9s %s\n' /main.dart.wasm revalidate "304 0 (ETag beat If-Modified-Since)" ;;
+            *) printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' /main.dart.wasm revalidate "$both (want 304 0)"; fail=1 ;;
+          esac
+        fi
         # The admin panel is served same-origin at /admin/ (react-admin, hash router). Assert the
         # directory serves its index and the hashed entry script loads. Its data provider calls
         # /api/v1 relative, so it shares this origin's session cookie — the whole point of /admin/.
@@ -1804,6 +1871,12 @@ tasks:
           echo "Database privilege split OFF: APP_DB_USERNAME/APP_DB_PASSWORD are not both in"
           echo "Secret Manager, so the app serves as the DDL role. See summary step 1c."
         fi
+        # ZEN_BUILD_ID is the validator every static response is served with
+        # (zen.transport.StaticCacheHeaders). It defaults to the Maven build timestamp baked into
+        # zen-transport, and is overridden here with the commit SHA that already tags the image —
+        # the same identity, so "which bytes is the browser holding" and "which image is running"
+        # answer with one value. The -dirty suffix rides along for the same reason it tags the
+        # image: a build that no commit describes must not claim to be that commit.
         gcloud run deploy {{.SERVICE_NAME}} \
           --image="$IMAGE" \
           --project={{.GCP_PROJECT}} \
@@ -1816,7 +1889,7 @@ tasks:
           --timeout={{.SERVICE_TIMEOUT}} \
           --port=8080 \
           --allow-unauthenticated \
-          --set-env-vars="^@^APPLINKS_ANDROID_PACKAGE=${APPLINKS_ANDROID_PACKAGE:-}@APPLINKS_ANDROID_FINGERPRINTS=${APPLINKS_ANDROID_FINGERPRINTS:-}@APPLINKS_APPLE_APP_IDS=${APPLINKS_APPLE_APP_IDS:-}" \
+          --set-env-vars="^@^ZEN_BUILD_ID={{.GIT_SHA}}{{.GIT_DIRTY}}@APPLINKS_ANDROID_PACKAGE=${APPLINKS_ANDROID_PACKAGE:-}@APPLINKS_ANDROID_FINGERPRINTS=${APPLINKS_ANDROID_FINGERPRINTS:-}@APPLINKS_APPLE_APP_IDS=${APPLINKS_APPLE_APP_IDS:-}" \
           --set-secrets="$SECRETS"
 
   destroy:cloudrun:

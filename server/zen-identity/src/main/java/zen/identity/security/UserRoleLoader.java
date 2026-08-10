@@ -45,17 +45,25 @@ public class UserRoleLoader {
     this.entityManager = entityManager;
   }
 
-  public record UserSnapshot(boolean exists, UserRole role, String analyticsConsent) {}
+  /**
+   * What the augmentation path learned about the caller, including the row it read.
+   *
+   * <p>{@code user} is the entity {@code loadUser} loaded, detached once this method's transaction
+   * commits. It is carried out so the request that follows does not read the identical row a second
+   * time (see {@link RoleAugmentor}); it is a flat 17-column row with no associations, so there is
+   * nothing lazy on it for a detached read to trip over.
+   */
+  public record UserSnapshot(boolean exists, UserRole role, String analyticsConsent, User user) {}
 
   @Transactional(Transactional.TxType.REQUIRED)
   public UserSnapshot loadUser(UUID userId) {
     if (!hasUsersTable()) {
-      return new UserSnapshot(false, null, null);
+      return new UserSnapshot(false, null, null, null);
     }
     User user = User.findById(userId);
     return user != null
-        ? new UserSnapshot(true, user.role, user.analyticsConsent)
-        : new UserSnapshot(false, null, null);
+        ? new UserSnapshot(true, user.role, user.analyticsConsent, user)
+        : new UserSnapshot(false, null, null, null);
   }
 
   @Transactional(Transactional.TxType.REQUIRED)

@@ -385,7 +385,10 @@ Each item is part of the wave that causes it, not a follow-up.
 
 ---
 
-## 8. Verification against revision `00019-lk8`, 2026-08-10
+## 8. Verification against production, 2026-08-10 / 2026-08-11
+
+Waves 0–3 measured on revision `00019-lk8` (§8.1–8.7); Wave 4 deployed and measured on
+`00020-x8c` (§8.8).
 
 Measured after Waves 0–3 shipped, against `https://zen-demo-server-tovqpjhspa-lm.a.run.app`
 (the origin `gcloud run services describe` returns — **not** the hostname `services list` prints,
@@ -395,11 +398,13 @@ revision's `ZEN_BUILD_ID`.
 **§5's numbers are predictions and stay as written. This section records what was measured.**
 The audit's numbers are dated observations of `00018-mn5` and remain true of it.
 
-**Wave 4 (`06fc93e`) is committed and NOT deployed.** Everything below is a Waves 0–3 measurement.
-`startup-cpu-boost=true` and the service-level `maxScale=20` are both still set out of band, so
-every boot figure here is a *boosted* boot and F11 is still live.
+**§8.1–8.7 are a Waves 0–3 measurement against `00019`, taken while Wave 4 was still undeployed.**
+They are left exactly as measured. **Wave 4 shipped the next day** — see §8.8, which closes F11.
+Every boot figure in this section is a *boosted* boot either way; what changed is who owns the
+setting.
 
-**Production request budget: 8 allowed, 5 spent.** Everything else came from Cloud Logging, the
+**Production request budget: 8 allowed, 7 spent** — 5 against `00019` (§8.3) and 2 against `00020`
+(§8.8). Everything else came from Cloud Logging, the
 Cloud Monitoring v3 API and the Cloud Billing Catalog API, which cost nothing and wake no container.
 
 ### 8.1 The predictions, and what they measured
@@ -585,3 +590,49 @@ touch — 24 times a day against a threshold of "a few per day". Its frequency i
 reduce a long way on the Supabase axis. Any such change must keep the job's *database* call, not
 merely an endpoint hit: an endpoint that stops touching Postgres would let the project pause while
 every check still looked green.
+
+### 8.8 Wave 4 deployed and verified, 2026-08-11
+
+Wave 4 shipped from **`main`** at `ffe8ca0` (the merge of PR #43, which carries `06fc93e` and this
+verification), tagged and deployed as revision **`zen-demo-server-00020-x8c`**, 100% of traffic.
+Two production requests, taking the session total to 7 of 8.
+
+**The deploy behaved as Wave 3 and Wave 4 designed it to.**
+
+- `build:web` **refused to run** on the first attempt, because the service URL resolved empty and it
+  will not bake a wrong origin into the bundle. That is ADR-037's guard firing on a real deploy,
+  and it failed *before* building rather than shipping a bundle that calls the wrong host.
+- The **migration job ran before the service deployed** (`zen-demo-migrate-w4m6b`, succeeded), and
+  the deploy read its exit code. Since ADR-038 this is the only thing that changes the schema.
+- The summary printed `Startup CPU boost: true; execution environment: platform default (UNPINNED)`
+  — the deploy now *states* the capacity it runs on.
+
+**F11 is closed.** `startup-cpu-boost=true` is still the live value, but it is now set by
+`deploy:cloudrun` from `SERVICE_CPU_BOOST` rather than by an out-of-band change no file described.
+`execution-environment` remains absent, i.e. platform default, deliberately unpinned.
+**F11a is not closed and was not touched**: the service-level `maxScale=20` above the template's `1`
+is still set out of band, exactly as `06fc93e` recorded.
+
+| Check | Result |
+|---|---|
+| Boot, first-after-deploy | **1.569 s** — matches `00019`'s equivalent 1.587 s |
+| Flyway lines at boot | absent |
+| `/main.dart.wasm` wire bytes | **909,639** — byte-identical to `00019` |
+| `content-type` | `application/wasm` |
+| ETag on `00020` | **`"ffe8ca0"`** ≠ `00019`'s `"e774290"` |
+| Stale `If-None-Match: "e774290"` | **200 + 909,639 bytes** — correctly busted, not a stale 304 |
+| Current `If-None-Match: "ffe8ca0"` | **304, 0 bytes** |
+
+**This is the one Wave 1 property that a single revision could not prove.** §8.3 established that
+the ETag *must* change per deploy because it is the commit SHA; here it was **observed** changing
+across two live revisions, with a stale validator correctly refused and the current one honoured.
+Had the ETag been build-stable, the stale request would have returned 304 and every client would
+have kept superseded bytes forever — a worse defect than the one Wave 1 fixed.
+
+**One cost this exposes, recorded and not fixed.** The two revisions serve a **byte-identical**
+`main.dart.wasm` (only `Taskfile.yml` and documentation changed between them), yet the ETag changed,
+so every returning visitor re-downloads 909,639 bytes after a deploy that altered nothing they run.
+The validator is a *commit* identifier, not a content hash. That is the conservative direction — it
+can never serve stale bytes — but it means deploy frequency, not bundle churn, drives returning-visit
+egress. A content-addressed validator would eliminate it. Worth a decision only if deploys become
+frequent enough for the egress to show; at today's rates it does not.

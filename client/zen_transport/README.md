@@ -1,5 +1,10 @@
 # zen_transport
 
+[![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+**Talk to your backend without picking a wire format — JSON or Protobuf, same typed client.**
+
 The client half of jZen's **dual-mode transport**. A developer names a domain model; this package
 negotiates the wire format. `ZenClient` speaks to a jZen backend over HTTP, and one setting — the
 `X-Zen-Transport` header — chooses whether a request travels as canonical proto3 **JSON** or
@@ -10,7 +15,7 @@ frames) and the generated Protobuf message classes.
 > dependency in the `client/` pub workspace, versioned in lockstep with the product; this README
 > also stands on its own for a reader who meets the package by itself.
 
-## What it provides
+## 🚂 What it provides
 
 - **`ZenClient`** — the dual-mode HTTP client. It returns a `ZenResult` (from `zen_core`) and
   **surfaces a `ZenError` on a decode failure** rather than a null payload — a silent failure is
@@ -25,14 +30,14 @@ frames) and the generated Protobuf message classes.
   are **tracked** generated files (a Flutter developer must compile without `protoc` or a JDK);
   never hand-edit them, and `task sync:contracts` fails if they drift. See [`../README.md`](../README.md).
 
-## Client config is compile-time
+## ⚙️ Client config is compile-time
 
 Wire format and platform come from `String.fromEnvironment` build defines (`ZEN_ENV`,
 `ZEN_PLATFORM`) plus `dart.library.io` / `dart.library.html` conditional imports, so the toolchain
 can tree-shake the Protobuf binary path out of a web bundle and web code out of a native binary.
 Runtime config on the client is forbidden (STANDARDS "Client config is compile-time").
 
-## Using it
+## 🚀 Using it
 
 ```yaml
 dependencies:
@@ -40,7 +45,7 @@ dependencies:
     path: ../zen_transport
 ```
 
-## Testing
+## 🧪 Testing
 
 `task test:client` runs the suite; `task test:client:matrix` recompiles the codec selector per
 `ZEN_ENV`/platform. Directly: `cd client/zen_transport && dart test test/zen_client_test.dart`.

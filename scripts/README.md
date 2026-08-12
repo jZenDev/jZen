@@ -1,12 +1,17 @@
 # scripts/
 
+[![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](../LICENSE)
+
+**One command boots the whole local stack — backend, frontend, and a clean Supabase — no manual dance.**
+
 One-shot helpers for the local dev loop. They wrap the Taskfile targets and add the two things
 `task` cannot do alone: run the backend together with a frontend, and dodge a leftover Supabase
 stack from another project that shadows the local ports (notably `54321`/`54322`). Shared logic for
 the sh side (colors, Supabase bring-up, backend start, health wait, port freeing) lives in `lib.sh`,
 which the runners source.
 
-## Two languages, and which one a script is
+## 🧰 Two languages, and which one a script is
 
 This directory holds **sh and Python, and neither is the default**. The full rule is
 [`STANDARDS.md`](../docs/architecture/STANDARDS.md) "Scripting" with the reasoning in
@@ -40,7 +45,7 @@ the Python scripts, and the two mirror each other's vocabulary (`info`, `warn`, 
 underscore (`lib.py`); a file that is *executed* keeps a hyphen (`pick-device.py`,
 `verify-boundaries.py`).
 
-## admin.sh — the admin panel stack
+## 🖥️ admin.sh — the admin panel stack
 
 ```
 scripts/admin.sh [--no-build] [--port N]
@@ -50,7 +55,7 @@ Supabase + backend (on `--port`, default `$ZEN_APP_PORT` or `8085`) + the react-
 server on `http://localhost:5173` (Vite proxies `/api` to the backend). Runs the admin server in the
 foreground; `Ctrl-C` stops it and the backend it started. Backend log: `scripts/.dev-backend.log`.
 
-## demo.sh — the ZenDemo reference app stack
+## 🎬 demo.sh — the ZenDemo reference app stack
 
 ```
 scripts/demo.sh [--no-build] [--port N] [--web-port N]
@@ -60,7 +65,7 @@ Supabase + backend + the `zen_demo` Flutter client in Chrome on `http://localhos
 (`--web-port`). The script form of `task run:demo`, with the same robust Supabase handling as
 `admin.sh`.
 
-## seed-admin.py — create an admin login
+## 🌱 seed-admin.py — create an admin login
 
 ```
 scripts/seed-admin.py [--email E] [--password P] [--port N]
@@ -76,7 +81,7 @@ quote is data, not syntax. The sh version assembled both by string interpolation
 either. Note the statement arrives on **stdin**, not via `psql -c`: `-c` skips psql's own lexer, so
 `:'email'` would never expand and the server would reject it outright.
 
-## stop.sh — stop the stack
+## 🛑 stop.sh — stop the stack
 
 ```
 scripts/stop.sh [--supabase] [--port N]
@@ -85,13 +90,13 @@ scripts/stop.sh [--supabase] [--port N]
 Frees the backend port (`--port`, default `8085`), the Quarkus default `8080`, the admin `5173`, and
 the demo `5200`. Pass `--supabase` to also `supabase stop`.
 
-## Supabase port shadowing
+## 🔌 Supabase port shadowing
 
 `admin.sh`/`demo.sh` (via `lib.sh`'s `ensure_supabase`) stop any *other* project's Supabase stack
 (non-jZen `supabase_*` containers) that would shadow the local ports, and recover a half-exited jZen
 stack (CLI reports "running" but the db container has exited) with a `stop` before `start`.
 
-## Typical flow
+## 🔁 Typical flow
 
 ```
 scripts/admin.sh            # terminal 1: Supabase + backend + admin panel
@@ -102,7 +107,7 @@ scripts/stop.sh --supabase  # tear everything down
 scripts/demo.sh             # or: the ZenDemo reference app (Flutter) instead of the admin panel
 ```
 
-## verify-boundaries.py — the client/server boundary gate
+## 🛡️ verify-boundaries.py — the client/server boundary gate
 
 Run by `task verify:boundaries`, which is the first thing `task test` and CI do. What it enforces
 and why is the task's own summary (`task verify:boundaries --summary`); the script's docstring
@@ -119,7 +124,7 @@ true`, so renaming a directory under `client/` — or moving the panel out of `a
 scan empty, which reads as a clean repository and reported green forever. `task test:scripts`
 covers that on both sides, plus each check and each exemption, with planted violations.
 
-## verify-docs.py — the documentation drift gate
+## 📄 verify-docs.py — the documentation drift gate
 
 Run by `task verify:docs`, in CI beside the contract-drift gate. Two checks: every `task <name>` a
 README names must exist in `task --list`, and every module `LICENSE` must be byte-identical to the
@@ -131,7 +136,7 @@ nothing, and then printed its success line — "All README task references resol
 statement about zero READMEs, and "All 0 module LICENSE copies are byte-identical" is a gate that
 has stopped looking.
 
-## audit-maven.py — the Java dependency CVE gate
+## 🔍 audit-maven.py — the Java dependency CVE gate
 
 Run by `task audit:server` (and `task audit`, which adds `pnpm audit` for both TypeScript
 packages). It reads `mvn dependency:list` output, queries [OSV](https://osv.dev) — no API key, no
@@ -158,7 +163,7 @@ Test scope is excluded by default (`--include-test-scope` asks the other questio
 test library is a real finding about a developer's machine, but it is not shipped, and one verdict
 cannot honestly mean both things.
 
-## pick-device.py — which device a native run targets
+## 📱 pick-device.py — which device a native run targets
 
 Used by `task run:demo:native`. Prints `<device-id>\t<platform>` on stdout and everything a human
 reads on stderr, so the task can capture the answer without the conversation.

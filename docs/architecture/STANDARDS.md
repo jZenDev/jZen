@@ -498,9 +498,9 @@ provider is only made meaningful by the backend.
   **The cold start, as most recently measured.** ADR-027's figures (2.9–4.8s end to end, a
   2.6–3.3s boot, from twelve hourly wake-ups on 2026-08-03) were superseded by the
   performance audit of 2026-08-08, which decomposed 173 cold starts out of seven days of
-  logs: a cold request is **≈4.51s** end to end, of which the platform (image pull, sandbox,
+  logs: a cold request was **≈4.51s** end to end, of which the platform (image pull, sandbox,
   17 secret injections) is 726ms and the rest is the process. Three of its phases were
-  charges nobody had priced, and each is now removed:
+  charges nobody had priced, and each was removed:
 
   | Phase | Was | Now |
   |---|---|---|
@@ -509,12 +509,15 @@ provider is only made meaningful by the backend.
   | Platform, native init, Hibernate/JAX-RS/CDI, `zen_jobs` read | ~2,416 ms | unchanged |
 
   A production connection to the Supabase pooler costs ~332ms and a round trip on an
-  established one ~35ms, which is why counts, not local timings, are the measurement here:
-  the local database is 0.1ms away and makes the whole difference invisible. **The
-  post-change figure is arithmetic on measured parts, not itself a measurement** — the next
-  audit should read it off `started in` rather than trust this row. Whether the remaining
-  first-request latency is an acceptable trade is a product decision, not a property of the
-  image.
+  established one ~35ms, which is why counts, not local timings, were the audit's measurement:
+  the local database is 0.1ms away and makes the whole difference invisible. **The change was
+  then verified against the live, deployed revision** (2026-08-10/11, `docs/plans/implemented/
+  PERFORMANCE-REMEDIATION.md` §8.1–8.8), not left as arithmetic: `startup_latencies` mean fell
+  to **≈1.49s** (n=3), and `started in` (the Quarkus boot itself) to a median of **≈1.08s**
+  (n=3, range 1.02–1.59s). The sample is thin — one deploy's worth of hourly ticks — so treat
+  the direction as settled and the exact figure as due for a fuller re-read, not as final.
+  Whether the remaining first-request latency is an acceptable trade is a product decision, not
+  a property of the image.
 - **One instance makes in-process state valid — but only for as long as the process
   lives.** Because at most one instance ever runs, in-process state (in-memory caches, a
   burst rate-limit counter) is correct by construction as far as *sharing* goes, and

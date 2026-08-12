@@ -1,5 +1,10 @@
 # client/ — the Dart/Flutter framework libraries
 
+[![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](../LICENSE)
+
+**Flutter framework libraries that tree-shake by design: only the code your target platform needs ships.**
+
 `client/` is the Dart/Flutter side of the jZen **framework**: a [pub
 workspace](https://dart.dev/tools/pub/workspaces) of reusable **library** packages. The
 applications that assemble them live under [`apps/`](../apps/zen_demo/README.md), a *second*
@@ -9,7 +14,7 @@ the repository root stays language-neutral (ADR-001).
 Every package shares one product version (`0.1.0` today) — jZen is versioned in lockstep
 (STANDARDS "Versioning").
 
-## Packages
+## 📦 Packages
 
 | Package | Responsibility |
 |---|---|
@@ -24,7 +29,7 @@ carry their own READMEs because they are shaped for eventual pub.dev publication
 ship their own `LICENSE`), which gives them an audience the monorepo view does not serve. Each
 `zen_ui_*` package also has an `example/` app demonstrating it in isolation.
 
-## Client config is compile-time (the load-bearing rule)
+## ⚙️ Client config is compile-time (the load-bearing rule)
 
 The Dart/Flutter client keeps **compile-time config** (`String.fromEnvironment`) and
 `if (dart.library.io)` / `if (dart.library.html)` conditional imports. This is not a
@@ -46,7 +51,7 @@ default would silently disable the negotiation seam on whichever platform it is 
 [`../docs/architecture/STANDARDS.md`](../docs/architecture/STANDARDS.md) "Client config is
 compile-time".
 
-## Localization is typed and generated
+## 🌐 Localization is typed and generated
 
 Every package that renders text owns its own `lib/src/l10n/*.arb` and generates typed accessors
 with `flutter gen-l10n` — never a runtime string-key lookup (ADR-009). The supported set is
@@ -57,7 +62,7 @@ Unlike the generated Protobuf messages, this output is **built, not committed** 
 inside the Flutter SDK, so there is no toolchain boundary to carry it across). `task
 generate:l10n` produces it; `task sync:contracts` fails if any of it is ever tracked.
 
-## Building, testing, running
+## 🚀 Building, testing, running
 
 From the repository root:
 

@@ -1,11 +1,16 @@
 # supabase/ — the local Supabase stack
 
+[![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](../LICENSE)
+
+**Auth and Postgres, running locally in one command, wired to match production exactly.**
+
 Supabase is a **real, named dependency** in jZen, not something hidden behind a portability
 layer (MANIFESTO "Real dependencies are first-class"). It owns **authentication**, and its
 bundled PostgreSQL is the local database. This directory holds the local stack's configuration;
 the [Supabase CLI](https://supabase.com/docs/guides/cli) reads it.
 
-## Running it
+## 🚀 Running it
 
 ```bash
 task run:supabase     # supabase start (idempotent — no-op if already running)
@@ -15,7 +20,7 @@ task stop:supabase    # supabase stop
 Most workflows start it for you: `task run:all`, `task run:demo`, and `task test:e2e` each bring
 the stack up before they need it.
 
-## Ports (`config.toml`)
+## 🔌 Ports (`config.toml`)
 
 | Service | Port |
 |---|---|
@@ -29,7 +34,7 @@ These match the JDBC and Supabase URLs the app server defaults to in its
 `SUPABASE_URL`, `SUPABASE_KEY`, and `DB_URL`/`DB_USERNAME`/`DB_PASSWORD` from the environment,
 falling back to these local defaults.
 
-## Migrations live in Flyway, not here
+## 🗃️ Migrations live in Flyway, not here
 
 `supabase/migrations/` **stays empty** (it holds only a `.gitkeep`). **Flyway is the single
 migration authority** — the schema is owned by the framework libraries under
@@ -37,7 +42,7 @@ migration authority** — the schema is owned by the framework libraries under
 database is exactly the failure this avoids (STANDARDS "Database migrations"). Do not add SQL
 here.
 
-## Auth and JWKS wiring
+## 🔐 Auth and JWKS wiring
 
 Supabase owns `auth.users`; the jZen `users` table is the **application profile**, keyed by the
 JWT `sub`, with **no foreign key** to `auth.users` (the `@QuarkusTest` Dev Services database is
@@ -59,7 +64,7 @@ front that strips or renames cookies. See
 [`../docs/architecture/BLUEPRINT.md`](../docs/architecture/BLUEPRINT.md) "Authentication" and
 STANDARDS "Deployment model".
 
-## Studio and captured email
+## 📧 Studio and captured email
 
 Open Studio at `http://localhost:54323` to inspect the database. Local email (welcome and
 retention-warning mail) is captured by Inbucket rather than sent — the app's mailer is mocked in

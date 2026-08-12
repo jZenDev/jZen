@@ -1,5 +1,10 @@
 # zen_core
 
+[![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+**The one dependency every other package can afford: zero magic, zero framework, just results and value objects.**
+
 The framework-free core of the jZen client: universal result types, value objects, logging, and
 the supported-locale declaration. It is the one package everything else can depend on without
 inheriting a framework — it depends only on `meta` and small, standard, inspectable libraries,
@@ -10,7 +15,7 @@ result types without pulling Flutter or a transport in).
 > dependency in the `client/` pub workspace, versioned in lockstep with the product; this README
 > also stands on its own for a reader who meets the package by itself.
 
-## What it provides
+## 🧘 What it provides
 
 - **`ZenResult` / `ZenError`** — a success-or-failure result type. A caller must be able to tell
   "the server said nothing" from "I could not understand what the server said", so failures are
@@ -21,7 +26,7 @@ result types without pulling Flutter or a transport in).
   own locale set against this, so an ARB set cannot drift from what the server can answer in.
 - **Logging** — a small logger with a platform-appropriate strategy chosen by conditional import.
 
-## Using it
+## 🚀 Using it
 
 Inside the jZen client workspace, depend on it by path (the distribution mechanism until the
 package is published — see [`../README.md`](../README.md)):
@@ -39,7 +44,7 @@ final result = ZenResult.ok(42);
 result.fold((v) => print('value: $v'), (e) => print('error: ${e.code}'));
 ```
 
-## Testing
+## 🧪 Testing
 
 From the repository root, `task test:client` runs this package's suite (pure Dart, `dart test`).
 Directly: `cd client/zen_core && dart test`.

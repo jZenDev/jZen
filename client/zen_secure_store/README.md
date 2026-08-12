@@ -1,9 +1,14 @@
 # zen_secure_store
 
+[![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+**Session tokens in the OS keychain, not shared preferences — secure by default, not by discipline.**
+
 Keystore-backed session persistence for the jZen client: the platform secure storage
 implementation of `zen_transport`'s `TokenStore` port.
 
-## Why this is its own package
+## 🧘 Why this is its own package
 
 It reaches Keychain (iOS/macOS) and Keystore-backed storage (Android) through a Flutter plugin,
 so its import graph contains `dart:ui`. The Dart VM cannot compile `dart:ui` at all — `dart test`
@@ -15,7 +20,7 @@ it. So `zen_transport` declares the port with a do-nothing default, this package
 and the app's `main` wires the two together. Conditional imports do not help: they select *code*,
 while a pubspec dependency is unconditional.
 
-## Use
+## 🚀 Use
 
 ```dart
 final TokenStore? tokens = zenIsWeb ? null : SecureTokenStore();
@@ -29,7 +34,7 @@ cookies itself, and the web session client ignores the store for that reason.
 Then hand the *same* client to `sessionClientProvider`, so `IdentitySessionStore` can resume the
 session on the next launch.
 
-## What is stored
+## 🔐 What is stored
 
 Only the refresh token, and only ever one value. The access token stays in memory: it lasts an
 hour and is re-obtainable from the refresh token, so writing it down would widen what sits at
@@ -39,13 +44,13 @@ Persisting to the OS store rather than a file is a requirement, not a preference
 MASVS-STORAGE-1. An app-support file is readable by any process running as the user on macOS and
 rides along in device backups on mobile, which would make persistence a downgrade.
 
-## Platform setup
+## ⚙️ Platform setup
 
 macOS only: a sandboxed app gets no keychain without the `keychain-access-groups` entitlement, in
 **both** `DebugProfile.entitlements` and `Release.entitlements`. It fails at runtime, not at
 build. iOS and Android need nothing.
 
-## Tests
+## 🧪 Tests
 
 The port's behaviour — persistence, rotation, expiry, logout — is tested in `zen_transport`
 against a fake store, where it runs on the VM. See `test/session_persistence_test.dart` there.

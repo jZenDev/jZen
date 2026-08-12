@@ -1,5 +1,10 @@
 # server/ — the Java/Quarkus framework libraries
 
+[![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+**Auth, dual-mode transport, and admin endpoints — inherited, not rebuilt, by every app on Quarkus.**
+
 `server/` is the Java side of the jZen **framework**: a multi-module Maven reactor of reusable
 **libraries** built on **Quarkus** (they are Quarkus extensions and CDI/JAX-RS providers, not a
 hand-rolled stack — the two leaf modules `zen-proto` and `zen-core` are deliberately Quarkus-free
@@ -13,7 +18,7 @@ Baseline: **Quarkus 3.32.2 on Java 25**. The Maven wrapper (`./mvnw`) is committ
 build is reproducible without a system Maven. The Java namespace is bare `zen` (ADR-006):
 `groupId zen`, packages `zen.core` / `zen.transport` / `zen.demo`.
 
-## How the reactor is put together
+## 🏗 How the reactor is put together
 
 `server/pom.xml` (`zen-parent`, `packaging pom`) is **both**:
 
@@ -27,7 +32,7 @@ inherits `zen-parent` **across directories** via `<relativePath>` and resolves t
 from the local repository — never by relative source paths. So the flow is always: install the
 libraries here, then the app package resolves them.
 
-## Modules
+## 📦 Modules
 
 | Module | Holds | Notes |
 |---|---|---|
@@ -43,7 +48,7 @@ libraries here, then the app package resolves them.
 > `apps/zen_demo/zen_demo_server` (ADR-001) and `zen-jobs` was added later (ADR-008). The table
 > above is the built truth.
 
-## The dual-mode transport seam
+## 🔀 The dual-mode transport seam
 
 The core mechanism: **a developer defines a domain model and nothing else; the framework
 negotiates the wire format.**
@@ -63,7 +68,7 @@ always binary Protobuf frames; the dual JSON/Protobuf negotiation is an HTTP-onl
 [`../docs/architecture/BLUEPRINT.md`](../docs/architecture/BLUEPRINT.md) "The dual-mode
 transport seam".
 
-## Two non-negotiable rules the seam depends on
+## ⚠️ Two non-negotiable rules the seam depends on
 
 - **Every library module contributing CDI beans or JAX-RS providers must run
   `jandex-maven-plugin`.** Quarkus discovers `@Provider`/bean classes from a dependency jar
@@ -81,7 +86,7 @@ Because SmallRye cannot cleanly introspect protobuf classes, resources return
 clean component schema is supplied by the app's static `META-INF/openapi.yaml` (paths scanned
 from annotations merge over it). See STANDARDS "OpenAPI and the REST surface".
 
-## Building and testing
+## 🚀 Building and testing
 
 Everything below runs through the Taskfile, from the repository root:
 
@@ -107,7 +112,7 @@ For live dev with reload, `task run:server` runs the reference backend in Quarku
 `:8080`. The native production build is `task build:server:native` (container build, pinned to
 `linux/amd64`).
 
-## Configuration
+## ⚙️ Configuration
 
 The server uses **runtime** MicroProfile config (`application.properties` in the app server),
 because one binary serves every client and has no bundle to shrink — the deliberate opposite of

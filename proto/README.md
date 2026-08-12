@@ -1,5 +1,10 @@
 # proto/ — the canonical contract
 
+[![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](../LICENSE)
+
+**Change the contract once; Java, Dart, and TypeScript regenerate together — never by hand.**
+
 `proto/zen/v1/` holds the **protobuf contract**, and it is the single source of truth for jZen's
 **models**. jZen serves a Flutter client, a react-admin panel, and native apps from one backend,
 so the contract is canonical and everything downstream is derived — Java DTOs, Dart messages,
@@ -12,7 +17,7 @@ API/wire version** and evolves on its own schedule, independent of the product v
 product major can ship while the API stays `zen.v1`, and a breaking API change would introduce
 `zen.v2` protos *alongside* `v1` (STANDARDS "Versioning").
 
-## The files
+## 📁 The files
 
 | File | Models for |
 |---|---|
@@ -33,7 +38,7 @@ Note the division of authority: **proto is canonical for models; the SmallRye-an
 resources are canonical for the REST surface** (paths, verbs, status codes) that proto cannot
 express. Both feed the same `openapi.json`.
 
-## How each language consumes it
+## 🔄 How each language consumes it
 
 ```
 proto/zen/v1/*.proto
@@ -53,7 +58,7 @@ toolchain that consumes it cannot produce it (STANDARDS "Code generation"):
 - **Not tracked:** the Java DTOs (`server/zen-proto/target/…`) and `openapi.json`, which live
   under `target/` because Maven resolves `protoc` from Maven Central itself.
 
-## Regenerating, and the drift gate
+## 🔐 Regenerating, and the drift gate
 
 Edit a `.proto`, then run the contract-first loop:
 

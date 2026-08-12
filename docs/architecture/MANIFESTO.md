@@ -8,7 +8,9 @@ reference app proves the framework composes end to end.
 The stack is Quarkus, PostgreSQL, and Supabase on the server; Flutter on the client;
 react-admin for administration; and one contract, declared in protobuf, binding all three.
 
-This document states what jZen believes. The concrete structure is in
+This document states what jZen believes, as an application of the broader design philosophy in
+[`../ZEN_ARCHITECTURE.md`](../ZEN_ARCHITECTURE.md) — read that first for the principles
+themselves, stated independent of jZen's stack. The concrete structure is in
 [`BLUEPRINT.md`](./BLUEPRINT.md); the order of work is in [`ROADMAP.md`](./ROADMAP.md);
 the rules that keep it honest are in [`STANDARDS.md`](./STANDARDS.md); decisions that change
 earlier docs, with justification, are logged in [`DECISIONS.md`](./DECISIONS.md).

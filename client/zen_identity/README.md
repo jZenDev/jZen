@@ -1,5 +1,10 @@
 # zen_identity
 
+[![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+**Login, register, and session state — implemented once, reused by every screen and every app.**
+
 The identity capability for the jZen client: the `IdentityRepository` contract and its
 Supabase-backed implementation, called over `zen_transport`'s dual-mode `ZenClient`. It is the
 data/logic layer for authentication — login, register, restore password, the current identity —
@@ -10,7 +15,7 @@ contract).
 > dependency in the `client/` pub workspace, versioned in lockstep with the product; this README
 > also stands on its own for a reader who meets the package by itself.
 
-## What it provides
+## 🧘 What it provides
 
 - **`IdentityRepository`** — the contract the app and the UI depend on, so the backing
   implementation is injected rather than baked in.
@@ -22,7 +27,7 @@ contract).
 Auth on the server is framework-side too (the `AuthResource` in `zen-identity`), so the client
 contract and the server surface are two halves of the same capability.
 
-## Using it
+## 🚀 Using it
 
 ```yaml
 dependencies:
@@ -42,6 +47,6 @@ ProviderScope(
 );
 ```
 
-## Testing
+## 🧪 Testing
 
 `task test:client` runs the suite (pure Dart). Directly: `cd client/zen_identity && dart test`.

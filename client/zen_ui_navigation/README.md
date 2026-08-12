@@ -1,5 +1,10 @@
 # zen_ui_navigation
 
+[![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+**One navigation widget that adapts to mobile, web, and desktop — no per-platform layout code.**
+
 Unified, adaptive navigation layer for jZen Flutter applications, with platform-specific
 optimizations.
 
@@ -7,13 +12,13 @@ optimizations.
 > dependency in the `client/` pub workspace (versioned in lockstep with the product); this
 > README also stands on its own for a reader who meets the package by itself.
 
-## Features
+## 📊 Features
 
 - **Platform adaptive** — adapts to mobile, web, and desktop layouts.
 - **Responsive** — breakpoint-based layouts with smart overflow handling.
 - **Zero configuration** — sensible defaults, customizable when needed.
 
-## Installation
+## 📦 Installation
 
 Inside the jZen client workspace, depend on it by path:
 
@@ -23,7 +28,7 @@ dependencies:
     path: ../zen_ui_navigation
 ```
 
-## Quick start
+## 🚀 Quick start
 
 ```dart
 import 'package:flutter/material.dart';
@@ -56,7 +61,7 @@ class _HomeShellState extends State<HomeShell> {
 }
 ```
 
-## Platform support (compile-time)
+## 📱 Platform support (compile-time)
 
 The package tree-shakes to the target platform, so specify it with the `ZEN_PLATFORM` define
 at compile time (jZen keeps client config compile-time, see `docs/architecture/STANDARDS.md`):
@@ -69,7 +74,7 @@ flutter run -d chrome --dart-define=ZEN_PLATFORM=web
 Supported values: `ios`, `android`, `web`, `macos`, `windows`, `linux`. If `ZEN_PLATFORM` is
 unset, a debug assertion fails. (`task test:client` passes the host platform automatically.)
 
-## Telemetry
+## 📊 Telemetry
 
 `ZenNavigation` exposes an optional `onItemSelectedId` callback so analytics can key off a
 stable item id rather than an index, keeping the UI decoupled from any analytics package:
@@ -83,15 +88,15 @@ ZenNavigation(
 );
 ```
 
-## Badges and overflow
+## 📛 Badges and overflow
 
 Set `badgeCount` on an item to show a notification badge. On mobile, more than four items
 overflow into a customizable "More" menu (`labelMore`).
 
-## Example
+## 💡 Example
 
 See the [`example/`](example) directory.
 
-## License
+## 📄 License
 
 Apache License 2.0 — see [LICENSE](LICENSE).

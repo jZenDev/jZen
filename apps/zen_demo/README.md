@@ -1,5 +1,10 @@
 # zen_demo — the reference app
 
+[![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](../../LICENSE)
+
+**The proof, not a pitch: every claim in this framework is exercised end to end, right here.**
+
 `zen_demo` is jZen's **reference application**: a full-stack app assembled from the framework,
 and today the only one. It has two jobs, and doing both is the point:
 
@@ -11,7 +16,7 @@ Because it assembles the framework on **both** sides (a Flutter client *and* a Q
 a green `zen_demo` run proves the framework composes end to end — which is exactly why it is the
 integration gate rather than a toy (ADR-001).
 
-## The three surfaces
+## 🧩 The three surfaces
 
 `apps/zen_demo/` holds one folder per surface. Each assembles a different tier of the framework;
 the reusable machinery each depends on is documented with the framework, not duplicated here.
@@ -22,7 +27,7 @@ the reusable machinery each depends on is documented with the framework, not dup
 | `zen_demo_server/` | The Quarkus backend — the only `quarkus`-packaged module, inheriting `zen-parent` and assembling the framework libraries. | [`server/`](../../server/README.md) |
 | `zen_demo_admin/` | The react-admin panel — assembles `@jzen/admin-core` and registers domain resources. | [`admin/`](../../admin/README.md) |
 
-## Running it (showcase)
+## 🚀 Running it (showcase)
 
 ```bash
 task run:demo     # Supabase + backend + the Flutter client in Chrome
@@ -51,7 +56,7 @@ leaves something bound to a port, `scripts/stop.sh [--supabase]` frees the backe
 deliberately no `stop:demo` task: the run task cleans up after itself on exit, so the only
 lingering process is the shared Supabase stack.
 
-## Testing it (the gate)
+## 🧪 Testing it (the gate)
 
 ```bash
 task test:e2e     # the release gate — the same flow, headless, against the live stack
@@ -78,7 +83,7 @@ exercises the **real** native session-cookie jar rather than a stub.
 tests that do not need the live stack run under `task test:apps:client` (client) and `task
 test:apps:server` (server, `@QuarkusTest` on Dev Services Postgres — Docker must be running).
 
-## The reference backend's own README
+## 📖 The reference backend's own README
 
 The three surfaces do not each carry a separate README: their reusable stories live in
 [`server/`](../../server/README.md), [`client/`](../../client/README.md), and

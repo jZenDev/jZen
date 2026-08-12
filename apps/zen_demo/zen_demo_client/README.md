@@ -1,5 +1,10 @@
 # zen_demo_client — the reference app's Flutter client
 
+[![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+**See the whole framework working, in a real Flutter app, before you write a line of your own.**
+
 The Flutter client of jZen's reference app, [`zen_demo`](../README.md). It is the surface `task
 run:demo` opens in a browser and the one `task test:e2e` drives against the live stack, so it is
 both the product showcase and the client half of the living end-to-end test stand.
@@ -15,7 +20,7 @@ framework in [`client/`](../../../client/README.md); this app composes them:
   `DemoLocalizations` — its own typed strings (`lib/src/l10n/demo_*.arb`, ADR-009), composed
   alongside the packages' own delegates.
 
-## Running it
+## 🚀 Running it
 
 The client reads its backend URL and platform as **compile-time** defines (jZen keeps client
 config compile-time so the toolchain can tree-shake — STANDARDS "Client config is
@@ -36,7 +41,7 @@ flutter run -d chrome \
   --dart-define=ZEN_API_URL=http://localhost:8085
 ```
 
-## What each target needs installed
+## 🛠️ What each target needs installed
 
 The web build needs only Flutter. Every other target adds something, and each of these was found
 by a build failing in a way that did not name the cause — so they are written down here.
@@ -71,7 +76,7 @@ Two traps worth knowing, both of which cost real time here:
   the failure is silent: the app simply looks permanently logged out. jZen's runner has it in both
   `DebugProfile` and `Release` entitlements — do not remove it.
 
-## Email links on every platform
+## 📧 Email links on every platform
 
 A confirmation or recovery link signs the user in wherever the app runs. On the web it lands on
 `/auth/callback` and the app reads the tokens out of the URL fragment (ADR-018). On native the
@@ -98,7 +103,7 @@ You do not need email to test it. Take one real token, then replay every case wi
 `xcrun simctl openurl booted`, `adb shell am start -a android.intent.action.VIEW -d`, or `open`
 on macOS.
 
-## Testing
+## 🧪 Testing
 
 Two suites, deliberately kept apart:
 

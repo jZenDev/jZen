@@ -1,5 +1,27 @@
 # jZen
 
+[![CI](https://github.com/jZenDev/jZen/actions/workflows/ci.yml/badge.svg)](https://github.com/jZenDev/jZen/actions/workflows/ci.yml)
+[![GitHub](https://img.shields.io/badge/GitHub-jZenDev-blue.svg)](https://github.com/jZenDev/jZen)
+[![go-task](https://img.shields.io/badge/orchestrated%20with-go--task-00ADD8.svg)](https://taskfile.dev)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+**One protobuf contract drives your Java backend, your Flutter client, and your admin panel —
+JSON or binary, over the same endpoints, with nothing to hand-sync.**
+
+## ✨ Why jZen
+
+- 🔄 **Contract-first, always in sync.** Edit one `.proto` model; Java DTOs, Dart messages, and
+  admin TypeScript types regenerate together, and `task sync:contracts` fails the build the moment
+  any of them drifts.
+- 🔀 **Dual-mode transport, one codebase.** A single request header switches the wire format
+  between canonical JSON and Protobuf binary — no branching in your resources or your client code.
+- 🔐 **Auth and admin, included.** Supabase-backed login, role loading, and a full admin-user CRUD
+  surface come from the framework, not something every new app rebuilds.
+- 🚀 **Cheap to run, fast to wake.** Ships as a native image on Cloud Run scaled to zero — pennies a
+  month idle, and a cold request answers in **~1.5s** (see "Capacity" under Deploy, below).
+- 🧪 **No mocks at the finish line.** The reference app's end-to-end suite runs against a real
+  Supabase + Quarkus stack, the same gate that has to be green before anything ships.
+
 jZen is a **framework/platform for building full-stack products**, not a single deployable
 app. `server/` (Java/Quarkus) and `client/` (Dart/Flutter) are reusable **framework libraries**;
 `apps/<app>/{<app>_client, <app>_server, <app>_admin}` are the **applications** that assemble
@@ -13,13 +35,14 @@ domain model and one request header, `X-Zen-Transport`, negotiates whether it tr
 as canonical proto3 JSON or Protobuf binary — over the same typed endpoints, with no branch in
 the resource or the caller.
 
-The philosophy is stated in [`docs/architecture/MANIFESTO.md`](docs/architecture/MANIFESTO.md);
-the architecture as built is in
+[`ARCHITECTURE.md`](ARCHITECTURE.md) maps the deeper docs: the philosophy is stated in
+[`docs/architecture/MANIFESTO.md`](docs/architecture/MANIFESTO.md) (itself an application of
+[`docs/ZEN_ARCHITECTURE.md`](docs/ZEN_ARCHITECTURE.md)); the architecture as built is in
 [`docs/architecture/BLUEPRINT.md`](docs/architecture/BLUEPRINT.md); the rules that keep it
 honest are in [`docs/architecture/STANDARDS.md`](docs/architecture/STANDARDS.md). **Read those
 before non-trivial work — they are the source of truth, and this README only points at them.**
 
-## Status — what works, and what does not yet
+## 🚦 Status — what works, and what does not yet
 
 **The framework is complete and gated; it is not yet production-ready, and the difference is
 deliberate.** Everything described below runs today: the transport seam, auth, jobs, email, the
@@ -36,7 +59,7 @@ The full list, with what "done" means for each, is the appendix in
 [`ROADMAP.md`](docs/architecture/ROADMAP.md). Nothing there is a hidden defect — they are stated
 boundaries, and this note exists so you meet them here rather than discover them later.
 
-## See it run
+## 🚀 See it run
 
 The fastest way to watch the whole product work end to end is the reference app:
 
@@ -50,7 +73,7 @@ human walks through here are asserted headlessly by `task test:e2e` (the release
 the same real stack, with no mocks. See
 [`apps/zen_demo/README.md`](apps/zen_demo/README.md) for what it exercises.
 
-## Repository map
+## 📦 Repository map
 
 The single most important structural fact: `server/` and `client/` are the **framework
 libraries**; `apps/` holds the **applications** that assemble them. The repository root stays
@@ -68,7 +91,7 @@ language-neutral — only `Taskfile.yml` lives there; there is no root `pom.xml`
 | [`scripts/`](scripts/README.md) | One-shot dev-loop helpers the `run:*` tasks shell out to. |
 | [`docs/architecture/`](docs/architecture/) | MANIFESTO, BLUEPRINT, STANDARDS, ROADMAP, and the DECISIONS log. The deep reference. |
 
-## Orchestration: `task` is the only entry point
+## 🧭 Orchestration: `task` is the only entry point
 
 [`Taskfile.yml`](Taskfile.yml) ([go-task](https://taskfile.dev), `brew install
 go-task/tap/go-task`) is the single orchestrator. It **triggers native tools, never replaces
@@ -79,12 +102,12 @@ It spans three audiences, not just local dev: the `run:*` tasks are the **local*
 `test`, `sync:contracts`, and `verify:docs` are the **CI gates** (wire them into your pipeline);
 and `deploy:cloudrun` is **release**. The `desc` in `task --list` tells you which is which.
 
-## Quick start — running it
+## 🏁 Quick start — running it
 
 Prerequisites: the Supabase CLI, Docker (running), and gcloud. Everything the build itself
 consumes is **version-pinned**, and each pin lives in the file its own ecosystem already reads —
 there is no universal version manager over the top, for the same reason the orchestrator does not
-replace `mvnw`/`dart pub`/`pnpm` ([`DECISIONS.md`](docs/architecture/DECISIONS.md) ADR-014):
+replace `mvnw`/`dart pub`/`pnpm`:
 
 | Pin | File | Applied by |
 |---|---|---|
@@ -143,7 +166,7 @@ Note: `task run:demo` and `task test:e2e` run the backend on `ZEN_APP_PORT` (def
 deliberately, so a leftover stack shadowing `:8080` cannot interfere. `task run:server` and
 `task run:all` use the Quarkus dev default `:8080`.
 
-## Running natively (iOS Simulator, Android emulator, macOS)
+## 📱 Running natively (iOS Simulator, Android emulator, macOS)
 
 The same `zen_demo` that runs in Chrome also runs as a real app. No paid developer account and no
 signing identity are needed for any of this — a simulator, an emulator and a local macOS build are
@@ -207,7 +230,7 @@ it only on an exact match. `task verify:deploy` checks the deployed half of that
 > building and tells you exactly what to run, because the underlying failure is a `jlink` stack
 > trace that names neither the JDK nor the reason.
 
-## Quick start — developing on it
+## 🛠️ Quick start — developing on it
 
 ```bash
 task deps     # resolve deps for every sub-project (native tools do the work)
@@ -252,7 +275,7 @@ test:e2e` runs `zen_demo` against the real stack as the integration gate, so a c
 `task verify:docs` checks this documentation itself: every `task` name mentioned in any README
 resolves in `task --list`, and every module's `LICENSE` is byte-identical to the root one.
 
-## Building your own app on jZen
+## 🧩 Building your own app on jZen
 
 jZen is a framework, so the deliverable is *your* application, and you build it by **depending on
 the libraries as versioned packages** — never by copying their code. That distinction is the
@@ -288,9 +311,9 @@ resources you inherit for free (auth, admin-user management, the jobs trigger) a
 [`server/README.md`](server/README.md); what each surface assembles is in
 [`apps/zen_demo/README.md`](apps/zen_demo/README.md). Testing is the same story as the reference
 app: unit suites per surface, plus your own live end-to-end suite modelled on `zen_demo`'s — a
-second app gets its *own* e2e gate (ADR-001).
+second app gets its *own* e2e gate.
 
-## Deploy
+## 🚢 Deploy
 
 **One task deploys the whole stack**, as a single Quarkus **native image** on Cloud Run:
 
@@ -304,49 +327,47 @@ task deploy:cloudrun
   session cookie work without CORS credentials, and `StaticCacheHeaders` keeps the fixed-name entry
   files revalidating so a redeploy is not invisible to returning browsers.
 - **Native mobile/desktop — later.** App-store and notarized-build pipelines are outside what the
-  framework automates, and that one *is* fine to leave to each app (ADR-020).
+  framework automates, and that one *is* fine to leave to each app.
 
 > **Deployed and exercised; not published.** The stack has run on real Cloud Run against real
 > Supabase — several defects in [`ROADMAP.md`](docs/architecture/ROADMAP.md) ("Defects surfaced by
 > the first real deployment") were found only that way, and `task verify:deploy` asserts the
 > deployment contract against a live service. What has *not* happened is **publishing**: no pub.dev
-> or npm package, deliberately, until a second product has bent the API (ADR-020).
+> or npm package, deliberately, until a second product has bent the API.
 
-### Capacity: the defaults, and the reason for each
+### ⚖️ Capacity: the defaults, and the reason for each
 
 The Cloud Run deploy runs a **single instance by design** — a deliberate cost floor, not a scaling
 ceiling. These are **defaults, not constants**: they are `vars` in `Taskfile.yml`, so an
 application overrides them without touching the framework. The values below are sized for
-`zen_demo`'s target (~2K MAU); nobody else has to live with them (ADR-028).
+`zen_demo`'s target (~2K MAU); nobody else has to live with them.
 
 | Flag | Default | Why this default | What changing it costs |
 |---|---|---|---|
-| `--min-instances` | `0` | Nothing is paid while the service sits idle. The price is a cold start on the first request after a quiet period — **measured at 2.9–4.8s, mean 3.7s** (see below). | Setting `1` removes cold starts and buys latency, at the cost of a warm instance around the clock. **Invalidates nothing.** |
-| `--max-instances` | `1` | A ceiling the bill cannot escape. It is also why an attack on this service costs availability rather than money (ADR-027). | Raising it above `1` **silently breaks three pieces of in-process state**: any burst rate limiter, `JobScheduler`'s overlap guard, and any in-memory cache. Read **ADR-028** first — none of them fails loudly. |
-| `--concurrency` | `200` | Requests one instance serves at once. With `--max-instances=1`, this is the entire capacity of the service. | A pure capacity trade-off, no invariant attached. Together with `--timeout` it decides how cheap a denial-of-service is (ADR-027). |
+| `--min-instances` | `0` | Nothing is paid while the service sits idle. The price is a cold start on the first request after a quiet period — **measured at ~1.49s mean** (see below). | Setting `1` removes cold starts and buys latency, at the cost of a warm instance around the clock. **Invalidates nothing.** |
+| `--max-instances` | `1` | A ceiling the bill cannot escape. It is also why an attack on this service costs availability rather than money. | Raising it above `1` **silently breaks three pieces of in-process state**: any burst rate limiter, `JobScheduler`'s overlap guard, and any in-memory cache — none of them fails loudly. |
+| `--concurrency` | `200` | Requests one instance serves at once. With `--max-instances=1`, this is the entire capacity of the service. | A pure capacity trade-off, no invariant attached. Together with `--timeout` it decides how cheap a denial-of-service is. |
 | `--timeout` | `300s` | Cloud Run's per-request ceiling. | Lower is safer: the shorter the timeout, the more traffic an attacker needs to keep every slot occupied. No invariant attached. |
 | `--memory` / `--cpu` | `256Mi` / `1` | What the native image needs for the target load. | Raise it if your application's workload is heavier. |
 
-**What a cold start actually costs.** Measured on the live service on 2026-08-03, from Cloud Run
-request logs and the browser:
+**What a cold start actually costs, on the live service:**
 
-| | Measured | Samples |
-|---|---|---|
-| Cold request, end to end | **2.9–4.8s, mean 3.7s** | 12 |
-| — of which Quarkus native boot | 2.6–3.3s, mean 3.0s | 15 |
-| — remainder | container scheduling, ~0.7s | — |
-| Warm request, time to first byte | **~26ms** | 1 |
-| Web app, fully loaded (warm) | 125ms, ~2.5 MB over 11 requests | 1 |
+| | Measured |
+|---|---|
+| Cold request, end to end | **~1.5s** |
+| Warm request, time to first byte | **~26ms** |
+| Web app, fully loaded (warm) | 125ms, ~2.5 MB over 11 requests |
+
+Method and full numbers: [`docs/plans/implemented/PERFORMANCE-REMEDIATION.md`](docs/plans/implemented/PERFORMANCE-REMEDIATION.md).
 
 Two things worth knowing before you copy these defaults:
 
-- **A ~3.7s first request is the deal `--min-instances=0` buys you.** That is not "sub-second", as
-  an earlier version of the architecture docs claimed without measuring. Whether it is acceptable
+- **A ~1.5s first request is the deal `--min-instances=0` buys you.** Whether that is acceptable
   is a product decision.
 - **In this deployment the instance is almost never warm.** The only recurring traffic is the
   hourly Cloud Scheduler tick, so the container starts, serves it, and scales back to zero — 24
-  cold starts a day, and a real visitor arriving between ticks pays the full 3.7s. An application
-  with steady traffic will see this far less; one with none will see it every time.
+  cold starts a day, and a real visitor arriving between ticks pays the full cold-start cost. An
+  application with steady traffic will see this far less; one with none will see it every time.
 
 Two consequences of scale-to-zero that are easy to miss, and that no test will catch:
 
@@ -360,11 +381,10 @@ Two consequences of scale-to-zero that are easy to miss, and that no test will c
   keeps the instance alive in the first place.
 
 The `deploy:cloudrun` task summary (`task --summary deploy:cloudrun`) lists the required Secret
-Manager secrets and the one-time scheduler setup. See STANDARDS "Deployment model", plus
-[ADR-027](docs/architecture/DECISIONS.md) (why this posture is accepted) and **ADR-028** (what each
-knob invalidates when you change it).
+Manager secrets and the one-time scheduler setup. See STANDARDS "Deployment model" for the full
+reasoning behind this posture.
 
-## Licence and contribution
+## 📄 Licence and contribution
 
 jZen is licensed under the **Apache License 2.0** — see [`LICENSE`](LICENSE). Each framework
 library and application module carries a byte-identical copy in its own directory. The product

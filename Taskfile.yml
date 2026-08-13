@@ -52,6 +52,16 @@ vars:
   # environment with cpu always allocated". It is a floor, not a sizing decision: the job runs the
   # same image for a few seconds and never serves a request.
   MIGRATE_JOB_MEMORY: '{{.MIGRATE_JOB_MEMORY | default "512Mi"}}'
+  # The identity the SERVICE and the MIGRATE JOB run as. No default: the platform default is
+  # the project's Compute Engine service account, which carries `roles/editor` — project-wide
+  # write access — on every project that has ever enabled the Compute Engine API, whether or not
+  # anything here uses it. Cloud Run assigns that default silently when `--service-account` is
+  # omitted, so an empty default here would be the same silent fallback this var exists to close;
+  # deploy:cloudrun instead refuses to run and names exactly what to create. See
+  # summary step 1f and STANDARDS "Deployment model" ("no deployed environment fact is written
+  # into the repository" — an account NAME is an identifier like a service URL, not a secret, so
+  # it is a var with a loud-failure default, the same shape as GCP_PROJECT).
+  RUNTIME_SERVICE_ACCOUNT: '{{.RUNTIME_SERVICE_ACCOUNT | default ""}}'
 
   # Cloud Run CAPACITY. These are the APPLICATION's choice, not the framework's (ADR-028):
   # the repo root is language- and application-neutral, so hardcoding one app's cost envelope
@@ -1396,6 +1406,12 @@ tasks:
       local container, so a deployment is held to exactly the standard the pre-deploy gate
       enforces. Override with `SERVICE_URL=https://... task verify:deploy` for any environment.
 
+      Also asserts the runtime identity (F1, docs/plans/SECURITY-ARCHITECTURE-REVIEW.md): reads
+      back the service's and the migrate job's `serviceAccountName` and FAILS if either is the
+      project's default Compute Engine account (`roles/editor`) or cannot be read at all — a
+      fix that is asserted only at deploy time regresses silently the next time someone deploys
+      from a fresh checkout without deploy:cloudrun's own guard.
+
       Run it after every deploy. To keep a bad revision from serving traffic at all, deploy
       with `--no-traffic --tag=candidate`, verify the tagged URL, then shift traffic.
     cmds:
@@ -1407,6 +1423,50 @@ tasks:
                   --region={{.GCP_REGION}} --format='value(status.url)' 2>/dev/null || true)
         fi
         [ -n "$URL" ] || { echo "No service URL. Set SERVICE_URL=... or GCP_PROJECT=..."; exit 1; }
+
+        # F1 (docs/plans/SECURITY-ARCHITECTURE-REVIEW.md): the runtime identity is asserted, not
+        # trusted to deploy:cloudrun's --service-account flag having been set correctly once. The
+        # insecure value is what a MISSING declaration produces, so an empty read here is a
+        # FAILURE, never a pass — ADR-034's rule that a gate must not be able to pass having
+        # checked nothing applies just as much to a control-plane read as to a dependency scan.
+        SA=$(gcloud run services describe {{.SERVICE_NAME}} --project={{.GCP_PROJECT}} \
+               --region={{.GCP_REGION}} --format='value(spec.template.spec.serviceAccountName)' \
+               2>/dev/null || true)
+        if [ -z "$SA" ]; then
+          echo "  FAIL   service account: could not read spec.template.spec.serviceAccountName"
+          echo "         for {{.SERVICE_NAME}} — this is a failure, not a skip. Check gcloud auth"
+          echo "         and GCP_PROJECT={{.GCP_PROJECT}}."
+          exit 1
+        fi
+        case "$SA" in
+          *-compute@developer.gserviceaccount.com)
+            printf '  \033[31mFAIL\033[0m %-24s %s\n' "service account" \
+              "$SA — the PROJECT DEFAULT (roles/editor). See Taskfile summary step 1f."
+            exit 1 ;;
+          *)
+            printf '  \033[32mok\033[0m   %-24s %s\n' "service account" "$SA (not the project default)" ;;
+        esac
+
+        # The migration job runs on the same declared identity (Taskfile step 1e: "job and
+        # service share the runtime service account"), so a drift here is the same defect wearing
+        # a second name — checked with the same non-empty-or-fail discipline as above.
+        JOB_SA=$(gcloud run jobs describe {{.MIGRATE_JOB_NAME}} --project={{.GCP_PROJECT}} \
+                   --region={{.GCP_REGION}} \
+                   --format='value(spec.template.spec.template.spec.serviceAccountName)' \
+                   2>/dev/null || true)
+        if [ -z "$JOB_SA" ]; then
+          echo "  FAIL   migrate job service account: could not read it for {{.MIGRATE_JOB_NAME}}"
+          exit 1
+        fi
+        case "$JOB_SA" in
+          *-compute@developer.gserviceaccount.com)
+            printf '  \033[31mFAIL\033[0m %-24s %s\n' "migrate job account" \
+              "$JOB_SA — the PROJECT DEFAULT (roles/editor). See Taskfile summary step 1f."
+            exit 1 ;;
+          *)
+            printf '  \033[32mok\033[0m   %-24s %s\n' "migrate job account" "$JOB_SA" ;;
+        esac
+
         SERVICE_URL="$URL" task verify:endpoints
 
         # The NATIVE return address must be configured, or every native client is locked out.
@@ -1793,9 +1853,11 @@ tasks:
           unpinned generation documented as unpinned beats a pin nobody verified; what is not
           acceptable is leaving a reader unable to tell which of the two this is (ADR-031).
 
-      Requires: gcloud auth, GCP_PROJECT set, and everything under ONE-TIME SETUP below.
-      Run it as `GCP_PROJECT=my-project task deploy:cloudrun` — this task never changes your
-      global gcloud config, so it cannot leave your shell pointed somewhere unexpected.
+      Requires: gcloud auth, GCP_PROJECT set, RUNTIME_SERVICE_ACCOUNT set (step 1f — the task
+      refuses to run without it, on purpose), and everything under ONE-TIME SETUP below.
+      Run it as `RUNTIME_SERVICE_ACCOUNT=... GCP_PROJECT=my-project task deploy:cloudrun` — this
+      task never changes your global gcloud config, so it cannot leave your shell pointed
+      somewhere unexpected.
 
       Deploy is deliberately manual and stays that way. Nothing triggers it but a person:
       CI runs the cheap gates, `task test:native` is the long local check before shipping,
@@ -2029,17 +2091,47 @@ tasks:
                                   legible error into two.
 
             The one thing that IS environmental: job and service share the runtime service
-            account, so step 2's secret binding covers both. If you run the job as a different
-            service account (--service-account), that account needs its own
-            roles/secretmanager.secretAccessor binding or every execution fails at boot on a
-            secret it cannot read.
+            account (RUNTIME_SERVICE_ACCOUNT, step 1f), so step 2's secret binding covers both.
+            If you run the job as a DIFFERENT service account (--service-account), that account
+            needs its own roles/secretmanager.secretAccessor binding or every execution fails at
+            boot on a secret it cannot read.
+
+        1f. THE RUNTIME SERVICE ACCOUNT (required — this is finding F1 of
+            docs/plans/SECURITY-ARCHITECTURE-REVIEW.md). deploy:cloudrun REFUSES to run without
+            RUNTIME_SERVICE_ACCOUNT set: the platform default it would otherwise fall back to is
+            the project's Compute Engine default service account, which carries `roles/editor`
+            project-wide on every project that has ever enabled the Compute Engine API — write
+            access to everything in the project, handed to the one process that parses
+            unauthenticated internet input before authentication runs (--allow-unauthenticated,
+            no edge, ADR-027). Create a dedicated account instead, with exactly the one role the
+            application actually uses:
+
+              gcloud iam service-accounts create zen-demo-runtime \
+                --project=PROJECT --display-name="zen_demo runtime (Cloud Run service + migrate job)"
+
+              gcloud projects add-iam-policy-binding PROJECT --condition=None \
+                --member="serviceAccount:zen-demo-runtime@PROJECT.iam.gserviceaccount.com" \
+                --role="roles/secretmanager.secretAccessor"
+
+            Nothing else: no roles/editor, no roles/run.invoker, no roles/iam.serviceAccountUser.
+            The migration job (1e) runs on DDL DATABASE credentials read from that same secret
+            set — a Postgres role, not a GCP permission — so it needs no IAM role beyond the one
+            above; a separate, narrower GCP identity for the job would buy nothing since
+            secretAccessor is already the floor for both, and would only reintroduce the thing
+            this finding removes (an identity nobody named) the moment the two drift. Pass it on
+            every deploy:
+
+              RUNTIME_SERVICE_ACCOUNT=zen-demo-runtime@PROJECT.iam.gserviceaccount.com \
+                GCP_PROJECT=PROJECT task deploy:cloudrun
 
         2. Let the runtime service account read those secrets. Without this the revision is
            created and then fails to start, because --set-secrets is resolved at boot. The same
-           binding is what lets the migration job in 1e read them.
+           binding is what lets the migration job in 1e read them. (This is the same binding
+           step 1f already performs for the dedicated account — repeated here only if you are
+           re-pointing an EXISTING deployment at a different account.)
 
              gcloud projects add-iam-policy-binding PROJECT --condition=None \
-               --member="serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+               --member="serviceAccount:zen-demo-runtime@PROJECT.iam.gserviceaccount.com" \
                --role="roles/secretmanager.secretAccessor"
 
         3. Scheduled work. Jobs do not run until this exists, which means GDPR retention
@@ -2073,7 +2165,26 @@ tasks:
         A missed tick is not a lost run: the next one sees a stale last_run_at and catches
         up. That is what makes GDPR retention a guarantee here rather than a hope.
     cmds:
-      # First, before any build: a dirty tree makes the image tag a lie. This is cmd #1 so it
+      # Before anything else: refuse to guess the runtime identity. Omitting --service-account
+      # further down would not error — gcloud silently assigns the project's default Compute
+      # Engine service account, which is exactly the `roles/editor` blast radius F1 found. So this
+      # is a loud failure naming what to set, not a fallback, checked before a single second of
+      # build time is spent.
+      - |
+        set -eu
+        if [ -z "{{.RUNTIME_SERVICE_ACCOUNT}}" ]; then
+          echo "RUNTIME_SERVICE_ACCOUNT is not set."
+          echo
+          echo "Omitting it would not fail the deploy — gcloud silently assigns the project's"
+          echo "default Compute Engine service account, which carries roles/editor project-wide."
+          echo "See summary step 1f for the one-time 'gcloud iam service-accounts create' /"
+          echo "'add-iam-policy-binding' commands, then pass the account every deploy:"
+          echo
+          echo "    RUNTIME_SERVICE_ACCOUNT=zen-demo-runtime@{{.GCP_PROJECT}}.iam.gserviceaccount.com \\"
+          echo "      GCP_PROJECT={{.GCP_PROJECT}} task deploy:cloudrun"
+          exit 1
+        fi
+      # Before any build: a dirty tree makes the image tag a lie. This is cmd #2 so it
       # costs a second, not a native compile, to find out.
       - |
         set -eu
@@ -2148,6 +2259,7 @@ tasks:
         gcloud run jobs deploy {{.MIGRATE_JOB_NAME}} \
           --project={{.GCP_PROJECT}} --region={{.GCP_REGION}} \
           --image="$IMAGE" \
+          --service-account={{.RUNTIME_SERVICE_ACCOUNT}} \
           --max-retries=0 --task-timeout=10m --tasks=1 \
           --memory={{.MIGRATE_JOB_MEMORY}} --cpu={{.SERVICE_CPU}} \
           --set-env-vars="ZEN_MIGRATE_ONLY=true,QUARKUS_HTTP_HOST_ENABLED=false,ZEN_ALLOW_SCHEMA_ROLLBACK=$ROLLBACK" \
@@ -2229,6 +2341,7 @@ tasks:
           --image="$IMAGE" \
           --project={{.GCP_PROJECT}} \
           --region={{.GCP_REGION}} \
+          --service-account={{.RUNTIME_SERVICE_ACCOUNT}} \
           --memory={{.SERVICE_MEMORY}} \
           --cpu={{.SERVICE_CPU}} \
           --min-instances={{.SERVICE_MIN_INSTANCES}} \

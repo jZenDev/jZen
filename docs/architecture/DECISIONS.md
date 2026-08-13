@@ -15,6 +15,53 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-039 — `task audit` is wired into CI on a schedule; it had never actually run there
+
+**Date:** 2026-08-13. **Status:** accepted. **Amends:** ADR-034. **Closes:**
+`docs/plans/SECURITY-ARCHITECTURE-REVIEW.md` F5.
+
+### Decision
+
+- **A new, separate workflow file, `.github/workflows/audit.yml`,** runs `task audit` on a weekly
+  `schedule:` (`cron: "17 6 * * 1"`) and on `workflow_dispatch:`, with `permissions: contents:
+  read`. Not a job inside `ci.yml`: a third-party advisory published overnight must not block an
+  unrelated pull request the way a red `ci.yml` run would, which is the same reasoning ADR-034
+  already gives for keeping `task audit` out of `task test` — it asks a remote service a question
+  whose answer changes when nothing in the repository changed.
+- **`.github/dependabot.yml`** now covers the `github-actions` ecosystem (weekly). Not the Java or
+  TypeScript ecosystems `task audit` already checks — that would be two tools answering the same
+  question on two different schedules — but the third-party Actions `ci.yml` invokes, which nothing
+  previously watched, and which is what would keep F12's SHA pins current if that finding is worked.
+- **The one live advisory closed.** `task audit:admin` was failing on a moderate DOMPurify XSS
+  (GHSA-55q2-fjhq-7xh7), transitive through `react-admin > ra-ui-materialui > dompurify` in the
+  admin panel — the highest-privilege surface in the system. `ra-ui-materialui`'s own dependency
+  range on `dompurify` (`^3.2.4`) already permitted the patched `3.4.13`; the lockfiles
+  (`admin/pnpm-lock.yaml`, `apps/zen_demo/zen_demo_admin/pnpm-lock.yaml`) were simply pinned to a
+  stale resolution. No `react-admin` version bump was needed — `pnpm update dompurify` in each
+  package sufficed.
+
+### What this supersedes, and why
+
+- **"[`task audit`] belongs in CI on a schedule and before a release"** (ADR-034, Decision) →
+  **fulfilled, not reversed.** *Why:* the security architecture review of 2026-08-13 found
+  `.github/workflows/ci.yml` had no `schedule:` trigger and never invoked `task audit` at all —
+  `grep -n 'audit' .github/workflows/ci.yml` matched nothing. The gate ADR-034 built was correct
+  and, on the one occasion it had been run by hand, had already caught a real advisory; nothing
+  had ever made it run on its own. ADR-034's reasoning stands unchanged — only the wiring it
+  asserted, and did not yet have, now exists.
+- **"before a release"** is *not* closed by this entry. No release checklist exists in this
+  repository yet for `task audit` to be wired into; that half of ADR-034's sentence remains
+  aspirational until one does.
+
+### Consequence
+
+`task audit` is green (`task audit:server`: 259 Java dependencies, clean; `task audit:admin`:
+clean on the finding this entry closes). The gate now fires on its own weekly and on demand,
+rather than only when a human remembers to type the command — which is the defect the review
+named: not that the gate could lie, but that nothing made it run.
+
+---
+
 ## ADR-038 — Migration runs at the deploy, and the binary-and-schema agreement check is abandoned at boot rather than moved
 
 **Date:** 2026-08-10. **Status:** accepted. **Supersedes:** STANDARDS "Deployment model" and

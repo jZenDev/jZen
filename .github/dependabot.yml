@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # Only the github-actions ecosystem, deliberately. jZen's Java, Dart and TypeScript
+  # dependencies already have a gate — task audit (ADR-034), scheduled weekly by
+  # .github/workflows/audit.yml — and giving Dependabot the same ecosystems would mean two
+  # tools answering the same question on two different schedules. What task audit does NOT
+  # cover is the third-party GitHub Actions ci.yml invokes, so this is where that gap closes.
+  # It is also what keeps F12's SHA pins (a separate, not-yet-actioned finding) current once
+  # that finding is worked.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

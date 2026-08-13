@@ -840,13 +840,15 @@ tasks:
   test:
     desc: Run every test suite (test:e2e is the release gate - it hits the live stack)
     cmds:
-      # First, and cheap: an architectural rule no unit test can catch, because the violation it
-      # looks for makes every other suite pass. See STANDARDS "The client talks to one server".
+      # First, and cheap: two architectural rules no unit test can catch, because the violation
+      # each looks for makes every other suite pass. See STANDARDS "The client talks to one
+      # server" and "Backend multi-module rules".
       #
       # test:scripts runs immediately after, and deliberately not before: it is the suite that
-      # proves the gate above still fires, so the cheap architectural check keeps its place at the
-      # front and the thing that vouches for it follows straight behind.
+      # proves both gates above still fire, so the cheap architectural checks keep their place at
+      # the front and the thing that vouches for them follows straight behind.
       - task: verify:boundaries
+      - task: verify:modules
       - task: test:scripts
       - task: test:server
       - task: test:client
@@ -983,11 +985,11 @@ tasks:
       - pnpm exec tsc -b
 
   test:scripts:
-    desc: Run the fixture tests for the Python dev scripts (the boundary, docs and CVE gates)
+    desc: Run the fixture tests for the Python dev scripts (the boundary, modules, docs and CVE gates)
     silent: true
     summary: |
       Covers the scripts on the Python side of STANDARDS "Scripting" — `verify:boundaries`,
-      `verify:docs`, `seed-admin`, and `audit-maven`.
+      `verify:modules`, `verify:docs`, `seed-admin`, and `audit-maven`.
 
       `audit-maven`'s tests are about one property above all: that the gate cannot report a clean
       result when it checked nothing. That is not a hypothetical — it is what disqualified both
@@ -2559,6 +2561,50 @@ tasks:
       which read as a clean repository and reported green forever.
     cmds:
       - scripts/verify-boundaries.py
+
+  verify:modules:
+    desc: Fail if a server/zen-* module drifts from the Jandex or no-Jackson rules
+    silent: true
+    summary: |
+      Enforces STANDARDS "Backend multi-module rules", which is two mandatory properties for
+      every jZen backend library module:
+
+        A. A module that contributes CDI beans or JAX-RS providers (`@Provider`,
+           `@ApplicationScoped`, `@Singleton`, `@Observes`) must run `jandex-maven-plugin`.
+           Quarkus discovers `@Provider`/bean classes from a dependency jar only if it carries
+           `META-INF/jandex.idx`; omit the plugin and the module's filters, MessageBodyWriters,
+           exception mappers and augmentors silently do nothing — no error, no negotiation.
+        B. No `pom.xml` declares server-side `quarkus-rest-jackson`. jZen is proto-first — every
+           response body is a proto message and its JSON is canonical proto3 JSON from
+           `JsonFormat` via `ProtoJsonMessageBodyWriter`. The Quarkus Jackson writer greedily
+           claims `application/json` through a build-time path that ignores writer priority, so
+           it must be ABSENT, not merely out-prioritized. `quarkus-rest-client-jackson`
+           (`zen-identity`'s outbound Supabase client) and its transitive
+           `quarkus-rest-jackson-common` are legitimate and are not flagged.
+
+      WHY THIS IS A GATE AND NOT A COMMENT. The 2026-08-13 architectural security review (F9)
+      found both rules holding in every module today, and enforced by nothing: five javadoc
+      comments (`zen-transport`, `zen-identity`, `zen-ratelimit` ×2, `zen-email`) and one line in
+      STANDARDS. A new library module that forgets `jandex-maven-plugin` compiles, ships, and its
+      `@Provider` classes vanish with no error at build or boot time — the review's census command,
+      run by hand, was the only thing that had ever checked. This task is that census, made
+      permanent.
+
+      Both checks are Rule 3 work (STANDARDS "Scripting"): they understand `pom.xml` structure
+      (is `jandex-maven-plugin` a real `<plugin>`, is `quarkus-rest-jackson` a real
+      `<dependency>` — as opposed to either name appearing only in an explanatory XML comment,
+      or the forbidden name being a substring of the legitimate `quarkus-rest-client-jackson`)
+      and Java source (does a non-comment line carry a bean-defining annotation). `pom.xml` is
+      parsed with `xml.etree.ElementTree`, which never sees comment nodes, so unlike the Dart/TS
+      scanners in `verify-boundaries.py` this needs no hand-written comment stripper.
+
+      A scope that matches NOTHING is a failure, not a pass — the same `StaleScope` discipline as
+      `verify:boundaries`: a `server/zen-*` glob matching no directory, or a repository with no
+      `pom.xml` at all, must not read as "nothing to flag".
+
+      Covered by `task test:scripts`, alongside the boundary gate's fixtures.
+    cmds:
+      - scripts/verify-modules.py
 
   verify:docs:
     desc: Fail if a README names a non-existent task, or a module LICENSE drifted from root

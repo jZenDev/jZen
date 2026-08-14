@@ -88,9 +88,11 @@ second, redundant status channel that has to be kept agreeing with the first.
 ### Quarkus implementation
 
 1. **`ZenTransportFilter`** — a `@PreMatching ContainerRequestFilter` in `zen-transport`.
-   Reads `X-Zen-Transport`, and rewrites `Accept`/`Content-Type` to
-   `application/x-protobuf` or `application/json`. Scoped to `api/` paths so it never
-   rewrites `Accept` on `/openapi`, `/q/health`, or static assets.
+   Reads `X-Zen-Transport`, and rewrites only `Accept` to `application/x-protobuf` or
+   `application/json` — this selects the **response** writer. Scoped to `api/` paths so
+   it never rewrites `Accept` on `/openapi`, `/q/health`, or static assets. The
+   **request** body's reader is selected independently, by the client's own
+   `Content-Type` via `@Consumes`; `X-Zen-Transport` does not steer request parsing.
 2. Standard JAX-RS content negotiation then dispatches to one of two body writers
    registered for `com.google.protobuf.Message`:
    - **`ProtobufMessageBodyWriter/Reader`** — `message.writeTo(out)` / `parseFrom(in)`.

@@ -6,8 +6,14 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import javax.sql.DataSource;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.flywaydb.core.Flyway;
@@ -52,11 +58,21 @@ import org.jboss.logging.Logger;
  * carry, the job refuses and the deploy stops. A rollback that genuinely must proceed says so with
  * {@code zen.allow-schema-rollback=true}, and is told exactly what it is giving up.
  *
+ * <p><strong>The Data API exposure gate.</strong> Runs after a successful migration, on the same
+ * DDL-credentialed connection: it asserts the OUTCOME {@code R__identity_data_api_lockdown.sql}
+ * exists to guarantee — that no public-schema object currently grants {@code anon} or
+ * {@code authenticated} anything — rather than trusting that file's revoke still applies to
+ * whoever creates or grants on tables now. See {@link #dataApiExposure(Flyway)} for why a
+ * repeatable migration's checksum-triggered re-run cannot be relied on for this (F10 of the
+ * 2026-08-13 architectural security review; ADR-041).
+ *
  * <p>Exit codes are distinct on purpose, because the deploy reads them and a human reads the
  * deploy: <strong>0</strong> migrated (or already up to date), <strong>1</strong> migration failed,
- * <strong>2</strong> the schema gate refused. Nothing here returns 0 on a failure; a zero would let
- * {@code deploy:cloudrun} ship a revision over a schema that was never migrated, which is the
- * swallowed failure STANDARDS forbids and is worse than the boot cost this change removes.
+ * <strong>2</strong> the schema gate refused, <strong>3</strong> the Data API exposure gate found a
+ * live grant. Nothing here returns 0 on a failure; a zero would let
+ * {@code deploy:cloudrun} ship a revision over a schema that was never migrated, or one where a
+ * public table is reachable through the Data API, which is the swallowed failure STANDARDS
+ * forbids and is worse than the boot cost this change removes.
  */
 @ApplicationScoped
 public class MigrateOnlyRunner {
@@ -69,6 +85,12 @@ public class MigrateOnlyRunner {
 
   /** The database is ahead of this image and no override was given. */
   public static final int EXIT_SCHEMA_AHEAD = 2;
+
+  /**
+   * A public-schema object still grants {@code anon} or {@code authenticated} something after
+   * migration. See {@link #dataApiExposure(Flyway)}.
+   */
+  public static final int EXIT_DATA_API_EXPOSED = 3;
 
   static final String MIGRATE_ONLY_PROPERTY = "zen.migrate-only";
   static final String ALLOW_SCHEMA_ROLLBACK_PROPERTY = "zen.allow-schema-rollback";
@@ -173,14 +195,112 @@ public class MigrateOnlyRunner {
       } else {
         LOG.infof("Migrate-only: applied %d migration(s).", applied);
       }
+
+      List<String> exposed = dataApiExposure(runner);
+      if (!exposed.isEmpty()) {
+        LOG.errorf(
+            "Data API exposure check: %d public-schema grant(s) still reach anon/authenticated"
+                + " after migration: %s",
+            exposed.size(), String.join("; ", exposed));
+        LOG.error(
+            "Refusing to deploy. R__identity_data_api_lockdown.sql's revoke did not hold for"
+                + " whoever is creating or granting on public-schema objects now — either the DDL"
+                + " role has rotated since that file last ran (it only re-runs on checksum"
+                + " change, which a role rotation does not touch), or a grant was restored by"
+                + " hand. See STANDARDS \"Database migrations\" and ADR-041.");
+        return EXIT_DATA_API_EXPOSED;
+      }
       return EXIT_OK;
-    } catch (RuntimeException failure) {
+    } catch (RuntimeException | SQLException failure) {
       // Logged here rather than left to propagate: an exception out of a startup observer exits
       // non-zero too, but with a stack trace wrapped in Quarkus bootstrap failures that reads as a
       // broken image rather than a failed migration. The deploy stops either way; this says why.
       LOG.error("Migrate-only: migration FAILED. The deploy must not continue.", failure);
       return EXIT_MIGRATION_FAILED;
     }
+  }
+
+  /**
+   * Asserts the Data API lockdown's OUTCOME instead of trusting that its cause still applies
+   * (F10 of the 2026-08-13 architectural security review; ADR-041).
+   * {@code R__identity_data_api_lockdown.sql} revokes {@code anon}/{@code authenticated}
+   * privileges for whichever role was {@code current_user} the moment it last ran — a repeatable
+   * migration only re-runs on checksum change, and rotating the DDL role does not touch that
+   * checksum. So a table created by a rotated role, or a grant restored by hand outside these
+   * migrations (the file's own documented gap: a table created via the Supabase dashboard's
+   * table editor, which runs as {@code supabase_admin}), can sit exposed while Flyway reports a
+   * clean history. This queries what actually holds today rather than re-deriving it.
+   *
+   * <p>Runs once per deploy, on the DDL credentials {@link #migrate()} already has open — not
+   * once per boot, which would reopen at every start exactly the connection ADR-038 removed.
+   *
+   * <p>Guarded on the {@code anon} role existing, the same way the SQL file is, so this is a
+   * no-op against the plain Postgres Dev Services provisions for {@code @QuarkusTest}.
+   */
+  private static List<String> dataApiExposure(Flyway runner) throws SQLException {
+    DataSource dataSource = runner.getConfiguration().getDataSource();
+    try (Connection connection = dataSource.getConnection()) {
+      if (!roleExists(connection, "anon")) {
+        return List.of();
+      }
+      List<String> exposed = new ArrayList<>(existingGrants(connection));
+      exposed.addAll(futureGrants(connection));
+      return exposed;
+    }
+  }
+
+  private static boolean roleExists(Connection connection, String role) throws SQLException {
+    try (PreparedStatement statement =
+        connection.prepareStatement("SELECT 1 FROM pg_roles WHERE rolname = ?")) {
+      statement.setString(1, role);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        return resultSet.next();
+      }
+    }
+  }
+
+  /** Objects that already exist in {@code public} and currently grant anon/authenticated something. */
+  private static List<String> existingGrants(Connection connection) throws SQLException {
+    String sql =
+        "SELECT table_name, grantee, privilege_type FROM information_schema.role_table_grants"
+            + " WHERE table_schema = 'public' AND grantee IN ('anon', 'authenticated')";
+    List<String> found = new ArrayList<>();
+    try (PreparedStatement statement = connection.prepareStatement(sql);
+        ResultSet resultSet = statement.executeQuery()) {
+      while (resultSet.next()) {
+        found.add(
+            resultSet.getString("table_name")
+                + " grants "
+                + resultSet.getString("privilege_type")
+                + " to "
+                + resultSet.getString("grantee"));
+      }
+    }
+    return found;
+  }
+
+  /**
+   * Default privileges a role OTHER than the one the lockdown last captured would still hand a
+   * newly created table — the exact drift F10 describes. A text match on the ACL array is
+   * enough: this only has to answer "is anon or authenticated named at all", not parse the ACL.
+   */
+  private static List<String> futureGrants(Connection connection) throws SQLException {
+    String sql =
+        "SELECT defaclrole::regrole::text AS creator, defaclacl::text AS acl FROM pg_default_acl"
+            + " WHERE defaclnamespace = 'public'::regnamespace"
+            + " AND (defaclacl::text LIKE '%anon=%' OR defaclacl::text LIKE '%authenticated=%')";
+    List<String> found = new ArrayList<>();
+    try (PreparedStatement statement = connection.prepareStatement(sql);
+        ResultSet resultSet = statement.executeQuery()) {
+      while (resultSet.next()) {
+        found.add(
+            "default privileges for role "
+                + resultSet.getString("creator")
+                + " still grant anon/authenticated: "
+                + resultSet.getString("acl"));
+      }
+    }
+    return found;
   }
 
   /**

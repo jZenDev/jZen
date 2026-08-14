@@ -72,11 +72,13 @@ Quarkus resources + SmallRye ──▶ REST paths/verbs/status ──▶ merged 
 ## The dual-mode transport seam (the framework's core mechanism)
 
 A developer defines a domain model; the framework negotiates the wire format. The `X-Zen-Transport`
-request header (values `json`/`protobuf`) selects the codec; negotiation order is header →
-content-type sniff → default JSON. `ZenTransportFilter` (a `@PreMatching` filter in `zen-transport`)
-rewrites `Accept`/`Content-Type`, then JAX-RS dispatches to `Protobuf*` or `ProtoJson*`
-`MessageBodyWriter/Reader` registered for `com.google.protobuf.Message`. Resources return proto
-messages; **MapStruct** maps Panache entity ⇄ proto. The response echoes `X-Zen-Transport`.
+request header (values `json`/`protobuf`) selects the **response** codec; negotiation order is
+header → content-type sniff → default JSON. `ZenTransportFilter` (a `@PreMatching` filter in
+`zen-transport`) rewrites only `Accept` to the negotiated media type, so JAX-RS dispatches to the
+matching `Protobuf*` or `ProtoJson*` `MessageBodyWriter` registered for `com.google.protobuf.Message`.
+The **request** body's parser is selected independently, by the client's own `Content-Type` via
+`@Consumes` — `X-Zen-Transport` never steers which reader parses an inbound body. Resources return
+proto messages; **MapStruct** maps Panache entity ⇄ proto. The response echoes `X-Zen-Transport`.
 
 There is also a **first-class WebSocket** surface (`/api/v1/demo/ws`, `quarkus-websockets-next`) —
 single-format, always binary Protobuf frames (dual negotiation is an HTTP-only concern).

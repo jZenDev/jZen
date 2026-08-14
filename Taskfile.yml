@@ -150,7 +150,10 @@ tasks:
         pin_java()    { sed -n 's/^java=\([0-9][0-9.]*\).*/\1/p' .sdkmanrc | head -1; }
         pin_flutter() { sed -n 's/.*"flutter" *: *"\([^"]*\)".*/\1/p' .fvmrc | head -1; }
         pin_node()    { tr -d 'v \n' < .nvmrc; }
-        pin_pnpm()    { sed -n 's/.*"packageManager" *: *"pnpm@\([^"]*\)".*/\1/p' "$1" | head -1; }
+        # Strips a trailing corepack integrity hash ("+sha512...") if present: `pnpm --version`
+        # reports only the semver, and comparing it against the untruncated field would DRIFT
+        # forever once `corepack use` writes the hash in (F12).
+        pin_pnpm()    { sed -n 's/.*"packageManager" *: *"pnpm@\([^"+]*\)[^"]*".*/\1/p' "$1" | head -1; }
 
         # Presence only. Used for tools that are services, clients, or codegen extras.
         check() {
@@ -208,7 +211,12 @@ tasks:
 
         echo "jZen toolchain (each version pinned in its own ecosystem's file):"
         checkv java    "java -version 2>&1 | sed -n '1s/.*\"\([0-9][^\"]*\)\".*/\1/p'" "sdk env install"                              "$(pin_java)"    "sdk env"
-        checkv flutter "flutter --version | awk 'NR==1{print \$2}'"                    "https://docs.flutter.dev/get-started/install" "$(pin_flutter)" "fvm use"
+        # Reads whichever `flutter` resolves on PATH, fvm-managed or not — this check has
+        # never depended on fvm to resolve the version, only to fix a real drift ("run: fvm
+        # use" is the hint, not the resolution path). The line is matched by its "Flutter "
+        # prefix rather than assumed to be the first line of output, since a flutter install
+        # that is rebuilding its tool snapshot can print preamble before the version line.
+        checkv flutter "flutter --version | grep -m1 '^Flutter ' | awk '{print \$2}'"    "https://docs.flutter.dev/get-started/install" "$(pin_flutter)" "fvm use"
         checkv node    "node --version | tr -d v"                                      "nvm install"                                  "$(pin_node)"    "nvm use"
         checkv pnpm    "pnpm --version"                                                "corepack enable"                              "$(pin_pnpm admin/package.json)" "corepack enable"
 
@@ -1333,6 +1341,42 @@ tasks:
         psql_smoke "delete from flyway_schema_history where installed_rank = 9001" >/dev/null
         docker rm -f zen-smoke-migrate >/dev/null 2>&1 || true
 
+        # ── The Data API exposure gate (F10 of the 2026-08-13 architectural security review;
+        # ADR-041). R__identity_data_api_lockdown.sql only revokes anon/authenticated for the
+        # role Flyway happened to be connected as when it last ran, so MigrateOnlyRunner asserts
+        # the OUTCOME on every deploy instead: no public-schema object may grant them anything.
+        # A plain Postgres has no anon role at all, which is exactly the guard that makes the
+        # earlier phases of this smoke test free of a Supabase dependency — so this phase creates
+        # one deliberately, the way a real Supabase project already has it, to prove the gate
+        # actually fires rather than asserting only its no-op path (invariant 8).
+        psql_smoke "create role anon nologin" >/dev/null
+        psql_smoke "create table zen_smoke_exposed (id int)" >/dev/null
+        psql_smoke "grant select on zen_smoke_exposed to anon" >/dev/null
+        set +e
+        migrate_only
+        rc=$?
+        set -e
+        if [ "$rc" -ne 3 ]; then
+          echo "The Data API exposure gate did NOT refuse a live anon grant (exit $rc, want 3)."
+          docker logs zen-smoke-migrate 2>&1 | tail -30
+          exit 1
+        fi
+        printf '  \033[32mok\033[0m   %-24s %-9s %s\n' migrate-only data-api-gate "refused a live anon grant with exit 3"
+        psql_smoke "revoke select on zen_smoke_exposed from anon" >/dev/null
+        set +e
+        migrate_only
+        rc=$?
+        set -e
+        if [ "$rc" -ne 0 ]; then
+          echo "The Data API exposure gate did not clear once the grant was revoked (exit $rc, want 0)."
+          docker logs zen-smoke-migrate 2>&1 | tail -30
+          exit 1
+        fi
+        printf '  \033[32mok\033[0m   %-24s %-9s %s\n' migrate-only data-api-clear "proceeds once the grant is gone"
+        psql_smoke "drop table zen_smoke_exposed" >/dev/null
+        psql_smoke "drop role anon" >/dev/null
+        docker rm -f zen-smoke-migrate >/dev/null 2>&1 || true
+
         # ── The deploy's second half: the same image, serving, against the migrated schema. ──
         docker run -d --name zen-smoke-app --network "$NET" -p 18080:8080 --platform=linux/amd64 \
           $(smoke_env) "$IMG" >/dev/null
@@ -1670,11 +1714,12 @@ tasks:
         for p in / /admin/ /api/v1/health; do
           hdrs=$(curl -s -o /dev/null -D- "$URL$p" | tr -d '\r')
           missing=''
-          for h in content-security-policy x-frame-options x-content-type-options referrer-policy; do
+          for h in content-security-policy x-frame-options x-content-type-options referrer-policy \
+                   permissions-policy cross-origin-opener-policy cross-origin-resource-policy; do
             printf '%s' "$hdrs" | awk -F': ' -v want="$h" 'tolower($1)==want{found=1} END{exit !found}' || missing="$missing $h"
           done
           if [ -z "$missing" ]; then
-            printf '  \033[32mok\033[0m   %-24s %-9s %s\n' "$p" headers "CSP, frame, sniff, referrer"
+            printf '  \033[32mok\033[0m   %-24s %-9s %s\n' "$p" headers "CSP, frame, sniff, referrer, permissions, COOP, CORP"
           else
             printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' "$p" headers "missing:$missing"; fail=1
           fi
@@ -2274,18 +2319,21 @@ tasks:
         else
           echo
           echo "MIGRATION FAILED — nothing was deployed, and the previous revision keeps serving."
-          echo "The job exits 1 when Flyway raised and 2 when the schema gate refused, i.e. when"
-          echo "the database has migrations this image does not carry (a rollback onto a newer"
-          echo "schema — the case boot-time validation used to catch and no longer can)."
+          echo "The job exits 1 when Flyway raised, 2 when the schema gate refused (the database"
+          echo "has migrations this image does not carry — a rollback onto a newer schema, the"
+          echo "case boot-time validation used to catch and no longer can), and 3 when the Data"
+          echo "API exposure gate found a public-schema object still granting anon/authenticated"
+          echo "something after migration (F10 of the 2026-08-13 architectural security review)."
           echo
           echo "Read which it was:"
           echo "    gcloud logging read \\"
           echo "      'resource.type=cloud_run_job AND resource.labels.job_name={{.MIGRATE_JOB_NAME}}' \\"
           echo "      --project={{.GCP_PROJECT}} --limit=50 --format='value(textPayload)'"
           echo
-          echo "If it was the gate and the rollback is deliberate, override it:"
+          echo "If it was the schema gate and the rollback is deliberate, override it:"
           echo "    ALLOW_SCHEMA_ROLLBACK=1 GCP_PROJECT={{.GCP_PROJECT}} task deploy:cloudrun"
           echo "which deploys an image that does not understand its own schema, on purpose."
+          echo "There is no override for exit 3: fix the exposed grant and redeploy."
           exit 1
         fi
 

@@ -132,6 +132,11 @@ class SecurityHeadersTest {
         .header("Content-Security-Policy", containsString("default-src 'self'"))
         .header("X-Frame-Options", equalTo("DENY"))
         .header("X-Content-Type-Options", equalTo("nosniff"))
-        .header("Referrer-Policy", equalTo("strict-origin-when-cross-origin"));
+        .header("Referrer-Policy", equalTo("strict-origin-when-cross-origin"))
+        .header(
+            "Permissions-Policy",
+            equalTo("geolocation=(), camera=(), microphone=(), payment=(), usb=()"))
+        .header("Cross-Origin-Opener-Policy", equalTo("same-origin"))
+        .header("Cross-Origin-Resource-Policy", equalTo("same-origin"));
   }
 }

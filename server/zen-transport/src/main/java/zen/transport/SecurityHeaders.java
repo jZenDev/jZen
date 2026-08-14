@@ -167,6 +167,21 @@ public class SecurityHeaders {
     // Full URL to this origin, bare origin to any other. Recovery and confirmation links carry
     // tokens in the URL (ADR-018), and the default policy would leak the path to third parties.
     response.putHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    // jZen uses none of these capabilities anywhere in the product, so denying them to the page
+    // and every frame it could embed is free.
+    response.putHeader(
+        "Permissions-Policy",
+        "geolocation=(), camera=(), microphone=(), payment=(), usb=()");
+    // Isolates this origin's browsing context group so another origin cannot hold a JS reference
+    // to this window via window.opener. Verified against the email-link return flow (ADR-018):
+    // that is a plain top-level navigation from the mail client, never a window.open() this
+    // origin controls, so there is no same-origin opener relationship for COOP to sever.
+    response.putHeader("Cross-Origin-Opener-Policy", "same-origin");
+    // Refuses this origin's responses to a <script>/<img> pull from another origin absent a CORS
+    // grant. Deliberately NOT paired with Cross-Origin-Embedder-Policy: require-corp — COEP is a
+    // stricter, page-wide opt-in that this policy does not make (see the class javadoc's font-host
+    // trap; COEP would need the same browser-verified pass before it could be trusted here).
+    response.putHeader("Cross-Origin-Resource-Policy", "same-origin");
     if (isHttps(rc)) {
       response.putHeader("Strict-Transport-Security", strictTransportSecurity());
     }

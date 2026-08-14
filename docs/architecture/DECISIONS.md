@@ -15,6 +15,81 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-048 — The Data API exposure gate asserts what a migration role can deliver, and warns about the rest
+
+**Date:** 2026-08-16 (authored 2026-08-14). **Status:** accepted. **Refines:** ADR-041, ADR-036.
+
+> **Provenance, because the gap is part of the record.** This decision was authored on 2026-08-14
+> as ADR-044 and shipped to `jzen-prod` — the image `zen-demo-server:8e634e2` served production
+> for two days — but its commit was reachable from no ref and never reached `main`, so the log
+> never carried it. The next deploy from `main` (2026-08-16) therefore failed in exactly the way
+> described below, with the same three `supabase_admin` findings, and the commit was recovered
+> from the object store. It is renumbered **048** because `main` has since assigned 044 to the
+> supported-locale decision; references to "ADR-044" in the recovered commit message mean this
+> entry.
+
+### Decision
+
+`MigrateOnlyRunner`'s Data API exposure check splits `pg_default_acl` findings on
+`pg_has_role(current_user, defaclrole, 'USAGE')` — whether the connection is a member of the role
+owning that default ACL, which is exactly the condition
+`ALTER DEFAULT PRIVILEGES FOR ROLE <r>` requires.
+
+- **Fatal (exit 3), unchanged:** any existing `public` object granting `anon`/`authenticated`
+  something (`information_schema.role_table_grants`).
+- **Fatal (exit 3), narrowed:** a `pg_default_acl` row naming `anon`/`authenticated` whose role
+  this connection **is** a member of. This is ADR-041's actual case — a rotated DDL role whose
+  defaults the checksum-triggered repeatable never re-revoked.
+- **Warned every deploy, not fatal:** the same row for a role this connection is **not** a member
+  of. The log names the residual, says no migration here can clear it, and points at the two things
+  that do: per-table row-level security (ADR-036's second layer) and `deploy:cloudrun` ONE-TIME
+  SETUP step 1d.
+
+### What this supersedes, and why
+
+- **"plus every `pg_default_acl` row in the `public` namespace whose ACL text names either role …
+  Either is a refusal."** (ADR-041, *Decision*) → **refined.** *Why:* that predicate asserts an
+  outcome no migration role can produce. `ALTER DEFAULT PRIVILEGES` requires membership in the
+  target role, so a default ACL owned by a role the migration role is not a member of is not a
+  revoke that failed — it is the gap `R__identity_data_api_lockdown.sql` documents in its own
+  header ("Altering another role's default privileges requires membership in it, which the
+  migration role does not have"). ADR-041 asserted the outcome without carrying that constraint
+  across from the file it was hardening.
+
+  A stock Supabase project ships exactly this: `supabase_admin` holds default privileges granting
+  `anon`/`authenticated` on tables, sequences and functions, and it is what the dashboard's table
+  editor creates as. So the gate as written refused **every** deploy on **every** Supabase project,
+  permanently — and exit 3 has no override by design, so the deploy path was wedged with no
+  documented way out. Found on the first deploy after ADR-041, on `jzen-prod`: three findings, all
+  `supabase_admin` default ACLs, and **zero** actual table grants. Nothing was exposed; the gate
+  simply could not pass.
+
+  This is the failure mode ADR-034 named from the other direction. There the concern was a tool
+  reporting success having checked nothing; here it is a gate that cannot report success at all.
+  Both end the same way — a gate people learn to route around — which is why the fix is to make the
+  assertion true rather than to add an override.
+
+- **"an exposed grant has no legitimate 'proceed anyway' case the way a deliberate rollback does"**
+  (ADR-041, *Decision*) → **upheld, and this entry is not an override.** No escape hatch is added.
+  The unreachable-role case is reclassified as a warning because it is not something this deploy
+  can fix, not because it is acceptable to ship past. A grant the migration role *could* have
+  revoked still stops the deploy with no way around it.
+
+### Consequence
+
+- The residual is now stated on every deploy rather than implied by a refusal: a table created by
+  the Supabase dashboard is exposed to the Data API on creation, and per-table RLS is what covers
+  it. ADR-036's two-independent-layers reasoning is unchanged and is the thing being relied on.
+- `verify:deploy:smoke`'s fixture is unaffected: it grants on a *table* (`zen_smoke_exposed`), which
+  is the first check above and was not touched, so the gate is still proven to fire.
+- Verified: `zen-identity` compiles; `task test:apps:server` green, 155 tests, 0 failures.
+- The narrowing is deliberate scope reduction of a security gate and is recorded as such. What it
+  gives up, stated plainly: the gate no longer claims "no public-schema object grants anon
+  anything". It claims "nothing this role could have revoked is still granting, and here is what it
+  could not". The second is true and checkable; the first was neither.
+
+---
+
 ## ADR-047 — An application resolves jZen's `zen/v1` messages, never regenerates them; and an empty contract directory fails
 
 **Date:** 2026-08-16. **Status:** accepted.

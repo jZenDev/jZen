@@ -60,16 +60,26 @@ import org.jboss.logging.Logger;
  *
  * <p><strong>The Data API exposure gate.</strong> Runs after a successful migration, on the same
  * DDL-credentialed connection: it asserts the OUTCOME {@code R__identity_data_api_lockdown.sql}
- * exists to guarantee — that no public-schema object currently grants {@code anon} or
- * {@code authenticated} anything — rather than trusting that file's revoke still applies to
- * whoever creates or grants on tables now. See {@link #dataApiExposure(Flyway)} for why a
- * repeatable migration's checksum-triggered re-run cannot be relied on for this (F10 of the
- * 2026-08-13 architectural security review; ADR-041).
+ * exists to guarantee, rather than trusting that file's revoke still applies to whoever creates or
+ * grants on tables now. See {@link #dataApiExposure(Flyway)} for why a repeatable migration's
+ * checksum-triggered re-run cannot be relied on for this (F10 of the 2026-08-13 architectural
+ * security review; ADR-041).
+ *
+ * <p><strong>It asserts what a migration role can actually deliver, and warns about the rest.</strong>
+ * Two things are fatal: an existing public-schema table that grants {@code anon} or
+ * {@code authenticated} something, and a default-privilege grant belonging to a role this
+ * connection is a member of — the second being F10's case, a rotated DDL role whose defaults the
+ * lockdown never re-revoked. A default-privilege grant belonging to a role it is NOT a member of
+ * is warned about every deploy and does not block: {@code ALTER DEFAULT PRIVILEGES} requires
+ * membership, so no migration here can clear it, and treating it as fatal would wedge the deploy
+ * path on every Supabase project (stock projects ship exactly this for {@code supabase_admin}).
+ * That residual is real and is covered by per-table row-level security, ADR-036's second layer —
+ * it is named in the log rather than asserted here.
  *
  * <p>Exit codes are distinct on purpose, because the deploy reads them and a human reads the
  * deploy: <strong>0</strong> migrated (or already up to date), <strong>1</strong> migration failed,
  * <strong>2</strong> the schema gate refused, <strong>3</strong> the Data API exposure gate found a
- * live grant. Nothing here returns 0 on a failure; a zero would let
+ * grant it could have revoked and did not. Nothing here returns 0 on a failure; a zero would let
  * {@code deploy:cloudrun} ship a revision over a schema that was never migrated, or one where a
  * public table is reachable through the Data API, which is the swallowed failure STANDARDS
  * forbids and is worse than the boot cost this change removes.
@@ -243,8 +253,21 @@ public class MigrateOnlyRunner {
       if (!roleExists(connection, "anon")) {
         return List.of();
       }
+      List<String> unreachable = futureGrants(connection, false);
+      if (!unreachable.isEmpty()) {
+        LOG.warnf(
+            "Data API residual, not a deploy blocker: %d default-privilege grant(s) belong to"
+                + " role(s) this migration role is not a member of, so no migration here can"
+                + " revoke them: %s. A table created BY one of those roles — the Supabase"
+                + " dashboard's table editor is the usual way — is exposed to the Data API on"
+                + " creation, and per-table row-level security is what covers it (ADR-036's"
+                + " second layer). Clearing this needs an operator with membership in that role,"
+                + " or the project setting that stops exposing public through the Data API"
+                + " (deploy:cloudrun ONE-TIME SETUP step 1d).",
+            unreachable.size(), String.join("; ", unreachable));
+      }
       List<String> exposed = new ArrayList<>(existingGrants(connection));
-      exposed.addAll(futureGrants(connection));
+      exposed.addAll(futureGrants(connection, true));
       return exposed;
     }
   }
@@ -280,24 +303,55 @@ public class MigrateOnlyRunner {
   }
 
   /**
-   * Default privileges a role OTHER than the one the lockdown last captured would still hand a
-   * newly created table — the exact drift F10 describes. A text match on the ACL array is
-   * enough: this only has to answer "is anon or authenticated named at all", not parse the ACL.
+   * Default privileges that would still hand a newly created table to {@code anon} —
+   * <strong>split by whether this role could have done anything about them</strong>, which is the
+   * difference between drift and the standing residual.
+   *
+   * <p>{@code ALTER DEFAULT PRIVILEGES FOR ROLE X} requires membership in X. So a default-ACL
+   * belonging to a role the migration role is not a member of is not something
+   * {@code R__identity_data_api_lockdown.sql} failed to revoke — it is something that file
+   * documents it <em>cannot</em> revoke, and says so in its own header. On a stock Supabase
+   * project that is exactly {@code supabase_admin}, which owns default privileges on tables,
+   * sequences and functions and is what the dashboard's table editor creates as.
+   *
+   * <p><strong>Why this distinction is the gate rather than a detail.</strong> Without it the
+   * check asserts an outcome no migration role can produce, so it fails every deploy on every
+   * Supabase project forever — and since exit 3 has no override by design, it would wedge the
+   * deploy path permanently while reporting a condition nobody can clear. A gate that cannot pass
+   * teaches people to bypass gates. The first deploy after ADR-041 hit exactly this.
+   *
+   * <p>So: {@code pg_has_role(current_user, defaclrole, 'USAGE')} splits the two. Reachable roles
+   * still granting anon/authenticated are drift and are fatal — that is F10's actual case, a DDL
+   * role whose defaults this file's checksum-triggered re-run never revoked. Unreachable roles are
+   * returned separately and WARNED about, loudly and every deploy, naming the residual rather than
+   * hiding it: per-table row-level security is the layer that covers a table created that way
+   * (ADR-036's second layer, STANDARDS "Database migrations"), and it is asserted by the
+   * {@code R__*_row_level_security.sql} files rather than here.
+   *
+   * <p>A text match on the ACL array is enough: this only has to answer "is anon or authenticated
+   * named at all", not parse the ACL.
+   *
+   * @param reachable when true, return only roles this connection could alter (fatal drift); when
+   *     false, only those it could not (the warned residual)
    */
-  private static List<String> futureGrants(Connection connection) throws SQLException {
+  private static List<String> futureGrants(Connection connection, boolean reachable)
+      throws SQLException {
     String sql =
         "SELECT defaclrole::regrole::text AS creator, defaclacl::text AS acl FROM pg_default_acl"
             + " WHERE defaclnamespace = 'public'::regnamespace"
-            + " AND (defaclacl::text LIKE '%anon=%' OR defaclacl::text LIKE '%authenticated=%')";
+            + " AND (defaclacl::text LIKE '%anon=%' OR defaclacl::text LIKE '%authenticated=%')"
+            + " AND pg_has_role(current_user, defaclrole, 'USAGE') = ?";
     List<String> found = new ArrayList<>();
-    try (PreparedStatement statement = connection.prepareStatement(sql);
-        ResultSet resultSet = statement.executeQuery()) {
-      while (resultSet.next()) {
-        found.add(
-            "default privileges for role "
-                + resultSet.getString("creator")
-                + " still grant anon/authenticated: "
-                + resultSet.getString("acl"));
+    try (PreparedStatement statement = connection.prepareStatement(sql)) {
+      statement.setBoolean(1, reachable);
+      try (ResultSet resultSet = statement.executeQuery()) {
+        while (resultSet.next()) {
+          found.add(
+              "default privileges for role "
+                  + resultSet.getString("creator")
+                  + " still grant anon/authenticated: "
+                  + resultSet.getString("acl"));
+        }
       }
     }
     return found;

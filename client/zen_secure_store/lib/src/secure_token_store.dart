@@ -1,53 +1,26 @@
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:zen_transport/zen_transport.dart';
-
-/// A [TokenStore] backed by the operating system's own credential store.
-///
-/// Keychain on iOS and macOS, Keystore-backed `EncryptedSharedPreferences` on Android. No branch
-/// picks between them: the plugin resolves the backend per platform, so the compile-time
-/// `zenIsIOS` / `zenIsAndroid` / `zenIsMacOS` constants are deliberately not used here — they
-/// would add a decision without changing an outcome.
-///
-/// **Why the OS store and not a file.** OWASP MASVS-STORAGE-1 requires persisted session tokens
-/// to live in platform secure storage. That is not ceremony: an app-support file is readable by
-/// any process running as the user on macOS, and rides along in device backups on mobile. A
-/// refresh token is a seven-day credential for the account, so a file would make persistence a
-/// downgrade rather than a feature.
-///
-/// Only the refresh token is ever handed here. The access token stays in memory for the life of
-/// the process — an hour long and re-obtainable, so writing it down would widen what sits at
-/// rest to save one round trip.
-class SecureTokenStore implements TokenStore {
-  SecureTokenStore({FlutterSecureStorage? storage, String key = _defaultKey})
-      : _storage = storage ?? const FlutterSecureStorage(
-              // The token is only ever needed while the app is in use, so it does not need to be
-              // readable before the first unlock after a reboot. `first_unlock_this_device` is
-              // the tighter accessibility class that still works: it keeps the item off backups
-              // and off any other device, so a restored backup cannot carry the session with it.
-              iOptions: IOSOptions(
-                accessibility: KeychainAccessibility.first_unlock_this_device,
-              ),
-              mOptions: MacOsOptions(
-                accessibility: KeychainAccessibility.first_unlock_this_device,
-              ),
-              // No AndroidOptions: `encryptedSharedPreferences` is deprecated from 10.x (Google
-              // deprecated the Jetpack Security library behind it) and is ignored when passed.
-              // The plugin now encrypts with its own ciphers by default and migrates existing
-              // data on first access, so the secure default is the one you get by saying nothing.
-            ),
-        _key = key;
-
-  static const String _defaultKey = 'zen_refresh_token';
-
-  final FlutterSecureStorage _storage;
-  final String _key;
-
-  @override
-  Future<String?> read() => _storage.read(key: _key);
-
-  @override
-  Future<void> write(String token) => _storage.write(key: _key, value: token);
-
-  @override
-  Future<void> delete() => _storage.delete(key: _key);
-}
+// The compile-time platform seam for this package's one class, structured exactly like
+// zen_transport's session_client.dart (docs/architecture/STANDARDS.md "Client config is
+// compile-time"): a default library that exports the stub, with `dart.library.io` /
+// `dart.library.js_interop` swapping in the native or web implementation so the toolchain
+// tree-shakes the wrong platform's code out of each bundle.
+//
+// The web branch keys on `dart.library.js_interop`, never `dart.library.html`: the latter is
+// defined only by dart2js, so under dart2wasm it would miss and fall through to the stub — which
+// is harmless here only because the stub also refuses, but relying on that would be an accident,
+// not a guarantee. `js_interop` is defined by every web compiler (dart2js AND dart2wasm) and by
+// no native one, so it is the portable "this is a web build" signal.
+//
+// WHY THE WEB BRANCH REFUSES INSTEAD OF FALLING BACK. Before this seam existed, this file
+// unconditionally wrapped `FlutterSecureStorage`, which resolves to `flutter_secure_storage_web`
+// on a web build — storing the refresh token in `window.localStorage`, readable by any XSS, with
+// `KeychainAccessibility.first_unlock_this_device` silently meaningless because there is no
+// Keychain (2026-08-13 architectural security review, F4). The property this class promises —
+// "the refresh token lives in platform secure storage" — was true only because every caller so
+// far remembered to guard construction on web (`zenIsWeb ? null : SecureTokenStore()` in
+// zen_demo's `main.dart`). A second application that wrote the natural `SecureTokenStore()` with
+// no guard would get that property silently revoked. Throwing loudly on web moves the guarantee
+// into the class itself, where the promise is made, instead of leaving it to every call site to
+// remember. zen_demo's ternary stays in place as belt-and-braces; it is redundant now, not wrong.
+export 'secure_token_store_stub.dart'
+    if (dart.library.js_interop) 'secure_token_store_web.dart'
+    if (dart.library.io) 'secure_token_store_io.dart';

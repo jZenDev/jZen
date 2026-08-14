@@ -66,7 +66,6 @@ public enum ZenTransportFormat {
       case "json":
         return JSON;
       case "protobuf":
-      case "msgpack": // accepted alias for the binary format
         return PROTOBUF;
       default:
         return null;

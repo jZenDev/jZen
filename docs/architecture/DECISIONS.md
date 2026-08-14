@@ -15,6 +15,291 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-043 — The shipped image gets an SBOM and a keyless signature; the build itself stays where it is
+
+**Date:** 2026-08-14. **Status:** accepted. **Closes:** `docs/plans/SECURITY-ARCHITECTURE-REVIEW.md`
+F6.
+
+### Decision
+
+- **Record what shipped.** `cyclonedx-maven-plugin` is added to
+  `apps/zen_demo/zen_demo_server/pom.xml` — the one `<packaging>quarkus</packaging>` module — bound
+  to the `package` phase, writing a CycloneDX SBOM to `target/bom.json` on every `mvn package`,
+  including the native build `deploy:cloudrun` runs. Measured: 253 components, generated in
+  roughly a second — negligible against the ~5m35s native build it rides along with.
+  `skipNotDeployed=false` is set explicitly: the plugin's default skips any module with
+  `maven.deploy.skip=true`, which `quarkus-maven-plugin` sets for every app module (none of them
+  are ever `mvn deploy`ed to a Maven repository — they ship as container images instead), and that
+  default would have silently produced no SBOM for the only module that needs one.
+- **Sign the image, keyless.** `Taskfile.yml`'s `deploy:cloudrun`, immediately after `docker push`
+  and before the migration job starts, runs `cosign sign` on the pushed image and `cosign attest
+  --type cyclonedx` on `target/bom.json` — both **keyless** (Sigstore Fulcio + Rekor), not a stored
+  key pair. No private key is generated, stored in Secret Manager, or rotated.
+- **Verify before trusting.** `cosign verify` and `cosign verify-attestation` must both succeed
+  against `COSIGN_CERT_IDENTITY`/`COSIGN_CERT_OIDC_ISSUER` before the migration job or `gcloud run
+  deploy` runs — fail-closed, the same shape `MigrateOnlyRunner`'s schema gate (ADR-041) already
+  uses. `COSIGN_CERT_IDENTITY` has no default; `deploy:cloudrun` refuses to run without it, the
+  same shape `RUNTIME_SERVICE_ACCOUNT` (F1) already established — an empty identity would make the
+  gate accept a signature from anyone, which is not a gate. `COSIGN_CERT_OIDC_ISSUER` defaults to
+  `https://accounts.google.com`. `cosign` is added to `task doctor` as presence-only, the same
+  category as `docker`/`gcloud` — a deploy-time client, not a pinned build input.
+- **Keyless over a stored key pair, and why.** The review asked for a deliberate choice, not a
+  default. Keyless wins on this repository's actual shape for three reasons: (1) there is no CI
+  deploy credential at all (F6's own finding — deploy is manual, by a person), so there is no
+  automation identity a stored key would need to represent; a human is already the one authorizing
+  every deploy, and keyless just makes that identity verifiable instead of implicit. (2) The trust
+  anchor becomes a real OIDC identity, checkable against Sigstore's public Rekor transparency log,
+  rather than "whoever holds this key file" — stronger, not weaker, for a single maintainer. (3) It
+  adds no new Secret Manager entry and no private-key rotation story. The cost is real and is taken
+  knowingly: a live dependency on Fulcio/Rekor availability at deploy time, and an interactive
+  browser OIDC login partway through `task deploy:cloudrun`. That was judged acceptable because the
+  same command already depends on an interactive `gcloud auth login` — this adds one more login to
+  a flow that already has one, not a new category of friction.
+- **Not done, deliberately.** The native build stays local. `.github/workflows/ci.yml`'s own
+  "Deliberately NOT here" reasoning (CI verifies; it never ships) is not reopened by this entry —
+  the review was explicit that this finding is about the artifact that ships, not about moving the
+  build, and this decision agrees.
+
+### What this supersedes, and why
+
+- **Nothing in an earlier doc is reversed.** F6 found no SBOM, no signature, no attestation
+  anywhere in the pipeline — SLSA level 0, stated as a finding rather than a prior decision. This
+  entry is the first decision recording the resulting posture, not a change to one.
+
+### Consequence
+
+**State plainly what is now verifiable and what still isn't — no SLSA level number is claimed.**
+Verifiable: the image that ships carries a CycloneDX SBOM and a signature, both bound to a specific
+human OIDC identity and anchored in Rekor's public transparency log, and `deploy:cloudrun` will not
+proceed to migrate or deploy an image that fails that check. Not verifiable, and not claimed to be:
+the build itself is neither hermetic nor reproducible — it still runs on a developer's workstation
+(`task build:server:native`), and CI still never touches the artifact that ships, exactly as
+`ci.yml`'s own comment already argues it should not.
+
+**Verified this pass, and how.** `task doctor` (cosign added, green), `task sync:contracts`
+(in sync), and `task test` (155 backend tests green; `test:e2e` did **not run** — ports
+54321/54322 were held by another product on this machine, the same constraint prior passes
+recorded, not a result of this change) all ran clean. The `cosign sign` / `cosign attest` /
+`cosign verify` / `cosign verify-attestation` mechanics were verified functionally against a
+disposable local scratch registry (`localhost:5500`, torn down after), using a throwaway
+`cosign generate-key-pair` key pair as a stand-in for the interactive keyless flow: all four
+commands succeeded, `verify-attestation`'s payload round-tripped the actual `bom.json` content
+through the in-toto envelope, and `cosign verify` was separately confirmed to fail closed
+(non-zero exit) against an unsigned image. **The real keyless OIDC round trip was not exercised
+end to end in this pass** — completing Sigstore's login requires a browser this environment does
+not have; it will run for the first time on the next actual `task deploy:cloudrun`, with the
+operator's own go-ahead.
+
+---
+
+## ADR-042 — Framework wiring gets proof, not just logic: a conformance test-jar, decided now, built when app #2 starts
+
+**Date:** 2026-08-14. **Status:** accepted (shape only — no module built yet). **Closes:**
+`docs/plans/SECURITY-ARCHITECTURE-REVIEW.md` F8.
+
+### Decision
+
+- **Shape: a conformance test-jar**, not a static `verify:assembly` gate. When it is built, the
+  six `*WiringTest` classes that exist today only in `apps/zen_demo/zen_demo_server`
+  (`SecurityHeadersWiringTest`, `CsrfWiringTest`, `RateLimitWiringTest`,
+  `CorsCredentialsGuardWiringTest`, `MigrateOnlyWiringTest`, `StaticCacheHeadersWiringTest` — one
+  more than the review counted) move into a new module, `zen-conformance`, or ship as
+  `zen-transport`'s Maven `test-jar` classifier. An application declares it in test scope and the
+  tests run against that application's own assembled container.
+- **Why a test-jar and not a static gate.** The two candidates check different things. A
+  `verify:assembly` script can only inspect a built artifact's Jandex index and bean list —
+  static presence. The existing `*WiringTest` classes already do something strictly stronger:
+  each is `@QuarkusTest` code that asks a **live CDI container**,
+  `beanManager.resolve(beanManager.getBeans(SomeClass.class))`, whether the bean actually
+  activated — which also catches a bean that is discoverable but fails to wire correctly for some
+  other reason a static index can't see. Every one of the six already follows the same
+  mechanical shape (confirmed by reading `SecurityHeadersWiringTest`: inject `BeanManager`,
+  assert one class resolves), which is what makes relocating them cheap rather than requiring a
+  new mechanism to be invented.
+- **What a second application has to do to use it:** declare the test-jar in test scope. Nothing
+  else — the assertions ship with the jar and run against whatever container the app assembles.
+- **Overlap with F9's `verify:modules` gate (ADR-039's sibling, already shipped): none that makes
+  either redundant.** `verify:modules` is static — a `pom.xml` either runs `jandex-maven-plugin`
+  or it doesn't. This test-jar is dynamic — the bean is actually resolvable in *this* assembled
+  container. A module can pass the static gate and still fail a wiring test if some other
+  assembly step (an exclusion, a dependency-version mismatch) breaks discovery a Jandex-presence
+  check cannot see. Both stay.
+
+### What this supersedes, and why
+
+- **Nothing in an earlier doc is reversed.** F8 named the gap; this decides how it will be closed
+  without closing it yet. Extends ADR-001's framework/application split: proof of wiring is
+  something the framework now owns delivering, the same way it owns delivering the code.
+
+### Consequence
+
+**No module exists yet, deliberately.** The review argued, and this entry agrees, that the
+payback arrives when a second application starts (ADR-026) — building `zen-conformance` today
+would be six test classes maintained against a single consumer that already has them. What
+changes today is that the shape is **decided**: when app #2 begins, this is "relocate six
+classes into the already-agreed module" rather than "have the test-jar-vs-gate conversation
+again." `apps/zen_demo/zen_demo_server` keeps its six `*WiringTest` classes exactly as they are
+until that migration happens.
+
+---
+
+## ADR-041 — The Data API lockdown's outcome is asserted at deploy time, not re-derived from its cause
+
+**Date:** 2026-08-14. **Status:** accepted. **Refines:** ADR-036, ADR-038. **Closes:**
+`docs/plans/SECURITY-ARCHITECTURE-REVIEW.md` F10.
+
+### Decision
+
+- **`MigrateOnlyRunner`** (`server/zen-identity`) now runs a Data API exposure check
+  immediately after a successful migration, on the same DDL-credentialed connection the
+  migration itself used — not a second connection, and not once per boot (ADR-038's whole point
+  is that nothing runs per boot in `%prod`). Guarded on the `anon` role existing, the identical
+  guard `R__identity_data_api_lockdown.sql` already uses, so it is a no-op against the plain
+  Postgres `@QuarkusTest`/Dev Services provisions.
+- **What it checks:** every object in `information_schema.role_table_grants` for `table_schema =
+  'public'` and `grantee IN ('anon', 'authenticated')` (objects that already exist and are
+  exposed today), plus every `pg_default_acl` row in the `public` namespace whose ACL text names
+  either role (a role other than the one the lockdown last captured is still handing out future
+  grants). Either is a refusal.
+- **New exit code, `EXIT_DATA_API_EXPOSED = 3`,** alongside the existing `0`/`1`/`2`. There is no
+  override for it (unlike `zen.allow-schema-rollback` for exit `2`) — an exposed grant has no
+  legitimate "proceed anyway" case the way a deliberate rollback does. `deploy:cloudrun`'s
+  failure message and `verify:deploy:smoke`'s native-image integration test were both updated to
+  know about it; the smoke test creates a throwaway `anon` role and a live grant specifically to
+  prove the gate actually fires, not merely that its no-op guard compiles.
+
+### What this supersedes, and why
+
+- **"[the lockdown] holds for tables not yet written"** (`R__identity_data_api_lockdown.sql`'s
+  own header, and ADR-036's reasoning) → **refined, not reversed.** *Why:* the security
+  architecture review of 2026-08-13 (F10) found the future-table protection binds to
+  `ddl_role := current_user`, captured once, at the moment the repeatable migration last ran. A
+  repeatable only re-runs on checksum change; rotating the DDL role — which
+  `application.properties` already contemplates as an operator action — does not touch that
+  checksum. So the SQL file's own guarantee about future tables can silently stop applying to
+  whoever is creating tables now, and nothing was checking that it still held. The SQL file is
+  unchanged and still correct for the role it captured; this entry adds a second, independent
+  check of the *outcome* rather than trusting the *mechanism* to still be aimed at the right
+  role.
+- **Two options were on the table** (widen `ALTER DEFAULT PRIVILEGES` to every table-owning role,
+  vs. assert the outcome in `MigrateOnlyRunner`) and the outcome-assertion was chosen because it
+  is strictly stronger: it also catches the file's own documented gap — a table created via the
+  Supabase dashboard's table editor, which runs as `supabase_admin` and which no default-privilege
+  widening naming Flyway-created-table owners would ever reach.
+
+### Consequence
+
+Verified functionally against a throwaway Postgres (not the hosted Supabase project — ports
+54321/54322 were held by another product on this machine for the whole of this pass, same
+constraint the original review recorded): a clean database migrates and exits `0`; manufacturing
+an `anon` role plus a live `GRANT SELECT ... TO anon` on a scratch table makes the same image
+exit `3` and name the exposed table in its log; revoking the grant returns it to exit `0`. This
+is deliberately closer to the real failure mode than the SQL file's own guard, which only proves
+"no anon role" rather than "no exposure" — see §8 Q2 of the review for the `psql` query that
+would additionally verify this against the hosted project once the ports are free, which remains
+unverified by this entry.
+
+`R__identity_data_api_lockdown.sql` is untouched. Widening its `ALTER DEFAULT PRIVILEGES` to
+every table-owning role (the review's Option 1) was not taken — the outcome assertion in
+`MigrateOnlyRunner` makes it unnecessary as a *detection* mechanism, though it would still
+narrow the window between a role rotation and the next deploy catching it, and is left as a
+cheap follow-up if wanted rather than bundled into this scope.
+
+---
+
+## ADR-040 — The undocumented `msgpack` alias is removed from `X-Zen-Transport`
+
+**Date:** 2026-08-13. **Status:** accepted. **Amends:** ADR-011. **Closes:**
+`docs/plans/SECURITY-ARCHITECTURE-REVIEW.md` F15.
+
+### Decision
+
+- **`ZenTransportFormat.parseOrNull`** (`server/zen-transport`) no longer accepts `"msgpack"` as an
+  alias for the binary format. The header now parses exactly `json` and `protobuf` — the two values
+  every tracked document already claimed it supported — and any other value, `msgpack` included,
+  falls through to `negotiate()`'s existing behaviour: a content-type sniff, then default JSON. No
+  request is ever rejected by an unrecognised header value; that property is unchanged.
+- **Deleted, not documented.** `client/zen_transport`'s Dart `ZenTransportFormat` never emitted
+  `msgpack` — confirmed by grep across `client/` and `apps/` before deletion — so nothing in the
+  product depended on the alias resolving to protobuf. Documenting a third wire value nobody sends
+  would have cost more than it returned.
+- **`CLAUDE.md` and `BLUEPRINT.md`** are also corrected in the same change: both stated that
+  `ZenTransportFilter` "rewrites `Accept`/`Content-Type`". It rewrites only `Accept`
+  (`ZenTransportFilter.java:44`) — the **request** body's parser is selected independently, by the
+  client's own `Content-Type` via `@Consumes`, not by `X-Zen-Transport`. The behaviour was always
+  safe (the two selections are independent, so the header could never steer a body into the wrong
+  parser), but the documents described the framework's core mechanism incorrectly.
+
+### What this supersedes, and why
+
+- **"One item is deliberately left alone. … Removing the alias is a small behavioural decision for
+  a later step."** (ADR-011, discussing `ZenTransportFormat.parseOrNull`) → **fulfilled.** *Why:*
+  the security architecture review of 2026-08-13 (F15) is that later step — it re-confirmed no test
+  asserted the alias and no client emitted it, which is exactly the precondition ADR-011 named for
+  removing it without a compatibility concern.
+- **"`ZenTransportFilter` … rewrites `Accept`/`Content-Type`"** (`CLAUDE.md` "The dual-mode transport
+  seam", `BLUEPRINT.md` "Quarkus implementation" step 1) → **corrected.** *Why:* verified on the wire
+  and in source — a protobuf body sent with `X-Zen-Transport: json` is still parsed by the protobuf
+  reader, because request parsing never consulted the header to begin with.
+
+### Consequence
+
+**This is a public wire-contract change**, stated plainly: a caller that was (undocumentedly)
+relying on `X-Zen-Transport: msgpack` resolving to protobuf now gets JSON instead — matching the
+two-value contract the documentation always described, never a rejected request. `task test` and
+`task sync:contracts` are green with no other change required, since neither language's test suite
+asserted the alias. `CLAUDE.md` and `BLUEPRINT.md` now describe the seam's actual behaviour;
+`task verify:docs` passes.
+
+---
+
+## ADR-039 — `task audit` is wired into CI on a schedule; it had never actually run there
+
+**Date:** 2026-08-13. **Status:** accepted. **Amends:** ADR-034. **Closes:**
+`docs/plans/SECURITY-ARCHITECTURE-REVIEW.md` F5.
+
+### Decision
+
+- **A new, separate workflow file, `.github/workflows/audit.yml`,** runs `task audit` on a weekly
+  `schedule:` (`cron: "17 6 * * 1"`) and on `workflow_dispatch:`, with `permissions: contents:
+  read`. Not a job inside `ci.yml`: a third-party advisory published overnight must not block an
+  unrelated pull request the way a red `ci.yml` run would, which is the same reasoning ADR-034
+  already gives for keeping `task audit` out of `task test` — it asks a remote service a question
+  whose answer changes when nothing in the repository changed.
+- **`.github/dependabot.yml`** now covers the `github-actions` ecosystem (weekly). Not the Java or
+  TypeScript ecosystems `task audit` already checks — that would be two tools answering the same
+  question on two different schedules — but the third-party Actions `ci.yml` invokes, which nothing
+  previously watched, and which is what would keep F12's SHA pins current if that finding is worked.
+- **The one live advisory closed.** `task audit:admin` was failing on a moderate DOMPurify XSS
+  (GHSA-55q2-fjhq-7xh7), transitive through `react-admin > ra-ui-materialui > dompurify` in the
+  admin panel — the highest-privilege surface in the system. `ra-ui-materialui`'s own dependency
+  range on `dompurify` (`^3.2.4`) already permitted the patched `3.4.13`; the lockfiles
+  (`admin/pnpm-lock.yaml`, `apps/zen_demo/zen_demo_admin/pnpm-lock.yaml`) were simply pinned to a
+  stale resolution. No `react-admin` version bump was needed — `pnpm update dompurify` in each
+  package sufficed.
+
+### What this supersedes, and why
+
+- **"[`task audit`] belongs in CI on a schedule and before a release"** (ADR-034, Decision) →
+  **fulfilled, not reversed.** *Why:* the security architecture review of 2026-08-13 found
+  `.github/workflows/ci.yml` had no `schedule:` trigger and never invoked `task audit` at all —
+  `grep -n 'audit' .github/workflows/ci.yml` matched nothing. The gate ADR-034 built was correct
+  and, on the one occasion it had been run by hand, had already caught a real advisory; nothing
+  had ever made it run on its own. ADR-034's reasoning stands unchanged — only the wiring it
+  asserted, and did not yet have, now exists.
+- **"before a release"** is *not* closed by this entry. No release checklist exists in this
+  repository yet for `task audit` to be wired into; that half of ADR-034's sentence remains
+  aspirational until one does.
+
+### Consequence
+
+`task audit` is green (`task audit:server`: 259 Java dependencies, clean; `task audit:admin`:
+clean on the finding this entry closes). The gate now fires on its own weekly and on demand,
+rather than only when a human remembers to type the command — which is the defect the review
+named: not that the gate could lie, but that nothing made it run.
+
+---
+
 ## ADR-038 — Migration runs at the deploy, and the binary-and-schema agreement check is abandoned at boot rather than moved
 
 **Date:** 2026-08-10. **Status:** accepted. **Supersedes:** STANDARDS "Deployment model" and

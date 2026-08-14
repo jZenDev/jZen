@@ -52,6 +52,31 @@ vars:
   # environment with cpu always allocated". It is a floor, not a sizing decision: the job runs the
   # same image for a few seconds and never serves a request.
   MIGRATE_JOB_MEMORY: '{{.MIGRATE_JOB_MEMORY | default "512Mi"}}'
+  # The identity the SERVICE and the MIGRATE JOB run as. No default: the platform default is
+  # the project's Compute Engine service account, which carries `roles/editor` — project-wide
+  # write access — on every project that has ever enabled the Compute Engine API, whether or not
+  # anything here uses it. Cloud Run assigns that default silently when `--service-account` is
+  # omitted, so an empty default here would be the same silent fallback this var exists to close;
+  # deploy:cloudrun instead refuses to run and names exactly what to create. See
+  # summary step 1f and STANDARDS "Deployment model" ("no deployed environment fact is written
+  # into the repository" — an account NAME is an identifier like a service URL, not a secret, so
+  # it is a var with a loud-failure default, the same shape as GCP_PROJECT).
+  RUNTIME_SERVICE_ACCOUNT: '{{.RUNTIME_SERVICE_ACCOUNT | default ""}}'
+
+  # F6 of docs/plans/SECURITY-ARCHITECTURE-REVIEW.md: nothing verifies that the image in
+  # Artifact Registry is the one built from the reviewed commit. deploy:cloudrun signs it with
+  # cosign KEYLESS (Sigstore/Fulcio+Rekor) rather than a stored key pair — no private key to put
+  # in Secret Manager or rotate, and the trust anchor is a real identity (an OIDC login) rather
+  # than "whoever holds this key file", which matches a single-maintainer, no-CI-deploy pipeline
+  # where that identity IS the deploy authorization already (RUNTIME_SERVICE_ACCOUNT is a GCP
+  # identity; this is the human's). The cost is a live dependency on Fulcio/Rekor at deploy time
+  # and an interactive OIDC login in the browser — acceptable, because `gcloud auth login` is
+  # already an interactive step this same command depends on. No default, same shape as
+  # RUNTIME_SERVICE_ACCOUNT: an empty COSIGN_CERT_IDENTITY would make the verify gate accept a
+  # signature from ANY identity, which is not a gate at all, so the task refuses to run without
+  # it rather than silently trusting whoever happened to run `cosign sign`.
+  COSIGN_CERT_IDENTITY: '{{.COSIGN_CERT_IDENTITY | default ""}}'
+  COSIGN_CERT_OIDC_ISSUER: '{{.COSIGN_CERT_OIDC_ISSUER | default "https://accounts.google.com"}}'
 
   # Cloud Run CAPACITY. These are the APPLICATION's choice, not the framework's (ADR-028):
   # the repo root is language- and application-neutral, so hardcoding one app's cost envelope
@@ -140,12 +165,15 @@ tasks:
         pin_java()    { sed -n 's/^java=\([0-9][0-9.]*\).*/\1/p' .sdkmanrc | head -1; }
         pin_flutter() { sed -n 's/.*"flutter" *: *"\([^"]*\)".*/\1/p' .fvmrc | head -1; }
         pin_node()    { tr -d 'v \n' < .nvmrc; }
-        pin_pnpm()    { sed -n 's/.*"packageManager" *: *"pnpm@\([^"]*\)".*/\1/p' "$1" | head -1; }
+        # Strips a trailing corepack integrity hash ("+sha512...") if present: `pnpm --version`
+        # reports only the semver, and comparing it against the untruncated field would DRIFT
+        # forever once `corepack use` writes the hash in (F12).
+        pin_pnpm()    { sed -n 's/.*"packageManager" *: *"pnpm@\([^"+]*\)[^"]*".*/\1/p' "$1" | head -1; }
 
         # Presence only. Used for tools that are services, clients, or codegen extras.
         check() {
           if command -v "$1" >/dev/null 2>&1; then
-            printf '  \033[32mok\033[0m   %-14s %s\n' "$1" "$($2 2>&1 | head -1)"
+            printf '  \033[32mok\033[0m   %-14s %s\n' "$1" "$(eval "$2" 2>&1 | head -1)"
           else
             printf '  \033[31mMISS\033[0m %-14s %s\n' "$1" "$3"
             missing=1
@@ -198,7 +226,12 @@ tasks:
 
         echo "jZen toolchain (each version pinned in its own ecosystem's file):"
         checkv java    "java -version 2>&1 | sed -n '1s/.*\"\([0-9][^\"]*\)\".*/\1/p'" "sdk env install"                              "$(pin_java)"    "sdk env"
-        checkv flutter "flutter --version | awk 'NR==1{print \$2}'"                    "https://docs.flutter.dev/get-started/install" "$(pin_flutter)" "fvm use"
+        # Reads whichever `flutter` resolves on PATH, fvm-managed or not — this check has
+        # never depended on fvm to resolve the version, only to fix a real drift ("run: fvm
+        # use" is the hint, not the resolution path). The line is matched by its "Flutter "
+        # prefix rather than assumed to be the first line of output, since a flutter install
+        # that is rebuilding its tool snapshot can print preamble before the version line.
+        checkv flutter "flutter --version | grep -m1 '^Flutter ' | awk '{print \$2}'"    "https://docs.flutter.dev/get-started/install" "$(pin_flutter)" "fvm use"
         checkv node    "node --version | tr -d v"                                      "nvm install"                                  "$(pin_node)"    "nvm use"
         checkv pnpm    "pnpm --version"                                                "corepack enable"                              "$(pin_pnpm admin/package.json)" "corepack enable"
 
@@ -216,6 +249,9 @@ tasks:
         check supabase "supabase --version"  "a local dev service, not a build input: brew install supabase/tap/supabase"
         check docker   "docker --version"    "a daemon, not a toolchain version: https://docs.docker.com/get-docker"
         check gcloud   "gcloud --version"    "a deploy-time client, expected to self-update: https://cloud.google.com/sdk/docs/install"
+        # `cosign version` alone prints an ASCII banner before the version line; --json is the
+        # one output mode that does not.
+        check cosign   "cosign version --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"gitVersion\"])'" "a deploy-time client, expected to self-update (F6): brew install cosign"
         # Floored, not pinned (STANDARDS "Scripting", DECISIONS.md ADR-032). The interpreter is
         # asked for its own version rather than having it parsed out of --version text. Until this
         # line existed, run:demo:native failed with a raw `env: python3: No such file` — the only
@@ -830,13 +866,15 @@ tasks:
   test:
     desc: Run every test suite (test:e2e is the release gate - it hits the live stack)
     cmds:
-      # First, and cheap: an architectural rule no unit test can catch, because the violation it
-      # looks for makes every other suite pass. See STANDARDS "The client talks to one server".
+      # First, and cheap: two architectural rules no unit test can catch, because the violation
+      # each looks for makes every other suite pass. See STANDARDS "The client talks to one
+      # server" and "Backend multi-module rules".
       #
       # test:scripts runs immediately after, and deliberately not before: it is the suite that
-      # proves the gate above still fires, so the cheap architectural check keeps its place at the
-      # front and the thing that vouches for it follows straight behind.
+      # proves both gates above still fire, so the cheap architectural checks keep their place at
+      # the front and the thing that vouches for them follows straight behind.
       - task: verify:boundaries
+      - task: verify:modules
       - task: test:scripts
       - task: test:server
       - task: test:client
@@ -973,11 +1011,11 @@ tasks:
       - pnpm exec tsc -b
 
   test:scripts:
-    desc: Run the fixture tests for the Python dev scripts (the boundary, docs and CVE gates)
+    desc: Run the fixture tests for the Python dev scripts (the boundary, modules, docs and CVE gates)
     silent: true
     summary: |
       Covers the scripts on the Python side of STANDARDS "Scripting" — `verify:boundaries`,
-      `verify:docs`, `seed-admin`, and `audit-maven`.
+      `verify:modules`, `verify:docs`, `seed-admin`, and `audit-maven`.
 
       `audit-maven`'s tests are about one property above all: that the gate cannot report a clean
       result when it checked nothing. That is not a hypothetical — it is what disqualified both
@@ -1321,6 +1359,42 @@ tasks:
         psql_smoke "delete from flyway_schema_history where installed_rank = 9001" >/dev/null
         docker rm -f zen-smoke-migrate >/dev/null 2>&1 || true
 
+        # ── The Data API exposure gate (F10 of the 2026-08-13 architectural security review;
+        # ADR-041). R__identity_data_api_lockdown.sql only revokes anon/authenticated for the
+        # role Flyway happened to be connected as when it last ran, so MigrateOnlyRunner asserts
+        # the OUTCOME on every deploy instead: no public-schema object may grant them anything.
+        # A plain Postgres has no anon role at all, which is exactly the guard that makes the
+        # earlier phases of this smoke test free of a Supabase dependency — so this phase creates
+        # one deliberately, the way a real Supabase project already has it, to prove the gate
+        # actually fires rather than asserting only its no-op path (invariant 8).
+        psql_smoke "create role anon nologin" >/dev/null
+        psql_smoke "create table zen_smoke_exposed (id int)" >/dev/null
+        psql_smoke "grant select on zen_smoke_exposed to anon" >/dev/null
+        set +e
+        migrate_only
+        rc=$?
+        set -e
+        if [ "$rc" -ne 3 ]; then
+          echo "The Data API exposure gate did NOT refuse a live anon grant (exit $rc, want 3)."
+          docker logs zen-smoke-migrate 2>&1 | tail -30
+          exit 1
+        fi
+        printf '  \033[32mok\033[0m   %-24s %-9s %s\n' migrate-only data-api-gate "refused a live anon grant with exit 3"
+        psql_smoke "revoke select on zen_smoke_exposed from anon" >/dev/null
+        set +e
+        migrate_only
+        rc=$?
+        set -e
+        if [ "$rc" -ne 0 ]; then
+          echo "The Data API exposure gate did not clear once the grant was revoked (exit $rc, want 0)."
+          docker logs zen-smoke-migrate 2>&1 | tail -30
+          exit 1
+        fi
+        printf '  \033[32mok\033[0m   %-24s %-9s %s\n' migrate-only data-api-clear "proceeds once the grant is gone"
+        psql_smoke "drop table zen_smoke_exposed" >/dev/null
+        psql_smoke "drop role anon" >/dev/null
+        docker rm -f zen-smoke-migrate >/dev/null 2>&1 || true
+
         # ── The deploy's second half: the same image, serving, against the migrated schema. ──
         docker run -d --name zen-smoke-app --network "$NET" -p 18080:8080 --platform=linux/amd64 \
           $(smoke_env) "$IMG" >/dev/null
@@ -1396,6 +1470,12 @@ tasks:
       local container, so a deployment is held to exactly the standard the pre-deploy gate
       enforces. Override with `SERVICE_URL=https://... task verify:deploy` for any environment.
 
+      Also asserts the runtime identity (F1, docs/plans/SECURITY-ARCHITECTURE-REVIEW.md): reads
+      back the service's and the migrate job's `serviceAccountName` and FAILS if either is the
+      project's default Compute Engine account (`roles/editor`) or cannot be read at all — a
+      fix that is asserted only at deploy time regresses silently the next time someone deploys
+      from a fresh checkout without deploy:cloudrun's own guard.
+
       Run it after every deploy. To keep a bad revision from serving traffic at all, deploy
       with `--no-traffic --tag=candidate`, verify the tagged URL, then shift traffic.
     cmds:
@@ -1407,6 +1487,50 @@ tasks:
                   --region={{.GCP_REGION}} --format='value(status.url)' 2>/dev/null || true)
         fi
         [ -n "$URL" ] || { echo "No service URL. Set SERVICE_URL=... or GCP_PROJECT=..."; exit 1; }
+
+        # F1 (docs/plans/SECURITY-ARCHITECTURE-REVIEW.md): the runtime identity is asserted, not
+        # trusted to deploy:cloudrun's --service-account flag having been set correctly once. The
+        # insecure value is what a MISSING declaration produces, so an empty read here is a
+        # FAILURE, never a pass — ADR-034's rule that a gate must not be able to pass having
+        # checked nothing applies just as much to a control-plane read as to a dependency scan.
+        SA=$(gcloud run services describe {{.SERVICE_NAME}} --project={{.GCP_PROJECT}} \
+               --region={{.GCP_REGION}} --format='value(spec.template.spec.serviceAccountName)' \
+               2>/dev/null || true)
+        if [ -z "$SA" ]; then
+          echo "  FAIL   service account: could not read spec.template.spec.serviceAccountName"
+          echo "         for {{.SERVICE_NAME}} — this is a failure, not a skip. Check gcloud auth"
+          echo "         and GCP_PROJECT={{.GCP_PROJECT}}."
+          exit 1
+        fi
+        case "$SA" in
+          *-compute@developer.gserviceaccount.com)
+            printf '  \033[31mFAIL\033[0m %-24s %s\n' "service account" \
+              "$SA — the PROJECT DEFAULT (roles/editor). See Taskfile summary step 1f."
+            exit 1 ;;
+          *)
+            printf '  \033[32mok\033[0m   %-24s %s\n' "service account" "$SA (not the project default)" ;;
+        esac
+
+        # The migration job runs on the same declared identity (Taskfile step 1e: "job and
+        # service share the runtime service account"), so a drift here is the same defect wearing
+        # a second name — checked with the same non-empty-or-fail discipline as above.
+        JOB_SA=$(gcloud run jobs describe {{.MIGRATE_JOB_NAME}} --project={{.GCP_PROJECT}} \
+                   --region={{.GCP_REGION}} \
+                   --format='value(spec.template.spec.template.spec.serviceAccountName)' \
+                   2>/dev/null || true)
+        if [ -z "$JOB_SA" ]; then
+          echo "  FAIL   migrate job service account: could not read it for {{.MIGRATE_JOB_NAME}}"
+          exit 1
+        fi
+        case "$JOB_SA" in
+          *-compute@developer.gserviceaccount.com)
+            printf '  \033[31mFAIL\033[0m %-24s %s\n' "migrate job account" \
+              "$JOB_SA — the PROJECT DEFAULT (roles/editor). See Taskfile summary step 1f."
+            exit 1 ;;
+          *)
+            printf '  \033[32mok\033[0m   %-24s %s\n' "migrate job account" "$JOB_SA" ;;
+        esac
+
         SERVICE_URL="$URL" task verify:endpoints
 
         # The NATIVE return address must be configured, or every native client is locked out.
@@ -1608,11 +1732,12 @@ tasks:
         for p in / /admin/ /api/v1/health; do
           hdrs=$(curl -s -o /dev/null -D- "$URL$p" | tr -d '\r')
           missing=''
-          for h in content-security-policy x-frame-options x-content-type-options referrer-policy; do
+          for h in content-security-policy x-frame-options x-content-type-options referrer-policy \
+                   permissions-policy cross-origin-opener-policy cross-origin-resource-policy; do
             printf '%s' "$hdrs" | awk -F': ' -v want="$h" 'tolower($1)==want{found=1} END{exit !found}' || missing="$missing $h"
           done
           if [ -z "$missing" ]; then
-            printf '  \033[32mok\033[0m   %-24s %-9s %s\n' "$p" headers "CSP, frame, sniff, referrer"
+            printf '  \033[32mok\033[0m   %-24s %-9s %s\n' "$p" headers "CSP, frame, sniff, referrer, permissions, COOP, CORP"
           else
             printf '  \033[31mFAIL\033[0m %-24s %-9s %s\n' "$p" headers "missing:$missing"; fail=1
           fi
@@ -1793,9 +1918,13 @@ tasks:
           unpinned generation documented as unpinned beats a pin nobody verified; what is not
           acceptable is leaving a reader unable to tell which of the two this is (ADR-031).
 
-      Requires: gcloud auth, GCP_PROJECT set, and everything under ONE-TIME SETUP below.
-      Run it as `GCP_PROJECT=my-project task deploy:cloudrun` — this task never changes your
-      global gcloud config, so it cannot leave your shell pointed somewhere unexpected.
+      Requires: gcloud auth, GCP_PROJECT set, RUNTIME_SERVICE_ACCOUNT set (step 1f — the task
+      refuses to run without it, on purpose), COSIGN_CERT_IDENTITY set (step 1g — same shape),
+      and everything under ONE-TIME SETUP below.
+      Run it as
+      `RUNTIME_SERVICE_ACCOUNT=... COSIGN_CERT_IDENTITY=... GCP_PROJECT=my-project task deploy:cloudrun`
+      — this task never changes your global gcloud config, so it cannot leave your shell pointed
+      somewhere unexpected. cosign sign will open a browser for an OIDC login partway through.
 
       Deploy is deliberately manual and stays that way. Nothing triggers it but a person:
       CI runs the cheap gates, `task test:native` is the long local check before shipping,
@@ -2029,17 +2158,67 @@ tasks:
                                   legible error into two.
 
             The one thing that IS environmental: job and service share the runtime service
-            account, so step 2's secret binding covers both. If you run the job as a different
-            service account (--service-account), that account needs its own
-            roles/secretmanager.secretAccessor binding or every execution fails at boot on a
-            secret it cannot read.
+            account (RUNTIME_SERVICE_ACCOUNT, step 1f), so step 2's secret binding covers both.
+            If you run the job as a DIFFERENT service account (--service-account), that account
+            needs its own roles/secretmanager.secretAccessor binding or every execution fails at
+            boot on a secret it cannot read.
+
+        1f. THE RUNTIME SERVICE ACCOUNT (required — this is finding F1 of
+            docs/plans/SECURITY-ARCHITECTURE-REVIEW.md). deploy:cloudrun REFUSES to run without
+            RUNTIME_SERVICE_ACCOUNT set: the platform default it would otherwise fall back to is
+            the project's Compute Engine default service account, which carries `roles/editor`
+            project-wide on every project that has ever enabled the Compute Engine API — write
+            access to everything in the project, handed to the one process that parses
+            unauthenticated internet input before authentication runs (--allow-unauthenticated,
+            no edge, ADR-027). Create a dedicated account instead, with exactly the one role the
+            application actually uses:
+
+              gcloud iam service-accounts create zen-demo-runtime \
+                --project=PROJECT --display-name="zen_demo runtime (Cloud Run service + migrate job)"
+
+              gcloud projects add-iam-policy-binding PROJECT --condition=None \
+                --member="serviceAccount:zen-demo-runtime@PROJECT.iam.gserviceaccount.com" \
+                --role="roles/secretmanager.secretAccessor"
+
+            Nothing else: no roles/editor, no roles/run.invoker, no roles/iam.serviceAccountUser.
+            The migration job (1e) runs on DDL DATABASE credentials read from that same secret
+            set — a Postgres role, not a GCP permission — so it needs no IAM role beyond the one
+            above; a separate, narrower GCP identity for the job would buy nothing since
+            secretAccessor is already the floor for both, and would only reintroduce the thing
+            this finding removes (an identity nobody named) the moment the two drift. Pass it on
+            every deploy:
+
+              RUNTIME_SERVICE_ACCOUNT=zen-demo-runtime@PROJECT.iam.gserviceaccount.com \
+                GCP_PROJECT=PROJECT task deploy:cloudrun
+
+        1g. COSIGN_CERT_IDENTITY (required — this is finding F6 of
+            docs/plans/SECURITY-ARCHITECTURE-REVIEW.md). deploy:cloudrun signs the pushed image
+            and its SBOM with cosign KEYLESS — no key pair to create here, no Secret Manager
+            entry, nothing to rotate. There genuinely is no setup step: "1g" exists only to name
+            the var, not to provision anything.
+
+            The identity is whichever email you authenticate as when `cosign sign` opens a
+            browser mid-deploy (Sigstore's own OIDC login — Google, GitHub or Microsoft). Pass
+            that same email as COSIGN_CERT_IDENTITY so the verify gate two lines later has
+            something to check the signature against; a mismatch, or a stale COSIGN_CERT_IDENTITY
+            left over from someone who no longer deploys, fails the deploy loudly at the verify
+            step rather than silently trusting whoever happened to sign in:
+
+              COSIGN_CERT_IDENTITY=you@example.com \
+                RUNTIME_SERVICE_ACCOUNT=zen-demo-runtime@PROJECT.iam.gserviceaccount.com \
+                GCP_PROJECT=PROJECT task deploy:cloudrun
+
+            COSIGN_CERT_OIDC_ISSUER defaults to https://accounts.google.com; override it if you
+            sign in with a different provider (e.g. https://github.com/login/oauth for GitHub).
 
         2. Let the runtime service account read those secrets. Without this the revision is
            created and then fails to start, because --set-secrets is resolved at boot. The same
-           binding is what lets the migration job in 1e read them.
+           binding is what lets the migration job in 1e read them. (This is the same binding
+           step 1f already performs for the dedicated account — repeated here only if you are
+           re-pointing an EXISTING deployment at a different account.)
 
              gcloud projects add-iam-policy-binding PROJECT --condition=None \
-               --member="serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+               --member="serviceAccount:zen-demo-runtime@PROJECT.iam.gserviceaccount.com" \
                --role="roles/secretmanager.secretAccessor"
 
         3. Scheduled work. Jobs do not run until this exists, which means GDPR retention
@@ -2073,7 +2252,44 @@ tasks:
         A missed tick is not a lost run: the next one sees a stale last_run_at and catches
         up. That is what makes GDPR retention a guarantee here rather than a hope.
     cmds:
-      # First, before any build: a dirty tree makes the image tag a lie. This is cmd #1 so it
+      # Before anything else: refuse to guess the runtime identity. Omitting --service-account
+      # further down would not error — gcloud silently assigns the project's default Compute
+      # Engine service account, which is exactly the `roles/editor` blast radius F1 found. So this
+      # is a loud failure naming what to set, not a fallback, checked before a single second of
+      # build time is spent.
+      - |
+        set -eu
+        if [ -z "{{.RUNTIME_SERVICE_ACCOUNT}}" ]; then
+          echo "RUNTIME_SERVICE_ACCOUNT is not set."
+          echo
+          echo "Omitting it would not fail the deploy — gcloud silently assigns the project's"
+          echo "default Compute Engine service account, which carries roles/editor project-wide."
+          echo "See summary step 1f for the one-time 'gcloud iam service-accounts create' /"
+          echo "'add-iam-policy-binding' commands, then pass the account every deploy:"
+          echo
+          echo "    RUNTIME_SERVICE_ACCOUNT=zen-demo-runtime@{{.GCP_PROJECT}}.iam.gserviceaccount.com \\"
+          echo "      GCP_PROJECT={{.GCP_PROJECT}} task deploy:cloudrun"
+          exit 1
+        fi
+      # Same shape, for the same reason (F6): an empty COSIGN_CERT_IDENTITY would make the
+      # post-push verify gate accept a signature from ANY Sigstore identity, which is not a gate.
+      - |
+        set -eu
+        if [ -z "{{.COSIGN_CERT_IDENTITY}}" ]; then
+          echo "COSIGN_CERT_IDENTITY is not set."
+          echo
+          echo "deploy:cloudrun signs the pushed image with cosign (keyless: Sigstore/Fulcio+Rekor,"
+          echo "no stored key) and then refuses to migrate or deploy unless 'cosign verify' confirms"
+          echo "the signature belongs to this identity. Without it there is nothing to check the"
+          echo "signature against, so the task refuses to run rather than trust whoever signed it."
+          echo "See summary step 1g. Pass the identity that will run 'cosign sign' (the OIDC"
+          echo "email you will authenticate as in the browser) every deploy:"
+          echo
+          echo "    COSIGN_CERT_IDENTITY=you@example.com \\"
+          echo "      GCP_PROJECT={{.GCP_PROJECT}} task deploy:cloudrun"
+          exit 1
+        fi
+      # Before any build: a dirty tree makes the image tag a lie. This is cmd #2 so it
       # costs a second, not a native compile, to find out.
       - |
         set -eu
@@ -2108,6 +2324,51 @@ tasks:
           -f {{.DEMO_SERVER_DIR}}/src/main/docker/Dockerfile.native-micro \
           -t "$IMAGE" {{.DEMO_SERVER_DIR}}
         docker push "$IMAGE"
+
+        # ═══ SIGN, ATTEST, VERIFY (F6 of the 2026-08-13 architectural security review). ═══
+        #
+        # Keyless (Sigstore/Fulcio+Rekor), not a stored key pair: opens a browser for an OIDC
+        # login (the same interactive shape as `gcloud auth login`, which this task already
+        # depends on) and issues a short-lived signing certificate bound to that identity — no
+        # private key to put in Secret Manager or rotate. `cosign attest` both records the
+        # CycloneDX SBOM `mvn package` just generated (apps/zen_demo/zen_demo_server/target/bom.json,
+        # via cyclonedx-maven-plugin) AND signs it in one step, as an in-toto attestation — the
+        # modern replacement for the older `cosign attach sbom`, which cosign itself now warns is
+        # deprecated and unsigned. `cosign verify` / `cosign verify-attestation` then gate
+        # everything after this point on COSIGN_CERT_IDENTITY: a substituted or locally-modified
+        # image, or one signed by anyone else, fails the deploy here rather than reaching the
+        # migration job or gcloud run deploy — the same fail-closed shape the schema gate
+        # already uses two steps down.
+        BOM="{{.DEMO_SERVER_DIR}}/target/bom.json"
+        if [ ! -f "$BOM" ]; then
+          echo "No SBOM at $BOM — build:server:native did not run cyclonedx-maven-plugin's"
+          echo "package-phase goal. Nothing was attested; refusing to sign an image with no"
+          echo "recorded contents."
+          exit 1
+        fi
+        echo "Signing $IMAGE as {{.COSIGN_CERT_IDENTITY}} (keyless — a browser window will open)..."
+        cosign sign --yes "$IMAGE"
+        echo "Attesting the CycloneDX SBOM ($BOM) to $IMAGE..."
+        cosign attest --yes --predicate "$BOM" --type cyclonedx "$IMAGE"
+        echo "Verifying the signature and attestation before anything downstream trusts this image..."
+        if ! cosign verify \
+               --certificate-identity="{{.COSIGN_CERT_IDENTITY}}" \
+               --certificate-oidc-issuer="{{.COSIGN_CERT_OIDC_ISSUER}}" \
+               "$IMAGE" >/dev/null; then
+          echo "cosign verify FAILED on $IMAGE — refusing to migrate or deploy an image whose"
+          echo "signature does not check out against COSIGN_CERT_IDENTITY={{.COSIGN_CERT_IDENTITY}}."
+          exit 1
+        fi
+        if ! cosign verify-attestation \
+               --type cyclonedx \
+               --certificate-identity="{{.COSIGN_CERT_IDENTITY}}" \
+               --certificate-oidc-issuer="{{.COSIGN_CERT_OIDC_ISSUER}}" \
+               "$IMAGE" >/dev/null; then
+          echo "cosign verify-attestation FAILED on $IMAGE — the SBOM attestation does not check"
+          echo "out. Refusing to migrate or deploy."
+          exit 1
+        fi
+        echo "Signature and SBOM attestation verified."
 
         # The secret set both the job and the service read. Declared here because the migration
         # job needs it too and must not drift from the service's: they are the same application,
@@ -2148,6 +2409,7 @@ tasks:
         gcloud run jobs deploy {{.MIGRATE_JOB_NAME}} \
           --project={{.GCP_PROJECT}} --region={{.GCP_REGION}} \
           --image="$IMAGE" \
+          --service-account={{.RUNTIME_SERVICE_ACCOUNT}} \
           --max-retries=0 --task-timeout=10m --tasks=1 \
           --memory={{.MIGRATE_JOB_MEMORY}} --cpu={{.SERVICE_CPU}} \
           --set-env-vars="ZEN_MIGRATE_ONLY=true,QUARKUS_HTTP_HOST_ENABLED=false,ZEN_ALLOW_SCHEMA_ROLLBACK=$ROLLBACK" \
@@ -2160,18 +2422,21 @@ tasks:
         else
           echo
           echo "MIGRATION FAILED — nothing was deployed, and the previous revision keeps serving."
-          echo "The job exits 1 when Flyway raised and 2 when the schema gate refused, i.e. when"
-          echo "the database has migrations this image does not carry (a rollback onto a newer"
-          echo "schema — the case boot-time validation used to catch and no longer can)."
+          echo "The job exits 1 when Flyway raised, 2 when the schema gate refused (the database"
+          echo "has migrations this image does not carry — a rollback onto a newer schema, the"
+          echo "case boot-time validation used to catch and no longer can), and 3 when the Data"
+          echo "API exposure gate found a public-schema object still granting anon/authenticated"
+          echo "something after migration (F10 of the 2026-08-13 architectural security review)."
           echo
           echo "Read which it was:"
           echo "    gcloud logging read \\"
           echo "      'resource.type=cloud_run_job AND resource.labels.job_name={{.MIGRATE_JOB_NAME}}' \\"
           echo "      --project={{.GCP_PROJECT}} --limit=50 --format='value(textPayload)'"
           echo
-          echo "If it was the gate and the rollback is deliberate, override it:"
+          echo "If it was the schema gate and the rollback is deliberate, override it:"
           echo "    ALLOW_SCHEMA_ROLLBACK=1 GCP_PROJECT={{.GCP_PROJECT}} task deploy:cloudrun"
           echo "which deploys an image that does not understand its own schema, on purpose."
+          echo "There is no override for exit 3: fix the exposed grant and redeploy."
           exit 1
         fi
 
@@ -2229,6 +2494,7 @@ tasks:
           --image="$IMAGE" \
           --project={{.GCP_PROJECT}} \
           --region={{.GCP_REGION}} \
+          --service-account={{.RUNTIME_SERVICE_ACCOUNT}} \
           --memory={{.SERVICE_MEMORY}} \
           --cpu={{.SERVICE_CPU}} \
           --min-instances={{.SERVICE_MIN_INSTANCES}} \
@@ -2446,6 +2712,50 @@ tasks:
       which read as a clean repository and reported green forever.
     cmds:
       - scripts/verify-boundaries.py
+
+  verify:modules:
+    desc: Fail if a server/zen-* module drifts from the Jandex or no-Jackson rules
+    silent: true
+    summary: |
+      Enforces STANDARDS "Backend multi-module rules", which is two mandatory properties for
+      every jZen backend library module:
+
+        A. A module that contributes CDI beans or JAX-RS providers (`@Provider`,
+           `@ApplicationScoped`, `@Singleton`, `@Observes`) must run `jandex-maven-plugin`.
+           Quarkus discovers `@Provider`/bean classes from a dependency jar only if it carries
+           `META-INF/jandex.idx`; omit the plugin and the module's filters, MessageBodyWriters,
+           exception mappers and augmentors silently do nothing — no error, no negotiation.
+        B. No `pom.xml` declares server-side `quarkus-rest-jackson`. jZen is proto-first — every
+           response body is a proto message and its JSON is canonical proto3 JSON from
+           `JsonFormat` via `ProtoJsonMessageBodyWriter`. The Quarkus Jackson writer greedily
+           claims `application/json` through a build-time path that ignores writer priority, so
+           it must be ABSENT, not merely out-prioritized. `quarkus-rest-client-jackson`
+           (`zen-identity`'s outbound Supabase client) and its transitive
+           `quarkus-rest-jackson-common` are legitimate and are not flagged.
+
+      WHY THIS IS A GATE AND NOT A COMMENT. The 2026-08-13 architectural security review (F9)
+      found both rules holding in every module today, and enforced by nothing: five javadoc
+      comments (`zen-transport`, `zen-identity`, `zen-ratelimit` ×2, `zen-email`) and one line in
+      STANDARDS. A new library module that forgets `jandex-maven-plugin` compiles, ships, and its
+      `@Provider` classes vanish with no error at build or boot time — the review's census command,
+      run by hand, was the only thing that had ever checked. This task is that census, made
+      permanent.
+
+      Both checks are Rule 3 work (STANDARDS "Scripting"): they understand `pom.xml` structure
+      (is `jandex-maven-plugin` a real `<plugin>`, is `quarkus-rest-jackson` a real
+      `<dependency>` — as opposed to either name appearing only in an explanatory XML comment,
+      or the forbidden name being a substring of the legitimate `quarkus-rest-client-jackson`)
+      and Java source (does a non-comment line carry a bean-defining annotation). `pom.xml` is
+      parsed with `xml.etree.ElementTree`, which never sees comment nodes, so unlike the Dart/TS
+      scanners in `verify-boundaries.py` this needs no hand-written comment stripper.
+
+      A scope that matches NOTHING is a failure, not a pass — the same `StaleScope` discipline as
+      `verify:boundaries`: a `server/zen-*` glob matching no directory, or a repository with no
+      `pom.xml` at all, must not read as "nothing to flag".
+
+      Covered by `task test:scripts`, alongside the boundary gate's fixtures.
+    cmds:
+      - scripts/verify-modules.py
 
   verify:docs:
     desc: Fail if a README names a non-existent task, or a module LICENSE drifted from root

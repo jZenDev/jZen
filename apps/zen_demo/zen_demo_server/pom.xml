@@ -177,6 +177,38 @@
           </systemPropertyVariables>
         </configuration>
       </plugin>
+      <!--
+        F6 of docs/plans/SECURITY-ARCHITECTURE-REVIEW.md: nothing recorded what was actually
+        shipped. Emits a CycloneDX SBOM for exactly this module's own dependency tree at
+        `package` time, written to target/bom.json. Placed here rather than in server/pom.xml
+        because this is the one module that ships an artifact (the only <packaging>quarkus</packaging>
+        module) — an SBOM is an application-shipping concern, not a framework-library one.
+        `deploy:cloudrun` (Taskfile.yml) reads target/bom.json and hands it to `cosign attest`
+        after the image is pushed; nothing here talks to a registry.
+      -->
+      <plugin>
+        <groupId>org.cyclonedx</groupId>
+        <artifactId>cyclonedx-maven-plugin</artifactId>
+        <version>2.9.3</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>makeBom</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <outputFormat>json</outputFormat>
+          <outputName>bom</outputName>
+          <!-- The plugin's default (skipNotDeployed=true) skips any module with
+               maven.deploy.skip=true, which quarkus-maven-plugin sets for every app module —
+               this one is never `mvn deploy`ed to a Maven repo, it ships as a container image
+               instead. Skipping on that signal would make the SBOM disappear silently for the
+               one module that needs it. -->
+          <skipNotDeployed>false</skipNotDeployed>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
 

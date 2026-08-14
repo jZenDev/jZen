@@ -15,6 +15,83 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-043 — The shipped image gets an SBOM and a keyless signature; the build itself stays where it is
+
+**Date:** 2026-08-14. **Status:** accepted. **Closes:** `docs/plans/SECURITY-ARCHITECTURE-REVIEW.md`
+F6.
+
+### Decision
+
+- **Record what shipped.** `cyclonedx-maven-plugin` is added to
+  `apps/zen_demo/zen_demo_server/pom.xml` — the one `<packaging>quarkus</packaging>` module — bound
+  to the `package` phase, writing a CycloneDX SBOM to `target/bom.json` on every `mvn package`,
+  including the native build `deploy:cloudrun` runs. Measured: 253 components, generated in
+  roughly a second — negligible against the ~5m35s native build it rides along with.
+  `skipNotDeployed=false` is set explicitly: the plugin's default skips any module with
+  `maven.deploy.skip=true`, which `quarkus-maven-plugin` sets for every app module (none of them
+  are ever `mvn deploy`ed to a Maven repository — they ship as container images instead), and that
+  default would have silently produced no SBOM for the only module that needs one.
+- **Sign the image, keyless.** `Taskfile.yml`'s `deploy:cloudrun`, immediately after `docker push`
+  and before the migration job starts, runs `cosign sign` on the pushed image and `cosign attest
+  --type cyclonedx` on `target/bom.json` — both **keyless** (Sigstore Fulcio + Rekor), not a stored
+  key pair. No private key is generated, stored in Secret Manager, or rotated.
+- **Verify before trusting.** `cosign verify` and `cosign verify-attestation` must both succeed
+  against `COSIGN_CERT_IDENTITY`/`COSIGN_CERT_OIDC_ISSUER` before the migration job or `gcloud run
+  deploy` runs — fail-closed, the same shape `MigrateOnlyRunner`'s schema gate (ADR-041) already
+  uses. `COSIGN_CERT_IDENTITY` has no default; `deploy:cloudrun` refuses to run without it, the
+  same shape `RUNTIME_SERVICE_ACCOUNT` (F1) already established — an empty identity would make the
+  gate accept a signature from anyone, which is not a gate. `COSIGN_CERT_OIDC_ISSUER` defaults to
+  `https://accounts.google.com`. `cosign` is added to `task doctor` as presence-only, the same
+  category as `docker`/`gcloud` — a deploy-time client, not a pinned build input.
+- **Keyless over a stored key pair, and why.** The review asked for a deliberate choice, not a
+  default. Keyless wins on this repository's actual shape for three reasons: (1) there is no CI
+  deploy credential at all (F6's own finding — deploy is manual, by a person), so there is no
+  automation identity a stored key would need to represent; a human is already the one authorizing
+  every deploy, and keyless just makes that identity verifiable instead of implicit. (2) The trust
+  anchor becomes a real OIDC identity, checkable against Sigstore's public Rekor transparency log,
+  rather than "whoever holds this key file" — stronger, not weaker, for a single maintainer. (3) It
+  adds no new Secret Manager entry and no private-key rotation story. The cost is real and is taken
+  knowingly: a live dependency on Fulcio/Rekor availability at deploy time, and an interactive
+  browser OIDC login partway through `task deploy:cloudrun`. That was judged acceptable because the
+  same command already depends on an interactive `gcloud auth login` — this adds one more login to
+  a flow that already has one, not a new category of friction.
+- **Not done, deliberately.** The native build stays local. `.github/workflows/ci.yml`'s own
+  "Deliberately NOT here" reasoning (CI verifies; it never ships) is not reopened by this entry —
+  the review was explicit that this finding is about the artifact that ships, not about moving the
+  build, and this decision agrees.
+
+### What this supersedes, and why
+
+- **Nothing in an earlier doc is reversed.** F6 found no SBOM, no signature, no attestation
+  anywhere in the pipeline — SLSA level 0, stated as a finding rather than a prior decision. This
+  entry is the first decision recording the resulting posture, not a change to one.
+
+### Consequence
+
+**State plainly what is now verifiable and what still isn't — no SLSA level number is claimed.**
+Verifiable: the image that ships carries a CycloneDX SBOM and a signature, both bound to a specific
+human OIDC identity and anchored in Rekor's public transparency log, and `deploy:cloudrun` will not
+proceed to migrate or deploy an image that fails that check. Not verifiable, and not claimed to be:
+the build itself is neither hermetic nor reproducible — it still runs on a developer's workstation
+(`task build:server:native`), and CI still never touches the artifact that ships, exactly as
+`ci.yml`'s own comment already argues it should not.
+
+**Verified this pass, and how.** `task doctor` (cosign added, green), `task sync:contracts`
+(in sync), and `task test` (155 backend tests green; `test:e2e` did **not run** — ports
+54321/54322 were held by another product on this machine, the same constraint prior passes
+recorded, not a result of this change) all ran clean. The `cosign sign` / `cosign attest` /
+`cosign verify` / `cosign verify-attestation` mechanics were verified functionally against a
+disposable local scratch registry (`localhost:5500`, torn down after), using a throwaway
+`cosign generate-key-pair` key pair as a stand-in for the interactive keyless flow: all four
+commands succeeded, `verify-attestation`'s payload round-tripped the actual `bom.json` content
+through the in-toto envelope, and `cosign verify` was separately confirmed to fail closed
+(non-zero exit) against an unsigned image. **The real keyless OIDC round trip was not exercised
+end to end in this pass** — completing Sigstore's login requires a browser this environment does
+not have; it will run for the first time on the next actual `task deploy:cloudrun`, with the
+operator's own go-ahead.
+
+---
+
 ## ADR-042 — Framework wiring gets proof, not just logic: a conformance test-jar, decided now, built when app #2 starts
 
 **Date:** 2026-08-14. **Status:** accepted (shape only — no module built yet). **Closes:**

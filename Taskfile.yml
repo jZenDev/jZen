@@ -63,6 +63,21 @@ vars:
   # it is a var with a loud-failure default, the same shape as GCP_PROJECT).
   RUNTIME_SERVICE_ACCOUNT: '{{.RUNTIME_SERVICE_ACCOUNT | default ""}}'
 
+  # F6 of docs/plans/SECURITY-ARCHITECTURE-REVIEW.md: nothing verifies that the image in
+  # Artifact Registry is the one built from the reviewed commit. deploy:cloudrun signs it with
+  # cosign KEYLESS (Sigstore/Fulcio+Rekor) rather than a stored key pair — no private key to put
+  # in Secret Manager or rotate, and the trust anchor is a real identity (an OIDC login) rather
+  # than "whoever holds this key file", which matches a single-maintainer, no-CI-deploy pipeline
+  # where that identity IS the deploy authorization already (RUNTIME_SERVICE_ACCOUNT is a GCP
+  # identity; this is the human's). The cost is a live dependency on Fulcio/Rekor at deploy time
+  # and an interactive OIDC login in the browser — acceptable, because `gcloud auth login` is
+  # already an interactive step this same command depends on. No default, same shape as
+  # RUNTIME_SERVICE_ACCOUNT: an empty COSIGN_CERT_IDENTITY would make the verify gate accept a
+  # signature from ANY identity, which is not a gate at all, so the task refuses to run without
+  # it rather than silently trusting whoever happened to run `cosign sign`.
+  COSIGN_CERT_IDENTITY: '{{.COSIGN_CERT_IDENTITY | default ""}}'
+  COSIGN_CERT_OIDC_ISSUER: '{{.COSIGN_CERT_OIDC_ISSUER | default "https://accounts.google.com"}}'
+
   # Cloud Run CAPACITY. These are the APPLICATION's choice, not the framework's (ADR-028):
   # the repo root is language- and application-neutral, so hardcoding one app's cost envelope
   # here would fix it for every app that will ever assemble jZen. Today's values are the
@@ -158,7 +173,7 @@ tasks:
         # Presence only. Used for tools that are services, clients, or codegen extras.
         check() {
           if command -v "$1" >/dev/null 2>&1; then
-            printf '  \033[32mok\033[0m   %-14s %s\n' "$1" "$($2 2>&1 | head -1)"
+            printf '  \033[32mok\033[0m   %-14s %s\n' "$1" "$(eval "$2" 2>&1 | head -1)"
           else
             printf '  \033[31mMISS\033[0m %-14s %s\n' "$1" "$3"
             missing=1
@@ -234,6 +249,9 @@ tasks:
         check supabase "supabase --version"  "a local dev service, not a build input: brew install supabase/tap/supabase"
         check docker   "docker --version"    "a daemon, not a toolchain version: https://docs.docker.com/get-docker"
         check gcloud   "gcloud --version"    "a deploy-time client, expected to self-update: https://cloud.google.com/sdk/docs/install"
+        # `cosign version` alone prints an ASCII banner before the version line; --json is the
+        # one output mode that does not.
+        check cosign   "cosign version --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"gitVersion\"])'" "a deploy-time client, expected to self-update (F6): brew install cosign"
         # Floored, not pinned (STANDARDS "Scripting", DECISIONS.md ADR-032). The interpreter is
         # asked for its own version rather than having it parsed out of --version text. Until this
         # line existed, run:demo:native failed with a raw `env: python3: No such file` — the only
@@ -1901,10 +1919,12 @@ tasks:
           acceptable is leaving a reader unable to tell which of the two this is (ADR-031).
 
       Requires: gcloud auth, GCP_PROJECT set, RUNTIME_SERVICE_ACCOUNT set (step 1f — the task
-      refuses to run without it, on purpose), and everything under ONE-TIME SETUP below.
-      Run it as `RUNTIME_SERVICE_ACCOUNT=... GCP_PROJECT=my-project task deploy:cloudrun` — this
-      task never changes your global gcloud config, so it cannot leave your shell pointed
-      somewhere unexpected.
+      refuses to run without it, on purpose), COSIGN_CERT_IDENTITY set (step 1g — same shape),
+      and everything under ONE-TIME SETUP below.
+      Run it as
+      `RUNTIME_SERVICE_ACCOUNT=... COSIGN_CERT_IDENTITY=... GCP_PROJECT=my-project task deploy:cloudrun`
+      — this task never changes your global gcloud config, so it cannot leave your shell pointed
+      somewhere unexpected. cosign sign will open a browser for an OIDC login partway through.
 
       Deploy is deliberately manual and stays that way. Nothing triggers it but a person:
       CI runs the cheap gates, `task test:native` is the long local check before shipping,
@@ -2171,6 +2191,26 @@ tasks:
               RUNTIME_SERVICE_ACCOUNT=zen-demo-runtime@PROJECT.iam.gserviceaccount.com \
                 GCP_PROJECT=PROJECT task deploy:cloudrun
 
+        1g. COSIGN_CERT_IDENTITY (required — this is finding F6 of
+            docs/plans/SECURITY-ARCHITECTURE-REVIEW.md). deploy:cloudrun signs the pushed image
+            and its SBOM with cosign KEYLESS — no key pair to create here, no Secret Manager
+            entry, nothing to rotate. There genuinely is no setup step: "1g" exists only to name
+            the var, not to provision anything.
+
+            The identity is whichever email you authenticate as when `cosign sign` opens a
+            browser mid-deploy (Sigstore's own OIDC login — Google, GitHub or Microsoft). Pass
+            that same email as COSIGN_CERT_IDENTITY so the verify gate two lines later has
+            something to check the signature against; a mismatch, or a stale COSIGN_CERT_IDENTITY
+            left over from someone who no longer deploys, fails the deploy loudly at the verify
+            step rather than silently trusting whoever happened to sign in:
+
+              COSIGN_CERT_IDENTITY=you@example.com \
+                RUNTIME_SERVICE_ACCOUNT=zen-demo-runtime@PROJECT.iam.gserviceaccount.com \
+                GCP_PROJECT=PROJECT task deploy:cloudrun
+
+            COSIGN_CERT_OIDC_ISSUER defaults to https://accounts.google.com; override it if you
+            sign in with a different provider (e.g. https://github.com/login/oauth for GitHub).
+
         2. Let the runtime service account read those secrets. Without this the revision is
            created and then fails to start, because --set-secrets is resolved at boot. The same
            binding is what lets the migration job in 1e read them. (This is the same binding
@@ -2231,6 +2271,24 @@ tasks:
           echo "      GCP_PROJECT={{.GCP_PROJECT}} task deploy:cloudrun"
           exit 1
         fi
+      # Same shape, for the same reason (F6): an empty COSIGN_CERT_IDENTITY would make the
+      # post-push verify gate accept a signature from ANY Sigstore identity, which is not a gate.
+      - |
+        set -eu
+        if [ -z "{{.COSIGN_CERT_IDENTITY}}" ]; then
+          echo "COSIGN_CERT_IDENTITY is not set."
+          echo
+          echo "deploy:cloudrun signs the pushed image with cosign (keyless: Sigstore/Fulcio+Rekor,"
+          echo "no stored key) and then refuses to migrate or deploy unless 'cosign verify' confirms"
+          echo "the signature belongs to this identity. Without it there is nothing to check the"
+          echo "signature against, so the task refuses to run rather than trust whoever signed it."
+          echo "See summary step 1g. Pass the identity that will run 'cosign sign' (the OIDC"
+          echo "email you will authenticate as in the browser) every deploy:"
+          echo
+          echo "    COSIGN_CERT_IDENTITY=you@example.com \\"
+          echo "      GCP_PROJECT={{.GCP_PROJECT}} task deploy:cloudrun"
+          exit 1
+        fi
       # Before any build: a dirty tree makes the image tag a lie. This is cmd #2 so it
       # costs a second, not a native compile, to find out.
       - |
@@ -2266,6 +2324,51 @@ tasks:
           -f {{.DEMO_SERVER_DIR}}/src/main/docker/Dockerfile.native-micro \
           -t "$IMAGE" {{.DEMO_SERVER_DIR}}
         docker push "$IMAGE"
+
+        # ═══ SIGN, ATTEST, VERIFY (F6 of the 2026-08-13 architectural security review). ═══
+        #
+        # Keyless (Sigstore/Fulcio+Rekor), not a stored key pair: opens a browser for an OIDC
+        # login (the same interactive shape as `gcloud auth login`, which this task already
+        # depends on) and issues a short-lived signing certificate bound to that identity — no
+        # private key to put in Secret Manager or rotate. `cosign attest` both records the
+        # CycloneDX SBOM `mvn package` just generated (apps/zen_demo/zen_demo_server/target/bom.json,
+        # via cyclonedx-maven-plugin) AND signs it in one step, as an in-toto attestation — the
+        # modern replacement for the older `cosign attach sbom`, which cosign itself now warns is
+        # deprecated and unsigned. `cosign verify` / `cosign verify-attestation` then gate
+        # everything after this point on COSIGN_CERT_IDENTITY: a substituted or locally-modified
+        # image, or one signed by anyone else, fails the deploy here rather than reaching the
+        # migration job or gcloud run deploy — the same fail-closed shape the schema gate
+        # already uses two steps down.
+        BOM="{{.DEMO_SERVER_DIR}}/target/bom.json"
+        if [ ! -f "$BOM" ]; then
+          echo "No SBOM at $BOM — build:server:native did not run cyclonedx-maven-plugin's"
+          echo "package-phase goal. Nothing was attested; refusing to sign an image with no"
+          echo "recorded contents."
+          exit 1
+        fi
+        echo "Signing $IMAGE as {{.COSIGN_CERT_IDENTITY}} (keyless — a browser window will open)..."
+        cosign sign --yes "$IMAGE"
+        echo "Attesting the CycloneDX SBOM ($BOM) to $IMAGE..."
+        cosign attest --yes --predicate "$BOM" --type cyclonedx "$IMAGE"
+        echo "Verifying the signature and attestation before anything downstream trusts this image..."
+        if ! cosign verify \
+               --certificate-identity="{{.COSIGN_CERT_IDENTITY}}" \
+               --certificate-oidc-issuer="{{.COSIGN_CERT_OIDC_ISSUER}}" \
+               "$IMAGE" >/dev/null; then
+          echo "cosign verify FAILED on $IMAGE — refusing to migrate or deploy an image whose"
+          echo "signature does not check out against COSIGN_CERT_IDENTITY={{.COSIGN_CERT_IDENTITY}}."
+          exit 1
+        fi
+        if ! cosign verify-attestation \
+               --type cyclonedx \
+               --certificate-identity="{{.COSIGN_CERT_IDENTITY}}" \
+               --certificate-oidc-issuer="{{.COSIGN_CERT_OIDC_ISSUER}}" \
+               "$IMAGE" >/dev/null; then
+          echo "cosign verify-attestation FAILED on $IMAGE — the SBOM attestation does not check"
+          echo "out. Refusing to migrate or deploy."
+          exit 1
+        fi
+        echo "Signature and SBOM attestation verified."
 
         # The secret set both the job and the service read. Declared here because the migration
         # job needs it too and must not drift from the service's: they are the same application,

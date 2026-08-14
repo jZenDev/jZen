@@ -23,15 +23,17 @@
     ],
     "//overrides": {
       "react-router": "GHSA-qwww-vcr4-c8h2. ra-core declares peer ^6.28.1 || ^7.1.1 and the fix exists only in 8.3.0, so this pin is deliberately outside what react-admin asks for. The advisory itself scopes the flaw to unstable RSC APIs react-admin does not use, so the pin buys a clean audit rather than a closed hole -- which is why it was only kept after the panel was driven in a browser, not merely typechecked. Drop it the moment react-admin's peer range reaches 8.",
-      "js-yaml": "GHSA-52cp-r559-cp3m, via openapi-typescript > @redocly/openapi-core. Build tooling, never shipped in the bundle; pinned anyway because the fix is a patch release and an unpinned known-vulnerable parser is not worth the argument.",
+      "js-yaml": "GHSA-52cp-r559-cp3m and GHSA-5p4m-2wfm-xmqj (quadratic CPU consumption in !!omap), via openapi-typescript > @redocly/openapi-core. Build tooling, never shipped in the bundle, and the only YAML it parses is this repository's own openapi.json pipeline -- so the quadratic parse is not reachable by anything a stranger controls. Pinned anyway because the fix is a patch release and an unpinned known-vulnerable parser is not worth the argument.",
       "brace-expansion": "GHSA-mh99-v99m-4gvg and GHSA-rgw5-rvv9-x895, via openapi-typescript > @redocly/openapi-core > minimatch. Same reasoning as js-yaml.",
-      "postcss": "GHSA-fxqj-rqcc-2cmp, via vite. Patch release; taken here rather than as a vite major, which would have dragged TypeScript and @vitejs/plugin-react with it for one transitive fix."
+      "postcss": "GHSA-fxqj-rqcc-2cmp, via vite. Patch release; taken here rather than as a vite major, which would have dragged TypeScript and @vitejs/plugin-react with it for one transitive fix.",
+      "nanoid": "GHSA-2v37-7h3g-55p8, via vite > postcss. Same shape as postcss above and reached through it: build tooling, and the ids nanoid generates here name build artifacts rather than anything a request supplies, so the non-terminating custom-generator loop has no untrusted input to loop on. Patch release, so pinned rather than argued about."
     },
     "overrides": {
       "react-router": "^8.3.0",
-      "js-yaml": "^4.3.0",
+      "js-yaml": "^4.3.1",
       "brace-expansion": "^2.1.4",
-      "postcss": "^8.5.23"
+      "postcss": "^8.5.23",
+      "nanoid": "^3.3.18"
     }
   },
   "devDependencies": {

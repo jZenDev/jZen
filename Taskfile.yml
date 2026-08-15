@@ -1980,6 +1980,16 @@ tasks:
              export APPLINKS_APPLE_APP_IDS="<TeamID>.<bundle-id>"          # paid Apple account
              GCP_PROJECT=... task deploy:cloudrun
 
+        1b. Languages (optional, and not a secret). ZEN_I18N_SUPPORTED is the APPLICATION's locale
+           set (ADR-044) - jZen ships {en, uk} and an app may support more. Unset, the server uses
+           what jZen ships, which is why zen_demo never sets it. It has to be passed here rather
+           than set by hand afterwards: the deploy uses --set-env-vars, which REPLACES the whole
+           environment, so a manually added variable is silently dropped by the next deploy - and
+           the symptom is only that a user's stored language quietly reverts to English.
+
+             export ZEN_I18N_SUPPORTED=en,uk,pl
+             GCP_PROJECT=... task deploy:cloudrun
+
            List EVERY signing certificate that will run, not just the release one: a debug keystore
            signs the build a developer actually installs, and a build signed by an unlisted key
            fails verification with no error anyone sees. Get a fingerprint with:
@@ -2504,7 +2514,7 @@ tasks:
           $CPU_BOOST_FLAG $EXEC_ENV_FLAG \
           --port=8080 \
           --allow-unauthenticated \
-          --set-env-vars="^@^ZEN_BUILD_ID={{.GIT_SHA}}{{.GIT_DIRTY}}@APPLINKS_ANDROID_PACKAGE=${APPLINKS_ANDROID_PACKAGE:-}@APPLINKS_ANDROID_FINGERPRINTS=${APPLINKS_ANDROID_FINGERPRINTS:-}@APPLINKS_APPLE_APP_IDS=${APPLINKS_APPLE_APP_IDS:-}" \
+          --set-env-vars="^@^ZEN_BUILD_ID={{.GIT_SHA}}{{.GIT_DIRTY}}@APPLINKS_ANDROID_PACKAGE=${APPLINKS_ANDROID_PACKAGE:-}@APPLINKS_ANDROID_FINGERPRINTS=${APPLINKS_ANDROID_FINGERPRINTS:-}@APPLINKS_APPLE_APP_IDS=${APPLINKS_APPLE_APP_IDS:-}@ZEN_I18N_SUPPORTED=${ZEN_I18N_SUPPORTED:-}" \
           --set-secrets="$SECRETS"
 
   destroy:cloudrun:

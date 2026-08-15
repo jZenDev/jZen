@@ -10,7 +10,16 @@ final demoRepositoryProvider = Provider<DemoRepository>((ref) {
   throw UnimplementedError('demoRepositoryProvider must be overridden');
 });
 
-/// The current UI locale, one of `ZenLocales.supported`.
+/// The languages this application supports.
+///
+/// The **application's** decision, not the framework's (ADR-044): `ZenLocales.shipped` is what
+/// jZen has ARB files for, and an app is free to support more. zen_demo deliberately supports
+/// exactly the shipped set - it is the framework's showcase, so any locale it added would be a
+/// locale the framework could not answer in. A product app declares its own list here, and the
+/// framework delegates degrade to English for anything jZen ships no strings for.
+const List<String> demoSupportedLocales = ZenLocales.shipped;
+
+/// The current UI locale, one of [demoSupportedLocales].
 ///
 /// It has two jobs, and keeping them on one provider is what makes the language switch honest:
 ///
@@ -21,8 +30,8 @@ final demoRepositoryProvider = Provider<DemoRepository>((ref) {
 ///    mid-session switch reaches the next request, including `POST /auth/register`, where the
 ///    server seeds `users.language` and every later localized email follows from it.
 ///
-/// A [Locale] rather than a language-code string: the framework's supported set is
-/// [ZenLocales.supported], and a `Locale` is what Flutter's localization stack consumes.
+/// A [Locale] rather than a language-code string: [demoSupportedLocales] is a set of tags, and
+/// a `Locale` is what Flutter's localization stack consumes.
 class LocaleNotifier extends Notifier<Locale> {
   @override
   Locale build() => const Locale(ZenLocales.fallback);

@@ -15,6 +15,165 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-044 — The supported locale set belongs to the application; jZen declares only what it ships
+
+**Date:** 2026-08-15. **Status:** accepted.
+
+### Decision
+
+`ZenLocales` conflated two sets under one name, and the second application broke on it immediately.
+The two are separated, and the framework's half becomes a **floor, not a ceiling**.
+
+- **A — the locales jZen's own packages ship strings for.** Legitimately the framework's, and an
+  honest thing to declare. Today `{en, uk}`.
+- **B — the locales the product supports.** Always an application decision.
+
+`ZenLocales` declared **A** and every consumer used it as **B**. The framework did not merely omit a
+locale it had no strings for; it **erased** one, in three places: `resolve()` clamped any unknown
+tag to `en` and `UserStore` ran every registration's `Accept-Language` through it, so a Polish
+user's `users.language` was written `en`; each generated delegate answered
+`isSupported(locale) => ['en','uk'].contains(...)`, so under `Locale('pl')`
+`IdentityLocalizations.of(context)` was null and a framework screen **crashed** rather than
+degrading; and each localized package asserted its generated `supportedLocales` equalled
+`ZenLocales.supported`, so the framework's own suite failed on the application's decision.
+
+Five coupled changes, and **no locale is added to jZen**:
+
+1. **`supported` → `shipped`, on both stacks.** `ZenLocales.shipped` / `ZenLocales.SHIPPED` is "the
+   locales jZen's own packages ship strings for", still `{en, uk}`, still hand-mirrored across the
+   two declarations. The rename is the load-bearing part: the old name is what invited every
+   consumer to read an inventory as a policy. (`default` was considered and is impossible — a
+   reserved word in both languages.)
+2. **The supported set is supplied by the application, per tier, the way that tier already does
+   config.** Server: the runtime MicroProfile property `zen.i18n.supported`, defaulting to the
+   shipped set, injected where resolution happens (`UserStore`, `EmailService`). Client: a
+   compile-time `const` list the app hands to the delegates it composes. This is not a new
+   concept — it is the existing runtime-server / compile-time-client split (BLUEPRINT "The
+   compile-time config rule") applied to one more value.
+3. **Resolution takes the set as an argument.** `resolve(tag, against:)` /
+   `resolve(tag, supported)` and `fromAcceptLanguage(header, supported)`; the single-argument forms
+   remain, delegating to `shipped`, so a caller that genuinely means "the framework's own set"
+   still reads that way. `users.language` can now hold a tag jZen ships no strings for.
+4. **Framework delegates degrade instead of refusing.** Each localized package exports a delegate
+   whose `isSupported` is unconditional and whose `load` resolves exact → primary subtag →
+   `fallback`. An application supporting a locale jZen has no strings for now gets **framework
+   chrome in English and its own content in Polish**, rather than a null-assertion crash. The
+   pure resolution stays in `zen_core`; the Flutter glue is four lines per package, which is why
+   this needs no new package and no shared base class.
+5. **An application may translate framework strings without the framework shipping that locale.**
+   The generated `XLocalizations` classes are `abstract` and exported, so an app subclasses one and
+   composes its own delegate **before** jZen's — Flutter's `Localizations` takes the first delegate
+   per type that supports the locale. The override is deleted the day jZen ships that locale. This
+   is a documented seam, not a fork.
+
+**Rejected: `MyLocales extends ZenLocales`.** It reads well and cannot work. `ZenLocales` is a
+static holder (`abstract final class` in Dart, a private-constructor `final class` in Java); Dart
+does not inherit static members at all, and Java *hides* rather than overrides them — so
+`PrudentLocales.SUPPORTED = {en,uk,pl}` would compile while every framework call site kept reading
+`{en, uk}`. A silent, compiling, wrong result is the failure mode this codebase reserves its
+loudest rules for. It is also the ceremony `ZEN_ARCHITECTURE.md` §5 rejects: the app supplies a
+value, it does not extend a base class.
+
+### What this supersedes, and why
+
+- **BLUEPRINT "Client localization": "`ZenLocales` (in `zen_core`) is the client's single
+  declaration of the supported set … Each package tests its generated `supportedLocales` against
+  it, so an ARB set cannot drift from what the server can answer in"** → **split.** *Why:* the
+  drift check is worth keeping and is retained against `shipped`; the claim that one declaration is
+  *the* supported set is what an application cannot live with. The set a package ships and the set
+  a product supports are different facts.
+- **ADR-009's "Adding a locale to jZen … needs no code edit on either [stack]: … then the tag in
+  `ZenLocales` on each side"** → **refined.** *Why:* it described adding a locale **to the
+  framework**, which is still exactly right. It was silently read as the only way an application
+  could gain one, which is what this entry corrects.
+- **ADR-008 pt.3's "`ZenLocales` (in `zen-core`) is the single declaration of the supported set"**
+  → **reframed** to the single declaration of the *shipped* set, with the supported set config-
+  supplied. *Why:* same conflation, server side. The `users.language` clamp it produced was a data
+  defect, not a styling one.
+- **`client/README.md` and `client/zen_core/README.md`, "the single declaration of the locales jZen
+  supports (`{en, uk}`)"** → **corrected** to what jZen *ships*.
+
+**Not superseded, and worth stating:** ADR-007 (the locale is ambient, sent as `Accept-Language`
+per request), ADR-009's typed-generated-accessors decision, and the tracked-vs-generated rule are
+all unchanged. So is ADR-010's bar — this entry adds no capability on speculation. It removes a
+coupling that the first real second consumer broke on, which is the evidence ADR-010 asks for.
+
+### Consequence
+
+An application declares its own languages and jZen stops ratifying them. jZen ships `{en, uk}` and
+says so; an app shipping `{en, uk, pl}` needs no framework change, no fork, and no locale added
+upstream. A locale the framework has no strings for degrades per delegate instead of crashing, and
+the ARB-drift gate that motivated the original assertion survives intact against `shipped`.
+
+The trigger for jZen to *ship* a new locale is unchanged and unmet: ARB files in every localized
+package plus a `@Localized` bundle variant and templates server-side. An application wanting one
+language is not that trigger — it is what item 5 exists for.
+
+Lockstep versioning is unchanged at `0.1.0`. No Flyway band is claimed (200-299 remains free), no
+module was added, and no dependency was added on either stack.
+
+**Verified on the delivery machine.** `task test:client` green — **321** tests (`zen_core` 89,
+`zen_identity` 54, `zen_secure_store` 8, `zen_transport` 68, `zen_ui_identity` 58, navigation
+example 2, `zen_ui_navigation` 42); `task test:apps:client` **11**; `task test:apps:server` **158,
+0 failures**. `task verify:boundaries`, `task verify:docs` (18 LICENSE copies byte-identical) and
+`task sync:contracts` ("Contracts in sync.", "Generated localizations correctly untracked.") are
+green.
+
+The new proof is behavioural on both stacks, because every failure this entry fixes was silent:
+
+- `ApplicationLocaleSetTest` (`@QuarkusTest`, `zen.i18n.supported=en,uk,pl` via `@TestProfile`)
+  registers a user with `Accept-Language: pl-PL` and asserts `users.language` **reads `pl` out of
+  the database** — the clamp wrote `en` there, and that column is email's only locale source. Its
+  second case registers `de` and asserts `en`: the set is wider, not open.
+- `identity_localizations_test.dart` pumps a real `LoginScreen` at `Locale('pl')` under an app set
+  of `{en, uk, pl}` and asserts it renders English rather than throwing, then pumps the same tree
+  with an app-supplied Polish delegate and asserts the app's wording wins.
+- `navigation_localizations_test.dart` asserts the same degradation for its own delegate, and both
+  packages pin that the *generated* delegate still refuses `pl` — the difference between the two
+  is the entire mechanism.
+- `zen_locales_test.dart` adds the `against:` case: `pl` survives an application set and still
+  falls back under the framework's own.
+
+**Checked against the artefact production actually ships, not only the JVM.**
+`task build:server:native` is green (6m03s, a 145 MB `linux/amd64` binary), and that binary was
+run in an `amd64` container against a throwaway Postgres: the migrate job applied its 9 migrations
+and the service started in **1.010s under `%prod` with `ZEN_I18N_SUPPORTED=en,uk,pl` set and no
+configuration complaint**. This mattered because the injected value is an `Optional<List<String>>`
+and native images resolve config differently from a JVM - it is read from an instance field at
+runtime, so nothing about it is folded into the image, while `ZenLocales.SHIPPED` is a genuine
+constant and correctly is.
+
+**One correction found by testing rather than by reading.** The seam works only if the
+application's delegate is composed **first** and returns a `SynchronousFuture`. An override placed
+after jZen's loses (`Localizations` takes the first delegate per type that supports the locale),
+and an `async` load leaves the type unresolved for a frame, during which the framework's delegate
+answers in its place. Both are now stated where an implementor will read them — the delegate
+doc comments, the `zen_ui_identity` library docs, and the test that would otherwise pass for the
+wrong reason.
+
+**One asymmetry the native image forces, and it is not obvious.** `zen.i18n.supported` is
+*runtime* config, so an operator can widen the set on a deployed service — but the native image
+bakes JDK locale data at **build** time, and Quarkus defaults to `-H:IncludeLocales=en-US`.
+Anything resolving through `java.util.Locale` (date, number and currency formatting) therefore
+formats as `en-US` in a native binary no matter what the runtime set says. jZen's own i18n is
+unaffected because it is string-keyed throughout — Qute picks a template by filename and
+`@Localized` picks a bundle by tag — but an application that formats money or dates server-side
+must also set the build-time `quarkus.locales`. Two properties, deliberately: the languages a
+product *answers in* are an operational choice, while the locale data compiled into a binary is a
+build artefact, and pretending otherwise would produce a service that accepts `pl` at runtime and
+silently formats it as English. The Cloud Run deploy passes `ZEN_I18N_SUPPORTED` through
+(`--set-env-vars` replaces the whole environment, so a variable not passed is a variable removed),
+and treats a blank value as unconfigured rather than as an empty set — `BlankLocaleSetTest` pins
+that, because a blank variable is what an unset export actually produces at deploy time.
+
+Two smaller things landed with it: the Java `resolve` now splits on `[-_]` like its Dart mirror
+(it split on `-` only, so `uk_UA` resolved to the fallback on one stack and to `uk` on the other),
+and the per-locale generated classes (`IdentityLocalizationsEn` and friends) are now exported,
+without which "subclass the fallback and override a few getters" was not actually reachable from
+outside the package.
+
+---
+
 ## ADR-043 — The shipped image gets an SBOM and a keyless signature; the build itself stays where it is
 
 **Date:** 2026-08-14. **Status:** accepted. **Closes:** `docs/plans/SECURITY-ARCHITECTURE-REVIEW.md`

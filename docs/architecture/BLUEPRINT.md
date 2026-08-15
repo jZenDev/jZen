@@ -240,10 +240,17 @@ lib/src/l10n/demo_{en,uk}.arb                          ▶  DemoLocalizations
   delegate; an application composes the delegates in `MaterialApp.localizationsDelegates` and
   supplies **no wording**. A framework screen calls `IdentityLocalizations.of(context)` rather than
   taking a messages argument, so a locale change is one rebuild.
-- **`ZenLocales` (in `zen_core`) is the client's single declaration of the supported set**,
-  mirroring the server's `zen.core.i18n.ZenLocales`: `{en, uk}`, fallback `en`. Each package tests
-  its generated `supportedLocales` against it, so an ARB set cannot drift from what the server can
-  answer in.
+- **`ZenLocales` (in `zen_core`) declares what jZen *ships*, not what an application supports**
+  (ADR-044), mirroring the server's `zen.core.i18n.ZenLocales`: `shipped = {en, uk}`, fallback
+  `en`. Each package tests its generated `supportedLocales` against `shipped`, so an ARB set cannot
+  drift from the strings the package claims to have. **The supported set is the application's** — a
+  compile-time `const` list it hands to the delegates it composes (the server's half of the same
+  decision is the runtime property `zen.i18n.supported`). A locale jZen ships no strings for is a
+  supported choice: each framework delegate degrades to `fallback` for it rather than refusing, so
+  the app's own screens render in that language while framework chrome stays English. An app that
+  would rather translate the framework's strings itself subclasses the exported `abstract
+  XLocalizations` and composes its delegate ahead of jZen's; that override is deleted if jZen later
+  ships the locale.
 - **The locale is app state, not config.** A single `Locale` provider is both `MaterialApp.locale`
   (so `Localizations` re-renders the typed strings) and the value `ZenClient` reads per request for
   `Accept-Language` (ADR-007) — so the language a user picks reaches `POST /auth/register`, seeds

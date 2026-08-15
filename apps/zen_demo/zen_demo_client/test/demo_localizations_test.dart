@@ -19,7 +19,7 @@ void main() {
       DemoLocalizations.delegate.load(Locale(locale));
 
   test('ships exactly the locales ZenLocales declares', () {
-    expect(DemoLocalizations.supportedLocales.map((l) => l.languageCode), ZenLocales.supported);
+    expect(DemoLocalizations.supportedLocales.map((l) => l.languageCode), ZenLocales.shipped);
   });
 
   test('demo strings resolve in English', () async {

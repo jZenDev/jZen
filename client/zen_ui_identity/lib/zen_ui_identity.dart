@@ -8,10 +8,22 @@
 ///
 /// ```dart
 /// MaterialApp(
-///   localizationsDelegates: IdentityLocalizations.localizationsDelegates,
-///   supportedLocales: IdentityLocalizations.supportedLocales,
+///   localizationsDelegates: const [
+///     identityLocaleDelegate,          // not IdentityLocalizations.delegate - see below
+///     GlobalMaterialLocalizations.delegate,
+///     GlobalCupertinoLocalizations.delegate,
+///     GlobalWidgetsLocalizations.delegate,
+///   ],
+///   supportedLocales: [for (final tag in myAppLocales) Locale(tag)],
 /// )
 /// ```
+///
+/// [identityLocaleDelegate] rather than the generated `IdentityLocalizations.delegate`: the
+/// supported set is the application's, not jZen's (ADR-044), and the generated delegate refuses
+/// any locale this package has no ARB for - which leaves `IdentityLocalizations.of(context)` null
+/// and throws on the first string read. The degrading delegate falls back to English instead. To
+/// render these strings in a language jZen does not ship, subclass `IdentityLocalizationsEn`,
+/// wrap it in your own delegate, and list that delegate *first*.
 ///
 /// Changing `MaterialApp.locale` re-renders the flows in the new language; see
 /// `IdentityErrorText.errorText` for the localized wording of a [ZenError].
@@ -19,6 +31,12 @@ library;
 
 // L10n
 export 'src/l10n/generated/identity_localizations.dart';
+// The per-locale implementations, exported so an application can translate this package's
+// strings itself (ADR-044): subclass the fallback one and override only the getters it wants
+// rendered in a locale jZen ships nothing for, rather than reimplementing every string.
+export 'src/l10n/generated/identity_localizations_en.dart';
+export 'src/l10n/generated/identity_localizations_uk.dart';
+export 'src/l10n/identity_locale_delegate.dart';
 export 'src/l10n/identity_error_text.dart';
 // Screens
 export 'src/screens/authority_roles_screen.dart';

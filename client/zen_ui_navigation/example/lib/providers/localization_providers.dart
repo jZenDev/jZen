@@ -6,7 +6,7 @@ import 'package:zen_core/zen_core.dart';
 ///
 /// Holding a [Locale] rather than a language-code string is the typed half of the same move
 /// that replaced string-key lookups with generated accessors (ADR-009): what it may hold is
-/// `ZenLocales.supported`, and `Localizations` re-renders every dependent when it changes, so
+/// `ZenLocales.shipped`, and `Localizations` re-renders every dependent when it changes, so
 /// no screen has to observe the language itself.
 class LocaleNotifier extends Notifier<Locale> {
   @override

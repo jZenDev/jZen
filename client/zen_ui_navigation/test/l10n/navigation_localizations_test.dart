@@ -11,7 +11,7 @@ void main() {
   test('ships exactly the locales ZenLocales declares', () {
     expect(
       NavigationLocalizations.supportedLocales.map((l) => l.languageCode),
-      ZenLocales.supported,
+      ZenLocales.shipped,
     );
   });
 
@@ -20,6 +20,21 @@ void main() {
     final uk = await NavigationLocalizations.delegate.load(const Locale(ZenLocales.uk));
 
     expect(en.more, 'More');
+    expect(uk.more, 'Ще');
+  });
+
+  // ADR-044: an application's locale set may be wider than what this package ships. The
+  // generated delegate declines an unshipped locale, which leaves nothing to resolve
+  // NavigationLocalizations from and throws on first read; the degrading delegate falls back.
+  test('the degrading delegate accepts an unshipped locale and loads the fallback', () async {
+    expect(navigationLocaleDelegate.isSupported(const Locale('pl')), isTrue);
+    expect(NavigationLocalizations.delegate.isSupported(const Locale('pl')), isFalse);
+
+    final pl = await navigationLocaleDelegate.load(const Locale('pl'));
+    expect(pl.more, 'More');
+
+    // Exact where it can be: a shipped tag never degrades.
+    final uk = await navigationLocaleDelegate.load(const Locale('uk', 'UA'));
     expect(uk.more, 'Ще');
   });
 }

@@ -62,7 +62,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: Text(messages.languageLabel),
             trailing: SegmentedButton<Locale>(
               segments: [
-                for (final tag in ZenLocales.supported)
+                for (final tag in ZenLocales.shipped)
                   ButtonSegment<Locale>(value: Locale(tag), label: Text(tag.toUpperCase())),
               ],
               selected: {ref.watch(localeProvider)},

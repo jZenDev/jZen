@@ -151,15 +151,38 @@ tasks:
 
       Discovery is by l10n.yaml, never by a list, so a new localized package is picked up by
       existing here rather than by being registered somewhere.
+
+      IT WALKS THE TREE WITH `git ls-files`, NOT `find`. On a Windows host the task shell resolves
+      a bare `find` to System32's find.exe — a different program that rejects these arguments,
+      writes to stderr and returns nothing — so the walk came back empty, this task announced "no
+      localized packages", and the failure only surfaced minutes later as a missing generated
+      import in the Windows runner build. `sort` is shadowed the same way and is gone for the same
+      reason (git's output is already ordered and deduplicated). `git ls-files` is one program on
+      every host, and an l10n.yaml is tracked source by definition — which also drops the
+      .dart_tool/build exclusions, since a gitignored path was never a candidate.
     cmds:
       - |
         set -e
+        cd "{{.ROOT_DIR}}"
+        if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+          echo "generate:l10n discovers localized packages with 'git ls-files', and {{.ROOT_DIR}} is not a git work tree."
+          exit 1
+        fi
+        # Two patterns per root: the root may itself be a localized package, or contain them at
+        # any depth. `:(glob)` pins the pathspec to wildmatch semantics rather than leaving them
+        # to git's default for the version at hand.
+        set --
+        for r in {{.DART_ROOTS}}; do
+          set -- "$@" ":(glob)$r/l10n.yaml" ":(glob)$r/**/l10n.yaml"
+        done
         found=0
-        for config in $(cd "{{.ROOT_DIR}}" && for r in {{.DART_ROOTS}}; do if [ -d "$r" ]; then find "$r" -name l10n.yaml -not -path '*/.dart_tool/*' -not -path '*/build/*'; fi; done | sort); do
-          pkgdir=$(dirname "{{.ROOT_DIR}}/$config")
+        for config in $(git ls-files -- "$@"); do
+          # Parameter expansion, not `dirname`: one less program this has to find on a host.
+          pkgdir="${config%/l10n.yaml}"
+          if [ "$pkgdir" = "$config" ]; then pkgdir="."; fi
           found=$((found + 1))
           echo ">> flutter gen-l10n ($config)"
-          (cd "$pkgdir" && flutter gen-l10n)
+          (cd "{{.ROOT_DIR}}/$pkgdir" && flutter gen-l10n)
         done
         if [ "$found" -eq 0 ]; then
           echo "No localized packages found (no l10n.yaml)."
@@ -189,21 +212,22 @@ tasks:
           *)                      host_platform=linux ;;
         esac
         cd "{{.ROOT_DIR}}"
-        # `if`, not `[ -d "$root" ] && …`: under `set -e` a false test as the loop's last
-        # statement makes the loop's status 1 and kills the script - a task that fails without
-        # running anything, which is the opposite of a gate.
-        roots=""
-        for root in {{.DART_ROOTS}}; do
-          if [ -d "$root" ]; then roots="$roots $root"; fi
-        done
-        if [ -z "$roots" ]; then
-          echo "None of DART_ROOTS ({{.DART_ROOTS}}) exist under {{.ROOT_DIR}}."
-          exit 0
+        if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+          echo "test:client discovers packages with 'git ls-files', and {{.ROOT_DIR}} is not a git work tree."
+          exit 1
         fi
+        # `git ls-files`, not `find | sort` — see generate:l10n. Both of those names belong to
+        # unrelated System32 programs on a Windows host, and a walk that comes back empty there
+        # would report "no packages" and exit green, which is a test task that tested nothing.
+        set --
+        for root in {{.DART_ROOTS}}; do
+          set -- "$@" ":(glob)$root/pubspec.yaml" ":(glob)$root/**/pubspec.yaml"
+        done
         found=0
-        for pubspec in $(find $roots -name pubspec.yaml -not -path '*/.dart_tool/*' -not -path '*/build/*' | sort); do
-          pkgdir=$(dirname "$pubspec")
-          [ -d "$pkgdir/test" ] || continue
+        for pubspec in $(git ls-files -- "$@"); do
+          pkgdir="${pubspec%/pubspec.yaml}"
+          if [ "$pkgdir" = "$pubspec" ]; then pkgdir="."; fi
+          if [ ! -d "$pkgdir/test" ]; then continue; fi
           found=1
           if grep -qE '^[[:space:]]*(flutter|flutter_test):' "$pubspec"; then
             echo ">> flutter test ($pkgdir)"

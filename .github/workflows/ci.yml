@@ -147,10 +147,16 @@ jobs:
       # Flutter's Linux desktop build shells out to CMake/ninja and links against GTK3. Not
       # preinstalled on the runner, and its absence fails as a CMake error naming a header rather
       # than a missing package.
-      - name: Linux desktop toolchain (GTK3, ninja)
+      #
+      # libsecret is here for the same reason one layer down: a Flutter PLUGIN brings its own
+      # native dependencies to each platform it supports, and flutter_secure_storage backs the
+      # Linux keystore with libsecret. So the list a desktop target needs is not "the Flutter SDK's
+      # own" — it grows with the dependency set, and each addition announces itself as a
+      # pkg_check_modules failure inside a package's CMakeLists.
+      - name: Linux desktop toolchain (GTK3, libsecret, ninja)
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libgtk-3-dev
+          sudo apt-get install -y ninja-build libgtk-3-dev libsecret-1-dev
       - run: task build:apps:runners
 
   # The Windows runner. Flutter does not cross-compile desktop targets — `flutter build windows`
@@ -163,8 +169,10 @@ jobs:
   # containers this runner cannot practically host, and a weaker check wearing the same name would
   # be worse than no check. The widget suites are host-agnostic Dart and already run on Linux.
   #
-  # `shell: bash` throughout: the runner ships Git Bash, and `task` runs POSIX sh recipes. That is
-  # what makes Windows a build target without rewriting the orchestration.
+  # `shell: bash` throughout: the runner ships Git Bash, so the step bodies are POSIX. It does NOT
+  # extend inside `task` — go-task interprets its recipes itself and resolves each program from the
+  # Windows PATH, where System32 comes first. Any recipe naming a program Windows also has (`find`,
+  # `sort`) gets the other one, which is why the task recipes walk trees with `git ls-files`.
   windows-runner:
     runs-on: windows-latest
     defaults:

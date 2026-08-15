@@ -110,14 +110,19 @@ jobs:
       - name: Web bundle compiles (WebAssembly)
         run: WEB_API_URL=https://ci.invalid task build:web
 
-  # The Android runner. Its own job so a Gradle/manifest fault is reported as itself rather than
-  # buried in the gates job, and so it runs in parallel.
+  # The runners this Linux host can build: Android and the Linux desktop app. Its own job so a
+  # Gradle/manifest/GTK fault is reported as itself rather than buried in the gates job, and so it
+  # runs in parallel. (The job keeps its `android-runner` name so existing required-status-check
+  # settings keep matching; it covers Linux desktop too since ADR-045.)
   #
-  # ANDROID ONLY, and the gap is deliberate. `build:apps:runners` builds macOS and the iOS
-  # simulator too, but both need Xcode, so on Linux they are skipped — announced, never silently.
-  # Covering them would mean a `macos-latest` runner, which bills at several times the Linux rate;
-  # that is a cost decision, not an oversight, and it is the same reasoning that keeps prod on one
-  # Cloud Run instance. Until it is taken, Apple runners are covered by `task build` locally.
+  # APPLE TARGETS ARE STILL SKIPPED, and the gap is deliberate. `build:apps:runners` builds macOS
+  # and the iOS simulator too, but both need Xcode, so on Linux they are skipped — announced, never
+  # silently. Covering them would mean a `macos-latest` runner, which bills at several times the
+  # Linux rate; that is a cost decision, not an oversight, and it is the same reasoning that keeps
+  # prod on one Cloud Run instance. Until it is taken, Apple runners are covered by `task build`
+  # locally — which they *can* be, unlike Windows. That asymmetry is why Windows got a runner and
+  # macOS did not: an Apple target is verifiable on the delivery machine, and Windows is verifiable
+  # nowhere else (ADR-045).
   android-runner:
     runs-on: ubuntu-latest
     steps:
@@ -129,6 +134,44 @@ jobs:
         with:
           distribution: temurin
           java-version: "25"
+      - name: Flutter 3.44.2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: "3.44.2"
+          channel: stable
+      - name: go-task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2
+        with:
+          version: "3.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      # Flutter's Linux desktop build shells out to CMake/ninja and links against GTK3. Not
+      # preinstalled on the runner, and its absence fails as a CMake error naming a header rather
+      # than a missing package.
+      - name: Linux desktop toolchain (GTK3, ninja)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev
+      - run: task build:apps:runners
+
+  # The Windows runner. Flutter does not cross-compile desktop targets — `flutter build windows`
+  # refuses on any other host, by name — so this job is the *only* place the Windows app is ever
+  # built, and the only evidence jZen has that the target works (ADR-045). It is also the one
+  # documented exception to "every command was run on the delivery machine": no macOS machine can
+  # run it.
+  #
+  # Build only. The full-stack `test:e2e` stays on Linux: it boots Supabase, which needs Linux
+  # containers this runner cannot practically host, and a weaker check wearing the same name would
+  # be worse than no check. The widget suites are host-agnostic Dart and already run on Linux.
+  #
+  # `shell: bash` throughout: the runner ships Git Bash, and `task` runs POSIX sh recipes. That is
+  # what makes Windows a build target without rewriting the orchestration.
+  windows-runner:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Flutter 3.44.2
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:

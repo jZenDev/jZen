@@ -486,10 +486,12 @@ provider is only made meaningful by the backend.
   dependency does not enter one platform, it enters all of them, and each build system can reject
   it on its own terms. No test compiles a runner — unit and widget tests run on the Dart VM and the
   flutter tester, which never invoke Xcode or Gradle — so a change can leave every suite green and
-  every shippable artifact broken. `task build:apps:runners` (macOS, iOS simulator, Android; part
-  of `task build`) and `task build:web` are what actually answer the question. Apple targets are
-  skipped off macOS, and the skip is announced rather than silent, because "not run here" and
-  "passed" must never look alike.
+  every shippable artifact broken. `task build:apps:runners` (macOS, iOS simulator, Android, Linux,
+  Windows; part of `task build`) and `task build:web` are what actually answer the question.
+  **Desktop targets are host-only** — Flutter refuses `build linux` off Linux and `build windows`
+  off Windows — so no one machine verifies all five, and Linux and Windows are gated in CI on
+  their own runners (ADR-045). Every target a host cannot build is skipped *audibly*, because
+  "not run here" and "passed" must never look alike.
 - The **server** uses runtime config (MicroProfile / `application.properties`): one binary
   serves both native and web clients, and it has no bundle to shrink.
 

@@ -527,7 +527,7 @@ tasks:
       - dart analyze
 
   build:apps:runners:
-    desc: Compile the app's NATIVE runners (macOS, iOS simulator, Android) — the targets tests never touch
+    desc: Compile the app's NATIVE runners (macOS, iOS simulator, Android, Linux, Windows) — the targets tests never touch
     summary: |
       Compiles every delivery target the reference app has, because nothing else does and
       `dart analyze` is not a build.
@@ -550,6 +550,13 @@ tasks:
       Apple targets need Xcode and are skipped, loudly, off macOS. Android needs a JDK whose
       jlink works, which GraalVM's does not — the same machine-wide `flutter config --jdk-dir`
       constraint `run:demo:native` explains at length (ADR-021).
+
+      DESKTOP IS HOST-ONLY, AND THAT IS THE WHOLE REASON CI GREW A SECOND OS (ADR-045). Flutter
+      does not cross-compile desktop targets — `flutter build linux` refuses off Linux and
+      `flutter build windows` refuses off Windows, by name. So no single machine can verify all
+      five runners, and the Linux and Windows branches below are dead code on a developer's Mac
+      and the only proof those targets exist on CI. Skipped loudly here too: an unverified target
+      must never look like a passing one.
 
       It generates the typed localizations first, and that is not a convenience. They are BUILT,
       NOT COMMITTED (ADR-009) — `**/l10n/generated/` is gitignored and `sync:contracts` fails if
@@ -581,7 +588,15 @@ tasks:
         cd {{.DEMO_CLIENT_DIR}}
         defines="--dart-define=ZEN_ENV=dev --dart-define=ZEN_API_URL={{.API}} --dart-define=ZEN_AUTH_REDIRECT_URI={{.SCHEME}}"
 
-        if [ "$(uname -s)" = "Darwin" ]; then
+        # One host, one family of runners: Flutter builds a desktop target only on that target.
+        case "$(uname -s)" in
+          Darwin)                 HOST=macos ;;
+          Linux)                  HOST=linux ;;
+          MINGW*|MSYS*|CYGWIN*)   HOST=windows ;;
+          *)                      HOST=unknown ;;
+        esac
+
+        if [ "$HOST" = "macos" ]; then
           echo ">> macOS"
           flutter build macos --debug --dart-define=ZEN_PLATFORM=macos $defines
           echo ">> iOS (simulator; a device build would need a signing identity, which the MVP does not have)"
@@ -589,6 +604,32 @@ tasks:
         else
           echo ">> SKIPPED macOS and iOS: they need Xcode, and this is $(uname -s)."
           echo "   Said out loud rather than passed silently — on this host they are unverified."
+        fi
+
+        if [ "$HOST" = "linux" ]; then
+          # Needs GTK3 and ninja on the host; CI installs them. `flutter build linux` refuses
+          # anywhere else, so this branch is the Linux target's only proof (ADR-045).
+          echo ">> Linux desktop"
+          flutter build linux --debug --dart-define=ZEN_PLATFORM=linux $defines
+        else
+          echo ">> SKIPPED Linux desktop: \"build linux\" only runs on Linux hosts, and this is $(uname -s)."
+        fi
+
+        if [ "$HOST" = "windows" ]; then
+          # Needs Visual Studio's C++ toolchain; the windows-latest runner has it.
+          echo ">> Windows desktop"
+          flutter build windows --debug --dart-define=ZEN_PLATFORM=windows $defines
+        else
+          echo ">> SKIPPED Windows desktop: \"build windows\" only runs on Windows hosts, and this is $(uname -s)."
+        fi
+
+        # Android is skipped on Windows CI: that job exists for the Windows runner, and pulling a
+        # full Android SDK onto it would double the job for a target ubuntu already covers.
+        if [ "$HOST" = "windows" ]; then
+          echo ">> SKIPPED Android here: covered by the Linux job, which already has the SDK."
+          echo
+          echo "Every native runner this host can build compiles."
+          exit 0
         fi
 
         # Android last: it is the one that fails for a reason no error message names.
@@ -607,7 +648,7 @@ tasks:
         echo ">> Android"
         flutter build apk --debug --dart-define=ZEN_PLATFORM=android $defines
         echo
-        echo "Every native runner compiles."
+        echo "Every native runner this host can build compiles."
 
   build:apps:server:
     desc: Build the reference backend (resolves framework libs from the local repo)
@@ -796,9 +837,12 @@ tasks:
         SELECTION=$(scripts/pick-device.py)
         TARGET=$(printf '%s' "$SELECTION" | cut -f1)
         PLATFORM=$(printf '%s' "$SELECTION" | cut -f2)
+        # Desktop targets are here because they are delivery targets (ADR-045). Flutter only
+        # offers the one matching the host, so this list is wider than what any single machine
+        # can run - which is the point: the task does not need to know which host it is on.
         case "$PLATFORM" in
-          macos|ios|android) ;;
-          *) echo "ZEN_PLATFORM must be macos, ios or android (got '$PLATFORM')"; exit 1 ;;
+          macos|ios|android|linux|windows) ;;
+          *) echo "ZEN_PLATFORM must be macos, ios, android, linux or windows (got '$PLATFORM')"; exit 1 ;;
         esac
         API='{{.API}}'
         if [ -z "$API" ]; then
@@ -909,10 +953,16 @@ tasks:
       # therefore compiled with the host platform define, mirroring how the real app builds.
       - |
         set -e
+        # The host's own platform, because the widget tests compile with ZEN_PLATFORM set and
+        # the honest value is the machine they run on. Windows is recognised rather than folded
+        # into linux (ADR-045): git-bash reports MINGW*, and calling it Linux would compile the
+        # wrong branch of every zenIsDesktop/zenIsWindows constant on the one host that can
+        # actually check them.
         case "$(uname -s)" in
-          Darwin) host_platform=macos ;;
-          Linux)  host_platform=linux ;;
-          *)      host_platform=linux ;;
+          Darwin)                 host_platform=macos ;;
+          Linux)                  host_platform=linux ;;
+          MINGW*|MSYS*|CYGWIN*)   host_platform=windows ;;
+          *)                      host_platform=linux ;;
         esac
         found=0
         for pubspec in $(find . -mindepth 2 -name pubspec.yaml -not -path '*/.dart_tool/*' | sort); do
@@ -947,10 +997,16 @@ tasks:
       # (the live e2e) is driven separately by test:e2e against the real stack.
       - |
         set -e
+        # The host's own platform, because the widget tests compile with ZEN_PLATFORM set and
+        # the honest value is the machine they run on. Windows is recognised rather than folded
+        # into linux (ADR-045): git-bash reports MINGW*, and calling it Linux would compile the
+        # wrong branch of every zenIsDesktop/zenIsWindows constant on the one host that can
+        # actually check them.
         case "$(uname -s)" in
-          Darwin) host_platform=macos ;;
-          Linux)  host_platform=linux ;;
-          *)      host_platform=linux ;;
+          Darwin)                 host_platform=macos ;;
+          Linux)                  host_platform=linux ;;
+          MINGW*|MSYS*|CYGWIN*)   host_platform=windows ;;
+          *)                      host_platform=linux ;;
         esac
         found=0
         for pubspec in $(find . -mindepth 2 -name pubspec.yaml -not -path '*/.dart_tool/*' | sort); do

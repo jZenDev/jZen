@@ -15,6 +15,109 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-045 — Linux and Windows are delivery targets; their gate is a real build on a real host, in CI
+
+**Date:** 2026-08-15. **Status:** accepted.
+
+### Decision
+
+jZen claims to be a framework for new applications (ADR-001). A framework that cannot deliver a
+desktop app on two of the three desktop operating systems is not complete, so **Linux and Windows
+join macOS, iOS, Android and web as first-class delivery targets of the client tier.**
+
+Most of the framework already handled them and nothing knew it:
+
+- `zen_core` has declared `zenIsLinux`, `zenIsWindows` and `zenIsDesktop = macOS ‖ linux ‖ windows`
+  all along, and `zen_ui_navigation` branches on `zenIsDesktop` — the desktop navigation was never
+  macOS-specific.
+- The transport codec seam splits **native vs web**, not per-OS, so `test:client:matrix` needs no
+  new rows: Linux and Windows are already covered wherever macOS is.
+- CI runs on `ubuntu-latest`, and `test:client` compiles every Flutter widget test with
+  `ZEN_PLATFORM=linux`. The Linux *code path* has been compiled and tested on every commit for
+  as long as CI has existed.
+
+What was missing was the only thing that actually proves a delivery target: **a build of the real
+runner.** The reference app had `android ios macos web` and no `linux/` or `windows/` directory, so
+neither had ever been built. That is now closed:
+
+1. **`zen_demo_client` gains `linux/` and `windows/` runner directories.** The reference app is the
+   framework's evidence; a target it cannot build is a target jZen does not have.
+2. **`build:apps:runners` builds every runner the host can, and says so when it cannot.** It gains
+   a Linux branch and a Windows branch beside the existing Apple and Android ones, host-detected
+   (`uname -s`, with `MINGW*`/`MSYS*`/`CYGWIN*` recognised as Windows), and skips **loudly** — the
+   rule ADR-012 set for the Apple targets, applied to two more.
+3. **CI is where the desktop gate lives, because it cannot live anywhere else** (see below). The
+   existing Linux job additionally builds the Linux desktop runner, and a new `windows-latest` job
+   builds the Windows one.
+4. **`run:demo:native` and `test:client` learn the two platforms** — the former's allowlist was
+   `macos|ios|android`, the latter mapped every non-Darwin host to `linux`.
+
+### The verification boundary, stated precisely
+
+Flutter does **not** cross-compile desktop targets, and this is measured, not assumed — on the
+delivery machine (`arm64` macOS), against a throwaway project:
+
+```
+flutter build windows  →  "build windows" only supported on Windows hosts.
+flutter build linux    →  "build linux" only supported on Linux hosts.
+```
+
+So the three tiers of verification are different things, and conflating them is how a framework
+claims a platform it has never shipped:
+
+- **Logic** — verified everywhere, including the delivery machine. The per-OS branching is
+  compile-time constants (`zenIsLinux`, `zenIsWindows`) and the only conditional imports are
+  `dart:io` vs `dart:html`, not per-OS, so widget tests compile and pass under any `ZEN_PLATFORM`
+  on any host. This proves the code path, **not the app**.
+- **The runner build** — only on a matching host, therefore only in CI. This is the gate.
+- **Running the built app** — possible for Linux in CI under `Xvfb`, and deliberately **not done
+  yet**; a named next step rather than a silent gap. The full-stack `test:e2e` (Supabase + Quarkus
+  + the app, no mocks) stays **Linux-only**: the Windows runner cannot practically host the Linux
+  containers Supabase needs, so a Windows end-to-end would be a different, weaker test wearing the
+  same name.
+
+**This forces a documented exception to a rule jZen has held since ADR-012**: "every command shown
+was run on the delivery machine". For Windows that is now structurally impossible — no macOS
+machine can run it. The Windows claim is therefore phrased as **"verified on `windows-latest` in
+CI"** wherever it appears, and the difference is stated rather than blurred. A README that claimed
+otherwise would be a claim nobody could reproduce.
+
+### Cost, taken deliberately
+
+CI goes from one operating system to two. That is the full-fanout wall-time pressure STANDARDS §25
+and ADR-026 name as a second-application trigger, arriving early and for a different reason. It is
+accepted because the alternative is a framework whose platform list is aspirational. **macOS and
+iOS remain outside CI** on the existing cost reasoning (a `macos-latest` runner bills at several
+times the Linux rate, and `build:apps:runners` covers them on a developer's machine) — so the
+matrix is `ubuntu-latest` + `windows-latest`, not three.
+
+### What this supersedes, and why
+
+- **ROADMAP and the client READMEs' implied platform set (Apple, Android, web)** → **widened to
+  include Linux and Windows.** *Why:* the constants and the desktop navigation branch already
+  existed, so the documents understated what the framework contained while overstating what it had
+  proven. Both halves are now true.
+- **ADR-012's "every command shown was run on the delivery machine"** → **narrowed**, with Windows
+  named as the exception and CI named as its evidence. *Why:* a rule that cannot hold must say so;
+  silently breaking it is how documentation stops being trustworthy.
+- **The CI comment "the macOS and iOS runners … a cost decision, not an oversight"** → **kept, and
+  extended** to say why Windows was worth the cost when Apple was not: Apple targets are verifiable
+  on the delivery machine, and Windows is verifiable nowhere else.
+
+### Consequence
+
+Every delivery target the reference app declares is now built by something on every commit, except
+the two Apple ones, which are built locally and announced when skipped. `zenIsWindows` is compiled
+for the first time. An application choosing Linux or Windows is choosing a supported platform
+rather than breaking new ground — which is what ADR-001's claim requires, and what the second
+application asked for.
+
+Lockstep versioning is unchanged at `0.1.0`. No Flyway band is claimed, no module was added, and
+no dependency was added: the runner directories are Flutter scaffolding, and the rest is
+orchestration.
+
+---
+
 ## ADR-044 — The supported locale set belongs to the application; jZen declares only what it ships
 
 **Date:** 2026-08-15. **Status:** accepted.

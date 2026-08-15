@@ -10,6 +10,23 @@
 # Install: brew install go-task/tap/go-task   (see `task doctor`)
 version: "3"
 
+# The application-facing half of the orchestration lives in Taskfile.app.yml, and this repository
+# consumes it the same way an application does — through `includes:`, with its own vars. That is
+# deliberate: a reusable file the framework does not itself use is a file that drifts, and the
+# claim "an application can orchestrate itself with this" is only true if something does. Here the
+# application is zen_demo. Tasks appear as `zen:*`; the ones this file still defines delegate to
+# them so their documented names keep working.
+includes:
+  zen:
+    taskfile: ./Taskfile.app.yml
+    vars:
+      APP_NAME: zen_demo
+      CLIENT_DIR: client
+      SERVER_DIR: server
+      PROTO_DIR: proto
+      # Both pub workspaces: the framework libraries and the applications that assemble them.
+      DART_ROOTS: "client apps"
+
 vars:
   # server/ + client/ are the Java + Dart FRAMEWORK libraries; apps/ holds the full-stack
   # application examples that assemble them (apps/<app>/{<app>_client, <app>_server}).
@@ -365,18 +382,10 @@ tasks:
       toolchain boundary to carry the result across. It is gitignored, produced here, and
       sync:contracts asserts that none of it is tracked.
     cmds:
-      - |
-        set -e
-        found=0
-        for config in $(find {{.CLIENT_DIR}} {{.APPS_DIR}} -name l10n.yaml -not -path '*/.dart_tool/*' -not -path '*/build/*' | sort); do
-          pkgdir=$(dirname "$config")
-          found=$((found + 1))
-          echo ">> flutter gen-l10n ($pkgdir)"
-          (cd "$pkgdir" && flutter gen-l10n)
-        done
-        if [ "$found" -eq 0 ]; then
-          echo "No localized packages found (no l10n.yaml)."
-        fi
+      # Delegated to Taskfile.app.yml (ADR-046): the discovery-by-l10n.yaml loop is not about
+      # zen_demo, so it lives where an application can have it too. The name stays here because
+      # docs, CI and eight other tasks call it.
+      - task: zen:generate:l10n
 
   generate:api:
     desc: Build the backend, emit openapi.json, and generate admin types
@@ -527,7 +536,7 @@ tasks:
       - dart analyze
 
   build:apps:runners:
-    desc: Compile the app's NATIVE runners (macOS, iOS simulator, Android) — the targets tests never touch
+    desc: Compile the app's NATIVE runners (macOS, iOS simulator, Android, Linux, Windows) — the targets tests never touch
     summary: |
       Compiles every delivery target the reference app has, because nothing else does and
       `dart analyze` is not a build.
@@ -551,6 +560,13 @@ tasks:
       jlink works, which GraalVM's does not — the same machine-wide `flutter config --jdk-dir`
       constraint `run:demo:native` explains at length (ADR-021).
 
+      DESKTOP IS HOST-ONLY, AND THAT IS THE WHOLE REASON CI GREW A SECOND OS (ADR-045). Flutter
+      does not cross-compile desktop targets — `flutter build linux` refuses off Linux and
+      `flutter build windows` refuses off Windows, by name. So no single machine can verify all
+      five runners, and the Linux and Windows branches below are dead code on a developer's Mac
+      and the only proof those targets exist on CI. Skipped loudly here too: an unverified target
+      must never look like a passing one.
+
       It generates the typed localizations first, and that is not a convenience. They are BUILT,
       NOT COMMITTED (ADR-009) — `**/l10n/generated/` is gitignored and `sync:contracts` fails if
       any of it is ever tracked — so a clean checkout does not have them and nothing that imports
@@ -562,52 +578,16 @@ tasks:
       are sequential `cmds` and not `deps:`, since go-task runs `deps:` in parallel. `gen-l10n`
       needs each package's `.dart_tool` to exist, and the ARB files live in the FRAMEWORK packages
       (`client/`) as well as the app, so both workspaces have to be resolved first.
-    vars:
-      API: '{{.ZEN_API_URL | default "http://localhost:8085"}}'
-      SCHEME: '{{.ZEN_AUTH_REDIRECT_URI | default "zendemo://auth-callback"}}'
-      FLUTTER_JDK:
-        sh: |
-          flutter config --list 2>/dev/null | sed -nE 's/^ *jdk-dir: *(.*)$/\1/p' | head -1
     cmds:
-      # Both workspaces, with `flutter pub get` rather than `dart pub get`: each holds Flutter
-      # packages, and gen-l10n below needs their .dart_tool to exist.
-      - |
-        set -eu
-        (cd {{.CLIENT_DIR}} && flutter pub get)
-        (cd {{.APPS_DIR}} && flutter pub get)
-      - task: generate:l10n
-      - |
-        set -eu
-        cd {{.DEMO_CLIENT_DIR}}
-        defines="--dart-define=ZEN_ENV=dev --dart-define=ZEN_API_URL={{.API}} --dart-define=ZEN_AUTH_REDIRECT_URI={{.SCHEME}}"
-
-        if [ "$(uname -s)" = "Darwin" ]; then
-          echo ">> macOS"
-          flutter build macos --debug --dart-define=ZEN_PLATFORM=macos $defines
-          echo ">> iOS (simulator; a device build would need a signing identity, which the MVP does not have)"
-          flutter build ios --simulator --debug --dart-define=ZEN_PLATFORM=ios $defines
-        else
-          echo ">> SKIPPED macOS and iOS: they need Xcode, and this is $(uname -s)."
-          echo "   Said out loud rather than passed silently — on this host they are unverified."
-        fi
-
-        # Android last: it is the one that fails for a reason no error message names.
-        JDK='{{.FLUTTER_JDK}}'
-        BAD=""
-        case "$JDK" in *graal*|*Graal*|*GRAAL*) BAD="yes" ;; esac
-        if [ -z "$BAD" ] && [ -n "$JDK" ] && [ -x "$JDK/bin/java" ]; then
-          case "$("$JDK/bin/java" -version 2>&1 | head -1)" in *GraalVM*) BAD="yes" ;; esac
-        fi
-        if [ -n "$BAD" ]; then
-          echo "The Android build cannot use this JDK: GraalVM (its jlink cannot run AGP's jdkImage transform)."
-          echo "Flutter takes it from a MACHINE-WIDE setting that outranks JAVA_HOME, so no task can fix it here:"
-          echo "  flutter config --jdk-dir /path/to/a/standard/jdk-25"
-          exit 1
-        fi
-        echo ">> Android"
-        flutter build apk --debug --dart-define=ZEN_PLATFORM=android $defines
-        echo
-        echo "Every native runner compiles."
+      # Delegated to Taskfile.app.yml (ADR-046). Compiling an application's runners is not a
+      # zen_demo concern, and the host matrix above is the same for every application built on
+      # jZen; keeping a second copy here is how the two would drift. The vars are what makes this
+      # file's version of the task about zen_demo.
+      - task: zen:build:runners
+        vars:
+          APP_CLIENT_DIR: "{{.DEMO_CLIENT_DIR}}"
+          ZEN_API_URL: '{{.ZEN_API_URL | default "http://localhost:8085"}}'
+          ZEN_AUTH_REDIRECT_URI: '{{.ZEN_AUTH_REDIRECT_URI | default "zendemo://auth-callback"}}'
 
   build:apps:server:
     desc: Build the reference backend (resolves framework libs from the local repo)
@@ -796,9 +776,12 @@ tasks:
         SELECTION=$(scripts/pick-device.py)
         TARGET=$(printf '%s' "$SELECTION" | cut -f1)
         PLATFORM=$(printf '%s' "$SELECTION" | cut -f2)
+        # Desktop targets are here because they are delivery targets (ADR-045). Flutter only
+        # offers the one matching the host, so this list is wider than what any single machine
+        # can run - which is the point: the task does not need to know which host it is on.
         case "$PLATFORM" in
-          macos|ios|android) ;;
-          *) echo "ZEN_PLATFORM must be macos, ios or android (got '$PLATFORM')"; exit 1 ;;
+          macos|ios|android|linux|windows) ;;
+          *) echo "ZEN_PLATFORM must be macos, ios, android, linux or windows (got '$PLATFORM')"; exit 1 ;;
         esac
         API='{{.API}}'
         if [ -z "$API" ]; then
@@ -909,10 +892,16 @@ tasks:
       # therefore compiled with the host platform define, mirroring how the real app builds.
       - |
         set -e
+        # The host's own platform, because the widget tests compile with ZEN_PLATFORM set and
+        # the honest value is the machine they run on. Windows is recognised rather than folded
+        # into linux (ADR-045): git-bash reports MINGW*, and calling it Linux would compile the
+        # wrong branch of every zenIsDesktop/zenIsWindows constant on the one host that can
+        # actually check them.
         case "$(uname -s)" in
-          Darwin) host_platform=macos ;;
-          Linux)  host_platform=linux ;;
-          *)      host_platform=linux ;;
+          Darwin)                 host_platform=macos ;;
+          Linux)                  host_platform=linux ;;
+          MINGW*|MSYS*|CYGWIN*)   host_platform=windows ;;
+          *)                      host_platform=linux ;;
         esac
         found=0
         for pubspec in $(find . -mindepth 2 -name pubspec.yaml -not -path '*/.dart_tool/*' | sort); do
@@ -947,10 +936,16 @@ tasks:
       # (the live e2e) is driven separately by test:e2e against the real stack.
       - |
         set -e
+        # The host's own platform, because the widget tests compile with ZEN_PLATFORM set and
+        # the honest value is the machine they run on. Windows is recognised rather than folded
+        # into linux (ADR-045): git-bash reports MINGW*, and calling it Linux would compile the
+        # wrong branch of every zenIsDesktop/zenIsWindows constant on the one host that can
+        # actually check them.
         case "$(uname -s)" in
-          Darwin) host_platform=macos ;;
-          Linux)  host_platform=linux ;;
-          *)      host_platform=linux ;;
+          Darwin)                 host_platform=macos ;;
+          Linux)                  host_platform=linux ;;
+          MINGW*|MSYS*|CYGWIN*)   host_platform=windows ;;
+          *)                      host_platform=linux ;;
         esac
         found=0
         for pubspec in $(find . -mindepth 2 -name pubspec.yaml -not -path '*/.dart_tool/*' | sort); do
@@ -1980,6 +1975,16 @@ tasks:
              export APPLINKS_APPLE_APP_IDS="<TeamID>.<bundle-id>"          # paid Apple account
              GCP_PROJECT=... task deploy:cloudrun
 
+        1b. Languages (optional, and not a secret). ZEN_I18N_SUPPORTED is the APPLICATION's locale
+           set (ADR-044) - jZen ships {en, uk} and an app may support more. Unset, the server uses
+           what jZen ships, which is why zen_demo never sets it. It has to be passed here rather
+           than set by hand afterwards: the deploy uses --set-env-vars, which REPLACES the whole
+           environment, so a manually added variable is silently dropped by the next deploy - and
+           the symptom is only that a user's stored language quietly reverts to English.
+
+             export ZEN_I18N_SUPPORTED=en,uk,pl
+             GCP_PROJECT=... task deploy:cloudrun
+
            List EVERY signing certificate that will run, not just the release one: a debug keystore
            signs the build a developer actually installs, and a build signed by an unlisted key
            fails verification with no error anyone sees. Get a fingerprint with:
@@ -2504,7 +2509,7 @@ tasks:
           $CPU_BOOST_FLAG $EXEC_ENV_FLAG \
           --port=8080 \
           --allow-unauthenticated \
-          --set-env-vars="^@^ZEN_BUILD_ID={{.GIT_SHA}}{{.GIT_DIRTY}}@APPLINKS_ANDROID_PACKAGE=${APPLINKS_ANDROID_PACKAGE:-}@APPLINKS_ANDROID_FINGERPRINTS=${APPLINKS_ANDROID_FINGERPRINTS:-}@APPLINKS_APPLE_APP_IDS=${APPLINKS_APPLE_APP_IDS:-}" \
+          --set-env-vars="^@^ZEN_BUILD_ID={{.GIT_SHA}}{{.GIT_DIRTY}}@APPLINKS_ANDROID_PACKAGE=${APPLINKS_ANDROID_PACKAGE:-}@APPLINKS_ANDROID_FINGERPRINTS=${APPLINKS_ANDROID_FINGERPRINTS:-}@APPLINKS_APPLE_APP_IDS=${APPLINKS_APPLE_APP_IDS:-}@ZEN_I18N_SUPPORTED=${ZEN_I18N_SUPPORTED:-}" \
           --set-secrets="$SECRETS"
 
   destroy:cloudrun:

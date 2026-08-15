@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 /// The locale the example renders in. zen_ui_identity supplies its own wording for every
-/// locale in ZenLocales.supported, so an app chooses the language and never the strings.
+/// locale in ZenLocales.shipped, so an app chooses the language and never the strings.
 class LocaleNotifier extends Notifier<Locale> {
   @override
   Locale build() => const Locale(ZenLocales.fallback);

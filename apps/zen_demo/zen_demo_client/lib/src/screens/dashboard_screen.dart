@@ -159,7 +159,7 @@ class _LanguageMenu extends ConsumerWidget {
       // Accept-Language, because ZenClient reads this same notifier per request.
       onSelected: (value) => ref.read(localeProvider.notifier).setLocale(value),
       itemBuilder: (context) => [
-        for (final tag in ZenLocales.supported)
+        for (final tag in demoSupportedLocales)
           PopupMenuItem(value: Locale(tag), child: Text(_endonyms[tag]!)),
       ],
     );

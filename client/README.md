@@ -54,9 +54,12 @@ compile-time".
 ## 🌐 Localization is typed and generated
 
 Every package that renders text owns its own `lib/src/l10n/*.arb` and generates typed accessors
-with `flutter gen-l10n` — never a runtime string-key lookup (ADR-009). The supported set is
-`ZenLocales` in `zen_core` (`{en, uk}`, fallback `en`), mirroring the server. An application
-composes the delegates in `MaterialApp.localizationsDelegates` and supplies **no wording**.
+with `flutter gen-l10n` — never a runtime string-key lookup (ADR-009). `ZenLocales` in `zen_core`
+declares what jZen itself **ships** (`shipped = {en, uk}`, fallback `en`), mirroring the server;
+the **supported** set belongs to the application (ADR-044), which may include locales jZen has no
+strings for — each framework delegate degrades to the fallback for those rather than refusing
+them. An application composes the delegates in `MaterialApp.localizationsDelegates` and supplies
+**no wording**.
 
 Unlike the generated Protobuf messages, this output is **built, not committed** (gen-l10n ships
 inside the Flutter SDK, so there is no toolchain boundary to carry it across). `task

@@ -27,12 +27,18 @@ class DemoApp extends ConsumerWidget {
       // Per-package generation (ADR-009): the app registers its own delegate plus one per
       // localized framework package it renders, and Flutter's own Material/Cupertino/Widgets
       // sets come along in DemoLocalizations.localizationsDelegates.
+      //
+      // The framework packages contribute their *degrading* delegates (ADR-044), not the
+      // generated `.delegate`: those resolve an unshipped locale to English instead of declining
+      // it, which is what lets an app support a language jZen has no strings for. zen_demo
+      // supports exactly the shipped set, so nothing degrades here - it composes them because
+      // this is the reference an application copies.
       localizationsDelegates: const [
         ...DemoLocalizations.localizationsDelegates,
-        IdentityLocalizations.delegate,
-        NavigationLocalizations.delegate,
+        identityLocaleDelegate,
+        navigationLocaleDelegate,
       ],
-      supportedLocales: DemoLocalizations.supportedLocales,
+      supportedLocales: [for (final tag in demoSupportedLocales) Locale(tag)],
       theme: _theme(Brightness.light),
       darkTheme: _theme(Brightness.dark),
       // INSIDE MaterialApp, unlike AuthDeepLinks which wraps it. The two halves of a warm link sit

@@ -3,9 +3,13 @@ package zen.identity.user;
 import zen.core.i18n.ZenLocales;
 import zen.identity.auth.SupabaseSessionResponse.UserPayload;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 
 /**
  * Persistence for the local {@code users} profile row that mirrors a Supabase
@@ -21,6 +25,21 @@ import java.util.UUID;
 public class UserStore {
 
   /**
+   * The languages <em>this application</em> supports, as language tags (ADR-044).
+   *
+   * <p>Absent, it is what jZen itself ships. An application that renders more languages than the
+   * framework has strings for sets {@code zen.i18n.supported} and {@code users.language} then
+   * holds those tags: the framework must not clamp a user's language to its own inventory, or a
+   * Polish user's stored preference silently becomes English and every later email is wrong.
+   *
+   * <p>Runtime config rather than a constant because the server is the runtime-config tier - one
+   * binary serves every client (BLUEPRINT, "The compile-time config rule").
+   */
+  @Inject
+  @ConfigProperty(name = "zen.i18n.supported")
+  Optional<List<String>> supportedLocales;
+
+  /**
    * The reconciled row plus whether this call is what created it. {@code created} is what makes
    * "greet a user once" enforceable: a Supabase signup for an address that already has a local
    * profile must not fire {@code UserRegistered} a second time.
@@ -34,8 +53,9 @@ public class UserStore {
    * <p>{@code preferredLanguage} seeds {@code users.language} on creation only - the column is the
    * user's own setting afterwards, so a later request in another language never overwrites it. It
    * is the raw tag from the registering request ({@code Accept-Language}); {@link ZenLocales}
-   * narrows it to a supported locale, so a null or unknown tag yields the fallback rather than an
-   * unrenderable value. That column is the sole locale source for email, which has no request to
+   * narrows it to one of {@link #supportedLocales}, so a null or unknown tag yields the fallback
+   * rather than an unrenderable value - while a language the application supports and jZen does
+   * not is kept rather than clamped. That column is the sole locale source for email, which has no request to
    * read a header from.
    *
    * <p>The email address and the confirmation flag go the other way: they belong to Supabase, so
@@ -46,6 +66,18 @@ public class UserStore {
    * active again, so it must fall out of the deletion pipeline. Leaving the stamps set would
    * anonymise an account whose owner had demonstrably come back.
    */
+  /**
+   * The application's locale set, defaulting to jZen's own inventory when unconfigured.
+   *
+   * <p>An <em>empty</em> value counts as unconfigured, not as "no languages at all". Cloud Run
+   * deploys pass the variable through unconditionally ({@code ZEN_I18N_SUPPORTED=${...:-}}), so
+   * the common case in production is a variable that is present and blank; reading that as an
+   * empty set would resolve every user to English while looking perfectly configured.
+   */
+  private List<String> supported() {
+    return supportedLocales.filter(set -> !set.isEmpty()).orElse(ZenLocales.SHIPPED);
+  }
+
   @Transactional
   public Upsert upsertOnLogin(UserPayload payload, String preferredLanguage) {
     UUID id = UUID.fromString(payload.id());
@@ -55,7 +87,7 @@ public class UserStore {
       user = new User();
       user.id = id;
       user.role = UserRole.USER;
-      user.language = ZenLocales.resolve(preferredLanguage);
+      user.language = ZenLocales.resolve(preferredLanguage, supported());
       user.isPrivate = false;
       user.acceptedTerms = false;
       user.isPremium = false;

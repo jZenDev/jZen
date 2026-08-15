@@ -21,9 +21,11 @@ result types without pulling Flutter or a transport in).
   "the server said nothing" from "I could not understand what the server said", so failures are
   values, never a null payload.
 - **Value objects and ids** — small typed wrappers instead of bare strings.
-- **`ZenLocales`** — the single declaration of the locales jZen supports (`{en, uk}`, fallback
-  `en`), mirrored by the server's `zen.core.i18n.ZenLocales`. Every localized package tests its
-  own locale set against this, so an ARB set cannot drift from what the server can answer in.
+- **`ZenLocales`** — the single declaration of the locales jZen itself **ships** strings for
+  (`shipped = {en, uk}`, fallback `en`), mirrored by the server's `zen.core.i18n.ZenLocales`. Every
+  localized package tests its own locale set against this, so an ARB set cannot drift from the
+  strings the package claims to have. It is an inventory, **not** a limit on what an application
+  supports: that set is the app's, and `resolve(tag, against:)` takes it (ADR-044).
 - **Logging** — a small logger with a platform-appropriate strategy chosen by conditional import.
 
 ## 🚀 Using it

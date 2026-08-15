@@ -208,7 +208,8 @@ One wrinkle that is not ours to fix: an **Android emulator** reaches your machin
 upgrading a Flutter dependency, since no test suite compiles a runner:
 
 ```bash
-task build:apps:runners     # macOS + iOS simulator + Android, also part of `task build`
+task build:apps:runners     # every runner this host can build, also part of `task build`
+                            # (macOS + iOS on a Mac, Android on either, Linux/Windows on their own hosts)
 ```
 
 **Testing the email links.** A confirmation or recovery link returns to `zendemo://auth-callback`,

@@ -130,6 +130,13 @@ point* of the script, it is Python. In one sentence: **sh runs things; Python un
   change?"; it asks the mirror question, **"is any of it tracked?"**, and fails if so — a
   generated file that is not in git cannot be hand-edited into the build. Drift between an `.arb`
   and its call sites needs no gate: it is a compile error, which is the reason to be typed.
+- **A package declares the locales it ships; an application declares the ones it supports**
+  (ADR-044). `ZenLocales.shipped` is jZen's own inventory (`{en, uk}`) and is what each package's
+  `supportedLocales` is tested against. The supported set is the app's — `zen.i18n.supported` on
+  the server, a compile-time `const` list on the client — and may include locales jZen has no
+  strings for. Never widen a framework set to give one application a language: framework delegates
+  degrade to `fallback` for an unshipped locale, and an app that wants framework strings in that
+  language subclasses the exported `abstract XLocalizations` and composes its delegate first.
 - **`task sync:contracts` is the gate.** It regenerates every cross-language artifact and
   fails if a committed generated file changed. Wire it into CI as a required check. A red
   `sync:contracts` means the contract and its generated clients have drifted — the exact
@@ -479,10 +486,12 @@ provider is only made meaningful by the backend.
   dependency does not enter one platform, it enters all of them, and each build system can reject
   it on its own terms. No test compiles a runner — unit and widget tests run on the Dart VM and the
   flutter tester, which never invoke Xcode or Gradle — so a change can leave every suite green and
-  every shippable artifact broken. `task build:apps:runners` (macOS, iOS simulator, Android; part
-  of `task build`) and `task build:web` are what actually answer the question. Apple targets are
-  skipped off macOS, and the skip is announced rather than silent, because "not run here" and
-  "passed" must never look alike.
+  every shippable artifact broken. `task build:apps:runners` (macOS, iOS simulator, Android, Linux,
+  Windows; part of `task build`) and `task build:web` are what actually answer the question.
+  **Desktop targets are host-only** — Flutter refuses `build linux` off Linux and `build windows`
+  off Windows — so no one machine verifies all five, and Linux and Windows are gated in CI on
+  their own runners (ADR-045). Every target a host cannot build is skipped *audibly*, because
+  "not run here" and "passed" must never look alike.
 - The **server** uses runtime config (MicroProfile / `application.properties`): one binary
   serves both native and web clients, and it has no bundle to shrink.
 

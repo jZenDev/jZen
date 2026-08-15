@@ -64,6 +64,9 @@ public class DemoResource {
         @Content(mediaType = PROTOBUF, schema = @Schema(ref = "Ping"))
       })
   public Response ping(@HeaderParam(HttpHeaders.ACCEPT_LANGUAGE) String acceptLanguage) {
+    // The single-argument form resolves against what jZen ships, which is right *here* because
+    // zen_demo supports exactly that set (see demoSupportedLocales on the client, ADR-044). An
+    // application with a wider set passes it: fromAcceptLanguage(header, mySupportedLocales).
     String locale = ZenLocales.fromAcceptLanguage(acceptLanguage);
     Ping ping =
         Ping.newBuilder()

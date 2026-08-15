@@ -45,5 +45,10 @@
 library;
 
 export 'src/l10n/generated/navigation_localizations.dart';
+// The per-locale implementations, exported so an application can translate this package's
+// strings itself (ADR-044): subclass the fallback one and override only the getters it wants.
+export 'src/l10n/generated/navigation_localizations_en.dart';
+export 'src/l10n/generated/navigation_localizations_uk.dart';
+export 'src/l10n/navigation_locale_delegate.dart';
 export 'src/zen_navigation.dart';
 export 'src/zen_navigation_item.dart';

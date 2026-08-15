@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -55,9 +56,93 @@ class _IdleRepository implements IdentityRepository {
   Future<ZenResult<void>> logout() async => const ZenResult.ok(null);
 }
 
+/// An application's own Polish for this package's strings, supplied without jZen shipping `pl`
+/// (ADR-044). Subclassing the exported `abstract IdentityLocalizations` is the documented seam;
+/// it is also why a new framework string cannot be missed - the override stops compiling.
+class _PlIdentityLocalizations extends IdentityLocalizationsEn {
+  _PlIdentityLocalizations() : super('pl');
+
+  @override
+  String get loginTitle => 'Zaloguj się';
+
+  @override
+  String get loginButton => 'Zaloguj się';
+}
+
+class _PlIdentityDelegate extends LocalizationsDelegate<IdentityLocalizations> {
+  const _PlIdentityDelegate();
+
+  @override
+  bool isSupported(Locale locale) => locale.languageCode == 'pl';
+
+  // SynchronousFuture, like every generated delegate: an async load leaves Localizations without
+  // this type for a frame, and the framework's own delegate answers in its place.
+  @override
+  Future<IdentityLocalizations> load(Locale locale) =>
+      SynchronousFuture<IdentityLocalizations>(_PlIdentityLocalizations());
+
+  @override
+  bool shouldReload(_PlIdentityDelegate old) => false;
+}
+
 void main() {
   test('ships exactly the locales ZenLocales declares', () {
-    expect(IdentityLocalizations.supportedLocales.map((l) => l.languageCode), ZenLocales.supported);
+    expect(IdentityLocalizations.supportedLocales.map((l) => l.languageCode), ZenLocales.shipped);
+  });
+
+  // ADR-044: an application may support a locale this package ships no strings for. The
+  // generated delegate declines it, which leaves IdentityLocalizations.of(context) null and
+  // crashes the first screen to read a string; the degrading delegate resolves to the fallback.
+  test('the degrading delegate accepts an unshipped locale and loads the fallback', () async {
+    expect(identityLocaleDelegate.isSupported(const Locale('pl')), isTrue);
+    expect(IdentityLocalizations.delegate.isSupported(const Locale('pl')), isFalse);
+
+    final pl = await identityLocaleDelegate.load(const Locale('pl'));
+    final en = await identityMessages(ZenLocales.en);
+    expect(pl.loginTitle, en.loginTitle);
+
+    // Still exact where it can be: an unshipped tag degrades, a shipped one does not.
+    final uk = await identityLocaleDelegate.load(const Locale('uk', 'UA'));
+    expect(uk.loginTitle, 'Увійти');
+  });
+
+  testWidgets('a framework screen renders in English under an unshipped app locale', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [identityRepositoryProvider.overrideWithValue(const _IdleRepository())],
+        child: localizedApp(
+          home: const LoginScreen(),
+          locale: 'pl',
+          supported: const [ZenLocales.en, ZenLocales.uk, 'pl'],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Degraded, not crashed - which is the whole point.
+    expect(find.widgetWithText(FilledButton, 'Log In'), findsOneWidget);
+  });
+
+  testWidgets('an app-supplied delegate composed first wins over the framework wording', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [identityRepositoryProvider.overrideWithValue(const _IdleRepository())],
+        child: localizedApp(
+          home: const LoginScreen(),
+          locale: 'pl',
+          supported: const [ZenLocales.en, ZenLocales.uk, 'pl'],
+          extraDelegates: const [_PlIdentityDelegate()],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(FilledButton, 'Zaloguj się'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Log In'), findsNothing);
   });
 
   test('every locale carries its own wording', () async {

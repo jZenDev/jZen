@@ -7,7 +7,10 @@ import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import zen.core.i18n.ZenLocales;
 
@@ -45,6 +48,16 @@ public class EmailService {
   private final Mailer mailer;
   private final Engine engine;
 
+  /**
+   * The languages <em>this application</em> supports, as language tags (ADR-044); jZen's own
+   * inventory when unconfigured. The templates are the application's, so the set that decides
+   * which {@code <template>_<locale>.html} is asked for must be the application's too - resolving
+   * against the framework's would refuse to render a template the application actually ships.
+   */
+  @Inject
+  @ConfigProperty(name = "zen.i18n.supported")
+  Optional<List<String>> supportedLocales;
+
   @Inject
   public EmailService(Mailer mailer, Engine engine) {
     this.mailer = mailer;
@@ -63,7 +76,10 @@ public class EmailService {
    * @return {@code true} when the message was handed to the mailer, {@code false} when it was not
    */
   public boolean send(LocalizedEmail email) {
-    String locale = ZenLocales.resolve(email.language());
+    // An empty value counts as unconfigured: the deploy passes the variable through blank when
+    // the operator sets nothing, and an empty set would send every message in English.
+    List<String> supported = supportedLocales.filter(set -> !set.isEmpty()).orElse(ZenLocales.SHIPPED);
+    String locale = ZenLocales.resolve(email.language(), supported);
     String templateName = TEMPLATE_ROOT + email.template() + LOCALE_SEPARATOR + locale;
     try {
       Template template = engine.getTemplate(templateName);

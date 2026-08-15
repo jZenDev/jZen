@@ -15,6 +15,92 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-046 — The orchestration an application needs is extracted into `Taskfile.app.yml`, and jZen consumes it the same way
+
+**Date:** 2026-08-15. **Status:** accepted.
+
+### Decision
+
+`Taskfile.yml` was written when there was exactly one application, and it shows: `DEMO_SERVER_DIR`,
+`DEMO_CLIENT_DIR`, `SERVICE_NAME: zen-demo-server`, paths relative to this repository's root. An
+application built on jZen could not reuse any of it. It could copy the shapes, or it could
+`includes:` the file and get tasks that build **zen_demo** — reuse in appearance only.
+
+**The application-facing half moves into `jZen/Taskfile.app.yml`**, written against variables
+rather than against zen_demo, and included by the consuming repository:
+
+```yaml
+includes:
+  zen:
+    taskfile: ../jZen/Taskfile.app.yml
+    vars: {APP_NAME: prudent, CLIENT_DIR: client, SERVER_DIR: server}
+```
+
+Three go-task facts make it work, and they were **measured before the file was written**, not
+assumed: an included file's tasks run in the *including* repository's directory; `ROOT_DIR` is the
+consumer's root while `TASKFILE_DIR` is jZen's, which is how a task operates on the application's
+files while reaching back into the framework checkout (`{{.TASKFILE_DIR}}/server/mvnw`); and
+`vars:` on the include override the file's defaults.
+
+**One file, not a `taskfiles/` directory.** A folder whose only job is to hold a single member is a
+container for something that does not need containing — `ZEN_ARCHITECTURE.md` §5, "fewer files,
+fewer indirections". A second reusable taskfile is what earns a folder, and there is not one.
+
+**jZen consumes it exactly as an application does**, through `includes:` in its own `Taskfile.yml`
+with `APP_NAME: zen_demo`. This is the load-bearing half of the decision. A reusable file the
+framework does not itself use is a file that drifts, and the claim "an application can orchestrate
+itself with this" is only true while something does. `generate:l10n` and `build:apps:runners` are
+the first two tasks moved; both now exist once, and `Taskfile.yml` keeps their documented names by
+delegating.
+
+### Scope, and what deliberately did not move
+
+Moved: `info` (which jZen checkout, at which revision, and whether it is dirty),
+`framework:install` (the local-repository prerequisite an application's own Maven build cannot
+express), `deps`, `generate:l10n`, `test:client`, `build:runners`.
+
+Not moved: the contract loop, the server build, the local stack, the deploy, and every framework
+gate. They are still zen_demo-shaped and are migrations to make one at a time, each proven against
+zen_demo first. **Recording that as a known limit rather than a plan**: a task living in both files
+can drift, which is an argument for finishing the move, never for keeping two copies.
+
+Anything that names zen_demo stays out, as does anything an application would have to fight rather
+than configure — a task needing `if APP_NAME == …` has been put in the wrong file.
+
+### What this supersedes, and why
+
+- **ADR-014 and ADR-032's framing of `Taskfile.yml` as "the single orchestrator"** → **refined:**
+  one orchestrator, now in two files, one of which is the reusable half. *Why:* the rule was about
+  never running a second build driver beside `task`, and that is untouched — `includes:` is
+  go-task composing itself, not a second tool. What changes is that "single" described a *file*
+  when it meant a *tool*.
+- **STANDARDS "Orchestration", by extension.** The prohibition on a second build driver stands;
+  the implication that all orchestration lives in one file does not.
+
+### Consequence
+
+An application can orchestrate itself against jZen without copying anything, and the parts it
+reuses are the parts jZen itself runs. `task zen:info` answers the question a path-consumed
+framework otherwise leaves unanswerable — *which* jZen is this — by reporting the checkout's
+revision and warning when it is dirty, because with no version boundary between the repositories
+a commit is the only honest answer.
+
+Two defects were found by running the extracted file rather than by reading it, and both are worth
+recording because they are the failure modes this repository legislates against:
+`[ -d dir ] && build || true` turns a **failed build into a pass** (the `|| true` cannot tell a
+missing directory from a compiler error), and under `set -e` a false `[ -d "$root" ] &&` as a
+loop's last statement makes the loop's status 1 and kills the script — a task that fails without
+running anything. Both are now `if` statements, with the reason written beside them.
+
+Verified: `task build:apps:runners` through the delegation is byte-for-byte the same outcome as
+before it (macOS, iOS simulator and Android built; Linux and Windows skipped audibly), a scratch
+consumer outside this repository resolves `zen:info`, `zen:generate:l10n` and `zen:test:client`
+against its own root, and `task generate:l10n` still finds all four localized packages.
+
+Lockstep versioning is unchanged at `0.1.0`. No module, no dependency, no Flyway band.
+
+---
+
 ## ADR-045 — Linux and Windows are delivery targets; their gate is a real build on a real host, in CI
 
 **Date:** 2026-08-15. **Status:** accepted.

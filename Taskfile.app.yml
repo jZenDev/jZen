@@ -1,0 +1,308 @@
+# jZen :: the orchestration an APPLICATION includes.
+#
+# `Taskfile.yml` next to this file orchestrates *this repository* — the framework libraries and
+# the reference app. This file is the part that is not about jZen at all: the tasks any
+# application built on jZen needs, written against variables instead of against zen_demo.
+#
+# WHY IT IS A SEPARATE FILE AND NOT A FOLDER. It is one file, so it is one file: a directory whose
+# only job is to hold a single member is a container for something that does not need containing
+# (docs/ZEN_ARCHITECTURE.md, "fewer files, fewer indirections"). If a second reusable taskfile ever
+# earns its place, that is when a folder does too.
+#
+# HOW AN APPLICATION USES IT. In the application's own Taskfile.yml:
+#
+#   version: '3'
+#   includes:
+#     zen:
+#       taskfile: ../jZen/Taskfile.app.yml
+#       vars:
+#         APP_NAME: prudent
+#         CLIENT_DIR: client
+#         SERVER_DIR: server
+#   tasks:
+#     test: {cmds: [{task: 'zen:test:client'}]}
+#
+# Then `task zen:deps`, `task zen:test:client`, and so on. Three go-task facts make this work, and
+# they were measured rather than assumed:
+#
+#   - tasks run in the INCLUDING repository's directory, so relative paths mean the application's
+#     tree, not jZen's;
+#   - {{.ROOT_DIR}} is the application's root and {{.TASKFILE_DIR}} is jZen's, which is how a task
+#     here reaches back into the framework checkout (`{{.TASKFILE_DIR}}/server/mvnw`) while
+#     operating on the application's files;
+#   - `vars:` on the include override the defaults below.
+#
+# WHAT DOES NOT BELONG HERE. Anything that names zen_demo, anything that only makes sense inside
+# this repository (publishing the framework libraries, the framework's own module gates), and
+# anything an application would have to fight rather than configure. A task that needs an `if
+# APP_NAME == …` has been put in the wrong file.
+#
+# THE HONEST LIMIT, TODAY. Two tasks have moved — `generate:l10n` and `build:runners` — and
+# Taskfile.yml delegates to both, so the framework runs the same code an application does rather
+# than a copy that resembles it. The rest of the orchestration (the contract loop, the server
+# build, the local stack, the deploy) has not moved yet and is still zen_demo-shaped. Those are
+# migrations to make one at a time, each proven against zen_demo before an application depends on
+# it; a task sitting in both files is drift waiting to happen, which is the argument for finishing
+# the move rather than for keeping two copies.
+version: "3"
+
+vars:
+  # The application's name. Used only in messages; nothing branches on it.
+  APP_NAME: '{{.APP_NAME | default "app"}}'
+
+  # Where the application keeps each tier, relative to ITS OWN root. The defaults are the shape a
+  # single-application repository takes (a language-neutral root over per-tier directories); an
+  # application that nests its tiers differently overrides them on the include.
+  CLIENT_DIR: '{{.CLIENT_DIR | default "client"}}'
+  SERVER_DIR: '{{.SERVER_DIR | default "server"}}'
+  PROTO_DIR: '{{.PROTO_DIR | default "proto"}}'
+
+  # Directories scanned by the tasks that walk a tree (l10n, client tests). Space-separated, so an
+  # application with two pub workspaces passes both. Defaults to the client tier alone.
+  DART_ROOTS: '{{.DART_ROOTS | default .CLIENT_DIR}}'
+
+  # The jZen checkout these tasks came from. Not a guess: TASKFILE_DIR is where this file lives.
+  JZEN_DIR: "{{.TASKFILE_DIR}}"
+
+  # Compile-time client config (ADR-007, BLUEPRINT "The compile-time config rule"). Placeholders:
+  # a real environment baked into a repository outlives the environment it names.
+  ZEN_ENV: '{{.ZEN_ENV | default "dev"}}'
+  API: '{{.ZEN_API_URL | default "http://localhost:8085"}}'
+
+tasks:
+  info:
+    desc: Which jZen this application is building against, and where its tiers are
+    silent: true
+    summary: |
+      Prints the resolved wiring. Worth running first in a new checkout, because every failure
+      mode of a path-consumed framework looks like a broken build rather than a missing sibling.
+
+      It reports the framework checkout's git revision, and whether that checkout is dirty.
+      Consuming jZen by path means there is no version boundary between the two repositories: the
+      only answer to "which jZen is this?" is a commit, and the only warning that the answer is
+      unstable is a dirty tree. Say both out loud rather than let a developer assume a release.
+    cmds:
+      - |
+        set -eu
+        echo "app:        {{.APP_NAME}}"
+        echo "app root:   {{.ROOT_DIR}}"
+        echo "tiers:      client={{.CLIENT_DIR}} server={{.SERVER_DIR}} proto={{.PROTO_DIR}}"
+        echo "jZen:       {{.JZEN_DIR}}"
+        if [ ! -d "{{.JZEN_DIR}}" ]; then
+          echo "            MISSING - the framework checkout is not there."
+          exit 1
+        fi
+        if [ -d "{{.JZEN_DIR}}/.git" ]; then
+          rev=$(git -C "{{.JZEN_DIR}}" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+          if [ -n "$(git -C '{{.JZEN_DIR}}' status --porcelain 2>/dev/null)" ]; then
+            echo "jZen rev:   $rev (DIRTY - uncommitted changes; this build is not reproducible)"
+          else
+            echo "jZen rev:   $rev"
+          fi
+        fi
+
+  framework:install:
+    desc: Build and install the jZen Java libraries into the local Maven repository
+    silent: true
+    summary: |
+      The prerequisite an application's own build cannot express. jZen's packages are unpublished,
+      so an application server declares zen-parent with an EMPTY <relativePath/> and resolves the
+      framework artifacts from the local repository — which means something has to put them there
+      first, and Maven will not reach across repositories to do it.
+
+      Deliberately not a `deps:` of the build tasks below. It compiles another repository, takes
+      real time, and an application developer who has not touched jZen should not pay for it on
+      every build. Run it after pulling jZen; the failure when it is stale is a missing or
+      out-of-date artifact, which Maven names clearly.
+    cmds:
+      - |
+        set -eu
+        echo ">> installing jZen framework libraries from {{.JZEN_DIR}}"
+        cd "{{.JZEN_DIR}}/server" && ./mvnw -B -q install -DskipTests
+        echo "jZen libraries installed."
+
+  deps:
+    desc: Resolve Dart/Flutter dependencies for the application's packages
+    silent: true
+    summary: |
+      `flutter pub get` rather than `dart pub get` in every directory named by DART_ROOTS: a
+      workspace holding Flutter packages needs the Flutter tool, and gen-l10n needs each package's
+      .dart_tool to exist before it can run.
+    cmds:
+      - |
+        set -eu
+        for root in {{.DART_ROOTS}}; do
+          [ -f "{{.ROOT_DIR}}/$root/pubspec.yaml" ] || continue
+          echo ">> flutter pub get ($root)"
+          (cd "{{.ROOT_DIR}}/$root" && flutter pub get)
+        done
+
+  generate:l10n:
+    desc: Generate the typed client localizations from the ARB files
+    silent: true
+    summary: |
+      Runs `flutter gen-l10n` in every package that declares an l10n.yaml: the ARB files are the
+      source, the classes under the package's generated/ directory are the output.
+
+      Unlike the proto artifacts this output is BUILT, NOT TRACKED (STANDARDS "Code generation",
+      ADR-009): gen-l10n ships inside the Flutter SDK that every consumer already has, so there is
+      no toolchain boundary to carry the result across. An application's own contract gate should
+      assert that none of it is tracked.
+
+      Discovery is by l10n.yaml, never by a list, so a new localized package is picked up by
+      existing here rather than by being registered somewhere.
+    cmds:
+      - |
+        set -e
+        found=0
+        for config in $(cd "{{.ROOT_DIR}}" && for r in {{.DART_ROOTS}}; do if [ -d "$r" ]; then find "$r" -name l10n.yaml -not -path '*/.dart_tool/*' -not -path '*/build/*'; fi; done | sort); do
+          pkgdir=$(dirname "{{.ROOT_DIR}}/$config")
+          found=$((found + 1))
+          echo ">> flutter gen-l10n ($config)"
+          (cd "$pkgdir" && flutter gen-l10n)
+        done
+        if [ "$found" -eq 0 ]; then
+          echo "No localized packages found (no l10n.yaml)."
+        fi
+
+  test:client:
+    desc: Run every Dart/Flutter suite in the application's packages
+    silent: true
+    summary: |
+      Neither `dart test` nor `flutter test` aggregates a pub workspace, so the members are walked
+      here: a package depending on Flutter runs under `flutter test`, a pure-Dart one under
+      `dart test`. A failing suite fails the task — nothing swallows an exit code.
+
+      The Flutter suites compile with ZEN_ENV and ZEN_PLATFORM defines because client config is
+      compile-time (ADR-007) and framework widgets assert ZEN_PLATFORM is set. ZEN_PLATFORM is the
+      HOST's platform, including Windows, which git-bash reports as MINGW* — calling that host
+      Linux would compile the wrong branch of every zenIsDesktop constant on the one machine able
+      to check them (ADR-045).
+    cmds:
+      - task: generate:l10n
+      - |
+        set -e
+        case "$(uname -s)" in
+          Darwin)                 host_platform=macos ;;
+          Linux)                  host_platform=linux ;;
+          MINGW*|MSYS*|CYGWIN*)   host_platform=windows ;;
+          *)                      host_platform=linux ;;
+        esac
+        cd "{{.ROOT_DIR}}"
+        # `if`, not `[ -d "$root" ] && …`: under `set -e` a false test as the loop's last
+        # statement makes the loop's status 1 and kills the script - a task that fails without
+        # running anything, which is the opposite of a gate.
+        roots=""
+        for root in {{.DART_ROOTS}}; do
+          if [ -d "$root" ]; then roots="$roots $root"; fi
+        done
+        if [ -z "$roots" ]; then
+          echo "None of DART_ROOTS ({{.DART_ROOTS}}) exist under {{.ROOT_DIR}}."
+          exit 0
+        fi
+        found=0
+        for pubspec in $(find $roots -name pubspec.yaml -not -path '*/.dart_tool/*' -not -path '*/build/*' | sort); do
+          pkgdir=$(dirname "$pubspec")
+          [ -d "$pkgdir/test" ] || continue
+          found=1
+          if grep -qE '^[[:space:]]*(flutter|flutter_test):' "$pubspec"; then
+            echo ">> flutter test ($pkgdir)"
+            (cd "$pkgdir" && flutter test --dart-define=ZEN_ENV={{.ZEN_ENV}} --dart-define=ZEN_PLATFORM="$host_platform")
+          else
+            echo ">> dart test ($pkgdir)"
+            (cd "$pkgdir" && dart test)
+          fi
+        done
+        if [ "$found" -eq 0 ]; then
+          echo "No test directories found under {{.DART_ROOTS}}."
+        fi
+
+  build:runners:
+    desc: Compile every delivery runner this host can build — the targets tests never touch
+    silent: true
+    summary: |
+      A Flutter dependency does not enter one platform, it enters all of them, and each has its
+      own build system that can reject it on its own terms. No test compiles a runner: unit and
+      widget tests run on the Dart VM and the flutter tester, which never invoke Xcode, Gradle,
+      CMake or MSBuild. So a change can leave every suite green and every shippable artifact
+      broken. This is what answers that question.
+
+      DESKTOP AND APPLE TARGETS ARE HOST-ONLY. Flutter refuses `build linux` off Linux, `build
+      windows` off Windows, and the Apple targets need Xcode. No single machine verifies all five,
+      which is why the skips below are announced rather than silent, and why an application's CI
+      needs more than one operating system to make its platform list true (ADR-045).
+
+      Set APP_CLIENT_DIR to the Flutter application package (it defaults to the client tier).
+      Artifacts are throwaway: this is a compile check, which is why the API URL is a placeholder.
+    vars:
+      APP_CLIENT_DIR: '{{.APP_CLIENT_DIR | default .CLIENT_DIR}}'
+      SCHEME: '{{.ZEN_AUTH_REDIRECT_URI | default ""}}'
+      # Read, not set: Flutter takes the Android JDK from a machine-wide setting that outranks
+      # JAVA_HOME, so no task can fix it from inside a repository - only name it before a build
+      # wastes minutes failing on it (ADR-021).
+      FLUTTER_JDK:
+        # A block scalar, not an inline one: the sed script contains ": ", which YAML would
+        # otherwise read as a mapping and refuse to parse.
+        sh: |
+          flutter config --list 2>/dev/null | sed -nE 's/^ *jdk-dir: *(.*)$/\1/p' | head -1
+    cmds:
+      - task: generate:l10n
+      - |
+        set -eu
+        cd "{{.ROOT_DIR}}/{{.APP_CLIENT_DIR}}"
+        defines="--dart-define=ZEN_ENV={{.ZEN_ENV}} --dart-define=ZEN_API_URL={{.API}}"
+        if [ -n '{{.SCHEME}}' ]; then
+          defines="$defines --dart-define=ZEN_AUTH_REDIRECT_URI={{.SCHEME}}"
+        fi
+
+        case "$(uname -s)" in
+          Darwin)                 HOST=macos ;;
+          Linux)                  HOST=linux ;;
+          MINGW*|MSYS*|CYGWIN*)   HOST=windows ;;
+          *)                      HOST=unknown ;;
+        esac
+
+        # `if`, never `[ -d x ] && build || true`: that idiom turns a FAILED build into a pass,
+        # because the `|| true` cannot tell a missing directory from a compiler error. Nothing
+        # here swallows a failure (STANDARDS, "Failures surface").
+        build_target() {
+          target="$1"; platform="$2"; needs="$3"; dir="$4"; shift 4
+          if [ ! -d "$dir" ]; then
+            return 0
+          fi
+          if [ "$HOST" != "$needs" ]; then
+            echo ">> SKIPPED $target: it only builds on a $needs host, and this is $(uname -s)."
+            return 0
+          fi
+          echo ">> $target"
+          flutter build "$@" --debug --dart-define=ZEN_PLATFORM="$platform" $defines
+        }
+
+        build_target "macOS"           macos   macos   macos   macos
+        build_target "iOS simulator"   ios     macos   ios     ios --simulator
+        build_target "Linux desktop"   linux   linux   linux   linux
+        build_target "Windows desktop" windows windows windows windows
+
+        # Android last: it is the one that fails for a reason no error message names. Skipped on a
+        # Windows host, where pulling a full Android SDK would double a job for a target any Linux
+        # or macOS host already covers.
+        if [ -d android ] && [ "$HOST" != "windows" ]; then
+          JDK='{{.FLUTTER_JDK}}'
+          BAD=""
+          case "$JDK" in *graal*|*Graal*|*GRAAL*) BAD="yes" ;; esac
+          if [ -z "$BAD" ] && [ -n "$JDK" ] && [ -x "$JDK/bin/java" ]; then
+            case "$("$JDK/bin/java" -version 2>&1 | head -1)" in *GraalVM*) BAD="yes" ;; esac
+          fi
+          if [ -n "$BAD" ]; then
+            echo "The Android build cannot use this JDK: GraalVM (its jlink cannot run AGP's jdkImage transform)."
+            echo "Flutter takes it from a MACHINE-WIDE setting that outranks JAVA_HOME, so no task can fix it here:"
+            echo "  flutter config --jdk-dir /path/to/a/standard/jdk-25"
+            exit 1
+          fi
+          echo ">> Android"
+          flutter build apk --debug --dart-define=ZEN_PLATFORM=android $defines
+        elif [ -d android ]; then
+          echo ">> SKIPPED Android here: covered by any Linux or macOS host, which already has the SDK."
+        fi
+        echo
+        echo "Every runner this host can build compiles."

@@ -10,6 +10,23 @@
 # Install: brew install go-task/tap/go-task   (see `task doctor`)
 version: "3"
 
+# The application-facing half of the orchestration lives in Taskfile.app.yml, and this repository
+# consumes it the same way an application does — through `includes:`, with its own vars. That is
+# deliberate: a reusable file the framework does not itself use is a file that drifts, and the
+# claim "an application can orchestrate itself with this" is only true if something does. Here the
+# application is zen_demo. Tasks appear as `zen:*`; the ones this file still defines delegate to
+# them so their documented names keep working.
+includes:
+  zen:
+    taskfile: ./Taskfile.app.yml
+    vars:
+      APP_NAME: zen_demo
+      CLIENT_DIR: client
+      SERVER_DIR: server
+      PROTO_DIR: proto
+      # Both pub workspaces: the framework libraries and the applications that assemble them.
+      DART_ROOTS: "client apps"
+
 vars:
   # server/ + client/ are the Java + Dart FRAMEWORK libraries; apps/ holds the full-stack
   # application examples that assemble them (apps/<app>/{<app>_client, <app>_server}).
@@ -365,18 +382,10 @@ tasks:
       toolchain boundary to carry the result across. It is gitignored, produced here, and
       sync:contracts asserts that none of it is tracked.
     cmds:
-      - |
-        set -e
-        found=0
-        for config in $(find {{.CLIENT_DIR}} {{.APPS_DIR}} -name l10n.yaml -not -path '*/.dart_tool/*' -not -path '*/build/*' | sort); do
-          pkgdir=$(dirname "$config")
-          found=$((found + 1))
-          echo ">> flutter gen-l10n ($pkgdir)"
-          (cd "$pkgdir" && flutter gen-l10n)
-        done
-        if [ "$found" -eq 0 ]; then
-          echo "No localized packages found (no l10n.yaml)."
-        fi
+      # Delegated to Taskfile.app.yml (ADR-046): the discovery-by-l10n.yaml loop is not about
+      # zen_demo, so it lives where an application can have it too. The name stays here because
+      # docs, CI and eight other tasks call it.
+      - task: zen:generate:l10n
 
   generate:api:
     desc: Build the backend, emit openapi.json, and generate admin types
@@ -569,86 +578,16 @@ tasks:
       are sequential `cmds` and not `deps:`, since go-task runs `deps:` in parallel. `gen-l10n`
       needs each package's `.dart_tool` to exist, and the ARB files live in the FRAMEWORK packages
       (`client/`) as well as the app, so both workspaces have to be resolved first.
-    vars:
-      API: '{{.ZEN_API_URL | default "http://localhost:8085"}}'
-      SCHEME: '{{.ZEN_AUTH_REDIRECT_URI | default "zendemo://auth-callback"}}'
-      FLUTTER_JDK:
-        sh: |
-          flutter config --list 2>/dev/null | sed -nE 's/^ *jdk-dir: *(.*)$/\1/p' | head -1
     cmds:
-      # Both workspaces, with `flutter pub get` rather than `dart pub get`: each holds Flutter
-      # packages, and gen-l10n below needs their .dart_tool to exist.
-      - |
-        set -eu
-        (cd {{.CLIENT_DIR}} && flutter pub get)
-        (cd {{.APPS_DIR}} && flutter pub get)
-      - task: generate:l10n
-      - |
-        set -eu
-        cd {{.DEMO_CLIENT_DIR}}
-        defines="--dart-define=ZEN_ENV=dev --dart-define=ZEN_API_URL={{.API}} --dart-define=ZEN_AUTH_REDIRECT_URI={{.SCHEME}}"
-
-        # One host, one family of runners: Flutter builds a desktop target only on that target.
-        case "$(uname -s)" in
-          Darwin)                 HOST=macos ;;
-          Linux)                  HOST=linux ;;
-          MINGW*|MSYS*|CYGWIN*)   HOST=windows ;;
-          *)                      HOST=unknown ;;
-        esac
-
-        if [ "$HOST" = "macos" ]; then
-          echo ">> macOS"
-          flutter build macos --debug --dart-define=ZEN_PLATFORM=macos $defines
-          echo ">> iOS (simulator; a device build would need a signing identity, which the MVP does not have)"
-          flutter build ios --simulator --debug --dart-define=ZEN_PLATFORM=ios $defines
-        else
-          echo ">> SKIPPED macOS and iOS: they need Xcode, and this is $(uname -s)."
-          echo "   Said out loud rather than passed silently — on this host they are unverified."
-        fi
-
-        if [ "$HOST" = "linux" ]; then
-          # Needs GTK3 and ninja on the host; CI installs them. `flutter build linux` refuses
-          # anywhere else, so this branch is the Linux target's only proof (ADR-045).
-          echo ">> Linux desktop"
-          flutter build linux --debug --dart-define=ZEN_PLATFORM=linux $defines
-        else
-          echo ">> SKIPPED Linux desktop: \"build linux\" only runs on Linux hosts, and this is $(uname -s)."
-        fi
-
-        if [ "$HOST" = "windows" ]; then
-          # Needs Visual Studio's C++ toolchain; the windows-latest runner has it.
-          echo ">> Windows desktop"
-          flutter build windows --debug --dart-define=ZEN_PLATFORM=windows $defines
-        else
-          echo ">> SKIPPED Windows desktop: \"build windows\" only runs on Windows hosts, and this is $(uname -s)."
-        fi
-
-        # Android is skipped on Windows CI: that job exists for the Windows runner, and pulling a
-        # full Android SDK onto it would double the job for a target ubuntu already covers.
-        if [ "$HOST" = "windows" ]; then
-          echo ">> SKIPPED Android here: covered by the Linux job, which already has the SDK."
-          echo
-          echo "Every native runner this host can build compiles."
-          exit 0
-        fi
-
-        # Android last: it is the one that fails for a reason no error message names.
-        JDK='{{.FLUTTER_JDK}}'
-        BAD=""
-        case "$JDK" in *graal*|*Graal*|*GRAAL*) BAD="yes" ;; esac
-        if [ -z "$BAD" ] && [ -n "$JDK" ] && [ -x "$JDK/bin/java" ]; then
-          case "$("$JDK/bin/java" -version 2>&1 | head -1)" in *GraalVM*) BAD="yes" ;; esac
-        fi
-        if [ -n "$BAD" ]; then
-          echo "The Android build cannot use this JDK: GraalVM (its jlink cannot run AGP's jdkImage transform)."
-          echo "Flutter takes it from a MACHINE-WIDE setting that outranks JAVA_HOME, so no task can fix it here:"
-          echo "  flutter config --jdk-dir /path/to/a/standard/jdk-25"
-          exit 1
-        fi
-        echo ">> Android"
-        flutter build apk --debug --dart-define=ZEN_PLATFORM=android $defines
-        echo
-        echo "Every native runner this host can build compiles."
+      # Delegated to Taskfile.app.yml (ADR-046). Compiling an application's runners is not a
+      # zen_demo concern, and the host matrix above is the same for every application built on
+      # jZen; keeping a second copy here is how the two would drift. The vars are what makes this
+      # file's version of the task about zen_demo.
+      - task: zen:build:runners
+        vars:
+          APP_CLIENT_DIR: "{{.DEMO_CLIENT_DIR}}"
+          ZEN_API_URL: '{{.ZEN_API_URL | default "http://localhost:8085"}}'
+          ZEN_AUTH_REDIRECT_URI: '{{.ZEN_AUTH_REDIRECT_URI | default "zendemo://auth-callback"}}'
 
   build:apps:server:
     desc: Build the reference backend (resolves framework libs from the local repo)

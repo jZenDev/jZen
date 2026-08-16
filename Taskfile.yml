@@ -1811,6 +1811,11 @@ tasks:
           ALLOW_DIRTY=1 overrides deliberately and tags `<sha>-dirty` so the image never
           impersonates the commit. That escape hatch is for a throwaway experiment only:
           two dirty builds still collide with each other, by design and not by accident.
+        - It refuses a commit that is on no branch on origin. The tag is only an identity
+          while the commit is somewhere a rollback can still find it, and a commit that
+          exists on one laptop is not. Learned the hard way: ADR-048's fix served
+          production for two days from an unreferenced commit that main never received.
+          ALLOW_UNPUSHED=1 overrides deliberately.
         - It MIGRATES BEFORE IT DEPLOYS, and stops if that fails. The order is build → push →
           run the migration job with the image just pushed → gcloud run deploy. Since ADR-038
           the application does not migrate at boot, so this step is the only thing that ever
@@ -2339,6 +2344,38 @@ tasks:
         fi
         echo "ALLOW_DIRTY set: deploying uncommitted changes as {{.GIT_SHA}}{{.GIT_DIRTY}}."
         git status --short
+      # And: a commit that exists only on this machine. Cheap, and cmd #3 for the same reason
+      # the dirty-tree check is cmd #2 — a second to answer, before a native compile.
+      - |
+        set -eu
+        if [ -n "${ALLOW_UNPUSHED:-}" ]; then
+          echo "ALLOW_UNPUSHED set: deploying {{.GIT_SHA}}, which exists nowhere but this machine."
+          exit 0
+        fi
+        if ! git fetch --quiet origin 2>/dev/null; then
+          echo "Refusing to deploy: cannot reach origin to check whether {{.GIT_SHA}} was pushed."
+          echo "A deploy needs the network anyway (Artifact Registry, Cloud Run), so this is not"
+          echo "a check worth skipping on the grounds of being offline. Override deliberately:"
+          echo "    ALLOW_UNPUSHED=1 GCP_PROJECT={{.GCP_PROJECT}} task deploy:cloudrun"
+          exit 1
+        fi
+        if [ -n "$(git branch -r --contains HEAD 2>/dev/null)" ]; then
+          echo "{{.GIT_SHA}} is on origin; the deployed commit exists off this machine."
+          exit 0
+        fi
+        echo "Refusing to deploy {{.GIT_SHA}}: it is not reachable from any branch on origin."
+        echo
+        echo "THIS HAS ALREADY COST THIS PROJECT ONCE (ADR-048). A fix to the Data API exposure"
+        echo "gate was built, deployed, and served production for two days from a commit that was"
+        echo "reachable from no ref at all — not a branch, not a tag, not origin. main never got"
+        echo "it, so the next deploy from main failed in exactly the way that commit had already"
+        echo "fixed, and the fix was recovered from the object store rather than from a branch."
+        echo "One 'git gc' would have ended it. The image tag is a commit SHA, which is only an"
+        echo "identity while the commit is somewhere a rollback can still find it."
+        echo
+        echo "Push the branch, then deploy. Or override deliberately:"
+        echo "    ALLOW_UNPUSHED=1 GCP_PROJECT={{.GCP_PROJECT}} task deploy:cloudrun"
+        exit 1
       # Stage both frontends so the native image serves them same-origin with the API:
       # the Flutter web app at / and the react-admin panel at /admin/.
       - task: build:web

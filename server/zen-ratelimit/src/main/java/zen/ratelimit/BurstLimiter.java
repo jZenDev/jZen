@@ -28,6 +28,20 @@ import org.jboss.logging.Logger;
  * timestamps, which is unbounded memory driven by attacker traffic. A fixed window is two longs
  * per caller, and its known weakness — up to twice the limit across a window boundary — is
  * absorbed by the durable tier on exactly the buckets where it would matter.
+ *
+ * <p><strong>The windows are aligned to the epoch, not to each caller's first request.</strong>
+ * {@code windowStart = now - floorMod(now, windowMs)}, so a one-minute window turns over at every
+ * wall-clock minute for everyone at once, rather than one minute after each caller arrived. Two
+ * consequences follow, and neither is a defect. Callers refused near a boundary are all forgiven
+ * at the same instant, so their retries arrive together — the tier below is what sees that, and
+ * it is why the durable tier exists on the buckets that matter. And a caller's first window is a
+ * partial one: arriving at :59.9 buys a full budget for 100ms and another at :00.
+ *
+ * <p>The same alignment is why a test that spends a budget and asserts the next call is refused
+ * must pin the {@link Clock} rather than trust wall time — if a boundary lands mid-sequence the
+ * count resets and the call that should have been refused is permitted. That cost one flaky CI
+ * failure per ten runs before {@code RateLimitEnforcementTest} froze its clock; the alternative
+ * of sleeping past the boundary buys the same green far more slowly.
  */
 @ApplicationScoped
 public class BurstLimiter {

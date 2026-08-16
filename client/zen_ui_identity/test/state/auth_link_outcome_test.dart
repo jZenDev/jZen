@@ -33,8 +33,7 @@ class _FakeRepo implements IdentityRepository {
       const ZenResult.err(ZenUnknownError('not stubbed'));
 
   @override
-  Future<ZenResult<void>> setPassword({required String password}) async =>
-      const ZenResult.ok(null);
+  Future<ZenResult<void>> setPassword({required String password}) async => const ZenResult.ok(null);
 
   @override
   Future<ZenResult<IdentityContract>> loginWithEmail({
@@ -123,15 +122,15 @@ void main() {
     // returns before the repository is touched and would otherwise vanish entirely.
     await c
         .read(identitySessionStoreProvider.notifier)
-        .consumeAuthLink(Uri.parse('zendemo://auth-callback#error=access_denied&error_code=otp_expired'));
+        .consumeAuthLink(
+          Uri.parse('zendemo://auth-callback#error=access_denied&error_code=otp_expired'),
+        );
 
     expect(c.read(authLinkOutcomeProvider)?.kind, ZenAuthLinkKind.failed);
   });
 
   test('a successful warm link reports nothing, because signing in is its own message', () async {
-    final c = containerWith(
-      _FakeRepo(exchangeResult: ZenResult.ok(makeContract('welcomed'))),
-    );
+    final c = containerWith(_FakeRepo(exchangeResult: ZenResult.ok(makeContract('welcomed'))));
     await c.read(identitySessionStoreProvider.future);
 
     await c

@@ -23,23 +23,21 @@ import 'package:zen_transport/zen_transport.dart';
 /// different class of this same name instead of this one.
 class SecureTokenStore implements TokenStore {
   SecureTokenStore({FlutterSecureStorage? storage, String key = _defaultKey})
-      : _storage = storage ?? const FlutterSecureStorage(
-              // The token is only ever needed while the app is in use, so it does not need to be
-              // readable before the first unlock after a reboot. `first_unlock_this_device` is
-              // the tighter accessibility class that still works: it keeps the item off backups
-              // and off any other device, so a restored backup cannot carry the session with it.
-              iOptions: IOSOptions(
-                accessibility: KeychainAccessibility.first_unlock_this_device,
-              ),
-              mOptions: MacOsOptions(
-                accessibility: KeychainAccessibility.first_unlock_this_device,
-              ),
-              // No AndroidOptions: `encryptedSharedPreferences` is deprecated from 10.x (Google
-              // deprecated the Jetpack Security library behind it) and is ignored when passed.
-              // The plugin now encrypts with its own ciphers by default and migrates existing
-              // data on first access, so the secure default is the one you get by saying nothing.
-            ),
-        _key = key;
+    : _storage =
+          storage ??
+          const FlutterSecureStorage(
+            // The token is only ever needed while the app is in use, so it does not need to be
+            // readable before the first unlock after a reboot. `first_unlock_this_device` is
+            // the tighter accessibility class that still works: it keeps the item off backups
+            // and off any other device, so a restored backup cannot carry the session with it.
+            iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock_this_device),
+            mOptions: MacOsOptions(accessibility: KeychainAccessibility.first_unlock_this_device),
+            // No AndroidOptions: `encryptedSharedPreferences` is deprecated from 10.x (Google
+            // deprecated the Jetpack Security library behind it) and is ignored when passed.
+            // The plugin now encrypts with its own ciphers by default and migrates existing
+            // data on first access, so the secure default is the one you get by saying nothing.
+          ),
+      _key = key;
 
   static const String _defaultKey = 'zen_refresh_token';
 

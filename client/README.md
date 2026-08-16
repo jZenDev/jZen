@@ -19,7 +19,7 @@ Every package shares one product version (`0.1.0` today) — jZen is versioned i
 | Package | Responsibility |
 |---|---|
 | `zen_core` | Universal result types (`ZenResult`/`ZenError`), value objects, logging, and `ZenLocales` (the supported-locale declaration). Framework-free — depends only on `meta` and small standard libraries, and that isolation is defended, not tolerated. |
-| `zen_transport` | The dual-mode `ZenClient` and `ZenWebSocket`, the compile-time codec selector, and the generated Protobuf messages (`lib/src/generated/`). |
+| `zen_transport` | The dual-mode `ZenClient` and `ZenWebSocket`, the compile-time codec selector, and the generated Protobuf messages (`lib/generated/`). |
 | `zen_identity` | The `IdentityRepository` contract and its Supabase-backed implementation, called over `zen_transport`. |
 | [`zen_ui_identity`](zen_ui_identity/README.md) | Adaptive Flutter UI for the identity flows (login, register, profile, roles). Speaks the `zen_identity` contract only. |
 | [`zen_ui_navigation`](zen_ui_navigation/README.md) | Adaptive, responsive navigation layer (`ZenNavigation`). |

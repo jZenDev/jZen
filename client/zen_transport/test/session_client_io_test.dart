@@ -33,10 +33,12 @@ void main() {
           // Report what the client sent back in the double-submit header, and on which method.
           request.response
             ..statusCode = HttpStatus.ok
-            ..write(jsonEncode({
-              'header': request.headers.value('X-CSRF-Token') ?? '',
-              'method': request.method,
-            }));
+            ..write(
+              jsonEncode({
+                'header': request.headers.value('X-CSRF-Token') ?? '',
+                'method': request.method,
+              }),
+            );
         case '/whoami':
           // Echo back whatever session cookie the client resent.
           final sid = request.cookies

@@ -44,17 +44,9 @@ void main() {
     // exercised a differently assembled client would prove less than it appears to.
     Future<bool> recoverSession() async => (await identity.refreshSession()).isSuccess;
     identity = SupabaseIdentityRepository(
-      client: ZenClient(
-        baseUrl: baseUrl,
-        httpClient: session,
-        recoverSession: recoverSession,
-      ),
+      client: ZenClient(baseUrl: baseUrl, httpClient: session, recoverSession: recoverSession),
     );
-    demo = DemoRepository(
-      baseUrl: baseUrl,
-      session: session,
-      recoverSession: recoverSession,
-    );
+    demo = DemoRepository(baseUrl: baseUrl, session: session, recoverSession: recoverSession);
 
     // Register a fresh user; with local Supabase auto-confirm this logs in and sets the cookies.
     final registered = await identity.registerWithEmail(email: email, password: password);
@@ -137,10 +129,9 @@ void main() {
     // an unhandled async error no matter how the stream's is caught. dart:io's connect() is a
     // single Future with nothing dangling behind it, and the status code is the assertion anyway.
     // The authenticated half of the same seam is covered by the echo test above.
-    final wsUrl = Uri.parse(baseUrl).replace(
-      scheme: Uri.parse(baseUrl).scheme == 'https' ? 'wss' : 'ws',
-      path: '/api/v1/demo/ws',
-    );
+    final wsUrl = Uri.parse(
+      baseUrl,
+    ).replace(scheme: Uri.parse(baseUrl).scheme == 'https' ? 'wss' : 'ws', path: '/api/v1/demo/ws');
 
     await expectLater(
       WebSocket.connect(wsUrl.toString()),

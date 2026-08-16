@@ -9,10 +9,7 @@ import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 /// framework declares, and that each one resolves to its own wording.
 void main() {
   test('ships exactly the locales ZenLocales declares', () {
-    expect(
-      NavigationLocalizations.supportedLocales.map((l) => l.languageCode),
-      ZenLocales.shipped,
-    );
+    expect(NavigationLocalizations.supportedLocales.map((l) => l.languageCode), ZenLocales.shipped);
   });
 
   test('resolves the overflow label per locale', () async {

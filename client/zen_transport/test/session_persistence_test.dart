@@ -150,8 +150,11 @@ void main() {
 
     final resp = await next.get(baseUri.resolve('/refresh'));
     expect(resp.statusCode, 200);
-    expect(jsonDecode(resp.body)['refreshed'], 'refresh-1',
-        reason: 'the restored cookie must actually reach the server');
+    expect(
+      jsonDecode(resp.body)['refreshed'],
+      'refresh-1',
+      reason: 'the restored cookie must actually reach the server',
+    );
   });
 
   test('a rotated refresh token replaces the stored one', () async {

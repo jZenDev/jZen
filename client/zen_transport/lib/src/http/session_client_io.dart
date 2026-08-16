@@ -15,8 +15,7 @@ import 'token_store.dart';
 import 'zen_session_client.dart';
 
 /// Native: a cookie-jar-backed [http.Client].
-ZenSessionClient createPlatformSessionClient({TokenStore? store}) =>
-    CookieJarClient(store: store);
+ZenSessionClient createPlatformSessionClient({TokenStore? store}) => CookieJarClient(store: store);
 
 /// An [http.BaseClient] that persists Set-Cookie responses and resends them as Cookie headers
 /// on subsequent requests, backed by a `dart:io` [HttpClient].
@@ -40,8 +39,8 @@ ZenSessionClient createPlatformSessionClient({TokenStore? store}) =>
 /// `POST /auth/refresh` is what makes a token lifted from an old backup go stale.
 class CookieJarClient extends ZenSessionClient {
   CookieJarClient({HttpClient? inner, TokenStore? store})
-      : _inner = inner ?? HttpClient(),
-        _store = store ?? InMemoryTokenStore();
+    : _inner = inner ?? HttpClient(),
+      _store = store ?? InMemoryTokenStore();
 
   /// The cookie the server rebuilds a session from. Must match the server's
   /// `session.cookie.refresh-name` (`SessionService.REFRESH_COOKIE`).
@@ -137,10 +136,7 @@ class CookieJarClient extends ZenSessionClient {
   @override
   Map<String, String> handshakeHeaders() {
     if (_jar.isEmpty) return const {};
-    return {
-      HttpHeaders.cookieHeader:
-          _jar.values.map((c) => '${c.name}=${c.value}').join('; '),
-    };
+    return {HttpHeaders.cookieHeader: _jar.values.map((c) => '${c.name}=${c.value}').join('; ')};
   }
 
   @override
@@ -262,19 +258,14 @@ class _StoredToken {
       final Object? value = parsed['value'];
       if (value is! String || value.isEmpty) return null;
       final Object? expires = parsed['expires'];
-      return _StoredToken(
-        value,
-        expires is String ? DateTime.tryParse(expires)?.toUtc() : null,
-      );
+      return _StoredToken(value, expires is String ? DateTime.tryParse(expires)?.toUtc() : null);
     } on FormatException {
       return null;
     }
   }
 
-  String encode() => jsonEncode({
-        'value': value,
-        if (expires != null) 'expires': expires!.toIso8601String(),
-      });
+  String encode() =>
+      jsonEncode({'value': value, if (expires != null) 'expires': expires!.toIso8601String()});
 
   bool hasExpired(DateTime now) => expires != null && !expires!.isAfter(now);
 }

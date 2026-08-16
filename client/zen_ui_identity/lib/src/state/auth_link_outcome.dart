@@ -37,5 +37,6 @@ class AuthLinkOutcome extends Notifier<ZenAuthLink?> {
 }
 
 /// The pending outcome of a warm auth link. Watched by [ZenAuthLinkListener].
-final authLinkOutcomeProvider =
-    NotifierProvider<AuthLinkOutcome, ZenAuthLink?>(AuthLinkOutcome.new);
+final authLinkOutcomeProvider = NotifierProvider<AuthLinkOutcome, ZenAuthLink?>(
+  AuthLinkOutcome.new,
+);

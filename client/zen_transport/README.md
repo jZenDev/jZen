@@ -26,7 +26,7 @@ frames) and the generated Protobuf message classes.
   from the build (`dev` → JSON; `prd` native → Protobuf; `prd` web → JSON). It is **computed,
   never hardcoded**: a literal default would silently disable negotiation on the platform it is
   wrong for.
-- **Generated messages** (`lib/src/generated/`) — the Dart output of `proto/zen/v1/*.proto`. These
+- **Generated messages** (`lib/generated/`) — the Dart output of `proto/zen/v1/*.proto`. These
   are **tracked** generated files (a Flutter developer must compile without `protoc` or a JDK);
   never hand-edit them, and `task sync:contracts` fails if they drift. See [`../README.md`](../README.md).
 

@@ -15,7 +15,7 @@ import 'package:http/http.dart' as http;
 import 'package:protobuf/protobuf.dart';
 import 'package:zen_core/zen_core.dart';
 
-import 'generated/zen/v1/common.pb.dart' as pb;
+import '../generated/zen/v1/common.pb.dart' as pb;
 import 'zen_codec_selector.dart';
 import 'zen_http_method.dart';
 import 'zen_proto_codec.dart';
@@ -173,16 +173,13 @@ class ZenClient {
     if (inFlight != null) {
       return inFlight;
     }
-    final started = runZoned<Future<bool>>(
-      () async {
-        try {
-          return await recover();
-        } finally {
-          _recovery = null;
-        }
-      },
-      zoneValues: {_recoveryZoneKey: true},
-    );
+    final started = runZoned<Future<bool>>(() async {
+      try {
+        return await recover();
+      } finally {
+        _recovery = null;
+      }
+    }, zoneValues: {_recoveryZoneKey: true});
     _recovery = started;
     return started;
   }

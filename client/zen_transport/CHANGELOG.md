@@ -7,7 +7,8 @@
     the same typed endpoints, with `selectDefaultCodec` choosing the default at compile time
     so the wrong platform's codec tree-shakes out of each bundle;
   - `ZenProtoCodec` carries typed protobuf bodies: binary via the protobuf runtime, JSON via
-    canonical proto3 JSON. The generated messages are committed under `lib/src/generated/`;
+    canonical proto3 JSON. The generated messages are committed under `lib/generated/` — a
+    public path, so an application whose own protos import `zen/v1` can name them (ADR-047);
   - request and response bodies are typed proto messages with no envelope. HTTP status
     carries the status, `X-Request-ID` carries the request id, and the shared `ZenError`
     proto carries errors;

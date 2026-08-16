@@ -37,9 +37,13 @@
 # anything an application would have to fight rather than configure. A task that needs an `if
 # APP_NAME == …` has been put in the wrong file.
 #
-# THE HONEST LIMIT, TODAY. Two tasks have moved — `generate:l10n` and `build:runners` — and
-# Taskfile.yml delegates to both, so the framework runs the same code an application does rather
-# than a copy that resembles it. The rest of the orchestration (the contract loop, the server
+# THE HONEST LIMIT, TODAY. Three tasks have moved — `generate:l10n`, `build:runners` and
+# `generate:proto:dart` — and Taskfile.yml delegates to all three, so the framework runs the same
+# code an application does rather than a copy that resembles it. The third one is a partial case
+# worth naming: zen_demo declares no protos of its own, so running it here proves the task parses,
+# resolves and selects correctly, but never exercises the import rewrite. That half was verified
+# against a throwaway application outside this tree (ADR-047), which is a manual proof rather than
+# a gate. The rest of the orchestration (the rest of the contract loop, the server
 # build, the local stack, the deploy) has not moved yet and is still zen_demo-shaped. Those are
 # migrations to make one at a time, each proven against zen_demo before an application depends on
 # it; a task sitting in both files is drift waiting to happen, which is the argument for finishing
@@ -60,6 +64,19 @@ vars:
   # Directories scanned by the tasks that walk a tree (l10n, client tests). Space-separated, so an
   # application with two pub workspaces passes both. Defaults to the client tier alone.
   DART_ROOTS: '{{.DART_ROOTS | default .CLIENT_DIR}}'
+
+  # Where generate:proto:dart writes the application's generated messages, relative to the
+  # application's root. The default assumes the conventional layout (`<client>/<app>_client`);
+  # an application that keeps its wire types in a dedicated package overrides it. The task
+  # refuses to write into a directory that is not inside a Dart package, so a wrong value fails
+  # loudly rather than scattering .pb.dart files somewhere nothing compiles them.
+  #
+  # The DEFAULT is built in the task body, not here, and that is not a style choice: a var in this
+  # map that references another var in this map reads the OTHER VAR'S DEFAULT, not the value the
+  # include supplied. Written here, `{{.APP_NAME}}_client` resolved to `app_client` for an
+  # application that had passed APP_NAME on the include. Measured, like everything else in this
+  # file. Inside a task the same reference resolves correctly.
+  PROTO_DART_OUT: '{{.PROTO_DART_OUT | default ""}}'
 
   # The jZen checkout these tasks came from. Not a guess: TASKFILE_DIR is where this file lives.
   JZEN_DIR: "{{.TASKFILE_DIR}}"
@@ -136,6 +153,144 @@ tasks:
           echo ">> flutter pub get ($root)"
           (cd "{{.ROOT_DIR}}/$root" && flutter pub get)
         done
+
+  generate:proto:dart:
+    desc: Generate the APPLICATION's Dart messages, resolving jZen's zen/v1 without copying it
+    silent: true
+    summary: |
+      The application half of the contract loop. jZen's own zen/v1 messages are generated once,
+      into client/zen_transport/lib/generated, by the framework's task; this one generates the
+      models the APPLICATION declares under its own proto/ tree.
+
+      THE PROBLEM IT SOLVES. protoc-gen-dart has no equivalent of Go's `M` mapping: it always
+      writes imports as filesystem-relative paths. An application proto that does
+      `import "zen/v1/common.proto"` therefore produces `import '../../zen/v1/common.pb.dart'` —
+      a path that resolves to nothing inside the application's package. Two branches look like
+      fixes and are not. Forbidding the import makes every application redefine the shapes
+      ZenClient already speaks. Regenerating zen/v1 into the application's tree is worse, and
+      silently so: the application's `zen.v1.ZenError` becomes a DIFFERENT DART TYPE from
+      zen_transport's, so the framework's own API stops type-checking against the messages the
+      application built. Two copies of one proto type in one program is the failure, not the fix.
+
+      WHAT IT DOES INSTEAD. protoc is given both contract roots with -I (jZen's and the
+      application's) but only the application's protos as ARGUMENTS, so zen/v1 is resolved for
+      typing and never emitted. The dangling relative imports it leaves behind are then rewritten
+      to `package:zen_transport/generated/zen/v1/…`, which is a public URI because the framework
+      keeps those messages outside lib/src for exactly this reason (ADR-047). Finally the task
+      FAILS if a zen/v1 file landed in the application's tree anyway — the type-identity rule
+      above, enforced rather than documented.
+
+      IT FAILS ON AN EMPTY CONTRACT DIRECTORY. jZen's own task used to skip with exit 0 there.
+      For an application that is wrong: proto/ with nothing in it is a broken checkout, and a
+      green exit code over it is what STANDARDS "Failures surface; nothing is swallowed" forbids.
+      An application that has protos but declares none of its own (all of them framework-owned,
+      which is zen_demo's case) is a different, legitimate state and is reported, not failed.
+
+      DISCOVERY IS `git ls-files`, NOT `find`, and the rewrite is parameter expansion rather than
+      sed or perl — for the reason generate:l10n documents at length: on a Windows host a bare
+      `find` resolves to System32's find.exe, and sed/perl may not exist at all. One program on
+      every host, or no program at all.
+    cmds:
+      - |
+        set -e
+        cd "{{.ROOT_DIR}}"
+        if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+          echo "generate:proto:dart discovers contracts with 'git ls-files', and {{.ROOT_DIR}} is not a git work tree."
+          exit 1
+        fi
+        if [ ! -d "{{.PROTO_DIR}}" ]; then
+          echo "No {{.PROTO_DIR}}/ directory in {{.ROOT_DIR}}. The application's contracts live there;"
+          echo "an absent contract root is a broken checkout, or PROTO_DIR is set wrong on the include."
+          exit 1
+        fi
+        all=$(git ls-files -- ":(glob){{.PROTO_DIR}}/*.proto" ":(glob){{.PROTO_DIR}}/**/*.proto")
+        if [ -z "$all" ]; then
+          echo "{{.PROTO_DIR}}/ contains no tracked .proto files. A contract directory with no"
+          echo "contract in it is a broken checkout, not a fresh one."
+          exit 1
+        fi
+        # zen/v1 is the FRAMEWORK's namespace. If the application's own tree carries a copy it is
+        # excluded here, never generated: see the type-identity paragraph in this task's summary.
+        set --
+        for p in $all; do
+          case "$p" in
+            {{.PROTO_DIR}}/zen/v1/*) continue ;;
+            *) set -- "$@" "$p" ;;
+          esac
+        done
+        if [ "$#" -eq 0 ]; then
+          echo "No application protos: every .proto under {{.PROTO_DIR}}/ is framework-owned (zen/v1)."
+          echo "Nothing to generate - jZen's own task owns those."
+          exit 0
+        fi
+        command -v protoc >/dev/null 2>&1 || { echo "protoc not found. Install it and protoc_plugin (dart pub global activate protoc_plugin)."; exit 1; }
+        [ -x "$HOME/.pub-cache/bin/protoc-gen-dart" ] || { echo "protoc-gen-dart not found. Run: dart pub global activate protoc_plugin"; exit 1; }
+        out="{{.PROTO_DART_OUT}}"
+        if [ -z "$out" ]; then out="{{.CLIENT_DIR}}/{{.APP_NAME}}_client/lib/generated"; fi
+        # The output has to land inside a Dart package, or the messages compile nowhere. Walk up
+        # from the output directory looking for the pubspec.yaml that owns it.
+        # Terminate on the PREVIOUS value, not on a sentinel: `${p%/*}` returns p unchanged once
+        # there is no slash left, so a loop that watches for "." or "/" never ends on a relative
+        # path. (It did not end. That is how this comment exists.)
+        pkg="$out"
+        while [ ! -f "$pkg/pubspec.yaml" ]; do
+          parent="${pkg%/*}"
+          if [ "$parent" = "$pkg" ] || [ -z "$parent" ]; then pkg=""; break; fi
+          pkg="$parent"
+        done
+        if [ -z "$pkg" ] || [ ! -f "$pkg/pubspec.yaml" ]; then
+          echo "PROTO_DART_OUT is '$out', which is not inside a Dart package (no pubspec.yaml above it)."
+          echo "Set PROTO_DART_OUT on the include to a path inside the package that should own the messages."
+          exit 1
+        fi
+        mkdir -p "$out"
+        echo ">> protoc ($# application proto(s) -> $out)"
+        PATH="$HOME/.pub-cache/bin:$PATH" protoc \
+          -I "{{.JZEN_DIR}}/proto" -I "{{.PROTO_DIR}}" \
+          --dart_out="$out" "$@"
+        # The guard, before the rewrite: if protoc emitted zen/v1 anyway (an application proto
+        # listed one of jZen's as its own, a stale copy from an earlier run), stop. Leaving it
+        # would give the program two incompatible definitions of the same proto type and the
+        # error would surface far from here.
+        if [ -d "$out/zen/v1" ]; then
+          echo
+          echo "REFUSING: jZen's zen/v1 messages were emitted into the application's tree at $out/zen/v1."
+          echo "They must be imported from package:zen_transport, never regenerated - a second copy"
+          echo "is a second, incompatible Dart type. Delete that directory and check that no"
+          echo "application .proto lives under {{.PROTO_DIR}}/zen/v1."
+          exit 1
+        fi
+        # Rewrite the relative imports protoc left pointing at zen/v1 into the package: URI that
+        # actually resolves. Idempotent: a line already carrying the package: form rewrites to
+        # itself. Pure parameter expansion - no sed, no perl (see the summary).
+        # The file list is DERIVED from the protos that were just compiled, not discovered by a
+        # walk: protoc's output path for `<proto-root>/a/b.proto` is `<out>/a/b.pb.dart` (plus
+        # .pbenum.dart and .pbjson.dart when the file has enums or is imported). Deriving it
+        # needs no `find` and no second opinion about which files are ours.
+        rewritten=0
+        for p in "$@"; do
+          rel="${p#{{.PROTO_DIR}}/}"
+          base="${rel%.proto}"
+          for f in "$out/$base.pb.dart" "$out/$base.pbenum.dart" "$out/$base.pbjson.dart"; do
+            [ -f "$f" ] || continue
+            touched=0
+            : > "$f.zen-tmp"
+            while IFS= read -r line || [ -n "$line" ]; do
+              case "$line" in
+                "import '"*/zen/v1/*|"export '"*/zen/v1/*)
+                  head="${line%%\'*}"
+                  tail="${line#*/zen/v1/}"
+                  line="${head}'package:zen_transport/generated/zen/v1/${tail}"
+                  touched=1
+                  ;;
+              esac
+              printf '%s\n' "$line" >> "$f.zen-tmp"
+            done < "$f"
+            mv "$f.zen-tmp" "$f"
+            if [ "$touched" -eq 1 ]; then rewritten=$((rewritten + 1)); fi
+          done
+        done
+        echo "Generated application messages -> $out ($rewritten file(s) re-pointed at package:zen_transport)"
 
   generate:l10n:
     desc: Generate the typed client localizations from the ARB files

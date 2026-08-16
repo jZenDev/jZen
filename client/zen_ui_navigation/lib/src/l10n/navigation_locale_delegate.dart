@@ -25,10 +25,9 @@ class NavigationLocaleDelegate extends LocalizationsDelegate<NavigationLocalizat
   bool isSupported(Locale locale) => true;
 
   @override
-  Future<NavigationLocalizations> load(Locale locale) =>
-      SynchronousFuture<NavigationLocalizations>(
-        lookupNavigationLocalizations(Locale(ZenLocales.resolve(locale.languageCode))),
-      );
+  Future<NavigationLocalizations> load(Locale locale) => SynchronousFuture<NavigationLocalizations>(
+    lookupNavigationLocalizations(Locale(ZenLocales.resolve(locale.languageCode))),
+  );
 
   @override
   bool shouldReload(NavigationLocaleDelegate old) => false;

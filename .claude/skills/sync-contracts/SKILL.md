@@ -7,7 +7,7 @@ description: The jZen contract-first loop. Use whenever you change a proto model
 
 `.proto` under `proto/zen/v1/` is canonical for **models**; SmallRye-annotated Quarkus resources
 are canonical for the **REST surface** (paths/verbs/status). Everything else is **derived and
-committed** — Java DTOs (`zen-proto`), Dart messages (`client/zen_transport/lib/src/generated/`),
+committed** — Java DTOs (`zen-proto`), Dart messages (`client/zen_transport/lib/generated/`),
 `openapi.json`, and admin TS (`schema.generated.ts`). **Never hand-edit a generated file.** Fix the
 source and regenerate.
 

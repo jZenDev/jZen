@@ -75,7 +75,8 @@ final class ZenAuthLink {
     final fragment = _splitQuery(uri.fragment);
     final query = uri.queryParameters;
 
-    final error = fragment['error_code'] ?? fragment['error'] ?? query['error_code'] ?? query['error'];
+    final error =
+        fragment['error_code'] ?? fragment['error'] ?? query['error_code'] ?? query['error'];
     if (error != null && error.isNotEmpty) {
       return ZenAuthLink._(kind: ZenAuthLinkKind.failed, errorCode: error);
     }

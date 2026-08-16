@@ -15,6 +15,95 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-047 — An application resolves jZen's `zen/v1` messages, never regenerates them; and an empty contract directory fails
+
+**Date:** 2026-08-16. **Status:** accepted.
+
+### Decision
+
+Two defects, found while building the first application on jZen that is not `zen_demo`. Both sit in
+the Dart proto codegen path, and neither is visible from inside this repository — which is the
+point: they are the first findings that could only come from a second consumer.
+
+**1. `protoc-gen-dart` writes relative imports, so framework messages could not cross a repository
+boundary.** It has no equivalent of Go's `M` mapping. An application `.proto` that does
+`import "zen/v1/common.proto"` gets generated code containing
+`import '../../../zen/v1/common.pb.dart'` — a path that resolves to nothing inside the
+application's package. Latent here: no `.proto` under `proto/zen/v1/` imports another one, so no
+generated file in this repository has a cross-file import at all.
+
+Two branches look like fixes and are not.
+
+- *Forbid application protos from importing `zen/v1`.* Every application then redefines the shapes
+  `ZenClient` already speaks — `ZenError`, `ZenStatus`, the page envelopes — and the redefinitions
+  are not interchangeable with what the framework returns.
+- *Let each application regenerate `zen/v1` into its own tree*, so the relative imports resolve.
+  Worse, and **silently** so: the application's `zen.v1.ZenError` becomes a **different Dart type**
+  from `zen_transport`'s, so the framework's own API stops type-checking against the messages the
+  application built. Two copies of one proto type in one program is the failure, not the fix.
+
+**What was done instead**, in three parts:
+
+- The framework's generated messages move from `client/zen_transport/lib/src/generated/` to
+  **`client/zen_transport/lib/generated/`** — a *public* path. Generated code imports per file, and
+  a barrel cannot satisfy a per-message import; `package:zen_transport/src/…` is an implementation
+  import, which the recommended lint set rejects. The directory keeps the name `generated` rather
+  than becoming `proto/`, so the repository's existing `**/generated/**` conventions — the analyzer
+  exclude in both `analysis_options.yaml`, `DART_FORMAT`'s find, `.gitattributes` — keep covering it
+  without a second pattern to remember.
+- **`zen:generate:proto:dart` in `Taskfile.app.yml`** generates the *application's* models: protoc
+  is given both contract roots with `-I` (jZen's, via `TASKFILE_DIR`, and the application's) but
+  only the application's protos as **arguments**, so `zen/v1` is resolved for typing and never
+  emitted. The dangling relative imports are then rewritten to
+  `package:zen_transport/generated/zen/v1/…`.
+- The task **refuses to continue** if a `zen/v1` file lands in the application's tree anyway. The
+  type-identity rule above is the one failure here that would not announce itself, so it is
+  enforced rather than documented.
+
+**2. `generate:proto:dart` printed "No .proto files yet, skipping" and exited 0.** Right for the
+week in 2025 when `proto/` was an empty skeleton; wrong ever since (the directory holds six files),
+and wrong for an application, where an empty contract root is a broken checkout. The branch is
+deleted on both sides. No `PROTO_REQUIRED` knob: the framework does not need the tolerance either,
+so with the branch gone the application-facing task inherits strictness with nothing to configure.
+An application that has protos but declares none of its *own* — every one framework-owned, which is
+zen_demo's case — is a different and legitimate state, and is reported rather than failed.
+
+### Supersedes
+
+- STANDARDS "Code generation", which named `lib/src/generated/**` as the tracked path. Also
+  `proto/README.md`, `client/README.md`, `client/zen_transport/README.md`, ROADMAP step 3, and the
+  `sync-contracts` skill, all of which carried the old path.
+- ADR-046's list of what has moved into `Taskfile.app.yml` — `generate:proto:dart` is the third
+  task to move, and the first that an application needs and this repository can only partly
+  exercise.
+
+### Consequence, and what is and is not proven
+
+`task generate:proto:dart` regenerates the framework messages **byte-identically** at the new path
+(only renames in `git status`), `dart analyze zen_transport` is clean, and `task test:client` is
+green at 42 passing.
+
+The import rewrite itself **cannot be exercised by this repository**: zen_demo declares no protos of
+its own — `demo.proto` is framework-owned, under `proto/zen/v1` — so running the application-facing
+task here correctly reports "no application protos" and emits nothing. It was instead verified
+against a throwaway application repository outside the tree: a proto declaring `package demoapp.v1`
+and importing `zen/v1/common.proto` generated `thing.pb.dart` carrying
+`import 'package:zen_transport/generated/zen/v1/common.pb.dart' as $0;`, with no relative import
+left and no `zen/v1` directory emitted, idempotent across two runs. That is a manual proof, not a
+gate. The gate arrives with application #2's own contract check, or with the conformance test-jar
+ADR-042 defers to the same moment; asserting it here would mean maintaining a fake application
+inside the framework, which is the cost ADR-042 already declined to pay early.
+
+Two smaller things were measured rather than assumed, and are recorded because both cost time. A
+var in `Taskfile.app.yml`'s `vars:` map that references another var in the same map reads that
+var's **default**, not the value the include supplied — `{{.APP_NAME}}_client` resolved to
+`app_client` for an application that had passed `APP_NAME` — so the default output path is built in
+the task body, where the reference resolves correctly. And a walk-up loop terminating on `"."` or
+`"/"` never terminates on a relative path, because `${p%/*}` returns `p` unchanged once no slash is
+left; it terminates on the previous value instead.
+
+---
+
 ## ADR-046 — The orchestration an application needs is extracted into `Taskfile.app.yml`, and jZen consumes it the same way
 
 **Date:** 2026-08-15. **Status:** accepted.

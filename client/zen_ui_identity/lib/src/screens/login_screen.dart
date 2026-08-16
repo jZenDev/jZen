@@ -61,8 +61,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final _Landing? landing = switch (link.kind) {
       ZenAuthLinkKind.failed => _Landing.expired,
       ZenAuthLinkKind.confirmedWithoutSession => _Landing.confirmed,
-      _ =>
-        ref.read(identitySessionStoreProvider.notifier).linkRejected ? _Landing.expired : null,
+      _ => ref.read(identitySessionStoreProvider.notifier).linkRejected ? _Landing.expired : null,
     };
 
     if (landing != null) {
@@ -71,12 +70,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         final messages = IdentityLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              switch (landing) {
-                _Landing.expired => messages.linkExpiredBanner,
-                _Landing.confirmed => messages.emailConfirmedBanner,
-              },
-            ),
+            content: Text(switch (landing) {
+              _Landing.expired => messages.linkExpiredBanner,
+              _Landing.confirmed => messages.emailConfirmedBanner,
+            }),
           ),
         );
       });

@@ -24,7 +24,10 @@ void main() {
           headers: {'content-type': 'application/json', 'x-zen-transport': 'json'},
         );
       });
-      final repo = DemoRepository(baseUrl: 'http://localhost:8080', session: PassthroughSessionClient(client));
+      final repo = DemoRepository(
+        baseUrl: 'http://localhost:8080',
+        session: PassthroughSessionClient(client),
+      );
 
       final result = await repo.ping(format: ZenTransportFormat.json, language: 'en');
 
@@ -47,7 +50,10 @@ void main() {
           headers: {'content-type': 'application/x-protobuf', 'x-zen-transport': 'protobuf'},
         );
       });
-      final repo = DemoRepository(baseUrl: 'http://localhost:8080', session: PassthroughSessionClient(client));
+      final repo = DemoRepository(
+        baseUrl: 'http://localhost:8080',
+        session: PassthroughSessionClient(client),
+      );
 
       final result = await repo.ping(format: ZenTransportFormat.protobuf, language: 'uk');
 
@@ -66,7 +72,10 @@ void main() {
           headers: {'content-type': 'application/json', 'x-zen-transport': 'json'},
         );
       });
-      final repo = DemoRepository(baseUrl: 'http://localhost:8080', session: PassthroughSessionClient(client));
+      final repo = DemoRepository(
+        baseUrl: 'http://localhost:8080',
+        session: PassthroughSessionClient(client),
+      );
 
       final result = await repo.terms(language: 'uk');
 
@@ -83,7 +92,10 @@ void main() {
           headers: {'content-type': 'application/json', 'x-zen-transport': 'json'},
         );
       });
-      final repo = DemoRepository(baseUrl: 'http://localhost:8080', session: PassthroughSessionClient(client));
+      final repo = DemoRepository(
+        baseUrl: 'http://localhost:8080',
+        session: PassthroughSessionClient(client),
+      );
 
       final result = await repo.profile();
 

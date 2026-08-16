@@ -99,7 +99,7 @@ point* of the script, it is Python. In one sentence: **sh runs things; Python un
 - **Generated output is committed across a toolchain boundary, regenerated within one.**
   An artifact is tracked in git exactly when the toolchain that consumes it cannot produce
   it, so no consumer needs a tool it would not otherwise install:
-  - **Tracked** — the Dart messages (`client/zen_transport/lib/src/generated/**`) and the
+  - **Tracked** — the Dart messages (`client/zen_transport/lib/generated/**`) and the
     admin TypeScript (`apps/*/*_admin/src/api/schema.generated.ts`). Regenerating the first
     needs a *system* `protoc` plus `protoc-gen-dart` (which is why `task doctor` lists them
     apart, as tools the Java build does not need); the second needs a full Quarkus build.
@@ -116,6 +116,21 @@ point* of the script, it is Python. In one sentence: **sh runs things; Python un
   The exit condition is publishing: once a package ships to pub.dev or npm, its archive
   carries its own generated code and the repository can stop tracking it. Until then the
   path dependency *is* the distribution mechanism.
+- **An application resolves `zen/v1`; it never regenerates it** (ADR-047). jZen's Dart messages
+  live at the *public* path `client/zen_transport/lib/generated/**` rather than under `lib/src`,
+  because `protoc-gen-dart` writes imports as filesystem-relative paths and an application proto
+  that imports `zen/v1/common.proto` produces generated code that must name those files one by
+  one — and `package:zen_transport/src/…` is an implementation import. `zen:generate:proto:dart`
+  (`Taskfile.app.yml`) gives protoc both contract roots with `-I` but only the *application's*
+  protos as arguments, so `zen/v1` is resolved for typing and never emitted, then rewrites the
+  relative imports to `package:zen_transport/generated/zen/v1/…`. The task **fails** if a
+  `zen/v1` file lands in the application's tree: a second copy of a proto type is a second,
+  incompatible Dart type, and the framework's own API would silently stop type-checking against
+  the messages the application built.
+- **An empty contract directory fails the build.** `generate:proto:dart` used to print
+  "No .proto files yet, skipping" and exit 0 — correct for a week in 2025 when `proto/` was an
+  empty skeleton, wrong ever since, and wrong for every application. A contract root with no
+  contract in it is a broken checkout; see "Failures surface; nothing is swallowed".
 - **A tracked generated file is never hand-edited.** Fix the source (`.proto` or an
   annotation) and regenerate. Its diff is reviewed like any other code — and is the one
   place a wire change surfaces *as* a change: a new header parameter on a resource is three

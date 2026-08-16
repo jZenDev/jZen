@@ -10,7 +10,7 @@
 # change. `task sync:contracts` is unaffected either way - it reads `git status`, which
 # these attributes do not touch.
 
-client/zen_transport/lib/src/generated/** linguist-generated=true
+client/zen_transport/lib/generated/** linguist-generated=true
 
 *.pb.dart      linguist-generated=true
 *.pbenum.dart  linguist-generated=true

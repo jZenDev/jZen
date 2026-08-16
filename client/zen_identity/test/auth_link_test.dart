@@ -65,8 +65,10 @@ void main() {
 
   test('an ordinary URL, and a fragment that is not a query, are not auth links', () {
     expect(ZenAuthLink.parse(Uri.parse('https://app.example/')).kind, ZenAuthLinkKind.none);
-    expect(ZenAuthLink.parse(Uri.parse('https://app.example/#/dashboard')).kind,
-        ZenAuthLinkKind.none);
+    expect(
+      ZenAuthLink.parse(Uri.parse('https://app.example/#/dashboard')).kind,
+      ZenAuthLinkKind.none,
+    );
     expect(ZenAuthLink.parse(Uri.parse('file:///Users/someone/app')).kind, ZenAuthLinkKind.none);
   });
 

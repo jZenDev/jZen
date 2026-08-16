@@ -8,7 +8,14 @@ import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;
 import io.quarkus.test.junit.TestProfile;
 import io.restassured.response.Response;
+import jakarta.enterprise.inject.Alternative;
+import jakarta.enterprise.inject.Produces;
+import jakarta.inject.Singleton;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -47,6 +54,34 @@ class RateLimitEnforcementTest {
    * changed one without the other would fail here rather than mislead.
    */
   public static class TightLimits implements QuarkusTestProfile {
+
+    /**
+     * Freezes time for this class, which is what makes the assertions below deterministic.
+     *
+     * <p>{@code BurstLimiter}'s window is a TUMBLING window aligned to the epoch — {@code
+     * windowStart = now - floorMod(now, windowMs)} — so with a one-minute window the counter resets
+     * at every wall-clock minute, not one minute after a caller's first request. Each test here
+     * spends its budget and then asserts the next call is refused; if a minute boundary happened to
+     * fall between those two, {@code Window.increment} reset the count and the call that should
+     * have been refused was permitted, arriving as the endpoint's own 401 instead of a 429.
+     *
+     * <p>That is not a bug in the limiter — a fixed window forgiving up to 2x the limit across a
+     * boundary is the tradeoff it is chosen for — it is this test asserting as though the window
+     * began at its first request. It failed roughly one CI run in ten, on whichever pull request
+     * had the bad luck to straddle the boundary (2026-08-15 and 2026-08-16, on two unrelated
+     * dependabot branches; the same commit passed and then failed). It never reproduced locally,
+     * because the sequence runs far faster there and so is exposed for less of the minute.
+     *
+     * <p>A sleep that waits out the boundary would also work and is rejected for the reason given
+     * above: this class does not buy green by inserting sleeps. Substituting the clock is the
+     * pattern the codebase already uses for exactly this (see {@code JobSchedulerTest}'s driven
+     * clock, and {@code JobClock}'s note that {@code Clock} is injected so it can be replaced).
+     */
+    @Override
+    public Set<Class<?>> getEnabledAlternatives() {
+      return Set.of(FrozenClock.class);
+    }
+
     @Override
     public Map<String, String> getConfigOverrides() {
       return Map.of(
@@ -116,6 +151,33 @@ class RateLimitEnforcementTest {
         429,
         refreshWithDeadCookie().statusCode(),
         "a dead session cookie must not buy an unmetered request");
+  }
+
+  /**
+   * A clock stopped on a window boundary, replacing the framework's {@code JobClock} producer.
+   *
+   * <p>The instant is deliberately ON a minute boundary, so {@code floorMod(now, 60_000) == 0} and
+   * the frozen "now" is the window's own start: every request in a test lands in the first
+   * millisecond of the same window, and {@code Retry-After} is the full window rather than a
+   * rounded-down remainder that could reach zero and fail the assertion for a second reason.
+   *
+   * <p>Nothing else in an assembled {@code %test} application reads this clock in a way that
+   * freezing breaks: the in-process job tick is off in {@code %test} on purpose ("no tick may fire
+   * behind a test's back"), so {@code JobScheduler} and {@code RateLimitCleanupJob} never run here,
+   * and {@code DurableLimiter}'s budget is set to 10000 below — far out of reach of these few
+   * requests — so its window never matters either.
+   */
+  @Alternative
+  @Singleton
+  public static class FrozenClock {
+
+    private static final Instant ON_A_WINDOW_BOUNDARY = Instant.parse("2026-01-01T00:00:00Z");
+
+    @Produces
+    @Singleton
+    public Clock frozenClock() {
+      return Clock.fixed(ON_A_WINDOW_BOUNDARY, ZoneOffset.UTC);
+    }
   }
 
   private Response trigger() {

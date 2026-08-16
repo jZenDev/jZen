@@ -27,8 +27,9 @@ final authLinkProvider = Provider<ZenAuthLink>((ref) => ZenAuthLink.current());
 /// Recovery is the one flow where being signed in is not the end of it: the link's whole purpose
 /// is the password change, and a user dropped straight onto the dashboard would leave the account
 /// with the password they could not remember.
-final passwordResetRequiredProvider =
-    NotifierProvider<PasswordResetRequired, bool>(PasswordResetRequired.new);
+final passwordResetRequiredProvider = NotifierProvider<PasswordResetRequired, bool>(
+  PasswordResetRequired.new,
+);
 
 /// Notifier behind [passwordResetRequiredProvider].
 class PasswordResetRequired extends Notifier<bool> {

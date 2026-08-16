@@ -62,7 +62,7 @@ Port the foundation, Firestore-free.
 - **Verified:** all three landed flat under `client/` and registered in the workspace at
   `0.1.0`. The `X-Zen-Transport` header, the Protobuf
   binary codec (generated Dart messages committed under
-  `client/zen_transport/lib/src/generated/`, `writeToBuffer`/`toProto3Json`), and the
+  `client/zen_transport/lib/generated/`, `writeToBuffer`/`toProto3Json`), and the
   compile-time `selectDefaultCodec()` selector are all in place; the `ZenTransport` facade,
   the envelope are gone. Both client invariants hold (default codec via `selectDefaultCodec`;
   a decode failure surfaces a `ZenError` from `common.proto`, never `null`).

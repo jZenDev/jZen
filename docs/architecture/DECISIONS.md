@@ -15,6 +15,170 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-048 — The Data API exposure gate asserts what a migration role can deliver, and warns about the rest
+
+**Date:** 2026-08-16 (authored 2026-08-14). **Status:** accepted. **Refines:** ADR-041, ADR-036.
+
+> **Provenance, because the gap is part of the record.** This decision was authored on 2026-08-14
+> as ADR-044 and shipped to `jzen-prod` — the image `zen-demo-server:8e634e2` served production
+> for two days — but its commit was reachable from no ref and never reached `main`, so the log
+> never carried it. The next deploy from `main` (2026-08-16) therefore failed in exactly the way
+> described below, with the same three `supabase_admin` findings, and the commit was recovered
+> from the object store. It is renumbered **048** because `main` has since assigned 044 to the
+> supported-locale decision; references to "ADR-044" in the recovered commit message mean this
+> entry.
+
+### Decision
+
+`MigrateOnlyRunner`'s Data API exposure check splits `pg_default_acl` findings on
+`pg_has_role(current_user, defaclrole, 'USAGE')` — whether the connection is a member of the role
+owning that default ACL, which is exactly the condition
+`ALTER DEFAULT PRIVILEGES FOR ROLE <r>` requires.
+
+- **Fatal (exit 3), unchanged:** any existing `public` object granting `anon`/`authenticated`
+  something (`information_schema.role_table_grants`).
+- **Fatal (exit 3), narrowed:** a `pg_default_acl` row naming `anon`/`authenticated` whose role
+  this connection **is** a member of. This is ADR-041's actual case — a rotated DDL role whose
+  defaults the checksum-triggered repeatable never re-revoked.
+- **Warned every deploy, not fatal:** the same row for a role this connection is **not** a member
+  of. The log names the residual, says no migration here can clear it, and points at the two things
+  that do: per-table row-level security (ADR-036's second layer) and `deploy:cloudrun` ONE-TIME
+  SETUP step 1d.
+
+### What this supersedes, and why
+
+- **"plus every `pg_default_acl` row in the `public` namespace whose ACL text names either role …
+  Either is a refusal."** (ADR-041, *Decision*) → **refined.** *Why:* that predicate asserts an
+  outcome no migration role can produce. `ALTER DEFAULT PRIVILEGES` requires membership in the
+  target role, so a default ACL owned by a role the migration role is not a member of is not a
+  revoke that failed — it is the gap `R__identity_data_api_lockdown.sql` documents in its own
+  header ("Altering another role's default privileges requires membership in it, which the
+  migration role does not have"). ADR-041 asserted the outcome without carrying that constraint
+  across from the file it was hardening.
+
+  A stock Supabase project ships exactly this: `supabase_admin` holds default privileges granting
+  `anon`/`authenticated` on tables, sequences and functions, and it is what the dashboard's table
+  editor creates as. So the gate as written refused **every** deploy on **every** Supabase project,
+  permanently — and exit 3 has no override by design, so the deploy path was wedged with no
+  documented way out. Found on the first deploy after ADR-041, on `jzen-prod`: three findings, all
+  `supabase_admin` default ACLs, and **zero** actual table grants. Nothing was exposed; the gate
+  simply could not pass.
+
+  This is the failure mode ADR-034 named from the other direction. There the concern was a tool
+  reporting success having checked nothing; here it is a gate that cannot report success at all.
+  Both end the same way — a gate people learn to route around — which is why the fix is to make the
+  assertion true rather than to add an override.
+
+- **"an exposed grant has no legitimate 'proceed anyway' case the way a deliberate rollback does"**
+  (ADR-041, *Decision*) → **upheld, and this entry is not an override.** No escape hatch is added.
+  The unreachable-role case is reclassified as a warning because it is not something this deploy
+  can fix, not because it is acceptable to ship past. A grant the migration role *could* have
+  revoked still stops the deploy with no way around it.
+
+### Consequence
+
+- The residual is now stated on every deploy rather than implied by a refusal: a table created by
+  the Supabase dashboard is exposed to the Data API on creation, and per-table RLS is what covers
+  it. ADR-036's two-independent-layers reasoning is unchanged and is the thing being relied on.
+- `verify:deploy:smoke`'s fixture is unaffected: it grants on a *table* (`zen_smoke_exposed`), which
+  is the first check above and was not touched, so the gate is still proven to fire.
+- Verified: `zen-identity` compiles; `task test:apps:server` green, 155 tests, 0 failures.
+- The narrowing is deliberate scope reduction of a security gate and is recorded as such. What it
+  gives up, stated plainly: the gate no longer claims "no public-schema object grants anon
+  anything". It claims "nothing this role could have revoked is still granting, and here is what it
+  could not". The second is true and checkable; the first was neither.
+
+---
+
+## ADR-047 — An application resolves jZen's `zen/v1` messages, never regenerates them; and an empty contract directory fails
+
+**Date:** 2026-08-16. **Status:** accepted.
+
+### Decision
+
+Two defects, found while building the first application on jZen that is not `zen_demo`. Both sit in
+the Dart proto codegen path, and neither is visible from inside this repository — which is the
+point: they are the first findings that could only come from a second consumer.
+
+**1. `protoc-gen-dart` writes relative imports, so framework messages could not cross a repository
+boundary.** It has no equivalent of Go's `M` mapping. An application `.proto` that does
+`import "zen/v1/common.proto"` gets generated code containing
+`import '../../../zen/v1/common.pb.dart'` — a path that resolves to nothing inside the
+application's package. Latent here: no `.proto` under `proto/zen/v1/` imports another one, so no
+generated file in this repository has a cross-file import at all.
+
+Two branches look like fixes and are not.
+
+- *Forbid application protos from importing `zen/v1`.* Every application then redefines the shapes
+  `ZenClient` already speaks — `ZenError`, `ZenStatus`, the page envelopes — and the redefinitions
+  are not interchangeable with what the framework returns.
+- *Let each application regenerate `zen/v1` into its own tree*, so the relative imports resolve.
+  Worse, and **silently** so: the application's `zen.v1.ZenError` becomes a **different Dart type**
+  from `zen_transport`'s, so the framework's own API stops type-checking against the messages the
+  application built. Two copies of one proto type in one program is the failure, not the fix.
+
+**What was done instead**, in three parts:
+
+- The framework's generated messages move from `client/zen_transport/lib/src/generated/` to
+  **`client/zen_transport/lib/generated/`** — a *public* path. Generated code imports per file, and
+  a barrel cannot satisfy a per-message import; `package:zen_transport/src/…` is an implementation
+  import, which the recommended lint set rejects. The directory keeps the name `generated` rather
+  than becoming `proto/`, so the repository's existing `**/generated/**` conventions — the analyzer
+  exclude in both `analysis_options.yaml`, `DART_FORMAT`'s find, `.gitattributes` — keep covering it
+  without a second pattern to remember.
+- **`zen:generate:proto:dart` in `Taskfile.app.yml`** generates the *application's* models: protoc
+  is given both contract roots with `-I` (jZen's, via `TASKFILE_DIR`, and the application's) but
+  only the application's protos as **arguments**, so `zen/v1` is resolved for typing and never
+  emitted. The dangling relative imports are then rewritten to
+  `package:zen_transport/generated/zen/v1/…`.
+- The task **refuses to continue** if a `zen/v1` file lands in the application's tree anyway. The
+  type-identity rule above is the one failure here that would not announce itself, so it is
+  enforced rather than documented.
+
+**2. `generate:proto:dart` printed "No .proto files yet, skipping" and exited 0.** Right for the
+week in 2025 when `proto/` was an empty skeleton; wrong ever since (the directory holds six files),
+and wrong for an application, where an empty contract root is a broken checkout. The branch is
+deleted on both sides. No `PROTO_REQUIRED` knob: the framework does not need the tolerance either,
+so with the branch gone the application-facing task inherits strictness with nothing to configure.
+An application that has protos but declares none of its *own* — every one framework-owned, which is
+zen_demo's case — is a different and legitimate state, and is reported rather than failed.
+
+### Supersedes
+
+- STANDARDS "Code generation", which named `lib/src/generated/**` as the tracked path. Also
+  `proto/README.md`, `client/README.md`, `client/zen_transport/README.md`, ROADMAP step 3, and the
+  `sync-contracts` skill, all of which carried the old path.
+- ADR-046's list of what has moved into `Taskfile.app.yml` — `generate:proto:dart` is the third
+  task to move, and the first that an application needs and this repository can only partly
+  exercise.
+
+### Consequence, and what is and is not proven
+
+`task generate:proto:dart` regenerates the framework messages **byte-identically** at the new path
+(only renames in `git status`), `dart analyze zen_transport` is clean, and `task test:client` is
+green at 42 passing.
+
+The import rewrite itself **cannot be exercised by this repository**: zen_demo declares no protos of
+its own — `demo.proto` is framework-owned, under `proto/zen/v1` — so running the application-facing
+task here correctly reports "no application protos" and emits nothing. It was instead verified
+against a throwaway application repository outside the tree: a proto declaring `package demoapp.v1`
+and importing `zen/v1/common.proto` generated `thing.pb.dart` carrying
+`import 'package:zen_transport/generated/zen/v1/common.pb.dart' as $0;`, with no relative import
+left and no `zen/v1` directory emitted, idempotent across two runs. That is a manual proof, not a
+gate. The gate arrives with application #2's own contract check, or with the conformance test-jar
+ADR-042 defers to the same moment; asserting it here would mean maintaining a fake application
+inside the framework, which is the cost ADR-042 already declined to pay early.
+
+Two smaller things were measured rather than assumed, and are recorded because both cost time. A
+var in `Taskfile.app.yml`'s `vars:` map that references another var in the same map reads that
+var's **default**, not the value the include supplied — `{{.APP_NAME}}_client` resolved to
+`app_client` for an application that had passed `APP_NAME` — so the default output path is built in
+the task body, where the reference resolves correctly. And a walk-up loop terminating on `"."` or
+`"/"` never terminates on a relative path, because `${p%/*}` returns `p` unchanged once no slash is
+left; it terminates on the previous value instead.
+
+---
+
 ## ADR-046 — The orchestration an application needs is extracted into `Taskfile.app.yml`, and jZen consumes it the same way
 
 **Date:** 2026-08-15. **Status:** accepted.

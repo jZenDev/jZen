@@ -5,10 +5,16 @@
 /// there is no envelope.
 library;
 
-export 'src/generated/zen/v1/common.pb.dart';
-export 'src/generated/zen/v1/demo.pb.dart';
-export 'src/generated/zen/v1/health.pb.dart';
-export 'src/generated/zen/v1/identity.pb.dart';
+// The generated messages sit at `lib/generated/`, not `lib/src/generated/`, deliberately: they
+// are a PUBLIC path (ADR-047). An application whose own `.proto` imports `zen/v1` gets generated
+// code that must name these files one by one — a barrel import cannot satisfy a generated
+// per-message import — and `package:zen_transport/src/…` is an implementation import, which the
+// recommended lint set rejects. The directory keeps the name `generated` so the repository's
+// existing `**/generated/**` conventions (the analyzer exclude, DART_FORMAT) keep covering it.
+export 'generated/zen/v1/common.pb.dart';
+export 'generated/zen/v1/demo.pb.dart';
+export 'generated/zen/v1/health.pb.dart';
+export 'generated/zen/v1/identity.pb.dart';
 export 'src/http/session_client.dart' show createSessionClient;
 export 'src/http/token_store.dart' show InMemoryTokenStore, TokenStore;
 export 'src/http/zen_session_client.dart' show PassthroughSessionClient, ZenSessionClient;

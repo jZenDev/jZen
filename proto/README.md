@@ -52,7 +52,7 @@ proto/zen/v1/*.proto
 Some generated output is **tracked** and some is not — an artifact is committed exactly when the
 toolchain that consumes it cannot produce it (STANDARDS "Code generation"):
 
-- **Tracked:** the Dart messages (`client/zen_transport/lib/src/generated/**`) and the admin
+- **Tracked:** the Dart messages (`client/zen_transport/lib/generated/**`) and the admin
   `schema.generated.ts` — so a Flutter or frontend developer never needs `protoc` or a JDK to
   compile.
 - **Not tracked:** the Java DTOs (`server/zen-proto/target/…`) and `openapi.json`, which live

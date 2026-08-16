@@ -12,7 +12,7 @@ environment:
 resolution: workspace
 
 # The binary codec is Protobuf (protobuf runtime; protoc_plugin generates the messages under
-# lib/src/generated) and bodies are typed proto messages with no envelope. See
+# lib/generated, a public path - ADR-047) and bodies are typed proto messages with no envelope. See
 # docs/architecture/BLUEPRINT.md "The dual-mode transport seam".
 dependencies:
   # fixnum backs the Int64 fields the protobuf runtime generates (e.g. HealthStatus.timestampMs).

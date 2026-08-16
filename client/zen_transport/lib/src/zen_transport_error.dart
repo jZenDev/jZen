@@ -4,7 +4,7 @@
 // carries the wire proto ZenError, reachable via [zenError].
 import 'package:zen_core/zen_core.dart';
 
-import 'generated/zen/v1/common.pb.dart' as pb;
+import '../generated/zen/v1/common.pb.dart' as pb;
 
 /// Machine-readable codes the client itself attaches to a synthesized [pb.ZenError] when a
 /// request never reaches a server-supplied error body. Centralized so no code string is

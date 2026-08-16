@@ -56,8 +56,7 @@ void main() {
   // for the same reason the language one is - it names a repository built on the client it is
   // being handed to, and it is only ever called during a request, by which time both exist.
   late final SupabaseIdentityRepository identityRepository;
-  Future<bool> recoverSession() async =>
-      (await identityRepository.refreshSession()).isSuccess;
+  Future<bool> recoverSession() async => (await identityRepository.refreshSession()).isSuccess;
 
   identityRepository = SupabaseIdentityRepository(
     client: ZenClient(

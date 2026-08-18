@@ -100,6 +100,33 @@
           </execution>
         </executions>
       </plugin>
+
+      <!-- Flags a fully-qualified class reference used inline where an import would do
+           (issue #61). See zen-core/pom.xml for the reference wiring/rationale. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-pmd-plugin</artifactId>
+        <configuration>
+          <rulesets>
+            <ruleset>${project.basedir}/../pmd-ruleset.xml</ruleset>
+          </rulesets>
+          <includeTests>true</includeTests>
+          <excludeRoots>
+            <excludeRoot>${project.build.directory}/generated-sources/annotations</excludeRoot>
+          </excludeRoots>
+        </configuration>
+        <executions>
+          <execution>
+            <phase>test-compile</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <configuration>
+              <failOnViolation>true</failOnViolation>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
 </project>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One rule, not a suite: a build failing on a style rule should be legible from the failure
+  alone. See docs/architecture STANDARDS "Code generation" and issue #61.
+
+  Flags a fully-qualified class reference used inline where an import already exists (or would
+  do), e.g. `new prudent.server.account.AccountBalance(...)` instead of an imported
+  `AccountBalance(...)`. Both compile identically, so nothing about compilation catches this —
+  autocomplete inserting the FQN, or a copy-paste from a stack trace, is easy to miss.
+-->
+<ruleset name="zen"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+  <description>jZen framework-level PMD rules</description>
+  <rule ref="category/java/codestyle.xml/UnnecessaryFullyQualifiedName"/>
+</ruleset>

@@ -61,7 +61,7 @@ public enum UserRole {
 
     @Override
     public UserRole convertToEntityAttribute(String dbData) {
-      return dbData == null ? null : UserRole.fromValue(dbData);
+      return dbData == null ? null : fromValue(dbData);
     }
   }
 }

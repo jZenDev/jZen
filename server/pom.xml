@@ -96,6 +96,14 @@
     <compiler-plugin.version>3.15.0</compiler-plugin.version>
     <surefire-plugin.version>3.5.4</surefire-plugin.version>
     <protobuf-maven-plugin.version>2.11.0</protobuf-maven-plugin.version>
+    <!--
+      maven-pmd-plugin's own default resolves PMD 6.55.0, whose bundled ASM cannot parse a Java 25
+      class file at all ("Unsupported class file major version 69") - every file in the module
+      fails to process, and the plugin still reports BUILD SUCCESS, a vacuous gate checking
+      nothing while looking green. 3.27.0 resolves PMD 7.14.0, which parses Java 25 correctly
+      (jZen's own baseline, maven.compiler.release above). See issue #61.
+    -->
+    <maven-pmd-plugin.version>3.27.0</maven-pmd-plugin.version>
 
     <skipITs>true</skipITs>
   </properties>
@@ -231,6 +239,18 @@
           <groupId>io.github.ascopes</groupId>
           <artifactId>protobuf-maven-plugin</artifactId>
           <version>${protobuf-maven-plugin.version}</version>
+        </plugin>
+        <!--
+          Version pinned here only (issue #61); NOT bound in <plugins> below, so resolving this
+          parent does not silently start linting every inheriting module. Each consuming module
+          (a jZen library, an application's own server module) opts in by declaring the plugin
+          with an execution against server/pmd-ruleset.xml - see zen-core/pom.xml for the
+          reference wiring.
+        -->
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-pmd-plugin</artifactId>
+          <version>${maven-pmd-plugin.version}</version>
         </plugin>
       </plugins>
     </pluginManagement>

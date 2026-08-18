@@ -112,6 +112,15 @@ For live dev with reload, `task run:server` runs the reference backend in Quarku
 `:8080`. The native production build is `task build:server:native` (container build, pinned to
 `linux/amd64`).
 
+**PMD: fully-qualified names.** Every library module and the app server module run PMD's
+`UnnecessaryFullyQualifiedName` rule (`server/pmd-ruleset.xml`) at `test-compile`, so `mvn test`
+alone already catches it — `import prudent.server.account.AccountBalance;` used, then
+`prudent.server.account.AccountBalance` typed out inline elsewhere in the same file instead of
+`AccountBalance`. Both compile identically, so nothing else catches it. The plugin version is
+pinned once in `zen-parent`'s `pluginManagement`; a module opts in by declaring
+`maven-pmd-plugin` with its own execution against `pmd-ruleset.xml` — `zen-core/pom.xml` is the
+reference wiring.
+
 ## ⚙️ Configuration
 
 The server uses **runtime** MicroProfile config (`application.properties` in the app server),

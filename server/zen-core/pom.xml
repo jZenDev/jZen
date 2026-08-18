@@ -30,4 +30,41 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <!--
+        Flags a fully-qualified class reference used inline where an import would do (issue #61).
+        The plugin version is pinned once in zen-parent's pluginManagement; each consuming module
+        opts in here with its own execution, so resolving a new zen-parent never silently starts
+        linting a module that hasn't opted in. Bound to test-compile (not compile/verify): a
+        fully-qualified reference compiles fine, so compile never catches it, and test-compile is
+        the last phase a plain `mvn test` and a full `mvn package`/native build both pass through.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-pmd-plugin</artifactId>
+        <configuration>
+          <rulesets>
+            <ruleset>${project.basedir}/../pmd-ruleset.xml</ruleset>
+          </rulesets>
+          <includeTests>true</includeTests>
+          <excludeRoots>
+            <excludeRoot>${project.build.directory}/generated-sources/annotations</excludeRoot>
+          </excludeRoots>
+        </configuration>
+        <executions>
+          <execution>
+            <phase>test-compile</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <configuration>
+              <failOnViolation>true</failOnViolation>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 </project>

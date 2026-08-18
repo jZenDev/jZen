@@ -173,7 +173,7 @@ class StaticCacheHeadersWiringTest {
    */
   @Test
   void the304CarriesTheSecurityHeaders() {
-    io.restassured.response.Response response =
+    Response response =
         given().header("If-None-Match", etagOf(ENTRY_FILE)).when().get(ENTRY_FILE).andReturn();
     assertEquals(304, response.statusCode());
     for (String header :

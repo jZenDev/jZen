@@ -46,10 +46,12 @@ class UserRetentionTest {
 
   @Inject UserRetentionJob retentionJob;
   @Inject MockMailbox mailbox;
+  @Inject AnonymisationRecorder anonymisations;
 
   @BeforeEach
   void clearMailbox() {
     mailbox.clear();
+    anonymisations.clear();
   }
 
   @Test
@@ -80,6 +82,8 @@ class UserRetentionTest {
     assertEquals("Last chance - your jZen account is deleted in 7 days", mail.getSubject());
     assertNotNull(reload(id).finalWarningSentAt, "the final warning is stamped");
     assertEquals(email, reload(id).email, "a warned account is not anonymised in the same cycle");
+    assertEquals(
+        List.of(), anonymisations.observed(), "no UserAnonymised event before anonymisation");
 
     /* Backdate the final warning past the last grace period; the next cycle must anonymise. */
     QuarkusTransaction.requiringNew()
@@ -93,6 +97,10 @@ class UserRetentionTest {
     User anonymised = reload(id);
     assertEquals("anon_" + id + "@deleted.invalid", anonymised.email);
     assertEquals("Deleted User", anonymised.nickname);
+    assertEquals(
+        List.of(id),
+        anonymisations.observed(),
+        "anonymising the row fires UserAnonymised for it (issue #63)");
   }
 
   @Test

@@ -1,6 +1,8 @@
 package zen.identity.user;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -11,6 +13,7 @@ import org.jboss.logging.Logger;
 import zen.identity.event.AccountDeletionWarning;
 import zen.identity.event.AccountDeletionWarning.Stage;
 import zen.identity.event.DeliveryReceipt;
+import zen.identity.event.UserAnonymised;
 
 /**
  * GDPR Art. 5(1)(e) data retention: warn the owners of long-dormant accounts twice, then anonymise
@@ -32,6 +35,11 @@ import zen.identity.event.DeliveryReceipt;
  * {@code IdentityService}'s outbound Supabase call outside {@link UserStore}'s transaction.
  *
  * <p>Premium accounts are never touched, and an already-anonymised row is never reprocessed.
+ *
+ * <p>Anonymisation fires a {@link zen.identity.event.UserAnonymised} event per row so an
+ * application can cascade its own cleanup of anything it keeps keyed on {@code userId} - the
+ * mirror of {@link zen.identity.event.UserRegistered} for the account's exit rather than its entry
+ * (DECISIONS ADR-007). See {@link #anonymiseExpiredAccounts()}.
  *
  * <p><strong>Every query is bounded, and the bound does not touch the ordering above.</strong> All
  * three used to load whatever matched, in full, into a list on a 256Mi instance — a shape whose
@@ -90,6 +98,13 @@ public class UserRetentionService {
    */
   @ConfigProperty(name = "zen.identity.retention.batch-size")
   int batchSize;
+
+  private final Event<UserAnonymised> anonymisations;
+
+  @Inject
+  public UserRetentionService(Event<UserAnonymised> anonymisations) {
+    this.anonymisations = anonymisations;
+  }
 
   /**
    * Finds up to one batch of accounts dormant longer than the configured window that have not been
@@ -179,6 +194,12 @@ public class UserRetentionService {
    * unroutable placeholder and the personal fields are cleared. The row itself is kept so foreign
    * references and aggregate counts stay intact.
    *
+   * <p>Fires a {@link UserAnonymised} event per row, synchronously and from inside this same
+   * transaction, so an application observer can cascade cleanup of its own tables keyed on
+   * {@code userId}. Synchronous and in-transaction, not {@code fireAsync} as {@link
+   * zen.identity.event.UserRegistered} is: an observer here is doing something that must either
+   * commit with the anonymisation or roll it back, not something that can safely lag behind it.
+   *
    * @return how many accounts were anonymised
    */
   @Transactional
@@ -203,6 +224,7 @@ public class UserRetentionService {
       user.displayName = null;
       user.avatarUrl = null;
       user.emailVerified = false;
+      anonymisations.fire(new UserAnonymised(user.id));
     }
     if (!expired.isEmpty()) {
       LOG.infof("Data retention: anonymised %d expired accounts", expired.size());

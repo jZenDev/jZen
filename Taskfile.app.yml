@@ -138,6 +138,42 @@ tasks:
         cd "{{.JZEN_DIR}}/server" && ./mvnw -B -q install -DskipTests
         echo "jZen libraries installed."
 
+  framework:prepare:
+    desc: Prepare the jZen framework checkout itself for consumption (l10n, admin scaffold deps)
+    silent: true
+    summary: |
+      The prerequisite an application's multi-repo build cannot express, alongside
+      framework:install for the Java side (issue #64).
+
+      TWO gaps, same shape. `zen:generate:l10n` (and `zen:test:client`'s internal call to it)
+      discovers localized packages with `git ls-files`, scoped to whichever repository the task
+      runs in. Called from an application's own root, it can only ever see that application's own
+      tracked files — client/zen_ui_identity/l10n.yaml and friends belong to jZen's OWN git
+      repository, which a sibling-checkout `git ls-files` structurally cannot see. And nothing has
+      ever run `pnpm install` inside jZen's own admin/ on a fresh multi-repo checkout, so
+      TypeScript's node_modules walk from an application's admin panel (which imports
+      @jzen/admin-core from ../jZen/admin/src via a `paths` alias) finds react-admin nowhere.
+
+      Both are invisible on a developer's machine: a developer who has done unrelated framework
+      work has already generated or installed the missing artifact, and it persists on disk. CI
+      has no such history, so this class of defect is structurally undetectable where the code
+      is written.
+
+      WHAT IT DOES. Runs `task generate:l10n` and `pnpm install` IN jZen's own root ({{.JZEN_DIR}}),
+      not the including application's, so `git ls-files` resolves against jZen's own tracked files
+      and the admin scaffold's own node_modules gets populated. Deliberately not a `deps:` of the
+      build tasks below, for the same reason framework:install is not: it compiles another
+      repository's config and an application developer who has not touched jZen should not pay for
+      it on every build. Run it once after cloning a sibling jZen checkout, or in CI before
+      anything that reaches into it.
+    cmds:
+      - |
+        set -eu
+        echo ">> preparing the jZen framework checkout at {{.JZEN_DIR}}"
+        (cd "{{.JZEN_DIR}}" && task generate:l10n)
+        (cd "{{.JZEN_DIR}}/admin" && pnpm install)
+        echo "jZen framework checkout prepared (l10n generated, admin scaffold deps installed)."
+
   deps:
     desc: Resolve Dart/Flutter dependencies for the application's packages
     silent: true

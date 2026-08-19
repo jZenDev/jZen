@@ -13,7 +13,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import zen.proto.v1.JobRun;
 import zen.proto.v1.JobTickResult;
@@ -51,20 +53,38 @@ public class JobScheduler {
 
   private final Instance<ZenJob> jobs;
   private final Clock clock;
+  private final Optional<String> triggerToken;
 
   @Inject
-  public JobScheduler(Instance<ZenJob> jobs, Clock clock) {
+  public JobScheduler(
+      Instance<ZenJob> jobs,
+      Clock clock,
+      @ConfigProperty(name = "zen.jobs.trigger.token") Optional<String> triggerToken) {
     this.jobs = jobs;
     this.clock = clock;
+    this.triggerToken = triggerToken;
   }
 
   /**
    * Seeds a row for every registered job that does not have one yet. Existing rows are left
    * untouched: once a job exists, the database owns its schedule and its enabled flag, so an
    * operator's change survives the next deploy.
+   *
+   * <p>Also warns when jobs are registered but no trigger token is configured: without it, {@link
+   * JobTriggerAuthenticator} rejects every call to {@link JobTriggerResource}, so none of these
+   * jobs can ever run. That call-time rejection only logs when something calls the endpoint, and an
+   * application that never configured the token has, in practice, not created the scheduler entry
+   * either - so the warning would never fire. Checking both facts here, at boot, is what makes the
+   * inert state observable.
    */
   void seedRegisteredJobs(@Observes StartupEvent startup) {
     Map<String, ZenJob> registry = registry();
+    if (isInert(registry.size(), triggerToken)) {
+      LOG.warnf(
+          "%d job(s) registered but zen.jobs.trigger.token is unconfigured - none of them can"
+              + " ever run. Set the secret and create the external trigger.",
+          registry.size());
+    }
     QuarkusTransaction.requiringNew()
         .run(
             () ->
@@ -206,6 +226,11 @@ public class JobScheduler {
                 state.failureCount++;
               }
             });
+  }
+
+  /** Jobs are registered but no token exists by which any of them could ever be triggered. */
+  static boolean isInert(int registeredJobCount, Optional<String> triggerToken) {
+    return registeredJobCount > 0 && triggerToken.filter(t -> !t.isBlank()).isEmpty();
   }
 
   /** The jobs this build ships, keyed by id. Duplicate ids are a wiring bug, so they are fatal. */

@@ -29,6 +29,15 @@ see it.
 5. **Screenshot desktop and mobile.** Resize to 390px wide and shoot again. Mobile overflow
    produced several separate bug reports in this project's history; a desktop-only check would
    have missed all of them.
+
+   **`resize_window` reports success even when it does nothing.** On macOS, Chrome refuses a
+   programmatic resize while the window is maximised or fullscreen — the tool returns
+   "Successfully resized" and the viewport does not change. Always **verify the resize landed**
+   by comparing the screenshot dimensions before and after. If the width did not change:
+   say the mobile check is **blocked**, not passed, and tell the user to take the Chrome window
+   out of fullscreen/maximised state so the check can run. Never infer mobile rendering from the
+   accessibility tree or from the presence of a responsive markup branch — seeing a "mobile nav"
+   element in the DOM is not evidence that it renders correctly.
 6. **Read the console.** `read_console_messages` with a pattern if it is noisy. Report every
    error, including ones that look unrelated.
 7. **Check the network tab** when the change touches a request: status codes, and for jZen the
@@ -52,5 +61,7 @@ Report exactly this, and nothing more:
   kill the session. Avoid buttons that confirm destructive actions.
 - **Stop after two failed attempts** at the same browser action and report what blocked you.
   Do not explore adjacent pages hoping something works.
+- **A blocked check is a FAIL, not a PASS with a caveat.** If any part of the procedure could
+  not run, the verdict is FAIL and the report says exactly which question is unanswered.
 - **Never log in with real credentials** unless the user supplied test credentials in this
   session for exactly this purpose.

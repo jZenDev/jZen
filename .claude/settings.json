@@ -1,0 +1,162 @@
+{
+  "permissions": {
+    "ask": [
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
+    ],
+    "allow": [
+      "Bash(./mvnw:*)",
+      "Bash(./server/mvnw:*)",
+      "Bash(basename:*)",
+      "Bash(cat:*)",
+      "Bash(column:*)",
+      "Bash(comm:*)",
+      "Bash(curl -fsS http://127.0.0.1:*)",
+      "Bash(curl -fsS http://localhost:*)",
+      "Bash(curl -i http://127.0.0.1:*)",
+      "Bash(curl -i http://localhost:*)",
+      "Bash(curl -s http://127.0.0.1:*)",
+      "Bash(curl -s http://localhost:*)",
+      "Bash(curl -sI http://127.0.0.1:*)",
+      "Bash(curl -sI http://localhost:*)",
+      "Bash(curl -sS http://127.0.0.1:*)",
+      "Bash(curl -sS http://localhost:*)",
+      "Bash(curl -v http://127.0.0.1:*)",
+      "Bash(curl -v http://localhost:*)",
+      "Bash(cut:*)",
+      "Bash(dart analyze:*)",
+      "Bash(dart format:*)",
+      "Bash(dart pub get:*)",
+      "Bash(dart test:*)",
+      "Bash(date:*)",
+      "Bash(df:*)",
+      "Bash(diff:*)",
+      "Bash(dirname:*)",
+      "Bash(docker images:*)",
+      "Bash(docker inspect:*)",
+      "Bash(docker logs:*)",
+      "Bash(docker ps:*)",
+      "Bash(du:*)",
+      "Bash(echo:*)",
+      "Bash(file:*)",
+      "Bash(find:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(flutter pub get:*)",
+      "Bash(flutter test:*)",
+      "Bash(gh api -X GET:*)",
+      "Bash(gh auth status:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh repo view:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+      "Bash(git blame:*)",
+      "Bash(git branch:*)",
+      "Bash(git cat-file:*)",
+      "Bash(git config --get:*)",
+      "Bash(git describe:*)",
+      "Bash(git diff:*)",
+      "Bash(git fetch:*)",
+      "Bash(git log:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git ls-remote:*)",
+      "Bash(git merge-base:*)",
+      "Bash(git reflog:*)",
+      "Bash(git remote -v:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git shortlog:*)",
+      "Bash(git show:*)",
+      "Bash(git stash list:*)",
+      "Bash(git status:*)",
+      "Bash(grep:*)",
+      "Bash(head:*)",
+      "Bash(javap:*)",
+      "Bash(join:*)",
+      "Bash(jq:*)",
+      "Bash(ls:*)",
+      "Bash(lsof -nP -iTCP:*)",
+      "Bash(md5:*)",
+      "Bash(npx tsc:*)",
+      "Bash(od:*)",
+      "Bash(openssl x509:*)",
+      "Bash(pnpm build:*)",
+      "Bash(pnpm exec tsc:*)",
+      "Bash(pnpm install:*)",
+      "Bash(pnpm test:*)",
+      "Bash(pnpm tsc:*)",
+      "Bash(printf:*)",
+      "Bash(ps:*)",
+      "Bash(realpath:*)",
+      "Bash(rg:*)",
+      "Bash(server/mvnw:*)",
+      "Bash(shasum:*)",
+      "Bash(sort:*)",
+      "Bash(stat:*)",
+      "Bash(supabase status:*)",
+      "Bash(tail:*)",
+      "Bash(task --list:*)",
+      "Bash(task --summary:*)",
+      "Bash(task audit:*)",
+      "Bash(task build:*)",
+      "Bash(task deps:*)",
+      "Bash(task doctor:*)",
+      "Bash(task generate:*)",
+      "Bash(task info:*)",
+      "Bash(task sync:*)",
+      "Bash(task test:*)",
+      "Bash(task verify:*)",
+      "Bash(tr:*)",
+      "Bash(tree:*)",
+      "Bash(type:*)",
+      "Bash(uniq:*)",
+      "Bash(unzip -l:*)",
+      "Bash(wc:*)",
+      "Bash(which:*)",
+      "Bash(xxd:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/git_guard.py\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/skill_guard.py\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/worktree_guard.py\""
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/skill_guard.py\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/verify_guard.py\""
+          }
+        ]
+      }
+    ]
+  }
+}

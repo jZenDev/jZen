@@ -201,3 +201,95 @@ construction**; the trigger to externalize state (Postgres/Redis) is raising `--
 ## Project-specific working agreement
 
 **Never run `git commit` or `git push` without explicit approval from the user.**
+
+**Never commit onto `main`** — branch first, even with approval in hand, and especially right
+after a PR merge, when the working copy has just landed back on `main`.
+
+Both rules, and the 50-character subject limit, are enforced by `.claude/hooks/git_guard.py`
+rather than by memory. A fresh clone has no git-side guard until
+`sh .claude/hooks/install-git-hooks.sh` runs, because `.git/hooks` is not tracked.
+`.claude/hooks/skill_guard.py` delivers a skill's rules the first time a file it governs is
+edited in a session; the path-to-skill mapping is `.claude/hooks/skill-map.json`.
+
+Two more guards close the gap between "a rule exists" and "a rule fires":
+`.claude/hooks/verify_guard.py` runs on `Stop` and refuses to end a turn that changed source
+without running a suite (config: `verify-rules.json`; docs, `.claude/` and generated output are
+exempt, and it never fires twice in a row). `skill_guard.py` also matches **commands**, not just
+paths — so `long-job` arrives on the first slow build and `deploy` on the first `gcloud`, which
+are skills no file edit could ever have summoned.
+
+**Branch names are `<type>/<slug>`** — `feature/`, `fix/`, `docs/`, `security/`, `orchestration/`.
+
+**Deploy commands are prepared, not run.** Produce the exact command and say what it will change;
+the user runs it and brings back the output. See the `deploy` skill, which also carries the
+describe-or-create rule for one-time regional resources.
+
+**When a command fails twice with the same error, escalate instead of retrying** — hand over the
+exact command for the user to run with the `!` prefix. Interactive authentication is never a
+retry problem.
+
+### What is in `.claude/`
+
+| | Purpose |
+|---|---|
+| `skills/add-adr` | record a decision in `DECISIONS.md` (append-only) |
+| `skills/add-endpoint` | add a REST endpoint contract-first (OpenAPI merge, Jandex, no-Jackson) |
+| `skills/sync-contracts` | the proto → Java/Dart/TS regeneration loop and its drift gate |
+| `skills/run-demo` | boot the stack locally |
+| `skills/deploy` | Cloud Run deploy; who runs it, and the one-time-resource rule |
+| `skills/long-job` | how to wait on a slow command, with this repo's measured durations |
+| `agents/visual-verify` | drive a change in a real browser; returns pass/fail + screenshots |
+| `agents/regression-guard` | review a diff for what it broke and what it duplicated |
+| `hooks/` | the guards above, their config, and their tests |
+
+Run the hook tests with `python3 .claude/hooks/test_git_guard.py`,
+`python3 .claude/hooks/test_skill_guard.py` and `python3 .claude/hooks/test_verify_guard.py`.
+
+`.claude/tools/session-metrics.py` measures whether any of this is working. It parses the
+Claude Code transcripts for all three repos and reports the rates the guards exist to move —
+over-long commit subjects, commits on a protected branch, foreground sleeps, skill loads, and
+how often each guard actually blocked something. `--compare` diffs against
+`session-metrics-baseline.json`, stamped from the window before the guards existed. Re-run it
+every few weeks; it is read-only and writes nothing outside `.claude/tools/`.
+
+Permissions are prefix rules in the tracked `.claude/settings.json` (read-only git, inspection
+tools, this repo's own build and test entry points). `settings.local.json` is for genuine
+one-offs; it is gitignored and never the place for a rule everyone needs. `task deploy:*` is
+deliberately **not** pre-allowed — and an entry there that pre-approves a real deploy
+contradicts the rule above, so prune those on sight. Entries accrete: periodically drop the ones
+already covered by a wildcard in the same file, and the ones naming ports, PIDs or scratch paths
+that no longer exist.
+
+
+## The working tree is shared
+
+The user edits files in this repository while a session runs. A session that
+assumes it is alone commits their work by accident.
+
+**Stage by explicit path, and check the index before committing.** `git add -A`
+and `git add .` sweep up whatever is there. Even explicit paths are not enough
+on their own: run `git diff --cached --name-only` immediately before `git
+commit` and confirm every entry is a file you wrote. A file can already be
+staged when you arrive.
+
+**Never switch branches while files you did not touch are modified.** A switch
+either aborts or carries someone else's work onto another branch, and a stash
+taken to get around it pops straight back onto the branch you were leaving.
+Use a worktree, which needs no stash and leaves this tree untouched:
+
+    git worktree add -b <branch> <dir> origin/main
+    # work, commit, push from <dir>
+    git worktree remove <dir>
+
+This applies to `git checkout -b <branch> <start-point>` too: git aborts that
+whenever a modified file differs between HEAD and the start point.
+
+**Leave what is not yours exactly as you found it.** If you have to undo your
+own commit, verify afterwards that their files are still modified and still
+theirs.
+
+`.claude/hooks/worktree_guard.py` enforces all of this: it recovers the files
+this session wrote from the transcript, refuses a commit whose index holds
+anything else, and refuses a branch switch under foreign changes. Prefix a
+command with `ALLOW_FOREIGN=1` when the foreign files genuinely belong in the
+commit.

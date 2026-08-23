@@ -1,0 +1,8 @@
+{
+  "source": ["*.java", "*.dart", "*.ts", "*.tsx", "*.sql", "*.proto", "*.yaml", "Taskfile*.yml"],
+  "exempt": [".claude/*", "docs/*", "*.md", "target/*", "*/node_modules/*", "build/*",
+             "*/generated/*", "*.generated.ts", "*.pb.dart", "*.pbjson.dart", "*.pbenum.dart"],
+  "tests": ["\\bmvnw\\b[^|;&]*\\b(test|verify)\\b", "\\btask\\s+test\\b", "\\btask\\s+verify",
+            "\\bdart\\s+test\\b", "\\bflutter\\s+test\\b", "\\bpnpm\\s+test\\b"],
+  "message": "Run `task test` (or the narrower suite for what changed) before ending the turn."
+}

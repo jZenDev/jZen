@@ -248,4 +248,7 @@ Run the hook tests with `python3 .claude/hooks/test_git_guard.py` and
 Permissions are prefix rules in the tracked `.claude/settings.json` (read-only git, inspection
 tools, this repo's own build and test entry points). `settings.local.json` is for genuine
 one-offs; it is gitignored and never the place for a rule everyone needs. `task deploy:*` is
-deliberately **not** pre-allowed.
+deliberately **not** pre-allowed — and an entry there that pre-approves a real deploy
+contradicts the rule above, so prune those on sight. Entries accrete: periodically drop the ones
+already covered by a wildcard in the same file, and the ones naming ports, PIDs or scratch paths
+that no longer exist.

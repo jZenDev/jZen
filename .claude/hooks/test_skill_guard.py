@@ -11,6 +11,14 @@ def check(name, cond, detail=""):
 def run(root, path, session="s1", tool="Edit"):
     payload = {"hook_event_name": "PreToolUse", "tool_name": tool, "cwd": root,
                "session_id": session, "tool_input": {"file_path": path}}
+    return _go(root, payload)
+
+def run_cmd(root, command, session="c1"):
+    payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "cwd": root,
+               "session_id": session, "tool_input": {"command": command}}
+    return _go(root, payload)
+
+def _go(root, payload):
     env = dict(os.environ, CLAUDE_PROJECT_DIR=root)
     p = subprocess.run([sys.executable, GUARD], input=json.dumps(payload),
                        capture_output=True, text=True, env=env)
@@ -84,6 +92,50 @@ with tempfile.TemporaryDirectory() as root:
     check("excluded build output passes", rc == 0, err[:150])
     rc, err = run(root, os.path.join(root, "src/app.module.css"), session="s9")
     check("source path still blocks", rc == 2, err[:150])
+
+    # ---- command triggers (item 14) ----
+    print("command triggers")
+    open(os.path.join(root, ".claude", "skills", "long-job", "SKILL.md"), "w") if False else None
+    os.makedirs(os.path.join(root, ".claude", "skills", "long-job"), exist_ok=True)
+    open(os.path.join(root, ".claude", "skills", "long-job", "SKILL.md"), "w").write(
+        "---\nname: long-job\n---\nNever poll with a foreground sleep.\n")
+    open(os.path.join(root, ".claude", "hooks", "skill-map.json"), "w").write(json.dumps({
+        "rules": [
+            {"skill": "long-job", "why": "it is a long command",
+             "commands": [r"\bmvnw\b[^|;&]*\btest\b", r"\btask\s+test\b"]},
+            {"skill": "design-system", "paths": ["*.qute.html"]},
+        ]}))
+    rc, err = run_cmd(root, "./mvnw test", session="c1")
+    check("first long test command blocks with the skill",
+          rc == 2 and "Never poll" in err and "mvnw test" in err, err[:200])
+    rc, err = run_cmd(root, "./mvnw -q -o test 2>&1 | tail -50", session="c1")
+    check("second such command passes", rc == 0, err[:150])
+    rc, err = run_cmd(root, "task test", session="c2")
+    check("different session blocks again", rc == 2)
+    rc, err = run_cmd(root, "ls -la", session="c3")
+    check("unrelated command passes", rc == 0)
+    rc, err = run_cmd(root, "git status", session="c3")
+    check("git status passes", rc == 0)
+    rc, err = run(root, os.path.join(root, "templates/x.qute.html"), session="c3")
+    check("path rules still work alongside command rules", rc == 2)
+    # a MENTION is not an invocation -- this exact shape produced a false block
+    rc, err = run_cmd(root, """probe() { echo "task test"; }\nprobe""", session="c5")
+    check("quoted mention inside a function does not block", rc == 0, err[:200])
+    rc, err = run_cmd(root, "grep -rn 'task test' docs/", session="c5")
+    check("grep for a trigger string does not block", rc == 0, err[:150])
+    rc, err = run_cmd(root, "cat <<'EOF'\n./mvnw test\nEOF", session="c5")
+    check("heredoc body mentioning a trigger does not block", rc == 0, err[:150])
+    rc, err = run_cmd(root, 'echo "run ./mvnw test later"', session="c5")
+    check("echoing a trigger does not block", rc == 0, err[:150])
+    rc, err = run_cmd(root, "./mvnw test", session="c5")
+    check("the real invocation still blocks", rc == 2, err[:150])
+    rc, err = run_cmd(root, "cd server && task test 2>&1 | tail -5", session="c6")
+    check("real invocation in a pipeline still blocks", rc == 2, err[:150])
+
+    open(os.path.join(root, ".claude", "hooks", "skill-map.json"), "w").write(json.dumps({
+        "rules": [{"skill": "long-job", "commands": ["[unclosed"]}]}))
+    rc, err = run_cmd(root, "./mvnw test", session="c4")
+    check("a broken regex in the map never blocks", rc == 0, err[:150])
 
     p = subprocess.run([sys.executable, GUARD], input="not json",
                        capture_output=True, text=True)

@@ -7,11 +7,20 @@ recognises "this is a design task", but the agent is usually part-way
 through something else when it opens a template, and by then the framing is
 set. Recognition is the wrong trigger. The file path is the right one.
 
-So: a PreToolUse hook on Edit/Write matches the path against
+So: a PreToolUse hook matches what is about to happen against
 .claude/hooks/skill-map.json and, the first time in a session that a
-governed file is touched, blocks the edit and puts the skill's rules on
+governed thing is touched, blocks the call and puts the skill's rules on
 stderr, which is fed back to the agent. It fires once per skill per
-session -- the second edit of the same kind goes straight through.
+session -- the second edit or command of the same kind goes straight
+through.
+
+Two kinds of trigger, because skills divide that way:
+
+  * `paths` -- an Edit/Write to a file the skill governs (a template, a
+    migration, a .proto);
+  * `commands` -- a Bash command the skill governs (a test run, a deploy).
+    A skill like `long-job` or `deploy` has no file to hang off; the thing
+    that should summon it is the command itself.
 
 Blocking is deliberate. Rules that arrive after the edit are advice; rules
 that arrive before it are a gate.
@@ -22,6 +31,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import os
+import re
 import sys
 import tempfile
 
@@ -40,6 +50,53 @@ def load_map(root: str) -> list[dict]:
         return []
     rules = data.get("rules", [])
     return rules if isinstance(rules, list) else []
+
+
+def bash_command(payload: dict) -> str | None:
+    if payload.get("tool_name") != "Bash":
+        return None
+    cmd = (payload.get("tool_input") or {}).get("command")
+    return cmd if isinstance(cmd, str) and cmd.strip() else None
+
+
+HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+
+
+def executable_text(cmd: str) -> str:
+    """Strip everything that is data rather than an invocation.
+
+    A command that merely *mentions* `task test` -- inside a quoted string, a
+    heredoc, a grep pattern, a shell function being defined -- is not running
+    it, and blocking on the mention is worse than missing the real thing. So
+    heredoc bodies and quoted spans come out before matching.
+    """
+    lines, out, i = cmd.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        tags = [m.group(2) for m in HEREDOC.finditer(line)]
+        i += 1
+        for tag in tags:                       # drop the body, keep the line
+            while i < len(lines) and lines[i].strip() != tag:
+                i += 1
+            i += 1
+    text = "\n".join(out)
+    # Remove quoted spans, leaving a separator so tokens do not fuse.
+    text = re.sub(r"'[^']*'", " ", text)
+    text = re.sub(r'"[^"]*"', " ", text)
+    return text
+
+
+def command_matches(cmd: str, patterns: list[str]) -> bool:
+    text = executable_text(cmd)
+    for rx in patterns:
+        try:
+            if re.search(rx, text):
+                return True
+        except re.error:
+            # A bad regex in the map must not take the session down.
+            continue
+    return False
 
 
 def edited_path(payload: dict) -> str | None:
@@ -106,34 +163,44 @@ def main() -> int:
     except (ValueError, OSError):
         return 0
 
-    path = edited_path(payload)
-    if not path:
-        return 0
     cwd = payload.get("cwd") or os.getcwd()
     root = os.environ.get("CLAUDE_PROJECT_DIR") or cwd
     session = payload.get("session_id") or ""
 
-    try:
-        rel = os.path.relpath(os.path.abspath(path), root)
-    except ValueError:
-        rel = path
-    if rel.startswith(".."):
-        return 0  # outside the project; not ours to govern
+    cmd = bash_command(payload)
+    path = None if cmd else edited_path(payload)
+    if cmd is None and not path:
+        return 0
+
+    rel = ""
+    if path:
+        try:
+            rel = os.path.relpath(os.path.abspath(path), root)
+        except ValueError:
+            rel = path
+        if rel.startswith(".."):
+            return 0  # outside the project; not ours to govern
 
     pending: list[tuple[str, str, str]] = []  # (skill, why, body)
     for rule in load_map(root):
         skill = rule.get("skill")
-        patterns = rule.get("paths") or []
-        if not skill or not matches(rel, patterns):
+        if not skill:
             continue
-        if matches(rel, rule.get("exclude") or []):
-            continue  # build output and vendored trees are not authored here
+        if cmd is not None:
+            if not command_matches(cmd, rule.get("commands") or []):
+                continue
+        else:
+            if not matches(rel, rule.get("paths") or []):
+                continue
+            if matches(rel, rule.get("exclude") or []):
+                continue  # build output and vendored trees are not authored here
         if already_delivered(root, session, skill):
             continue
         body, skill_path = skill_body(root, skill)
         if not body:
             continue
-        why = rule.get("why") or f"it governs `{rel}`"
+        why = rule.get("why") or (
+            "it governs this command" if cmd is not None else f"it governs `{rel}`")
         pending.append((skill, why, f"Source: {skill_path}\n\n{body}"))
 
     if not pending:
@@ -143,11 +210,14 @@ def main() -> int:
         mark_delivered(root, session, skill)
 
     names = ", ".join(f"`{s}`" for s, _, _ in pending)
+    what = (f"Running `{cmd.strip().splitlines()[0][:60]}`" if cmd is not None
+            else f"Editing `{rel}`")
+    action = "re-issue this command" if cmd is not None else "re-issue this edit"
     print(
         f"Blocked once by the skill guard (.claude/hooks/skill_guard.py).\n\n"
-        f"Editing `{rel}` engages {names}. Their rules are below -- apply them, then\n"
-        f"re-issue this edit. Each skill fires once per session, so the next edit of\n"
-        f"this kind goes straight through.",
+        f"{what} engages {names}. Their rules are below -- apply them, then\n"
+        f"{action}. Each skill fires once per session, so the next one of this\n"
+        f"kind goes straight through.",
         file=sys.stderr,
     )
     for skill, why, body in pending:

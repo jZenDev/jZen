@@ -211,6 +211,13 @@ rather than by memory. A fresh clone has no git-side guard until
 `.claude/hooks/skill_guard.py` delivers a skill's rules the first time a file it governs is
 edited in a session; the path-to-skill mapping is `.claude/hooks/skill-map.json`.
 
+Two more guards close the gap between "a rule exists" and "a rule fires":
+`.claude/hooks/verify_guard.py` runs on `Stop` and refuses to end a turn that changed source
+without running a suite (config: `verify-rules.json`; docs, `.claude/` and generated output are
+exempt, and it never fires twice in a row). `skill_guard.py` also matches **commands**, not just
+paths — so `long-job` arrives on the first slow build and `deploy` on the first `gcloud`, which
+are skills no file edit could ever have summoned.
+
 **Branch names are `<type>/<slug>`** — `feature/`, `fix/`, `docs/`, `security/`, `orchestration/`.
 
 **Deploy commands are prepared, not run.** Produce the exact command and say what it will change;

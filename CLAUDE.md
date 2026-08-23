@@ -201,3 +201,12 @@ construction**; the trigger to externalize state (Postgres/Redis) is raising `--
 ## Project-specific working agreement
 
 **Never run `git commit` or `git push` without explicit approval from the user.**
+
+**Never commit onto `main`** — branch first, even with approval in hand, and especially right
+after a PR merge, when the working copy has just landed back on `main`.
+
+Both rules, and the 50-character subject limit, are enforced by `.claude/hooks/git_guard.py`
+rather than by memory. A fresh clone has no git-side guard until
+`sh .claude/hooks/install-git-hooks.sh` runs, because `.git/hooks` is not tracked.
+`.claude/hooks/skill_guard.py` delivers a skill's rules the first time a file it governs is
+edited in a session; the path-to-skill mapping is `.claude/hooks/skill-map.json`.

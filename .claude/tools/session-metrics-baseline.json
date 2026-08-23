@@ -1,0 +1,80 @@
+{
+  "cutoff": "2026-08-23",
+  "window": "2026-07-11..2026-08-22",
+  "note": "before the .claude/hooks guards were installed",
+  "generated": "2026-08-23T13:18:25.651192+00:00",
+  "metrics": {
+    "sessions": 99,
+    "assistant_turns": 19480,
+    "commits": 164,
+    "commit_subject_over_50": 61,
+    "longest_subject": 116,
+    "commit_on_protected_branch": 23,
+    "sleep_calls": 125,
+    "sleep_seconds": 5974,
+    "idle_echo_calls": 6,
+    "skill_invocations": 31,
+    "subagent_invocations": 13,
+    "bash_calls": 6780,
+    "test_runs": 617,
+    "guard_blocks": {
+      "git_guard": 0,
+      "skill_guard": 0,
+      "verify_guard": 0
+    },
+    "correction_turns": 116,
+    "user_turns": 971,
+    "per_repo": {
+      "jZen": {
+        "sessions": 38,
+        "commits": 46,
+        "commit_subject_over_50": 29,
+        "commit_on_protected_branch": 5,
+        "sleep_calls": 82,
+        "sleep_seconds": 5085,
+        "skill_invocations": 13,
+        "correction_turns": 31,
+        "test_runs": 265,
+        "guard_blocks": {
+          "git_guard": 0,
+          "skill_guard": 0,
+          "verify_guard": 0
+        }
+      },
+      "prudent": {
+        "sessions": 8,
+        "commits": 19,
+        "commit_subject_over_50": 8,
+        "commit_on_protected_branch": 5,
+        "sleep_calls": 16,
+        "sleep_seconds": 311,
+        "skill_invocations": 6,
+        "correction_turns": 9,
+        "test_runs": 92,
+        "guard_blocks": {
+          "git_guard": 0,
+          "skill_guard": 0,
+          "verify_guard": 0
+        }
+      },
+      "bugeater": {
+        "sessions": 53,
+        "commits": 99,
+        "commit_subject_over_50": 24,
+        "commit_on_protected_branch": 13,
+        "sleep_calls": 27,
+        "sleep_seconds": 578,
+        "skill_invocations": 12,
+        "correction_turns": 76,
+        "test_runs": 260,
+        "guard_blocks": {
+          "git_guard": 0,
+          "skill_guard": 0,
+          "verify_guard": 0
+        }
+      }
+    },
+    "first_session": "2026-07-11T11:05:18.815000+00:00",
+    "last_session": "2026-08-22T21:36:25.267000+00:00"
+  }
+}

@@ -242,8 +242,15 @@ retry problem.
 | `agents/regression-guard` | review a diff for what it broke and what it duplicated |
 | `hooks/` | the guards above, their config, and their tests |
 
-Run the hook tests with `python3 .claude/hooks/test_git_guard.py` and
-`python3 .claude/hooks/test_skill_guard.py`.
+Run the hook tests with `python3 .claude/hooks/test_git_guard.py`,
+`python3 .claude/hooks/test_skill_guard.py` and `python3 .claude/hooks/test_verify_guard.py`.
+
+`.claude/tools/session-metrics.py` measures whether any of this is working. It parses the
+Claude Code transcripts for all three repos and reports the rates the guards exist to move —
+over-long commit subjects, commits on a protected branch, foreground sleeps, skill loads, and
+how often each guard actually blocked something. `--compare` diffs against
+`session-metrics-baseline.json`, stamped from the window before the guards existed. Re-run it
+every few weeks; it is read-only and writes nothing outside `.claude/tools/`.
 
 Permissions are prefix rules in the tracked `.claude/settings.json` (read-only git, inspection
 tools, this repo's own build and test entry points). `settings.local.json` is for genuine

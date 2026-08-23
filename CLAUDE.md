@@ -259,3 +259,37 @@ deliberately **not** pre-allowed — and an entry there that pre-approves a real
 contradicts the rule above, so prune those on sight. Entries accrete: periodically drop the ones
 already covered by a wildcard in the same file, and the ones naming ports, PIDs or scratch paths
 that no longer exist.
+
+
+## The working tree is shared
+
+The user edits files in this repository while a session runs. A session that
+assumes it is alone commits their work by accident.
+
+**Stage by explicit path, and check the index before committing.** `git add -A`
+and `git add .` sweep up whatever is there. Even explicit paths are not enough
+on their own: run `git diff --cached --name-only` immediately before `git
+commit` and confirm every entry is a file you wrote. A file can already be
+staged when you arrive.
+
+**Never switch branches while files you did not touch are modified.** A switch
+either aborts or carries someone else's work onto another branch, and a stash
+taken to get around it pops straight back onto the branch you were leaving.
+Use a worktree, which needs no stash and leaves this tree untouched:
+
+    git worktree add -b <branch> <dir> origin/main
+    # work, commit, push from <dir>
+    git worktree remove <dir>
+
+This applies to `git checkout -b <branch> <start-point>` too: git aborts that
+whenever a modified file differs between HEAD and the start point.
+
+**Leave what is not yours exactly as you found it.** If you have to undo your
+own commit, verify afterwards that their files are still modified and still
+theirs.
+
+`.claude/hooks/worktree_guard.py` enforces all of this: it recovers the files
+this session wrote from the transcript, refuses a commit whose index holds
+anything else, and refuses a branch switch under foreign changes. Prefix a
+command with `ALLOW_FOREIGN=1` when the foreign files genuinely belong in the
+commit.

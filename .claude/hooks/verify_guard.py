@@ -27,7 +27,9 @@ import fnmatch
 import json
 import os
 import re
+import hashlib
 import sys
+import tempfile
 
 DEFAULTS = {
     # Editing one of these means the session owes a test run.
@@ -62,15 +64,109 @@ def matches(rel: str, patterns: list[str]) -> bool:
     return any(fnmatch.fnmatch(rel, p) or fnmatch.fnmatch(base, p) for p in patterns)
 
 
-def scan(transcript: str, root: str, rules: dict) -> tuple[int, str | None, int]:
-    """Return (index of last source edit, its path, index of last test run)."""
+def cache_path(root: str, session: str) -> str:
+    """Where the resume point lives. Inside .git so it is never committed."""
+    git_dir = os.path.join(root, ".git")
+    base = git_dir if os.path.isdir(git_dir) else tempfile.gettempdir()
+    return os.path.join(base, "claude-verify-guard", f"{session or 'nosession'}.json")
+
+
+def head_digest(transcript: str) -> str:
+    """Fingerprint of the file's opening bytes.
+
+    Size alone cannot tell a resumed transcript from a rewritten one: a file
+    replaced with same-or-larger content would let the cache resume at an
+    offset that now points into different data. The opening bytes of a given
+    session's transcript never change, so a changed digest means re-scan.
+    """
+    try:
+        with open(transcript, "rb") as fh:
+            return hashlib.sha256(fh.read(512)).hexdigest()
+    except OSError:
+        return ""
+
+
+def load_cache(root: str, session: str, size: int, head: str) -> dict | None:
+    """The saved scan state, or None if it cannot be trusted for this file.
+
+    A transcript only ever grows within a session, so a cache whose recorded
+    size exceeds the file's is stale -- truncated, rotated or replaced -- and
+    so is one whose opening bytes no longer match.
+    """
+    try:
+        with open(cache_path(root, session), encoding="utf-8") as fh:
+            c = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(c, dict):
+        return None
+    try:
+        if int(c["size"]) > size or int(c["offset"]) > size:
+            return None
+        if c.get("head") != head:
+            return None
+        return c
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def save_cache(root: str, session: str, state: dict) -> None:
+    path = cache_path(root, session)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(state, fh)
+        os.replace(tmp, path)          # atomic; a torn cache would be worse than none
+    except OSError:
+        pass                            # a cache that cannot be written costs speed, not correctness
+
+
+def scan(transcript: str, root: str, rules: dict, session: str = "") -> tuple[int, str | None, int]:
+    """Return (index of last source edit, its path, index of last test run).
+
+    Resumes from a byte offset saved on the previous turn. Without that this
+    re-read the whole transcript on every turn end, which is quadratic across a
+    session -- fine at 3 MB, and not fine at the 90 MB these sessions reach.
+    """
     last_edit, last_edit_path, last_test = -1, None, -1
+    start_offset, start_line = 0, 0
+    try:
+        size = os.path.getsize(transcript)
+    except OSError:
+        return -1, None, -1
+
+    head = head_digest(transcript)
+    cached = load_cache(root, session, size, head)
+    if cached:
+        start_offset = int(cached["offset"])
+        start_line = int(cached.get("line", 0))
+        last_edit = int(cached.get("last_edit", -1))
+        last_edit_path = cached.get("last_edit_path")
+        last_test = int(cached.get("last_test", -1))
+
     try:
         fh = open(transcript, encoding="utf-8", errors="replace")
     except OSError:
         return -1, None, -1
     with fh:
-        for i, line in enumerate(fh):
+        fh.seek(start_offset)
+        offset, i = start_offset, start_line
+        while True:
+            # readline() rather than iterating the handle: tell() is disabled
+            # inside a `for line in fh` loop, and the byte offset is the whole
+            # point of this pass.
+            raw = fh.readline()
+            if not raw:
+                break
+            # A transcript is appended to while a session runs, so the final
+            # line can be half-written. Stop before it and resume there next
+            # turn rather than parsing a fragment.
+            if not raw.endswith("\n"):
+                break
+            i += 1
+            offset = fh.tell()
+            line = raw
             line = line.strip()
             if not line:
                 continue
@@ -103,6 +199,11 @@ def scan(transcript: str, root: str, rules: dict) -> tuple[int, str | None, int]
                     cmd = inp.get("command") or ""
                     if any(re.search(rx, cmd) for rx in rules["tests"]):
                         last_test = i
+        save_cache(root, session, {
+            "size": size, "head": head, "offset": offset, "line": i,
+            "last_edit": last_edit, "last_edit_path": last_edit_path,
+            "last_test": last_test,
+        })
     return last_edit, last_edit_path, last_test
 
 
@@ -123,7 +224,8 @@ def main() -> int:
         return 0
 
     rules = load_rules(root)
-    last_edit, path, last_test = scan(transcript, root, rules)
+    last_edit, path, last_test = scan(transcript, root, rules,
+                                      payload.get("session_id") or "")
 
     if last_edit < 0 or last_test > last_edit:
         return 0

@@ -84,6 +84,81 @@ with tempfile.TemporaryDirectory() as root:
                        capture_output=True,text=True,env=dict(os.environ,CLAUDE_PROJECT_DIR=root))
     check("missing transcript never blocks", p.returncode==0)
 
+    # ---------------------------------------------------------- offset cache
+    print("offset cache")
+    import shutil
+    def run_persistent(root, events, session="cache1", truncate=False):
+        """Same transcript file across calls, so the cache is exercised."""
+        tp = os.path.join(root, "persist.jsonl")
+        mode = "w" if truncate else ("a" if os.path.exists(tp) else "w")
+        with open(tp, mode) as f:
+            for e in events: f.write(json.dumps(e)+"\n")
+        payload = {"hook_event_name":"Stop","cwd":root,"session_id":session,
+                   "transcript_path":tp,"stop_hook_active":False}
+        p = subprocess.run([sys.executable,GUARD],input=json.dumps(payload),
+              capture_output=True,text=True,env=dict(os.environ,CLAUDE_PROJECT_DIR=root))
+        return p.returncode, p.stderr
+
+    os.makedirs(os.path.join(root,".git"), exist_ok=True)
+    rc,_ = run_persistent(root, [edit(J("src","A.java"))], truncate=True)
+    check("cache: first turn blocks", rc==2)
+    cache_dir = os.path.join(root,".git","claude-verify-guard")
+    check("cache: file written", os.path.isdir(cache_dir) and os.listdir(cache_dir))
+    rc,_ = run_persistent(root, [bash("./mvnw test")])
+    check("cache: appended test clears it", rc==0)
+    rc,_ = run_persistent(root, [edit(J("src","B.java"))])
+    check("cache: appended edit blocks again", rc==2)
+    rc,_ = run_persistent(root, [bash("task test")])
+    check("cache: cleared again", rc==0)
+
+    # incremental must agree with a cold full parse of the same file
+    cold = os.path.join(root,"persist.jsonl")
+    shutil.copy(cold, os.path.join(root,"cold.jsonl"))
+    payload = {"hook_event_name":"Stop","cwd":root,"session_id":"never-seen",
+               "transcript_path":os.path.join(root,"cold.jsonl"),"stop_hook_active":False}
+    p = subprocess.run([sys.executable,GUARD],input=json.dumps(payload),
+          capture_output=True,text=True,env=dict(os.environ,CLAUDE_PROJECT_DIR=root))
+    check("cache: incremental result == cold full parse", p.returncode==0, p.returncode)
+
+    # a truncated/replaced transcript must invalidate the cache, not mis-resume
+    rc,_ = run_persistent(root, [edit(J("src","C.java"))], truncate=True)
+    check("cache: truncated transcript falls back to full parse", rc==2)
+
+    # a same-size replacement must invalidate too, not just a truncation
+    tp = os.path.join(root,"persist.jsonl")
+    with open(tp,"w") as f:
+        f.write(json.dumps(bash("./mvnw test"))+"\n")
+        f.write(json.dumps(edit(J("src","Z.java")))+"\n")
+    payload = {"hook_event_name":"Stop","cwd":root,"session_id":"cache1",
+               "transcript_path":tp,"stop_hook_active":False}
+    p = subprocess.run([sys.executable,GUARD],input=json.dumps(payload),
+          capture_output=True,text=True,env=dict(os.environ,CLAUDE_PROJECT_DIR=root))
+    check("cache: rewritten transcript is not resumed from a stale offset",
+          p.returncode==2, p.returncode)
+
+    # a corrupt cache must not break the hook
+    cf = os.path.join(cache_dir, os.listdir(cache_dir)[0])
+    open(cf,"w").write("{not json")
+    rc,_ = run_persistent(root, [bash("./mvnw test")])
+    check("cache: corrupt cache falls back cleanly", rc==0)
+
+    # a half-written final line must not be consumed
+    tp = os.path.join(root,"partial.jsonl")
+    with open(tp,"w") as f:
+        f.write(json.dumps(edit(J("src","D.java")))+"\n")
+        f.write('{"type":"assistant","mess')          # torn write, no newline
+    payload = {"hook_event_name":"Stop","cwd":root,"session_id":"partial",
+               "transcript_path":tp,"stop_hook_active":False}
+    p = subprocess.run([sys.executable,GUARD],input=json.dumps(payload),
+          capture_output=True,text=True,env=dict(os.environ,CLAUDE_PROJECT_DIR=root))
+    check("cache: torn final line ignored, edit still seen", p.returncode==2)
+    with open(tp,"a") as f:
+        f.write('age":{"content":[]}}\n')
+        f.write(json.dumps(bash("./mvnw test"))+"\n")
+    p = subprocess.run([sys.executable,GUARD],input=json.dumps(payload),
+          capture_output=True,text=True,env=dict(os.environ,CLAUDE_PROJECT_DIR=root))
+    check("cache: completed line then test clears it", p.returncode==0, p.stderr[:120])
+
 print()
 if FAILURES:
     print(f"{len(FAILURES)} FAILED: {FAILURES}"); sys.exit(1)

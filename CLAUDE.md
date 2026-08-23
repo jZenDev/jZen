@@ -210,3 +210,35 @@ rather than by memory. A fresh clone has no git-side guard until
 `sh .claude/hooks/install-git-hooks.sh` runs, because `.git/hooks` is not tracked.
 `.claude/hooks/skill_guard.py` delivers a skill's rules the first time a file it governs is
 edited in a session; the path-to-skill mapping is `.claude/hooks/skill-map.json`.
+
+**Branch names are `<type>/<slug>`** — `feature/`, `fix/`, `docs/`, `security/`, `orchestration/`.
+
+**Deploy commands are prepared, not run.** Produce the exact command and say what it will change;
+the user runs it and brings back the output. See the `deploy` skill, which also carries the
+describe-or-create rule for one-time regional resources.
+
+**When a command fails twice with the same error, escalate instead of retrying** — hand over the
+exact command for the user to run with the `!` prefix. Interactive authentication is never a
+retry problem.
+
+### What is in `.claude/`
+
+| | Purpose |
+|---|---|
+| `skills/add-adr` | record a decision in `DECISIONS.md` (append-only) |
+| `skills/add-endpoint` | add a REST endpoint contract-first (OpenAPI merge, Jandex, no-Jackson) |
+| `skills/sync-contracts` | the proto → Java/Dart/TS regeneration loop and its drift gate |
+| `skills/run-demo` | boot the stack locally |
+| `skills/deploy` | Cloud Run deploy; who runs it, and the one-time-resource rule |
+| `skills/long-job` | how to wait on a slow command, with this repo's measured durations |
+| `agents/visual-verify` | drive a change in a real browser; returns pass/fail + screenshots |
+| `agents/regression-guard` | review a diff for what it broke and what it duplicated |
+| `hooks/` | the guards above, their config, and their tests |
+
+Run the hook tests with `python3 .claude/hooks/test_git_guard.py` and
+`python3 .claude/hooks/test_skill_guard.py`.
+
+Permissions are prefix rules in the tracked `.claude/settings.json` (read-only git, inspection
+tools, this repo's own build and test entry points). `settings.local.json` is for genuine
+one-offs; it is gitignored and never the place for a rule everyone needs. `task deploy:*` is
+deliberately **not** pre-allowed.

@@ -1,0 +1,42 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 '/Users/amerezhanyi/Developer/jZenDev/jZen/.codex/hooks/git_guard.py'"
+          },
+          {
+            "type": "command",
+            "command": "python3 '/Users/amerezhanyi/Developer/jZenDev/jZen/.codex/hooks/skill_guard.py'"
+          },
+          {
+            "type": "command",
+            "command": "python3 '/Users/amerezhanyi/Developer/jZenDev/jZen/.codex/hooks/worktree_guard.py'"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 '/Users/amerezhanyi/Developer/jZenDev/jZen/.codex/hooks/skill_guard.py'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 '/Users/amerezhanyi/Developer/jZenDev/jZen/.codex/hooks/verify_guard.py'"
+          }
+        ]
+      }
+    ]
+  }
+}

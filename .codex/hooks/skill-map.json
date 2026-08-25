@@ -1,0 +1,61 @@
+{
+  "//": "Path-triggered skill delivery. See .claude/hooks/skill_guard.py.",
+  "rules": [
+    {
+      "skill": "sync-contracts",
+      "why": "it is a contract source or a tracked generated artifact -- a generated file is never hand-edited",
+      "paths": [
+        "proto/zen/v1/*.proto",
+        "client/zen_transport/lib/generated/*",
+        "apps/*/*_admin/src/api/schema.generated.ts",
+        "*.pb.dart",
+        "*.pbjson.dart",
+        "*.pbenum.dart"
+      ]
+    },
+    {
+      "skill": "add-endpoint",
+      "why": "it is a JAX-RS resource, where the OpenAPI merge rule, the Jandex rule and the no-Jackson rule all apply",
+      "paths": [
+        "*Resource.java",
+        "*/META-INF/openapi.yaml"
+      ]
+    },
+    {
+      "skill": "add-adr",
+      "why": "ADRs are append-only -- add an entry, never edit an accepted one",
+      "paths": [
+        "docs/architecture/DECISIONS.md"
+      ]
+    },
+    {
+      "skill": "long-job",
+      "why": "this command has taken up to 20 minutes in this repo; never wait on it in the foreground",
+      "commands": [
+        "\\btask\\s+(test|build)\\b",
+        "\\bmvnw\\b[^|;&]*\\b(test|verify|package)\\b",
+        "\\bdocker\\s+build\\b",
+        "\\bsupabase\\s+start\\b",
+        "\\bflutter\\s+build\\b"
+      ]
+    },
+    {
+      "skill": "deploy",
+      "why": "it touches a live service; deploy commands are prepared for the user to run, not run here",
+      "commands": [
+        "\\btask\\s+deploy",
+        "\\bgcloud\\s+run\\s+(deploy|services|jobs)\\b",
+        "\\bgcloud\\s+builds\\s+submit\\b",
+        "\\bfirebase\\s+deploy\\b"
+      ]
+    },
+    {
+      "skill": "run-demo",
+      "why": "the stack has a launcher; do not invent one",
+      "commands": [
+        "\\btask\\s+run:",
+        "\\bquarkus:dev\\b"
+      ]
+    }
+  ]
+}

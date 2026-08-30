@@ -14,7 +14,7 @@ Quarkus resources     ──▶ REST paths/verbs/status ──▶ openapi.json �
 
 `.proto` is canonical for **models**; the Quarkus resources are canonical for the **REST
 surface**. Everything else — Java DTOs, Dart messages, `openapi.json`, TS types — is generated,
-and `task sync:contracts` fails the build if a generated file drifts from what its source
+and `task verify:contracts` fails the build if a generated file drifts from what its source
 produces.
 
 This file is a map, not the source of truth — it exists so a reader new to the repository knows

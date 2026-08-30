@@ -60,17 +60,19 @@ toolchain that consumes it cannot produce it (STANDARDS "Code generation"):
 
 ## 🔐 Regenerating, and the drift gate
 
-Edit a `.proto`, then run the contract-first loop:
+Edit a `.proto`, then regenerate:
 
 ```bash
-task sync:contracts
+task generate          # regenerate every cross-language artifact — always green if generators succeed
+task verify:contracts  # regenerate, then FAIL if a committed generated file drifted (the CI gate)
 ```
 
-It regenerates every cross-language artifact and **fails if any committed generated file
-changed** — the exact bug class the gate exists to stop. A red `sync:contracts` means a
-generated file was hand-edited, or a `.proto` changed without regenerating. Fix it by running
-`task generate:proto generate:api` and committing the result, **never** by editing generated
-output. Wire `sync:contracts` into CI as a required check.
+`task verify:contracts` **fails if any committed generated file changed** — the exact bug class
+the gate exists to stop. A red gate means a generated file was hand-edited, or a `.proto` changed
+without regenerating. Fix it by running `task generate` and committing the result, **never** by
+editing generated output. Wire `verify:contracts` into CI as a required check. (Both were one task
+named `sync:contracts` before ADR-049 — splitting them means "regenerate my code" never fails you
+because the regeneration worked.)
 
 Regenerating the Dart messages needs a *system* `protoc` plus `protoc-gen-dart` (see `task
 doctor`); the Java DTOs are produced hermetically by `./mvnw` alone.

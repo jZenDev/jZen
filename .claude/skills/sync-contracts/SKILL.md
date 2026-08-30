@@ -1,6 +1,6 @@
 ---
 name: sync-contracts
-description: The jZen contract-first loop. Use whenever you change a proto model, a REST resource's shape, or need to regenerate/commit generated Java DTOs, Dart messages, or admin TypeScript, or when `task sync:contracts` fails with a drift error.
+description: The jZen contract-first loop. Use whenever you change a proto model, a REST resource's shape, or need to regenerate/commit generated Java DTOs, Dart messages, or admin TypeScript, or when `task verify:contracts` fails with a drift error.
 ---
 
 # Syncing jZen contracts
@@ -14,21 +14,26 @@ source and regenerate.
 ## The loop
 
 1. Edit the source: a `proto/zen/v1/*.proto` file (models) and/or a resource's annotations (paths).
-2. Regenerate everything: `task generate:proto generate:api`.
+2. Regenerate everything: `task generate`.
    - `generate:proto` → Java DTOs (`./mvnw -pl zen-proto generate-sources`) + Dart messages
      (needs `protoc` + `protoc-gen-dart`; run `task doctor` if missing).
    - `generate:api` → builds the reference backend to emit `openapi.json`, then runs
      `openapi-typescript` for the admin panel.
-3. Verify + commit: `task sync:contracts` runs both generators then `sync:verify`, which fails if
-   any `*.pb.dart`, `*.pbjson.dart`, `*.pbenum.dart`, `*.generated.ts`, or `proto/**` file differs
-   from what's committed. Commit the regenerated output (with approval — see CLAUDE.md).
+   - `generate:l10n` → the typed client localizations.
+   - `task generate` always exits 0 when the generators succeed — running it to "regenerate my
+     code" never fails you because the regeneration worked.
+3. Verify + commit: `task verify:contracts` runs `generate` then the drift gate, which fails if
+   any `*.pb.dart`, `*.pbjson.dart`, `*.pbenum.dart`, `*.generated.ts`, or `proto/**/*.proto` file
+   differs from what's committed (and if any `*/l10n/generated/*` is tracked, which it must not
+   be). Commit the regenerated output (with approval — see CLAUDE.md).
 
-## When `task sync:contracts` fails
+`task generate` and `task verify:contracts` were one task, `sync:contracts`, before ADR-049.
+
+## When `task verify:contracts` fails
 
 The error `Contracts are OUT OF SYNC` means either a generated file was hand-edited, or a `.proto`
-changed without regenerating. **Fix by running `task generate:proto generate:api` and committing the
-result — never by editing generated output.** This gate is meant to be wired into CI as a required
-check.
+changed without regenerating. **Fix by running `task generate` and committing the result — never by
+editing generated output.** This gate is meant to be wired into CI as a required check.
 
 ## Adding proto3 canonical JSON note
 

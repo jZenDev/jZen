@@ -26,6 +26,14 @@ includes:
       PROTO_DIR: proto
       # Both pub workspaces: the framework libraries and the applications that assemble them.
       DART_ROOTS: "client apps"
+      # zen_demo nests its tiers under apps/zen_demo/ rather than at the root, so the reusable
+      # tasks that operate on the runnable server, the panel and the client package are pointed
+      # there. A single-app repo (the Taskfile.app.yml defaults) would leave these unset.
+      APP_SERVER_MODULE: apps/zen_demo/zen_demo_server
+      APP_CLIENT_DIR: apps/zen_demo/zen_demo_client
+      ADMIN_DIR: apps/zen_demo/zen_demo_admin
+      # zen_demo's local dev URL scheme for auth deep-links (ADR-018/019).
+      ZEN_AUTH_REDIRECT_URI: zendemo://auth-callback
 
 vars:
   # server/ + client/ are the Java + Dart FRAMEWORK libraries; apps/ holds the full-stack
@@ -46,7 +54,7 @@ vars:
 
   # `dart format` over a workspace, minus the tracked generated protobuf. It has no ignore file
   # and does not read `analyzer: exclude:` (that governs analysis), so the exclusion lives here.
-  # Formatting a generated file makes `sync:contracts` report drift the next time protoc runs.
+  # Formatting a generated file makes `verify:contracts` report drift the next time protoc runs.
   # Width is NOT passed as a flag: it is declared in each workspace's analysis_options.yaml so an
   # IDE format-on-save produces the same result as this task.
   DART_FORMAT: >-
@@ -307,23 +315,24 @@ tasks:
     desc: Resolve dependencies for every sub-project (native tools do the work)
     deps: [deps:server, deps:client, deps:admin]
 
+  # deps:client and deps:server delegate straight to Taskfile.app.yml (ADR-049): resolving a
+  # tier's dependencies is not a zen_demo concern. deps:admin additionally installs the framework
+  # scaffold's own node_modules, which the reusable task leaves to framework:prepare:admin.
   deps:server:
-    desc: Resolve Maven dependencies
-    dir: "{{.SERVER_DIR}}"
+    desc: Resolve the reference backend's Maven dependencies
     cmds:
-      - ./mvnw -B -q dependency:go-offline
+      - task: zen:deps:server
 
   deps:client:
-    desc: Resolve the Dart pub workspace
-    dir: "{{.CLIENT_DIR}}"
+    desc: Resolve the Dart pub workspaces
     cmds:
-      - dart pub get
+      - task: zen:deps:client
 
   deps:admin:
     desc: Install admin dependencies (framework scaffold + zen_demo panel)
     cmds:
-      - cd {{.ADMIN_DIR}} && pnpm install
-      - cd {{.DEMO_ADMIN_DIR}} && pnpm install
+      - task: zen:framework:prepare:admin
+      - task: zen:deps:admin
 
   # ---------------------------------------------------------------------------
   # Code generation - proto is upstream, OpenAPI is derived
@@ -402,101 +411,68 @@ tasks:
       STANDARDS "Code generation" and DECISIONS.md ADR-009): gen-l10n ships inside the
       Flutter SDK that every consumer of these packages already has, so there is no
       toolchain boundary to carry the result across. It is gitignored, produced here, and
-      sync:contracts asserts that none of it is tracked.
+      verify:contracts asserts that none of it is tracked.
     cmds:
       # Delegated to Taskfile.app.yml (ADR-046): the discovery-by-l10n.yaml loop is not about
       # zen_demo, so it lives where an application can have it too. The name stays here because
       # docs, CI and eight other tasks call it.
       - task: zen:generate:l10n
 
+  # The application half of the contract loop (schema emit + TS generation) is delegated to
+  # Taskfile.app.yml (ADR-049): it is written against the app server pom and the app panel, not
+  # against zen_demo. The framework's OWN proto generation (generate:proto:java / :dart above)
+  # stays here — it regenerates jZen's zen-proto DTOs and zen_transport messages, which is
+  # framework-internal and has no app-facing form.
   generate:api:
     desc: Build the backend, emit openapi.json, and generate admin types
     cmds:
-      - task: generate:api:schema
-      - task: generate:api:ts
+      - task: zen:generate:api
 
   generate:api:schema:
     desc: Emit openapi.json from the reference backend's annotated resources (SmallRye)
-    dir: "{{.SERVER_DIR}}"
     cmds:
-      # Install the framework libs so the app can resolve them, then package the app (the only
-      # Quarkus module) via the shared wrapper with -f. store-schema-directory writes the schema.
-      - ./mvnw -B -q install -DskipTests
-      - ./mvnw -B -q -f ../{{.DEMO_SERVER_DIR}}/pom.xml package -DskipTests
+      - task: zen:generate:api:schema
 
   generate:api:ts:
     desc: Generate admin types from openapi.json
-    dir: "{{.DEMO_ADMIN_DIR}}"
-    status:
-      # openapi.json is a sibling of the panel (apps/zen_demo/{zen_demo_server,zen_demo_admin}).
-      - test ! -f ../zen_demo_server/target/openapi/openapi.json
     cmds:
-      - pnpm run generate:types
+      - task: zen:generate:api:ts
 
-  sync:contracts:
-    desc: Regenerate every cross-language artifact and FAIL if anything drifted
+  generate:
+    desc: Regenerate every cross-language artifact — no gate (see verify:contracts for the gate)
     summary: |
-      The atomic contract sync. Regenerates Java DTOs, Dart messages, openapi.json and
-      the admin TypeScript, then fails if any generated file changed.
-
-      A failure means a generated file was hand-edited, or someone changed a .proto
-      without regenerating. Fix by running `task generate:proto generate:api` and
-      committing the result, never by editing generated output.
-
-      It also regenerates the client localizations and asserts the opposite property for
-      them: they are BUILT, NOT TRACKED (ADR-009), so the gate fails if any of that output
-      was committed rather than if it changed.
-
-      This is the gate that blocks out-of-sync bugs. Wire it into CI.
+      What you run after editing a .proto or a resource: it regenerates and exits 0 whenever the
+      generators succeed. The drift gate is verify:contracts, a separate task, so "regenerate my
+      code" never fails you because the regeneration worked. (Was folded into sync:contracts before
+      ADR-049.)
     cmds:
       - task: generate:proto
       - task: generate:api
       - task: generate:l10n
-      - task: sync:verify
 
-  sync:verify:
-    desc: Fail if regeneration produced a dirty working tree, or tracked what must not be
-    internal: true
-    silent: true
+  verify:contracts:
+    desc: Regenerate every cross-language artifact and FAIL if anything drifted
+    summary: |
+      The contract-drift gate. Regenerates Java DTOs, Dart messages, openapi.json, the admin
+      TypeScript and the typed l10n, then fails if a tracked generated file changed (a .proto
+      edited without regenerating, or a generated file hand-edited) or if a BUILT-not-tracked
+      localization was committed (ADR-009).
+
+      Fix a red gate by running `task generate` and committing the result, never by editing
+      generated output. Wire this into CI. Named `sync:contracts` before ADR-049.
     cmds:
-      - |
-        set -e
-        if ! git rev-parse --git-dir >/dev/null 2>&1; then
-          echo "Not a git repository, cannot verify contract sync."; exit 1
-        fi
-        # The proto watch is scoped to the .proto SOURCES, not everything under proto/: the gate
-        # detects contract drift, and a doc file beside the contract (proto/README.md) is not one.
-        dirty=$(git status --porcelain -- '*.generated.ts' '*.pb.dart' '*.pbjson.dart' '*.pbenum.dart' 'proto/**/*.proto')
-        if [ -n "$dirty" ]; then
-          echo "Contracts are OUT OF SYNC. Regenerated output differs from what is committed:"
-          echo "$dirty"
-          echo
-          echo "Run 'task generate:proto generate:api' and commit the result."
-          exit 1
-        fi
-        echo "Contracts in sync."
-      # The mirror-image check for the artifacts the tracking rule sends the other way. A
-      # generated localization file that IS tracked is the failure: it would then be
-      # hand-editable without the compiler or this gate ever noticing.
-      - |
-        set -e
-        tracked=$(git ls-files -- '*/l10n/generated/*')
-        if [ -n "$tracked" ]; then
-          echo "Generated localizations are TRACKED, and must not be (ADR-009):"
-          echo "$tracked"
-          echo
-          echo "Run 'git rm --cached' on them; they are produced by 'task generate:l10n'."
-          exit 1
-        fi
-        echo "Generated localizations correctly untracked."
+      - task: generate:proto
+      - task: generate:api
+      - task: generate:l10n
+      - task: zen:verify:contracts:check
 
   # ---------------------------------------------------------------------------
   # Build / test
   # ---------------------------------------------------------------------------
   build:
-    desc: Sync contracts, then build every sub-project
+    desc: Verify contracts, then build every sub-project
     cmds:
-      - task: sync:contracts
+      - task: verify:contracts
       - task: build:server
       - task: build:client
       - task: build:apps
@@ -590,7 +566,7 @@ tasks:
       must never look like a passing one.
 
       It generates the typed localizations first, and that is not a convenience. They are BUILT,
-      NOT COMMITTED (ADR-009) — `**/l10n/generated/` is gitignored and `sync:contracts` fails if
+      NOT COMMITTED (ADR-009) — `**/l10n/generated/` is gitignored and `verify:contracts` fails if
       any of it is ever tracked — so a clean checkout does not have them and nothing that imports
       `IdentityLocalizations` can compile. A developer's machine always has them lying around from
       an earlier build, which is precisely why this was missed here and found by CI: the task
@@ -1140,81 +1116,40 @@ tasks:
     cmds:
       - task: run:server
 
+  # The local-stack tasks are delegated to Taskfile.app.yml (ADR-049): the process-management
+  # shape (background PIDs, a port-scoped teardown, `trap` on EXIT) is not a zen_demo concern.
+  # run:demo keeps its name — ROADMAP, the run-demo skill and docs all call it — and is now a thin
+  # wrapper over the generalised zen:run:dev.
   run:supabase:
     desc: Start the local Supabase stack (API 54321, DB 54322, Studio 54323)
     cmds:
-      - supabase start
-    status:
-      - supabase status >/dev/null 2>&1
+      - task: zen:run:supabase
 
   run:server:
     desc: Start the reference backend in Quarkus dev mode (live reload) on :8080
-    dir: "{{.SERVER_DIR}}"
     cmds:
-      # Install the framework libs, then run the app (apps/zen_demo/zen_demo_server) in dev mode
-      # via the shared wrapper.
-      - ./mvnw -B -q install -DskipTests
-      - ./mvnw -f ../{{.DEMO_SERVER_DIR}}/pom.xml quarkus:dev
+      - task: zen:run:server
+        vars: { APP_PORT: "8080" }
 
   run:demo:
     desc: Boot Supabase + the backend + the reference app (zen_demo) for a manual walkthrough
     summary: |
       The product showcase (ROADMAP step 4). Brings up the local Supabase stack, starts the
-      Quarkus server (dev profile) on ZEN_APP_PORT (default 8085, to dodge a leftover stack that
-      may shadow :8080), waits for /health, then runs zen_demo in Chrome pointed at it. The web
-      build runs on a fixed port so the server's CORS allowlist can permit its credentialed
-      requests. Ctrl-C stops the app; the server is torn down on exit. For the headless gate that
-      asserts the same flow, see `task test:e2e`.
-    deps: [run:supabase]
+      Quarkus server (dev profile) on port 8085 (to dodge a leftover stack that may shadow :8080),
+      waits for /health, then runs zen_demo in Chrome pointed at it. The web build runs on a fixed
+      port so the server's CORS allowlist can permit its credentialed requests. Ctrl-C stops the
+      app; the server is torn down on exit. For the headless gate that asserts the same flow, see
+      `task test:e2e`.
+
+      Now a wrapper over `zen:run:dev` (ADR-049) — the process management lives in Taskfile.app.yml
+      so any consumer gets it. `task run:demo:native` still handles a native device separately.
     cmds:
-      - |
-        set -euo pipefail
-        PORT="${ZEN_APP_PORT:-8085}"
-        WEB_PORT="${ZEN_WEB_PORT:-5200}"
-        API="http://localhost:${PORT}"
-
-        eval "$(supabase status -o env | sed 's/^/export SB_/')"
-        export SUPABASE_URL="${SB_API_URL}"
-        export SUPABASE_KEY="${SB_ANON_KEY}"
-        # Let the browser's credentialed calls through CORS from the demo's web origin.
-        export CORS_ORIGINS="http://localhost:${WEB_PORT},http://localhost:8080,http://localhost:5173"
-
-        # Tear the server down: pkill the quarkus:dev java by its port system-property (dependable
-        # across shells - go-task can reparent `&`, and quarkus:dev forks a child), then a
-        # port-scoped lsof fallback that waits for the port to free, escalating to SIGKILL.
-        stop_server() {
-          pkill -f "quarkus.http.port=${PORT}" 2>/dev/null || true
-          p=$(lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t 2>/dev/null || true)
-          [ -n "${p}" ] && kill "${p}" 2>/dev/null || true
-          for _ in $(seq 1 15); do
-            lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t >/dev/null 2>&1 || return 0
-            sleep 1
-          done
-          p=$(lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t 2>/dev/null || true)
-          [ -n "${p}" ] && kill -9 "${p}" 2>/dev/null || true
-        }
-        trap stop_server EXIT
-
-        ( cd {{.SERVER_DIR}} && ./mvnw -B -q install -DskipTests \
-          && ./mvnw -f ../{{.DEMO_SERVER_DIR}}/pom.xml quarkus:dev -Dquarkus.http.port="${PORT}" ) &
-
-        ready=0
-        for _ in $(seq 1 90); do
-          if curl -sf "${API}/api/v1/health" >/dev/null 2>&1; then ready=1; break; fi
-          sleep 1
-        done
-        [ "${ready}" -eq 1 ] || { echo "server did not become healthy on ${API}"; stop_server; exit 1; }
-
-        cd {{.DEMO_CLIENT_DIR}}
-        flutter run -d chrome --web-port="${WEB_PORT}" \
-          --dart-define=ZEN_ENV=dev --dart-define=ZEN_PLATFORM=web --dart-define=ZEN_API_URL="${API}"
-        stop_server
+      - task: zen:run:dev
 
   run:admin:
     desc: Start the admin panel dev server on :5173 (proxies /api to the backend)
-    dir: "{{.DEMO_ADMIN_DIR}}"
     cmds:
-      - pnpm dev
+      - task: zen:run:admin
 
   stop:supabase:
     desc: Stop the local Supabase stack
@@ -1770,7 +1705,7 @@ tasks:
         esac
         # /openapi is build tooling and must not be in the image (SECURITY-REMEDIATION F15). It
         # publishes every route, verb, parameter and status code the service accepts. The DEFAULT
-        # build still serves it -- sync:contracts depends on that -- which OpenApiProfileTest
+        # build still serves it -- verify:contracts depends on that -- which OpenApiProfileTest
         # asserts; asserting only one direction would pass on a build that lost it everywhere.
         oc=$(curl -s -o /dev/null -w '%{http_code}' "$URL/openapi")
         if [ "$oc" = "404" ]; then
@@ -2697,7 +2632,7 @@ tasks:
       `schema.generated.ts`; Dart has no such file and `dart format` ignores the
       `analyzer: exclude:` block (that governs analysis, not formatting), so the generated
       protobuf is excluded by the find below. Format either of them and the next
-      regeneration re-emits the generator's own layout, so `sync:contracts` reports drift.
+      regeneration re-emits the generator's own layout, so `verify:contracts` reports drift.
 
       Line width is declared per workspace in `analysis_options.yaml` (`formatter:
       page_width: 100`), not passed here, so an IDE format-on-save agrees with this task.
@@ -2844,7 +2779,7 @@ tasks:
 
       Unlike the step-8 standalone check (a terminal one-shot, reverted once its failure mode
       stopped occurring), README and LICENSE drift START the moment those files exist and keep
-      recurring, so this ships as a standing gate. Wire it into CI beside sync:contracts.
+      recurring, so this ships as a standing gate. Wire it into CI beside verify:contracts.
 
       Both scans refuse to pass vacuously. The task-list read always did; `git ls-files` for
       READMEs and for module LICENSEs now does too, because a `for` loop over nothing printed

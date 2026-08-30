@@ -32,8 +32,8 @@ The rules that keep the monorepo honest. Philosophy is in
   a per-member loop is exactly where a lost exit code hides.
 - **Never fingerprint a task that a gate composes.** `task` can skip work whose inputs are
   unchanged (`sources:` / `generates:`), and that is forbidden on any task a gate runs — today
-  `generate:proto`, `generate:api`, and `generate:l10n`, which `sync:contracts` composes.
-  *Why:* `sync:verify` detects drift by regenerating and then diffing the working tree, so a
+  `generate:proto`, `generate:api`, and `generate:l10n`, which `generate` and `verify:contracts`
+  compose. *Why:* `verify:contracts` detects drift by regenerating and then diffing the working tree, so a
   skipped regeneration produces a clean tree and the gate reports success **without having
   checked anything**. The defect it exists to catch — a hand-edited tracked generated file — does
   not touch a `.proto`, so the fingerprint would match and the task would skip precisely when it
@@ -152,11 +152,13 @@ point* of the script, it is Python. In one sentence: **sh runs things; Python un
   strings for. Never widen a framework set to give one application a language: framework delegates
   degrade to `fallback` for an unshipped locale, and an app that wants framework strings in that
   language subclasses the exported `abstract XLocalizations` and composes its delegate first.
-- **`task sync:contracts` is the gate.** It regenerates every cross-language artifact and
-  fails if a committed generated file changed. Wire it into CI as a required check. A red
-  `sync:contracts` means the contract and its generated clients have drifted — the exact
-  bug class the gate exists to stop. Note this is *why* the boundary artifacts are tracked:
-  the gate is `git status` over those paths, and git cannot report a file it is not tracking.
+- **`task verify:contracts` is the gate** (`task generate` is the same regeneration without the
+  gate, so "regenerate my code" never fails because it worked — ADR-049). It regenerates every
+  cross-language artifact and fails if a committed generated file changed. Wire it into CI as a
+  required check. A red `verify:contracts` means the contract and its generated clients have
+  drifted — the exact bug class the gate exists to stop. Note this is *why* the boundary artifacts
+  are tracked: the gate is `git status` over those paths, and git cannot report a file it is not
+  tracking.
 
 ## Backend (Quarkus) multi-module rules
 
@@ -292,7 +294,7 @@ below: in-process *time* is invalid under scale-to-zero. Three rules, all enforc
 - SmallRye-annotated Quarkus resources are canonical for the **REST surface** (paths,
   verbs, status codes).
 - Everything else — Java DTOs, Dart messages, `openapi.json`, TS types — is **derived**.
-  Editing a derived artifact by hand is a defect, and `sync:contracts` will catch it.
+  Editing a derived artifact by hand is a defect, and `verify:contracts` will catch it.
 - **Every endpoint declares its own request and response messages. There is no generic
   payload type and no envelope.** Per-endpoint messages in `proto/zen/v1/<domain>.proto`;
   cross-cutting shapes once in `common.proto` (`ZenError`, `PageRequest`); **MapStruct** maps
@@ -328,7 +330,7 @@ runtime, not just in the docs: it triggers Quarkus's build-time Jackson writer a
 depends on `microprofile-openapi-api` — the annotation classes, and nothing else. The extension that
 *reads* them, `quarkus-smallrye-openapi`, is the application's dependency and lives in the app's
 `openapi` Maven profile, which is active unless `-Dnative` is passed. So the default build, every
-test run and `task sync:contracts` all have it, and the native image prod ships does not: `/openapi`
+test run and `task verify:contracts` all have it, and the native image prod ships does not: `/openapi`
 publishes a complete, always-current map of every route, verb, parameter and status code the service
 accepts, and nothing needs that at runtime (`SECURITY-REMEDIATION` F15). `quarkus-swagger-ui` rides
 along with the extension and goes with it.
@@ -338,7 +340,7 @@ Two ways to get this wrong, both quiet:
 - **A library depending on the extension instead of the API** hands the scanner and the published
   endpoint to every application that depends on it, transitively. The app can then exclude it and
   nothing changes, which is exactly what happened the first time this was tried.
-- **Inverting the profile** — excluding OpenAPI from the default build — breaks `sync:contracts`
+- **Inverting the profile** — excluding OpenAPI from the default build — breaks `verify:contracts`
   without failing it. `generate:api:schema` would package cleanly and write no `openapi.json`;
   `generate:api:ts` is guarded by `status: test ! -f …/openapi.json`, so it would **skip** rather
   than fail; and the gate would then diff a `schema.generated.ts` nobody regenerated and report the

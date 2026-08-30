@@ -35,7 +35,7 @@ permissions:
 
 jobs:
   # Contract drift, docs drift, the Dart/Flutter libraries, and the admin typecheck. Needs the full
-  # toolchain because sync:contracts regenerates across all three languages.
+  # toolchain because verify:contracts regenerates across all three languages.
   gates:
     runs-on: ubuntu-latest
     steps:
@@ -59,7 +59,7 @@ jobs:
           node-version-file: .nvmrc
       - run: corepack enable
 
-      # sync:contracts generates the Dart messages with protoc + protoc-gen-dart. Pin protoc_plugin
+      # verify:contracts generates the Dart messages with protoc + protoc-gen-dart. Pin protoc_plugin
       # to the version that produced the committed .pb.dart (25.0.0), or the drift gate false-fails
       # on codegen-format differences. (Java DTOs and the admin schema are hermetic — Maven and pnpm
       # resolve their own tools — so only the Dart path needs a system protoc here.)
@@ -96,7 +96,7 @@ jobs:
 
       - run: task deps
       - name: Contract drift gate
-        run: task sync:contracts
+        run: task verify:contracts
       - name: Docs drift gate
         run: task verify:docs
       - run: task test:client

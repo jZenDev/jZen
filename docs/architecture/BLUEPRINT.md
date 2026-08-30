@@ -128,8 +128,9 @@ proto/zen/v1/*.proto
 
 Proto is upstream for **models**; SmallRye OpenAPI is authoritative for the **REST
 surface** (paths, verbs, status) that proto cannot express. Nothing downstream is
-hand-edited. `task sync:contracts` regenerates everything and fails the build if a
-committed generated file changed — the gate that blocks out-of-sync bugs.
+hand-edited. `task verify:contracts` regenerates everything and fails the build if a
+committed generated file changed — the gate that blocks out-of-sync bugs (`task generate` is the
+same regeneration without the gate — ADR-049).
 
 ## Authentication
 
@@ -234,7 +235,7 @@ lib/src/l10n/demo_{en,uk}.arb                          ▶  DemoLocalizations
 - **The ARB files are the source and are tracked; the generated classes are not.** `flutter
   gen-l10n` ships inside the Flutter SDK, so unlike the `.pb.dart` messages there is no toolchain
   boundary to carry output across — see STANDARDS "Code generation". `task generate:l10n` produces
-  them, `build:client` / `test:client` run it first, and `sync:contracts` fails if any generated
+  them, `build:client` / `test:client` run it first, and `verify:contracts` fails if any generated
   localization is ever *committed*.
 - **Every localized package owns its own strings**, generates its own accessors, and ships a
   delegate; an application composes the delegates in `MaterialApp.localizationsDelegates` and

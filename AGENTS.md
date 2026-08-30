@@ -28,9 +28,10 @@ Common commands (`task --list` for all):
 |---|---|
 | `task doctor` | Verify toolchain (JDK 25, dart, flutter, pnpm, supabase, docker, gcloud; protoc/protoc-gen-dart only needed for Dart proto codegen) |
 | `task deps` | Resolve deps for every sub-project |
-| `task build` | `sync:contracts` then build everything |
+| `task build` | `verify:contracts` then build everything |
 | `task test` | Every suite, **including `test:e2e` (the live release gate)** |
-| `task sync:contracts` | Regenerate all cross-language artifacts and **fail if any committed generated file drifted** — the contract-drift gate; wire into CI |
+| `task generate` | Regenerate every cross-language artifact — no gate, always green if the generators succeed |
+| `task verify:contracts` | Regenerate, then **fail if any committed generated file drifted** — the contract-drift gate; wire into CI |
 | `task run:server` | Quarkus dev mode (live reload) on `:8080` |
 | `task run:demo` | Boot Supabase + backend + zen_demo for a manual walkthrough |
 | `task run:admin` | Admin panel dev server on `:5173` (proxies `/api`) |
@@ -66,7 +67,7 @@ Quarkus resources + SmallRye ──▶ REST paths/verbs/status ──▶ merged 
   `target/` because Maven resolves `protoc` itself. Do not "fix" that by checking `target/` in.
   See STANDARDS "Code generation".
 - **A tracked generated file is never hand-edited.** Fix the `.proto` or annotation and
-  regenerate; `task sync:contracts` will fail the build if a generated file drifts. Editing a
+  regenerate; `task verify:contracts` will fail the build if a generated file drifts. Editing a
   derived artifact is a defect.
 
 ## The dual-mode transport seam (the framework's core mechanism)
@@ -128,7 +129,7 @@ Every package that renders text owns its own `lib/src/l10n/*.arb` + `l10n.yaml` 
 accessors with `flutter gen-l10n` (`task generate:l10n`); an app composes the delegates in
 `MaterialApp.localizationsDelegates` and supplies no wording. Unlike the `.pb.dart` messages this
 output is **built, not committed** (`**/l10n/generated/` is gitignored) because gen-l10n ships
-in the Flutter SDK; `sync:contracts` fails if any of it is ever tracked. The supported set is
+in the Flutter SDK; `verify:contracts` fails if any of it is ever tracked. The supported set is
 `ZenLocales` in `zen_core` (`{en, uk}`, fallback `en`), mirroring server `zen.core.i18n.ZenLocales`.
 The chosen `Locale` is also what `ZenClient` sends as `Accept-Language` (ADR-007).
 

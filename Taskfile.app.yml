@@ -37,17 +37,22 @@
 # anything an application would have to fight rather than configure. A task that needs an `if
 # APP_NAME == …` has been put in the wrong file.
 #
-# THE HONEST LIMIT, TODAY. Three tasks have moved — `generate:l10n`, `build:runners` and
-# `generate:proto:dart` — and Taskfile.yml delegates to all three, so the framework runs the same
-# code an application does rather than a copy that resembles it. The third one is a partial case
-# worth naming: zen_demo declares no protos of its own, so running it here proves the task parses,
-# resolves and selects correctly, but never exercises the import rewrite. That half was verified
-# against a throwaway application outside this tree (ADR-047), which is a manual proof rather than
-# a gate. The rest of the orchestration (the rest of the contract loop, the server
-# build, the local stack, the deploy) has not moved yet and is still zen_demo-shaped. Those are
-# migrations to make one at a time, each proven against zen_demo before an application depends on
-# it; a task sitting in both files is drift waiting to happen, which is the argument for finishing
-# the move rather than for keeping two copies.
+# WHAT HAS MOVED. The dependency install (`deps` and `deps:server/client/admin`), the whole
+# contract loop (`generate` and its `generate:proto*` / `generate:api*` / `generate:l10n` parts,
+# plus the `verify:contracts` drift gate), the local stack (`run:dev` and `run:supabase` /
+# `run:server` / `run:client` / `run:admin`), `test:client` and `build:runners` — all live here
+# now, written against vars, and Taskfile.yml delegates to every one of them (ADR-046, ADR-049). So
+# the framework runs the same code an application does rather than a copy that resembles it.
+#
+# Two things this file's own runs cannot fully exercise, and both are manual proofs recorded in an
+# ADR rather than gates: `generate:proto:dart`'s import rewrite (zen_demo declares no protos of its
+# own, verified against a throwaway application outside this tree — ADR-047), and the consumer-side
+# shape of a repo whose tiers are nested differently from zen_demo's.
+#
+# WHAT HAS NOT MOVED, deliberately: the framework's own code generation (jZen's `zen-proto` DTOs and
+# `zen_transport` messages), the framework module gates, and the deploy — all genuinely
+# jZen-internal or still zen_demo-shaped. A task sitting in both files is drift waiting to happen,
+# which is the argument for finishing a move rather than for keeping two copies.
 version: "3"
 
 vars:
@@ -64,6 +69,31 @@ vars:
   # Directories scanned by the tasks that walk a tree (l10n, client tests). Space-separated, so an
   # application with two pub workspaces passes both. Defaults to the client tier alone.
   DART_ROOTS: '{{.DART_ROOTS | default .CLIENT_DIR}}'
+
+  # The application's own react-admin panel, relative to ITS OWN root. Assembles @jzen/admin-core
+  # (ADR-005) and owns the generated schema. `deps:admin` and `generate:api:ts` run pnpm here; both
+  # skip with a note if the directory is absent, so an application with no admin panel is fine.
+  ADMIN_DIR: '{{.ADMIN_DIR | default "admin"}}'
+
+  # The directory holding the application's Quarkus server pom (the module that produces
+  # openapi.json and runs in dev mode). Defaults to the server tier; an application that nests the
+  # runnable module deeper (apps/<app>/<app>_server) overrides it on the include.
+  APP_SERVER_MODULE: '{{.APP_SERVER_MODULE | default .SERVER_DIR}}'
+
+  # The Flutter application package that `run:client` boots and `run:dev` points a browser at.
+  # Same default shape as build:runners' APP_CLIENT_DIR (`<client>/<app>_client`), built in the
+  # task body for the vars-in-a-vars-map reason PROTO_DART_OUT documents above.
+  APP_CLIENT_DIR: '{{.APP_CLIENT_DIR | default ""}}'
+
+  # run:dev / run:client wiring. DEVICE is a passthrough to `flutter run -d` (a device id, or
+  # `chrome` for the web target). WEB_PORT is fixed so the server's CORS allowlist can name it;
+  # APP_PORT dodges a leftover stack on :8080. Names and defaults match Taskfile.yml's run:demo.
+  DEVICE: '{{.DEVICE | default "chrome"}}'
+  WEB_PORT: '{{.ZEN_WEB_PORT | default "5200"}}'
+  APP_PORT: '{{.ZEN_APP_PORT | default "8085"}}'
+  # Custom URI scheme for the client's auth deep-link (ADR-018/019). Empty = the client declares
+  # none; run:client only passes the define when it is set.
+  AUTH_REDIRECT_URI: '{{.ZEN_AUTH_REDIRECT_URI | default ""}}'
 
   # Where generate:proto:dart writes the application's generated messages, relative to the
   # application's root. The default assumes the conventional layout (`<client>/<app>_client`);
@@ -207,6 +237,42 @@ tasks:
       - echo "jZen framework checkout prepared (l10n generated, admin scaffold deps installed)."
 
   deps:
+    desc: Resolve dependencies for every tier the application declares (native tools do the work)
+    silent: true
+    summary: |
+      The aggregate: `deps:server` (Maven), `deps:client` (pub), `deps:admin` (pnpm), each
+      delegating to the tool that owns that tier. `task` triggers those tools, it does not become
+      an SDK manager — installing the JDK, the Flutter SDK or node is the developer's job after
+      `task doctor` (run from the jZen checkout) reports what is missing, the same contract
+      `flutter doctor` assumes. Not wired as a `deps:` of `doctor` on purpose: in CI the toolchain
+      is already pinned, and a hard dependency there would re-run the check on every job.
+    deps: [deps:server, deps:client, deps:admin]
+
+  deps:server:
+    desc: Resolve the application server's Maven dependencies (framework libs installed first)
+    silent: true
+    summary: |
+      `dependency:go-offline` against the application's Quarkus pom, through jZen's own `mvnw` (the
+      application module has no wrapper of its own — it inherits zen-parent across directories).
+
+      It runs `framework:install` first, and that is the one place ADR-046's "framework:install is
+      not a `deps:` of a build task" genuinely cannot hold: the jZen artifacts are unpublished, so
+      Maven cannot resolve the application server's own dependency tree until they are in the local
+      repository. Everywhere else the rule stands.
+    cmds:
+      - |
+        set -eu
+        pom="{{.ROOT_DIR}}/{{.APP_SERVER_MODULE}}/pom.xml"
+        if [ ! -f "$pom" ]; then
+          echo ">> no server pom at {{.APP_SERVER_MODULE}}/pom.xml - skipping deps:server."
+          exit 0
+        fi
+        echo ">> installing jZen framework libraries (prerequisite for resolving the app server)"
+        (cd "{{.JZEN_DIR}}/server" && ./mvnw -B -q install -DskipTests)
+        echo ">> mvnw dependency:go-offline ({{.APP_SERVER_MODULE}})"
+        "{{.JZEN_DIR}}/server/mvnw" -B -q -f "$pom" dependency:go-offline
+
+  deps:client:
     desc: Resolve Dart/Flutter dependencies for the application's packages
     silent: true
     summary: |
@@ -221,6 +287,24 @@ tasks:
           echo ">> flutter pub get ($root)"
           (cd "{{.ROOT_DIR}}/$root" && flutter pub get)
         done
+
+  deps:admin:
+    desc: Install the application admin panel's dependencies
+    silent: true
+    summary: |
+      `pnpm install` in the application's own panel directory. The @jzen/admin-core scaffold it
+      imports from source needs its own deps too — that is `framework:prepare:admin`, kept separate
+      because a consumer with no Node toolchain should not be forced through it.
+    cmds:
+      - |
+        set -eu
+        dir="{{.ROOT_DIR}}/{{.ADMIN_DIR}}"
+        if [ ! -f "$dir/package.json" ]; then
+          echo ">> no admin panel at {{.ADMIN_DIR}} - skipping deps:admin."
+          exit 0
+        fi
+        echo ">> pnpm install ({{.ADMIN_DIR}})"
+        (cd "$dir" && pnpm install)
 
   generate:proto:dart:
     desc: Generate the APPLICATION's Dart messages, resolving jZen's zen/v1 without copying it
@@ -411,6 +495,164 @@ tasks:
           echo "No localized packages found (no l10n.yaml)."
         fi
 
+  generate:proto:java:
+    desc: Regenerate the application server's proto-derived Java sources
+    silent: true
+    summary: |
+      protoc for the JVM side is resolved by Maven itself (protobuf-maven-plugin, no host `protoc`
+      needed), so this is just the `generate-sources` phase on the application's Quarkus pom,
+      through jZen's `mvnw`. The framework's own DTOs come from `framework:install`; this only
+      touches models the application declares under its own proto/ tree.
+
+      An application that declares no protos of its own (every one framework-owned — zen_demo's
+      case) still runs the phase cleanly; it simply emits nothing new.
+    cmds:
+      - |
+        set -eu
+        pom="{{.ROOT_DIR}}/{{.APP_SERVER_MODULE}}/pom.xml"
+        if [ ! -f "$pom" ]; then
+          echo ">> no server pom at {{.APP_SERVER_MODULE}}/pom.xml - nothing to generate."
+          exit 0
+        fi
+        (cd "{{.JZEN_DIR}}/server" && ./mvnw -B -q install -DskipTests)
+        echo ">> mvnw generate-sources ({{.APP_SERVER_MODULE}})"
+        "{{.JZEN_DIR}}/server/mvnw" -B -q -f "$pom" generate-sources
+
+  generate:proto:
+    desc: Regenerate every proto-derived artifact the application owns (Java + Dart)
+    silent: true
+    summary: |
+      The application half of the contract loop's proto stage: `generate:proto:java` then
+      `generate:proto:dart`. The framework's own zen/v1 messages are generated once by jZen's task
+      and resolved here, never re-emitted (ADR-047).
+    cmds:
+      - task: generate:proto:java
+      - task: generate:proto:dart
+
+  generate:api:schema:
+    desc: Emit openapi.json from the application server's annotated resources (SmallRye)
+    silent: true
+    summary: |
+      The REST surface is canonical in the SmallRye-annotated resources, not in a proto; this
+      packages the application's Quarkus module (framework libs installed first) so
+      store-schema-directory writes target/openapi/openapi.json. `-DskipTests` — the schema is a
+      build output, not a test result.
+    cmds:
+      - |
+        set -eu
+        pom="{{.ROOT_DIR}}/{{.APP_SERVER_MODULE}}/pom.xml"
+        if [ ! -f "$pom" ]; then
+          echo ">> no server pom at {{.APP_SERVER_MODULE}}/pom.xml - no schema to emit."
+          exit 0
+        fi
+        (cd "{{.JZEN_DIR}}/server" && ./mvnw -B -q install -DskipTests)
+        echo ">> mvnw package -DskipTests ({{.APP_SERVER_MODULE}})"
+        "{{.JZEN_DIR}}/server/mvnw" -B -q -f "$pom" package -DskipTests
+
+  generate:api:ts:
+    desc: Regenerate the admin panel's TypeScript types from openapi.json
+    silent: true
+    summary: |
+      `pnpm run generate:types` in the application's panel. Guarded on the schema existing, so it
+      is a no-op for an application with no admin panel or before the server has been packaged.
+    cmds:
+      - |
+        set -eu
+        dir="{{.ROOT_DIR}}/{{.ADMIN_DIR}}"
+        schema="{{.ROOT_DIR}}/{{.APP_SERVER_MODULE}}/target/openapi/openapi.json"
+        if [ ! -f "$dir/package.json" ]; then
+          echo ">> no admin panel at {{.ADMIN_DIR}} - no types to generate."
+          exit 0
+        fi
+        if [ ! -f "$schema" ]; then
+          echo ">> no openapi.json yet (run generate:api:schema first) - skipping type generation."
+          exit 0
+        fi
+        echo ">> pnpm run generate:types ({{.ADMIN_DIR}})"
+        (cd "$dir" && pnpm run generate:types)
+
+  generate:api:
+    desc: Emit openapi.json, then regenerate the admin TypeScript from it
+    silent: true
+    cmds:
+      - task: generate:api:schema
+      - task: generate:api:ts
+
+  generate:
+    desc: Regenerate every cross-language artifact the application owns — no gate, always green
+    silent: true
+    summary: |
+      What you run after editing a .proto or a resource. It regenerates (proto -> Java/Dart,
+      openapi.json, admin TS, typed l10n) and exits 0 whenever the generators succeed — the drift
+      gate is a SEPARATE task, `verify:contracts`, so "regenerate my code" never fails you because
+      the regeneration worked.
+
+      NOT fingerprinted with `sources:`/`generates:`, and it must never be: `verify:contracts`
+      detects drift by regenerating and diffing the tree, so a skipped regeneration would make the
+      gate pass having checked nothing (STANDARDS "Orchestration", "Never fingerprint a task a gate
+      composes"). The native tools already skip unchanged work within their own languages.
+    cmds:
+      - task: generate:proto
+      - task: generate:api
+      - task: generate:l10n
+
+  verify:contracts:
+    desc: Regenerate everything, then FAIL if the tree drifted or tracked what must not be
+    silent: true
+    summary: |
+      The CI gate. Runs `generate`, then asserts two properties:
+
+        - the tracked generated artifacts (Dart messages, admin schema.generated.ts) are
+          byte-identical to what is committed — a dirty tree means a .proto changed without a
+          regenerate-and-commit, or a generated file was hand-edited;
+        - none of the BUILT-not-tracked localizations (ADR-009) are tracked — a committed
+          */l10n/generated/* file would be hand-editable with nothing to notice.
+
+      Append this to CI. `sync:contracts` and `sync:verify` were the old names for the combined
+      job; they are retired (ADR-049).
+    cmds:
+      - task: generate
+      - task: verify:contracts:check
+
+  verify:contracts:check:
+    desc: The drift assertions alone, without regenerating first
+    internal: true
+    silent: true
+    summary: |
+      Split out so a caller that runs its OWN regeneration sequence first (the framework's
+      Taskfile.yml, which also regenerates jZen's own zen-proto DTOs and zen_transport messages)
+      can reuse the exact gate without double-generating.
+    cmds:
+      - |
+        set -e
+        cd "{{.ROOT_DIR}}"
+        if ! git rev-parse --git-dir >/dev/null 2>&1; then
+          echo "Not a git repository, cannot verify contract sync."; exit 1
+        fi
+        # Scoped to the .proto SOURCES, not everything under proto/: the gate detects contract
+        # drift, and a doc file beside the contract (proto/README.md) is not one.
+        dirty=$(git status --porcelain -- '*.generated.ts' '*.pb.dart' '*.pbjson.dart' '*.pbenum.dart' 'proto/**/*.proto')
+        if [ -n "$dirty" ]; then
+          echo "Contracts are OUT OF SYNC. Regenerated output differs from what is committed:"
+          echo "$dirty"
+          echo
+          echo "Run 'task generate' and commit the result."
+          exit 1
+        fi
+        echo "Contracts in sync."
+      - |
+        set -e
+        cd "{{.ROOT_DIR}}"
+        tracked=$(git ls-files -- '*/l10n/generated/*')
+        if [ -n "$tracked" ]; then
+          echo "Generated localizations are TRACKED, and must not be (ADR-009):"
+          echo "$tracked"
+          echo
+          echo "Run 'git rm --cached' on them; they are produced by 'task generate:l10n'."
+          exit 1
+        fi
+        echo "Generated localizations correctly untracked."
+
   test:client:
     desc: Run every Dart/Flutter suite in the application's packages
     silent: true
@@ -553,3 +795,139 @@ tasks:
         fi
         echo
         echo "Every runner this host can build compiles."
+
+  # ---------------------------------------------------------------------------
+  # Run the application locally
+  # ---------------------------------------------------------------------------
+  #
+  # The single-tier tasks (run:supabase / run:server / run:client / run:admin) are the composable
+  # primitives; run:dev is the rollup that brings the stack up together with one Ctrl-C that tears
+  # it all down. The process-management shape — background PIDs, a port-scoped teardown, `trap` on
+  # EXIT — is generalised from Taskfile.yml's run:demo, which proved it against zen_demo.
+  run:supabase:
+    desc: Start the local Supabase stack (API 54321, DB 54322, Studio 54323)
+    silent: true
+    cmds:
+      - supabase start
+    status:
+      - supabase status >/dev/null 2>&1
+
+  run:server:
+    desc: Start the application backend in Quarkus dev mode (live reload) on APP_PORT
+    silent: true
+    summary: |
+      Installs the jZen framework libraries, then runs the application's Quarkus module in dev mode
+      through jZen's `mvnw` (the module has no wrapper of its own). APP_PORT defaults to 8085 to
+      dodge a leftover stack on :8080.
+    cmds:
+      - |
+        set -eu
+        pom="{{.ROOT_DIR}}/{{.APP_SERVER_MODULE}}/pom.xml"
+        [ -f "$pom" ] || { echo "no server pom at {{.APP_SERVER_MODULE}}/pom.xml"; exit 1; }
+        (cd "{{.JZEN_DIR}}/server" && ./mvnw -B -q install -DskipTests)
+        "{{.JZEN_DIR}}/server/mvnw" -f "$pom" quarkus:dev -Dquarkus.http.port="{{.APP_PORT}}"
+
+  run:client:
+    desc: Run the Flutter application, pointed at a local backend (DEVICE selects the target)
+    silent: true
+    summary: |
+      `flutter run -d DEVICE` (default `chrome`, on a fixed WEB_PORT so the server's CORS allowlist
+      can name it) with the compile-time client config baked in. Set APP_CLIENT_DIR if the Flutter
+      package is not `<client>/<app>_client`; set CLIENT_PLATFORM for a non-web device.
+    vars:
+      APP_CLIENT_DIR: '{{.APP_CLIENT_DIR | default (printf "%s/%s_client" .CLIENT_DIR .APP_NAME)}}'
+      CLIENT_PLATFORM: '{{.CLIENT_PLATFORM | default "web"}}'
+    cmds:
+      - task: generate:l10n
+      - |
+        set -eu
+        cd "{{.ROOT_DIR}}/{{.APP_CLIENT_DIR}}"
+        defines="--dart-define=ZEN_ENV={{.ZEN_ENV}} --dart-define=ZEN_PLATFORM={{.CLIENT_PLATFORM}} --dart-define=ZEN_API_URL={{.API}}"
+        if [ -n '{{.AUTH_REDIRECT_URI}}' ]; then
+          defines="$defines --dart-define=ZEN_AUTH_REDIRECT_URI={{.AUTH_REDIRECT_URI}}"
+        fi
+        case "{{.DEVICE}}" in
+          chrome|web-server|edge) set -- --web-port="{{.WEB_PORT}}" ;;
+          *)                      set -- ;;
+        esac
+        exec flutter run -d "{{.DEVICE}}" "$@" $defines
+
+  run:admin:
+    desc: Start the application admin panel's dev server (proxies /api to the backend)
+    silent: true
+    cmds:
+      - |
+        set -eu
+        dir="{{.ROOT_DIR}}/{{.ADMIN_DIR}}"
+        [ -f "$dir/package.json" ] || { echo "no admin panel at {{.ADMIN_DIR}}"; exit 1; }
+        cd "$dir" && exec pnpm dev
+
+  run:dev:
+    desc: Bring up Supabase + the backend + the client together; one Ctrl-C tears it all down
+    silent: true
+    summary: |
+      The local development rollup, following the `quarkus dev` / `npm run dev` convention. Starts
+      the Supabase stack, the backend in dev mode on APP_PORT, waits for /health, then runs the
+      client on DEVICE (default web on WEB_PORT). The server is torn down on exit — by its port
+      system-property first (dependable across shells), then a port-scoped lsof fallback that
+      escalates to SIGKILL. Supabase is left running; `task stop:supabase` (or the framework's)
+      stops it.
+
+      DEVICE is a passthrough to the client. WEB_PORT is fixed and named in CORS_ORIGINS so the
+      browser's credentialed calls are allowed from the client's web origin.
+    deps: [run:supabase]
+    vars:
+      APP_CLIENT_DIR: '{{.APP_CLIENT_DIR | default (printf "%s/%s_client" .CLIENT_DIR .APP_NAME)}}'
+      CLIENT_PLATFORM: '{{.CLIENT_PLATFORM | default "web"}}'
+    cmds:
+      - task: generate:l10n
+      - |
+        set -euo pipefail
+        PORT="{{.APP_PORT}}"
+        WEB_PORT="{{.WEB_PORT}}"
+        API="http://localhost:${PORT}"
+        pom="{{.ROOT_DIR}}/{{.APP_SERVER_MODULE}}/pom.xml"
+        [ -f "$pom" ] || { echo "no server pom at {{.APP_SERVER_MODULE}}/pom.xml"; exit 1; }
+
+        eval "$(supabase status -o env | sed 's/^/export SB_/')"
+        export SUPABASE_URL="${SB_API_URL}"
+        export SUPABASE_KEY="${SB_ANON_KEY}"
+        export CORS_ORIGINS="http://localhost:${WEB_PORT},http://localhost:8080,http://localhost:5173"
+
+        # Tear the server down: pkill the quarkus:dev java by its port system-property (dependable
+        # across shells - go-task can reparent `&`, and quarkus:dev forks a child), then a
+        # port-scoped lsof fallback that waits for the port to free, escalating to SIGKILL.
+        stop_server() {
+          pkill -f "quarkus.http.port=${PORT}" 2>/dev/null || true
+          p=$(lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t 2>/dev/null || true)
+          [ -n "${p}" ] && kill "${p}" 2>/dev/null || true
+          for _ in $(seq 1 15); do
+            lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t >/dev/null 2>&1 || return 0
+            sleep 1
+          done
+          p=$(lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t 2>/dev/null || true)
+          [ -n "${p}" ] && kill -9 "${p}" 2>/dev/null || true
+        }
+        trap stop_server EXIT
+
+        ( cd "{{.JZEN_DIR}}/server" && ./mvnw -B -q install -DskipTests \
+          && "{{.JZEN_DIR}}/server/mvnw" -f "$pom" quarkus:dev -Dquarkus.http.port="${PORT}" ) &
+
+        ready=0
+        for _ in $(seq 1 90); do
+          if curl -sf "${API}/api/v1/health" >/dev/null 2>&1; then ready=1; break; fi
+          sleep 1
+        done
+        [ "${ready}" -eq 1 ] || { echo "server did not become healthy on ${API}"; exit 1; }
+
+        cd "{{.ROOT_DIR}}/{{.APP_CLIENT_DIR}}"
+        defines="--dart-define=ZEN_ENV={{.ZEN_ENV}} --dart-define=ZEN_PLATFORM={{.CLIENT_PLATFORM}} --dart-define=ZEN_API_URL=${API}"
+        if [ -n '{{.AUTH_REDIRECT_URI}}' ]; then
+          defines="$defines --dart-define=ZEN_AUTH_REDIRECT_URI={{.AUTH_REDIRECT_URI}}"
+        fi
+        case "{{.DEVICE}}" in
+          chrome|web-server|edge) set -- --web-port="${WEB_PORT}" ;;
+          *)                      set -- ;;
+        esac
+        flutter run -d "{{.DEVICE}}" "$@" $defines
+        stop_server

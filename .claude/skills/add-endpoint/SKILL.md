@@ -58,7 +58,7 @@ proto3 camelCase field names. SmallRye merges the annotation-scanned **paths** o
 
 ## 5. Regenerate and test
 
-Run the `sync-contracts` skill (`task generate:proto generate:api`, then `task sync:contracts`).
+Run the `sync-contracts` skill (`task generate`, then `task verify:contracts`).
 Add a `@QuarkusTest` in the app server module asserting **both** transport modes and the `ZenError`
 error path (see `AdminUserResourceTest`), then `task test:apps:server`.
 

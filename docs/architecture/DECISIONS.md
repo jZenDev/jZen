@@ -15,6 +15,80 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-049 — The consumer rollups land in `Taskfile.app.yml`, and contract regeneration is split from its gate
+
+**Date:** 2026-08-30. **Status:** accepted. **Refines:** ADR-046, ADR-047.
+
+### Decision
+
+Two changes, both driven by the first real consumer of `Taskfile.app.yml` — Prudent
+(`jlogicsoftware/prudent`, its issue #20) — needing rollups that only existed in zen_demo-shaped
+form.
+
+**1. The dependency install, the whole contract loop, and the local stack move into
+`Taskfile.app.yml`**, written against vars, and `Taskfile.yml` delegates to every one:
+
+- `deps` (aggregate) → `deps:server` / `deps:client` / `deps:admin`, each delegating to the
+  native tool for its tier. `deps:server` runs `framework:install` first — see *Consequence*.
+- `generate:proto` (`:java` + `:dart`), `generate:api` (`:schema` + `:ts`), `generate:l10n`.
+- `run:dev` (rollup) → `run:supabase` / `run:server` / `run:client` / `run:admin`, generalising
+  `run:demo`'s background-PID + `trap`-on-EXIT + port-scoped teardown from zen_demo to any
+  consumer. `run:demo` is now a thin wrapper over `run:dev`.
+
+The reusable file gains `ADMIN_DIR`, `APP_SERVER_MODULE`, `APP_CLIENT_DIR`, `DEVICE`, `WEB_PORT`,
+`APP_PORT`, `AUTH_REDIRECT_URI` vars for the parts of a consumer's layout that are not the
+single-app default. jZen consumes all of it as zen_demo, the same as ADR-046 established.
+
+**2. `sync:contracts` splits into `generate` (regenerate, always green) and `verify:contracts`
+(regenerate, then fail on drift).** One task did both jobs, so a developer who edited a `.proto`
+and ran it to "regenerate my code" got a non-zero exit *because the regeneration worked*.
+`generate` is what you run after editing a source; `verify:contracts` is the CI gate. `sync:verify`
+(the internal gate body) is folded into `verify:contracts:check`.
+
+### What this supersedes, and why
+
+- **"Not moved: the contract loop, the server build, the local stack, the deploy"** (ADR-046,
+  *Scope, and what deliberately did not move*) → **refined:** three of the four now move. *Why:*
+  ADR-046 deferred them as "migrations to make one at a time, each proven against zen_demo first";
+  that is now done for the contract loop and the local stack. The server *build* (native image,
+  web staging) and the deploy stay — they are genuinely zen_demo/prod-shaped.
+- **"`task sync:contracts` is the gate. … A red `sync:contracts` means the contract and its
+  generated clients have drifted"** (STANDARDS "Code generation") → **changed:** the gate is
+  `task verify:contracts`. `sync:contracts` and `sync:verify` are **retired, not aliased** — a
+  stale reference now fails with "task not found" rather than silently resolving, which is the
+  louder failure. STANDARDS, BLUEPRINT, MANIFESTO, ARCHITECTURE.md, the READMEs, CI and the
+  `sync-contracts` skill are updated to the new names; ROADMAP's past "verified green" entries are
+  left as the historical record they are.
+- **"forbidden on any task a gate runs — today `generate:proto`, `generate:api`, and
+  `generate:l10n`, which `sync:contracts` composes"** (STANDARDS "Orchestration", *Never
+  fingerprint a task that a gate composes*) → **reframed:** the composing tasks are now `generate`
+  and `verify:contracts`; the rule is unchanged and upheld. *Why:* the issue asked for
+  `sources:`/`generates:` fingerprinting on `generate` as a nice-to-have. It is refused for
+  exactly the reason the rule already gives — `verify:contracts` detects drift by regenerating and
+  diffing, so a skipped regeneration makes the gate pass having checked nothing.
+
+### Consequence
+
+- `deps:server` runs `framework:install` before `dependency:go-offline`, and that is the one place
+  ADR-046's "framework:install is not a `deps:` of a build task" genuinely cannot hold: the jZen
+  artifacts are unpublished, so Maven cannot resolve the application server's own dependency tree
+  until they are in the local repository. Everywhere else the rule stands.
+- The reusable `deps` task was Dart-only before this; it is **renamed to `deps:client`** and the
+  new `deps` is the aggregate. Breaking for a pre-existing consumer — done now, while there is
+  exactly one, rather than after there are several.
+- What this repository's own runs cannot fully exercise, recorded as manual proof rather than a
+  gate (as ADR-047 did for the import rewrite): a consumer whose tiers are nested differently from
+  zen_demo's. zen_demo sets `APP_SERVER_MODULE` / `ADMIN_DIR` / `APP_CLIENT_DIR` (its tiers live
+  under `apps/zen_demo/`), so the override path *is* exercised here; a root-level single-app
+  layout (the file's defaults) is the untested shape.
+- Verified: `task --list` parses with the app file included; `task deps`, `task generate`,
+  `task verify:contracts` (green on a synced tree, red on a hand-edited `*.pb.dart`), `task build`
+  and `task run:demo` all run through the delegation; `git grep 'task sync:contracts'` returns
+  only the deliberate "before ADR-049" mentions.
+- Lockstep version unchanged. No module, no dependency, no Flyway band.
+
+---
+
 ## ADR-048 — The Data API exposure gate asserts what a migration role can deliver, and warns about the rest
 
 **Date:** 2026-08-16 (authored 2026-08-14). **Status:** accepted. **Refines:** ADR-041, ADR-036.

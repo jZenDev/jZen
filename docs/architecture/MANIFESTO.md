@@ -52,7 +52,7 @@ So jZen adopts **industry-standard, inspectable generators only**:
 The line is bright: no custom DSLs, no bespoke frameworks, no generator whose output a
 developer cannot read. Every generated file is readable and reproducible, the ones that cross a
 toolchain boundary are committed and diffable (STANDARDS "Code generation"), and
-`task sync:contracts` fails the build if any of it drifts. Generation that you can read and
+`task verify:contracts` fails the build if any of it drifts. Generation that you can read and
 that a gate keeps honest is not magic — it is the opposite.
 
 ## The single source of truth is the contract, not the code

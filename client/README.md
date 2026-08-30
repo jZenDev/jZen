@@ -63,7 +63,7 @@ them. An application composes the delegates in `MaterialApp.localizationsDelegat
 
 Unlike the generated Protobuf messages, this output is **built, not committed** (gen-l10n ships
 inside the Flutter SDK, so there is no toolchain boundary to carry it across). `task
-generate:l10n` produces it; `task sync:contracts` fails if any of it is ever tracked.
+generate:l10n` produces it; `task verify:contracts` fails if any of it is ever tracked.
 
 ## 🚀 Building, testing, running
 

@@ -11,7 +11,7 @@ JSON or binary, over the same endpoints, with nothing to hand-sync.**
 ## ✨ Why jZen
 
 - 🔄 **Contract-first, always in sync.** Edit one `.proto` model; Java DTOs, Dart messages, and
-  admin TypeScript types regenerate together, and `task sync:contracts` fails the build the moment
+  admin TypeScript types regenerate together, and `task verify:contracts` fails the build the moment
   any of them drifts.
 - 🔀 **Dual-mode transport, one codebase.** A single request header switches the wire format
   between canonical JSON and Protobuf binary — no branching in your resources or your client code.
@@ -99,7 +99,7 @@ them** — `mvnw` owns Java, `dart pub` owns Dart, `pnpm` owns TypeScript. Run `
 the full, always-current set; the commands below are the ones you need first.
 
 It spans three audiences, not just local dev: the `run:*` tasks are the **local** loop; `build`,
-`test`, `sync:contracts`, and `verify:docs` are the **CI gates** (wire them into your pipeline);
+`test`, `verify:contracts`, and `verify:docs` are the **CI gates** (wire them into your pipeline);
 and `deploy:cloudrun` is **release**. The `desc` in `task --list` tells you which is which.
 
 ## 🏁 Quick start — running it
@@ -235,7 +235,7 @@ it only on an exact match. `task verify:deploy` checks the deployed half of that
 
 ```bash
 task deps     # resolve deps for every sub-project (native tools do the work)
-task build    # sync:contracts, then build server + client + apps + admin
+task build    # verify:contracts, then build server + client + apps + admin
 task test     # every suite, including test:e2e (the live release gate)
 ```
 
@@ -249,17 +249,19 @@ Quarkus resources     ──▶ REST paths/verbs/status ──▶ openapi.json �
 Edit a model in [`proto/`](proto/README.md) or a resource in `server/`, then:
 
 ```bash
-task sync:contracts
+task generate          # regenerate everything — always green if the generators succeed
+task verify:contracts  # regenerate, then fail if a committed generated file drifted (the CI gate)
 ```
 
-This regenerates every cross-language artifact and **fails if any committed generated file
-drifted** — the drift gate. Wire it into CI.
+`task verify:contracts` regenerates every cross-language artifact and **fails if any committed
+generated file drifted** — the drift gate. Wire it into CI. (One task, `sync:contracts`, before
+ADR-049.)
 
 The golden rules a new contributor trips over first:
 
 - **Generated files are committed across a toolchain boundary and never hand-edited.** Fix the
   `.proto` or the annotation and regenerate; editing a derived artifact is a defect
-  `sync:contracts` will catch. See STANDARDS "Code generation".
+  `verify:contracts` will catch. See STANDARDS "Code generation".
 - **Client config is compile-time.** The Dart/Flutter client uses `String.fromEnvironment`
   (`ZEN_ENV`, `ZEN_PLATFORM`) and conditional imports so the toolchain can tree-shake native
   code out of the web bundle and web code out of the native binary. Runtime config on the

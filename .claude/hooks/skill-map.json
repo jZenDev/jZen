@@ -32,7 +32,7 @@
       "skill": "long-job",
       "why": "this command has taken up to 20 minutes in this repo; never wait on it in the foreground",
       "commands": [
-        "\\btask\\s+(test|build)\\b",
+        "\\btask\\s+(test|build|generate|verify:contracts)\\b",
         "\\bmvnw\\b[^|;&]*\\b(test|verify|package)\\b",
         "\\bdocker\\s+build\\b",
         "\\bsupabase\\s+start\\b",

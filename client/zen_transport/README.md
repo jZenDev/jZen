@@ -28,7 +28,7 @@ frames) and the generated Protobuf message classes.
   wrong for.
 - **Generated messages** (`lib/generated/`) — the Dart output of `proto/zen/v1/*.proto`. These
   are **tracked** generated files (a Flutter developer must compile without `protoc` or a JDK);
-  never hand-edit them, and `task sync:contracts` fails if they drift. See [`../README.md`](../README.md).
+  never hand-edit them, and `task verify:contracts` fails if they drift. See [`../README.md`](../README.md).
 
 ## ⚙️ Client config is compile-time
 

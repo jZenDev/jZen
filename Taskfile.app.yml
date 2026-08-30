@@ -805,12 +805,37 @@ tasks:
   # it all down. The process-management shape — background PIDs, a port-scoped teardown, `trap` on
   # EXIT — is generalised from Taskfile.yml's run:demo, which proved it against zen_demo.
   run:supabase:
-    desc: Start the local Supabase stack (API 54321, DB 54322, Studio 54323)
+    desc: Start the local Supabase stack — idempotent; prints the URLs a developer needs
     silent: true
+    summary: |
+      Starts the application's local Supabase stack (ports are whatever the consumer's
+      supabase/config.toml sets). Idempotent: an already-running stack is left alone, not
+      restarted, so this is safe to run before anything else — run:dev depends on it.
+
+      After the stack is up it prints the URLs resolved from `supabase status`. THE MAILBOX LINE
+      IS THE ONE TO REMEMBER when testing sign-up: a local Supabase mails nothing to the outside
+      world, so the confirmation and recovery links — and any `*://auth-callback` deep link —
+      land in the local mailbox rather than a real inbox.
     cmds:
-      - supabase start
-    status:
-      - supabase status >/dev/null 2>&1
+      - |
+        set -eu
+        command -v supabase >/dev/null 2>&1 || {
+          echo "supabase CLI not found on PATH: https://supabase.com/docs/guides/cli"
+          exit 1
+        }
+        if supabase status >/dev/null 2>&1; then
+          echo "Supabase already running."
+        else
+          supabase start
+        fi
+        eval "$(supabase status -o env | sed 's/^/SB_/')"
+        studio="${SB_STUDIO_URL:-}"
+        mailbox="${SB_INBUCKET_URL:-${SB_MAILPIT_URL:-}}"
+        db="${SB_DB_URL:-}"
+        echo
+        [ -n "$studio" ]  && echo "  Studio:    $studio" || true
+        [ -n "$mailbox" ] && echo "  Mailbox:   $mailbox   <- email confirmation + recovery links arrive here" || true
+        [ -n "$db" ]      && echo "  Postgres:  $db" || true
 
   run:server:
     desc: Start the application backend in Quarkus dev mode (live reload) on APP_PORT
@@ -819,11 +844,17 @@ tasks:
       Installs the jZen framework libraries, then runs the application's Quarkus module in dev mode
       through jZen's `mvnw` (the module has no wrapper of its own). APP_PORT defaults to 8085 to
       dodge a leftover stack on :8080.
+
+      Exports a default CORS_ORIGINS that already names the client's web origin
+      (http://localhost:WEB_PORT), so a plain `task run:client` is allowed from the browser
+      without extra flags. Set CORS_ORIGINS yourself to override — run:client checks its web
+      origin against the same value.
     cmds:
       - |
         set -eu
         pom="{{.ROOT_DIR}}/{{.APP_SERVER_MODULE}}/pom.xml"
         [ -f "$pom" ] || { echo "no server pom at {{.APP_SERVER_MODULE}}/pom.xml"; exit 1; }
+        export CORS_ORIGINS="${CORS_ORIGINS:-http://localhost:{{.WEB_PORT}},http://localhost:8080,http://localhost:5173}"
         (cd "{{.JZEN_DIR}}/server" && ./mvnw -B -q install -DskipTests)
         "{{.JZEN_DIR}}/server/mvnw" -f "$pom" quarkus:dev -Dquarkus.http.port="{{.APP_PORT}}"
 
@@ -833,22 +864,69 @@ tasks:
     summary: |
       `flutter run -d DEVICE` (default `chrome`, on a fixed WEB_PORT so the server's CORS allowlist
       can name it) with the compile-time client config baked in. Set APP_CLIENT_DIR if the Flutter
-      package is not `<client>/<app>_client`; set CLIENT_PLATFORM for a non-web device.
+      package is not `<client>/<app>_client`; set CLIENT_PLATFORM for a device whose name does not
+      say its platform.
+
+      Three operator guards run before the app launches, because each failure they catch otherwise
+      surfaces as an opaque "broken backend" in the browser:
+
+        - ZEN_PLATFORM is inferred from DEVICE where the name is unambiguous (chrome/edge/web-server
+          -> web, macos/linux/windows -> themselves). For an arbitrary id (an emulator, a UDID) it
+          cannot be guessed — a wrong ZEN_PLATFORM compiles cleanly and is wrong at runtime — so
+          the task fails and asks for CLIENT_PLATFORM explicitly.
+        - The backend must answer /api/v1/health. If nothing does, the app would load and fail its
+          first call; the task says to start run:server instead.
+        - For a web target, the client's origin (http://localhost:WEB_PORT) must be in the server's
+          CORS allowlist (CORS_ORIGINS, defaulted to what run:server exports). If not, every
+          credentialed call is rejected 403 "CORS Rejected - Invalid origin"; the task prints the
+          one-line fix.
     vars:
       APP_CLIENT_DIR: '{{.APP_CLIENT_DIR | default (printf "%s/%s_client" .CLIENT_DIR .APP_NAME)}}'
-      CLIENT_PLATFORM: '{{.CLIENT_PLATFORM | default "web"}}'
+      PLATFORM:
+        sh: |
+          explicit='{{.CLIENT_PLATFORM | default ""}}'
+          if [ -n "$explicit" ]; then echo "$explicit"; exit 0; fi
+          case "{{.DEVICE}}" in
+            chrome|edge|web-server) echo web ;;
+            macos)                  echo macos ;;
+            linux)                  echo linux ;;
+            windows)                echo windows ;;
+            *)                      echo "" ;;
+          esac
     cmds:
       - task: generate:l10n
       - |
         set -eu
+        platform='{{.PLATFORM}}'
+        if [ -z "$platform" ]; then
+          echo "Cannot infer ZEN_PLATFORM from DEVICE='{{.DEVICE}}'."
+          echo "Pass it explicitly:  task run:client DEVICE={{.DEVICE}} CLIENT_PLATFORM=android"
+          exit 1
+        fi
+
+        api="{{.API}}"
+        curl -sf "$api/api/v1/health" >/dev/null 2>&1 || {
+          echo "No backend answering on {{.APP_PORT}} — run 'task run:server' in another terminal."
+          exit 1
+        }
+
         cd "{{.ROOT_DIR}}/{{.APP_CLIENT_DIR}}"
-        defines="--dart-define=ZEN_ENV={{.ZEN_ENV}} --dart-define=ZEN_PLATFORM={{.CLIENT_PLATFORM}} --dart-define=ZEN_API_URL={{.API}}"
+        defines="--dart-define=ZEN_ENV={{.ZEN_ENV}} --dart-define=ZEN_PLATFORM=$platform --dart-define=ZEN_API_URL=$api"
         if [ -n '{{.AUTH_REDIRECT_URI}}' ]; then
           defines="$defines --dart-define=ZEN_AUTH_REDIRECT_URI={{.AUTH_REDIRECT_URI}}"
         fi
         case "{{.DEVICE}}" in
-          chrome|web-server|edge) set -- --web-port="{{.WEB_PORT}}" ;;
-          *)                      set -- ;;
+          chrome|web-server|edge)
+            allowed="${CORS_ORIGINS:-http://localhost:{{.WEB_PORT}},http://localhost:8080,http://localhost:5173}"
+            case ",$allowed," in
+              *",http://localhost:{{.WEB_PORT}},"*) ;;
+              *)
+                echo "WEB_PORT={{.WEB_PORT}} is not in the server's CORS allowlist. Either drop WEB_PORT, or"
+                echo "start the server with:  CORS_ORIGINS=http://localhost:{{.WEB_PORT}} task run:server"
+                exit 1 ;;
+            esac
+            set -- --web-port="{{.WEB_PORT}}" ;;
+          *) set -- ;;
         esac
         exec flutter run -d "{{.DEVICE}}" "$@" $defines
 
@@ -874,11 +952,23 @@ tasks:
       stops it.
 
       DEVICE is a passthrough to the client. WEB_PORT is fixed and named in CORS_ORIGINS so the
-      browser's credentialed calls are allowed from the client's web origin.
+      browser's credentialed calls are allowed from the client's web origin — here the CORS check
+      is a cheap assertion, since this task exports CORS_ORIGINS itself. ZEN_PLATFORM is inferred
+      from DEVICE (see run:client); an unrecognised device id fails asking for CLIENT_PLATFORM.
     deps: [run:supabase]
     vars:
       APP_CLIENT_DIR: '{{.APP_CLIENT_DIR | default (printf "%s/%s_client" .CLIENT_DIR .APP_NAME)}}'
-      CLIENT_PLATFORM: '{{.CLIENT_PLATFORM | default "web"}}'
+      PLATFORM:
+        sh: |
+          explicit='{{.CLIENT_PLATFORM | default ""}}'
+          if [ -n "$explicit" ]; then echo "$explicit"; exit 0; fi
+          case "{{.DEVICE}}" in
+            chrome|edge|web-server) echo web ;;
+            macos)                  echo macos ;;
+            linux)                  echo linux ;;
+            windows)                echo windows ;;
+            *)                      echo "" ;;
+          esac
     cmds:
       - task: generate:l10n
       - |
@@ -889,10 +979,25 @@ tasks:
         pom="{{.ROOT_DIR}}/{{.APP_SERVER_MODULE}}/pom.xml"
         [ -f "$pom" ] || { echo "no server pom at {{.APP_SERVER_MODULE}}/pom.xml"; exit 1; }
 
+        platform='{{.PLATFORM}}'
+        if [ -z "$platform" ]; then
+          echo "Cannot infer ZEN_PLATFORM from DEVICE='{{.DEVICE}}'."
+          echo "Pass it explicitly:  task run:dev DEVICE={{.DEVICE}} CLIENT_PLATFORM=android"
+          exit 1
+        fi
+
         eval "$(supabase status -o env | sed 's/^/export SB_/')"
         export SUPABASE_URL="${SB_API_URL}"
         export SUPABASE_KEY="${SB_ANON_KEY}"
         export CORS_ORIGINS="http://localhost:${WEB_PORT},http://localhost:8080,http://localhost:5173"
+
+        case "{{.DEVICE}}" in
+          chrome|web-server|edge)
+            case ",${CORS_ORIGINS}," in
+              *",http://localhost:${WEB_PORT},"*) ;;
+              *) echo "WEB_PORT=${WEB_PORT} is not in CORS_ORIGINS — cannot serve the web client"; exit 1 ;;
+            esac ;;
+        esac
 
         # Tear the server down: pkill the quarkus:dev java by its port system-property (dependable
         # across shells - go-task can reparent `&`, and quarkus:dev forks a child), then a
@@ -921,7 +1026,7 @@ tasks:
         [ "${ready}" -eq 1 ] || { echo "server did not become healthy on ${API}"; exit 1; }
 
         cd "{{.ROOT_DIR}}/{{.APP_CLIENT_DIR}}"
-        defines="--dart-define=ZEN_ENV={{.ZEN_ENV}} --dart-define=ZEN_PLATFORM={{.CLIENT_PLATFORM}} --dart-define=ZEN_API_URL=${API}"
+        defines="--dart-define=ZEN_ENV={{.ZEN_ENV}} --dart-define=ZEN_PLATFORM=${platform} --dart-define=ZEN_API_URL=${API}"
         if [ -n '{{.AUTH_REDIRECT_URI}}' ]; then
           defines="$defines --dart-define=ZEN_AUTH_REDIRECT_URI={{.AUTH_REDIRECT_URI}}"
         fi

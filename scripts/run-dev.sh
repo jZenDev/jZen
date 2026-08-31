@@ -80,9 +80,17 @@ trap stop_all EXIT
 # only this script and `stop_all` (via the flag) owns the teardown.
 set -m
 
+# `< /dev/null` on the server subshell, same as the client below and for the same reason.
+# With `set -m` the backgrounded server is not the foreground process group; Quarkus dev
+# mode's aesh console reads the controlling terminal, and a background-group TTY read
+# raises SIGTTIN — which STOPS the whole server process group. It then never finishes
+# augmentation, never binds the port, and the health loop below times out with
+# "server did not become healthy". Closing stdin keeps aesh off the TTY (the console is
+# non-interactive in this rollup anyway — run:dev streams server logs, the client is the
+# foreground process; use `task run:server` for an interactive dev console).
 ( cd "${RUN_DEV_JZEN_DIR}/server" && ./mvnw -B -q install -DskipTests \
   && "${RUN_DEV_JZEN_DIR}/server/mvnw" -f "${RUN_DEV_POM}" quarkus:dev \
-       -Dquarkus.http.port="${RUN_DEV_PORT}" ) &
+       -Dquarkus.http.port="${RUN_DEV_PORT}" ) < /dev/null &
 server_pid=$!
 disown "${server_pid}" 2>/dev/null || true   # keep the pgroup, drop the job-exit chatter
 

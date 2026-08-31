@@ -960,15 +960,16 @@ tasks:
       the Supabase stack, the backend in dev mode on APP_PORT, waits for /health, then runs the
       client on DEVICE (default web on WEB_PORT). The server is torn down on exit — by its port
       system-property first (dependable across shells), then a port-scoped lsof fallback that
-      escalates to SIGKILL. Supabase is left running; `task stop:supabase` (or the framework's)
-      stops it.
+      escalates to SIGKILL. Supabase is left running — the teardown message says so — and
+      `task stop:supabase` (or the framework's) stops it.
 
-      This is a manual-walkthrough rollup, so one Ctrl-C ends it cleanly and at once: the client
-      is run with stdin closed (no interactive `r`/`R`/`q` keys — use `task run:client` for a
-      hot-reload loop) so the first signal shuts it down instead of dropping to its "Press [e]…"
-      prompt and waiting for a second, and it is also killed from its --pid-file by the exit
-      handler. go-task's shell can only trap EXIT, so the teardown runs when the foreground client
-      returns rather than being driven off the signal directly.
+      This is a manual-walkthrough rollup, so one Ctrl-C ends it cleanly and at once. The
+      orchestration runs in `scripts/run-dev.sh` (a real bash script — go-task's own shell can
+      only trap EXIT, which fires a signal too late): it starts server and client each in their
+      own process group with `set -m`, so the first Ctrl-C reaches only the script and its
+      `trap … INT TERM EXIT` handler drives an ordered teardown — client from its `--pid-file`
+      (TERM→KILL), then the server by its port. The client also runs with stdin closed (no
+      interactive `r`/`R`/`q` keys — use `task run:client` for a hot-reload loop).
 
       DEVICE is a passthrough to the client. WEB_PORT is fixed and named in CORS_ORIGINS so the
       browser's credentialed calls are allowed from the client's web origin — here the CORS check
@@ -1018,45 +1019,6 @@ tasks:
             esac ;;
         esac
 
-        # Teardown runs from the EXIT trap. go-task's shell (mvdan/sh) can only trap EXIT
-        # — `trap ... INT` is rejected — and `$!` is not a real PID there (the interpreter
-        # can reparent `&`), so both the client and the server are torn down by identity
-        # we captured another way, not by a shell job id, and the trap fires as soon as
-        # the foreground `flutter run` below returns.
-        #
-        # `stop_all` kills the client from its --pid-file (TERM, then KILL), then the
-        # quarkus:dev java by its port system-property (a forked child of the mvnw the
-        # script backgrounded), then a port-scoped lsof fallback that waits for the port
-        # to free, escalating to SIGKILL.
-        client_pidfile="$(mktemp "${TMPDIR:-/tmp}/zen-run-dev-client.XXXXXX")"
-        stop_all() {
-          cp=$(cat "${client_pidfile}" 2>/dev/null || true)
-          [ -n "${cp}" ] && kill "${cp}" 2>/dev/null || true
-          pkill -f "quarkus.http.port=${PORT}" 2>/dev/null || true
-          p=$(lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t 2>/dev/null || true)
-          [ -n "${p}" ] && kill "${p}" 2>/dev/null || true
-          for _ in $(seq 1 15); do
-            lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t >/dev/null 2>&1 || break
-            sleep 1
-          done
-          p=$(lsof -nP -iTCP:"${PORT}" -sTCP:LISTEN -t 2>/dev/null || true)
-          [ -n "${p}" ] && kill -9 "${p}" 2>/dev/null || true
-          [ -n "${cp}" ] && kill -9 "${cp}" 2>/dev/null || true
-          rm -f "${client_pidfile}"
-        }
-        trap stop_all EXIT
-
-        ( cd "{{.JZEN_DIR}}/server" && ./mvnw -B -q install -DskipTests \
-          && "{{.JZEN_DIR}}/server/mvnw" -f "$pom" quarkus:dev -Dquarkus.http.port="${PORT}" ) &
-
-        ready=0
-        for _ in $(seq 1 90); do
-          if curl -sf "${API}/api/v1/health" >/dev/null 2>&1; then ready=1; break; fi
-          sleep 1
-        done
-        [ "${ready}" -eq 1 ] || { echo "server did not become healthy on ${API}"; exit 1; }
-
-        cd "{{.ROOT_DIR}}/{{.APP_CLIENT_DIR}}"
         defines="--dart-define=ZEN_ENV={{.ZEN_ENV}} --dart-define=ZEN_PLATFORM=${platform} --dart-define=ZEN_API_URL=${API}"
         # Native-only by construction — see run:client. A web build must not get a custom-scheme
         # redirect or the server refuses it as invalid_redirect.
@@ -1064,14 +1026,18 @@ tasks:
           defines="$defines --dart-define=ZEN_AUTH_REDIRECT_URI={{.AUTH_REDIRECT_URI}}"
         fi
         case "{{.DEVICE}}" in
-          chrome|web-server|edge) set -- --web-port="${WEB_PORT}" ;;
-          *)                      set -- ;;
+          chrome|web-server|edge) flutter_args="-d {{.DEVICE}} --web-port=${WEB_PORT}" ;;
+          *)                      flutter_args="-d {{.DEVICE}}" ;;
         esac
-        # `flutter run` in the foreground, but with stdin closed (`< /dev/null`): with no
-        # controlling TTY on stdin its interactive key handler is off, so a single Ctrl-C
-        # shuts the client down and returns instead of dropping to the "Press [e]…" prompt
-        # and waiting for a second signal — the ~15 s hang this task's desc denies.
-        # --pid-file gives stop_all a real PID to finish the job (and the EXIT trap the
-        # server) regardless of how flutter took the signal.
-        flutter run -d "{{.DEVICE}}" "$@" $defines \
-          --pid-file="${client_pidfile}" < /dev/null
+
+        # The orchestration — start server, wait for health, start client, and tear BOTH
+        # down on the FIRST Ctrl-C — runs in a real bash script, not here. go-task's shell
+        # (mvdan/sh) rejects `trap ... INT` and `set -m`, so an inline body can only clean
+        # up from an EXIT trap that fires after `flutter run` returns, i.e. after a *second*
+        # signal (issue #83). scripts/run-dev.sh gets a genuine process-group-isolated,
+        # signal-trapped teardown. Every value is computed here and passed as environment.
+        export RUN_DEV_PORT="${PORT}" RUN_DEV_API="${API}" RUN_DEV_POM="$pom"
+        export RUN_DEV_JZEN_DIR="{{.JZEN_DIR}}"
+        export RUN_DEV_CLIENT_DIR="{{.ROOT_DIR}}/{{.APP_CLIENT_DIR}}"
+        export RUN_DEV_FLUTTER_ARGS="${flutter_args}" RUN_DEV_DEFINES="${defines}"
+        exec bash "{{.JZEN_DIR}}/scripts/run-dev.sh"

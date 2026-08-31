@@ -92,7 +92,8 @@ vars:
   WEB_PORT: '{{.ZEN_WEB_PORT | default "5200"}}'
   APP_PORT: '{{.ZEN_APP_PORT | default "8085"}}'
   # Custom URI scheme for the client's auth deep-link (ADR-018/019). Empty = the client declares
-  # none; run:client only passes the define when it is set.
+  # none. run:client / run:dev pass the define only when it is set AND the resolved platform is
+  # not web — a custom-scheme redirect is native-only by construction.
   AUTH_REDIRECT_URI: '{{.ZEN_AUTH_REDIRECT_URI | default ""}}'
 
   # Where generate:proto:dart writes the application's generated messages, relative to the
@@ -849,12 +850,20 @@ tasks:
       (http://localhost:WEB_PORT), so a plain `task run:client` is allowed from the browser
       without extra flags. Set CORS_ORIGINS yourself to override — run:client checks its web
       origin against the same value.
+
+      Wires the local Supabase credentials (SUPABASE_URL / SUPABASE_KEY) from `supabase status`
+      the same way run:dev does — the anon key is per-stack, not a constant, so a backend started
+      without it 500s every auth call. depends on run:supabase so the stack is up first.
+    deps: [run:supabase]
     cmds:
       - |
         set -eu
         pom="{{.ROOT_DIR}}/{{.APP_SERVER_MODULE}}/pom.xml"
         [ -f "$pom" ] || { echo "no server pom at {{.APP_SERVER_MODULE}}/pom.xml"; exit 1; }
         export CORS_ORIGINS="${CORS_ORIGINS:-http://localhost:{{.WEB_PORT}},http://localhost:8080,http://localhost:5173}"
+        eval "$(supabase status -o env | sed 's/^/export SB_/')"
+        export SUPABASE_URL="${SB_API_URL}"
+        export SUPABASE_KEY="${SB_ANON_KEY}"
         (cd "{{.JZEN_DIR}}/server" && ./mvnw -B -q install -DskipTests)
         "{{.JZEN_DIR}}/server/mvnw" -f "$pom" quarkus:dev -Dquarkus.http.port="{{.APP_PORT}}"
 
@@ -912,7 +921,10 @@ tasks:
 
         cd "{{.ROOT_DIR}}/{{.APP_CLIENT_DIR}}"
         defines="--dart-define=ZEN_ENV={{.ZEN_ENV}} --dart-define=ZEN_PLATFORM=$platform --dart-define=ZEN_API_URL=$api"
-        if [ -n '{{.AUTH_REDIRECT_URI}}' ]; then
+        # A custom-scheme redirect (myapp://auth-callback) is native-only by construction: handing
+        # one to a web build makes the server refuse the unlisted address as invalid_redirect. Pass
+        # it only when the resolved platform is not web.
+        if [ -n '{{.AUTH_REDIRECT_URI}}' ] && [ "$platform" != web ]; then
           defines="$defines --dart-define=ZEN_AUTH_REDIRECT_URI={{.AUTH_REDIRECT_URI}}"
         fi
         case "{{.DEVICE}}" in
@@ -1027,7 +1039,9 @@ tasks:
 
         cd "{{.ROOT_DIR}}/{{.APP_CLIENT_DIR}}"
         defines="--dart-define=ZEN_ENV={{.ZEN_ENV}} --dart-define=ZEN_PLATFORM=${platform} --dart-define=ZEN_API_URL=${API}"
-        if [ -n '{{.AUTH_REDIRECT_URI}}' ]; then
+        # Native-only by construction — see run:client. A web build must not get a custom-scheme
+        # redirect or the server refuses it as invalid_redirect.
+        if [ -n '{{.AUTH_REDIRECT_URI}}' ] && [ "$platform" != web ]; then
           defines="$defines --dart-define=ZEN_AUTH_REDIRECT_URI={{.AUTH_REDIRECT_URI}}"
         fi
         case "{{.DEVICE}}" in

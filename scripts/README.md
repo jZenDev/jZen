@@ -65,6 +65,18 @@ Supabase + backend + the `zen_demo` Flutter client in Chrome on `http://localhos
 (`--web-port`). The script form of `task run:demo`, with the same robust Supabase handling as
 `admin.sh`.
 
+## 🔁 run-dev.sh — the `run:dev` orchestration
+
+Not a runner you invoke directly — the `run:dev` task (in `Taskfile.app.yml`, which an app
+includes as `zen:run:dev`) `exec`s it after computing every path, port and `--dart-define`. It
+exists as a real bash script for Rule 1: `task`'s own shell (`mvdan/sh`) rejects `trap … INT`
+and `set -m`, so an inline task body can only tear down from an `EXIT` trap that fires *after*
+`flutter run` returns — i.e. after a second Ctrl-C. Here `set -m` puts the backgrounded server
+and client each in their own process
+group, the terminal's Ctrl-C reaches only this script, and `trap … INT TERM EXIT` drives an
+ordered teardown (client from its `--pid-file`, then the server by port) on the **first** signal.
+Supabase is deliberately left up; the teardown message says so.
+
 ## 🌱 seed-admin.py — create an admin login
 
 ```

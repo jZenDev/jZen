@@ -71,10 +71,12 @@ Not a runner you invoke directly — the `run:dev` task (in `Taskfile.app.yml`, 
 includes as `zen:run:dev`) `exec`s it after computing every path, port and `--dart-define`. It
 exists as a real bash script for Rule 1: `task`'s own shell (`mvdan/sh`) rejects `trap … INT`
 and `set -m`, so an inline task body can only tear down from an `EXIT` trap that fires *after*
-`flutter run` returns — i.e. after a second Ctrl-C. Here `set -m` puts the backgrounded server
-and client each in their own process
-group, the terminal's Ctrl-C reaches only this script, and `trap … INT TERM EXIT` drives an
-ordered teardown (client from its `--pid-file`, then the server by port) on the **first** signal.
+`flutter run` returns — i.e. after a second Ctrl-C. Here `set -m` is toggled on only around each
+`&` so the backgrounded server and client each get their own process group (a terminal Ctrl-C is
+not delivered straight to them) while job control stays off for the rest of the script — left on,
+the forked `sleep`/`curl` in the poll loops would each grab the terminal for their turn and eat
+the Ctrl-C. The script keeps the terminal, so `trap … INT TERM EXIT` drives an ordered teardown
+(client from its `--pid-file`, then the server by port) on the **first** signal.
 Supabase is deliberately left up; the teardown message says so. Both backgrounded children run
 with stdin closed (`< /dev/null`) — under `set -m` a background-group read of the controlling
 terminal raises `SIGTTIN` and stops the group, so Quarkus dev mode's aesh console (and Flutter's

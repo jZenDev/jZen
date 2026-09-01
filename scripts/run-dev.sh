@@ -6,10 +6,13 @@
 # SECOND Ctrl-C. That made the "one Ctrl-C tears it all down" promise false (issue #83).
 #
 # Here, with real bash (works on the macOS system bash 3.2, like the other scripts):
-#   * `set -m` puts each backgrounded child (server, client) in its OWN process group,
-#     so a Ctrl-C at the terminal is delivered to THIS script only, never straight to
-#     the children. The children stop because `stop_all` stops them, in order — not
-#     because a raw SIGINT won a race, and not after a second signal.
+#   * `set -m` is switched ON only around each `&`, then OFF again. That is enough to put
+#     the server and the client each in their OWN process group — so a terminal Ctrl-C is
+#     NOT delivered straight to them (the #83 concern) — while job control stays OFF for
+#     the rest of the script. If `-m` were left on, the forked `sleep`/`curl` in the poll
+#     loops below would each briefly become a process group that owns the controlling
+#     terminal, so the Ctrl-C would land on `sleep` and this script's `trap` would never
+#     fire — the stack would keep running after the signal (the #87-follow-up bug).
 #   * `trap … INT TERM` sets a flag; the wait is a poll loop that checks it every second
 #     (bash 3.2's `wait <pid>` is not interruptible by a trapped signal, so we don't use
 #     it as the blocking primitive). First signal → flag set → loop breaks → stop_all.
@@ -76,22 +79,23 @@ stop_all() {
 trap on_signal INT TERM
 trap stop_all EXIT
 
-# `set -m`: each `&` below lands in its own process group, so a terminal Ctrl-C hits
-# only this script and `stop_all` (via the flag) owns the teardown.
-set -m
-
 # `< /dev/null` on the server subshell, same as the client below and for the same reason.
-# With `set -m` the backgrounded server is not the foreground process group; Quarkus dev
-# mode's aesh console reads the controlling terminal, and a background-group TTY read
-# raises SIGTTIN — which STOPS the whole server process group. It then never finishes
-# augmentation, never binds the port, and the health loop below times out with
-# "server did not become healthy". Closing stdin keeps aesh off the TTY (the console is
-# non-interactive in this rollup anyway — run:dev streams server logs, the client is the
-# foreground process; use `task run:server` for an interactive dev console).
+# Quarkus dev mode's aesh console reads the controlling terminal, and once the server is
+# in its own (background) process group a TTY read raises SIGTTIN — which STOPS the whole
+# server process group. It then never finishes augmentation, never binds the port, and
+# the health loop below times out with "server did not become healthy". Closing stdin
+# keeps aesh off the TTY (the console is non-interactive in this rollup anyway — run:dev
+# streams server logs, the client is the foreground process; use `task run:server` for an
+# interactive dev console).
+#
+# `-m` ON just for the `&` gives the subshell its own process group; OFF again right after
+# so the poll loops keep the terminal — see the header. `stop_all` owns teardown.
+set -m
 ( cd "${RUN_DEV_JZEN_DIR}/server" && ./mvnw -B -q install -DskipTests \
   && "${RUN_DEV_JZEN_DIR}/server/mvnw" -f "${RUN_DEV_POM}" quarkus:dev \
        -Dquarkus.http.port="${RUN_DEV_PORT}" ) < /dev/null &
 server_pid=$!
+set +m
 disown "${server_pid}" 2>/dev/null || true   # keep the pgroup, drop the job-exit chatter
 
 ready=0
@@ -106,12 +110,14 @@ done
 
 cd "${RUN_DEV_CLIENT_DIR}"
 # stdin closed: no interactive r/R/q keys (use `task run:client` for a hot-reload loop).
-# --pid-file gives stop_all a real PID. The client is backgrounded so `set -m` isolates
-# its process group too; the poll loop below is the interruptible wait.
+# --pid-file gives stop_all a real PID. `-m` around the `&` (then off) isolates the
+# client's process group; the poll loop below is the interruptible wait.
 # shellcheck disable=SC2086
+set -m
 flutter run ${RUN_DEV_FLUTTER_ARGS:-} ${RUN_DEV_DEFINES:-} \
   --pid-file="${client_pidfile}" < /dev/null &
 client_pid=$!
+set +m
 disown "${client_pid}" 2>/dev/null || true
 
 while kill -0 "${client_pid}" 2>/dev/null; do

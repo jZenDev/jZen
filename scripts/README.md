@@ -75,7 +75,10 @@ and `set -m`, so an inline task body can only tear down from an `EXIT` trap that
 and client each in their own process
 group, the terminal's Ctrl-C reaches only this script, and `trap … INT TERM EXIT` drives an
 ordered teardown (client from its `--pid-file`, then the server by port) on the **first** signal.
-Supabase is deliberately left up; the teardown message says so.
+Supabase is deliberately left up; the teardown message says so. Both backgrounded children run
+with stdin closed (`< /dev/null`) — under `set -m` a background-group read of the controlling
+terminal raises `SIGTTIN` and stops the group, so Quarkus dev mode's aesh console (and Flutter's
+key handler) must not touch the TTY here.
 
 ## 🌱 seed-admin.py — create an admin login
 

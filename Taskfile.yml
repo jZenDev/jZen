@@ -1491,8 +1491,9 @@ tasks:
         #
         # It is a CONFIG assertion, not a code one: the image is byte-identical either way and the
         # web app is wholly unaffected, so no other check here can notice. A deployment that omits
-        # the AUTH_REDIRECT_URIS secret refuses every native email link with 400 invalid_redirect —
-        # ADR-019 matches exactly and the allowlist is empty by default. The probe address is
+        # AUTH_REDIRECT_URIS (a public-config env var, not a secret — issue #90) refuses every
+        # native email link with 400 invalid_redirect — ADR-019 matches exactly and the allowlist
+        # is empty by default. The probe address is
         # deliberately a nonexistent user: /restore-password answers 204 whether or not the account
         # exists, so this reads the allowlist and nothing else, and mails no one.
         want_scheme="${ZEN_AUTH_REDIRECT_URI:-zendemo://auth-callback}"
@@ -1507,11 +1508,12 @@ tasks:
           echo
           echo "The deployed service does not allow the native return address, so every native"
           echo "client is locked out of confirmation and recovery while the web app looks fine."
-          echo "Create the secret and redeploy, and register the same scheme in the Supabase"
-          echo "dashboard under Auth -> URL Configuration -> Redirect URLs:"
+          echo "AUTH_REDIRECT_URIS is public configuration passed as a literal (issue #90), not a"
+          echo "Secret Manager entry — export it and redeploy, and register the same scheme in the"
+          echo "Supabase dashboard under Auth -> URL Configuration -> Redirect URLs:"
           echo
-          echo "  printf '%s' '$want_scheme' | gcloud secrets create AUTH_REDIRECT_URIS \\"
-          echo "    --data-file=- --project={{.GCP_PROJECT}}"
+          echo "  export AUTH_REDIRECT_URIS='$want_scheme'"
+          echo "  GCP_PROJECT={{.GCP_PROJECT}} task deploy:cloudrun"
           exit 1
         fi
 
@@ -1904,25 +1906,74 @@ tasks:
                --location=REGION --project=PROJECT
              gcloud auth configure-docker REGION-docker.pkg.dev
 
-        1. The fourteen configuration secrets. `--set-secrets` below fails the deploy if any
-           is absent, so create them all before the first run.
+        0a. Artifact Registry cleanup policy (issue #90). Every build pushes THREE registry
+           versions — a multi-arch index (the tag lands here), the platform-specific image it
+           resolves to (what Cloud Run actually runs, and what shows as "untagged" because the
+           tag is on the index, not on this child), and a small config/attestation blob — so the
+           repo grows by roughly 3 versions per deploy with nothing pruning it. `--dry-run` first
+           and read the output before applying for real; a keepCount that is too low deletes a
+           digest a live revision could still be rolled back to.
+
+             cat > cleanup-policy.json <<'EOF'
+             [
+               {
+                 "name": "keep-tagged",
+                 "action": {"type": "Keep"},
+                 "condition": {"tagState": "TAGGED"}
+               },
+               {
+                 "name": "keep-recent-untagged",
+                 "action": {"type": "Keep"},
+                 "mostRecentVersions": {"keepCount": 10}
+               },
+               {
+                 "name": "delete-old-untagged",
+                 "action": {"type": "Delete"},
+                 "condition": {"tagState": "UNTAGGED", "olderThan": "2592000s"}
+               }
+             ]
+             EOF
+             gcloud artifacts repositories set-cleanup-policies jzen \
+               --project=PROJECT --location=REGION \
+               --policy=cleanup-policy.json --dry-run
+             # review the dry run, then drop --dry-run to apply for real
+             gcloud artifacts repositories set-cleanup-policies jzen \
+               --project=PROJECT --location=REGION --policy=cleanup-policy.json
+
+        1. The seven genuine secrets. `--set-secrets` below fails the deploy if any is absent,
+           so create them all before the first run.
 
              mk() { printf '%s' "$2" | gcloud secrets create "$1" --data-file=- --project=PROJECT; }
 
-             mk SUPABASE_URL       "https://<ref>.supabase.co"
              mk SUPABASE_KEY       "<publishable/anon key>"
              mk DB_URL             "jdbc:postgresql://<pooler-host>:5432/postgres"
              mk DB_USERNAME        "postgres.<ref>"
              mk DB_PASSWORD        "<database password>"
-             mk SITE_URL           "https://<service-url>"
-             mk AUTH_REDIRECT_URI  "https://<service-url>/auth/callback"
-             mk AUTH_REDIRECT_URIS "zendemo://auth-callback"
-             mk CORS_ORIGINS       "https://<service-url>"
-             mk SMTP_HOST          "smtp-relay.brevo.com"
-             mk SMTP_PORT          "587"
              mk SMTP_USERNAME      "<smtp login>"
              mk SMTP_PASSWORD      "<smtp api key>"
-             mk SMTP_FROM          "noreply@<domain>"
+             mk ZEN_JOBS_TRIGGER_TOKEN "<minted token>"
+
+           (APP_DB_USERNAME/APP_DB_PASSWORD are an eighth and ninth secret, created only if the
+           optional least-privilege role from step 1c is adopted — see there.)
+
+        1a-config. Eight PUBLIC configuration values (issue #90) — public by construction: the
+           URLs are already in the app's own manifests and redirect config, and the SMTP
+           host/port/from ride on every outgoing message header. Storing them in Secret Manager
+           bills per version-month for confidentiality they never had, and it makes the genuine
+           secrets above harder to spot. They are plain `--set-env-vars` literals instead,
+           supplied by the operator's shell environment (same pattern as APPLINKS_* in 1a below)
+           — export them before running `task deploy:cloudrun`, which fails closed with the name
+           of whichever is missing:
+
+             export SUPABASE_URL="https://<ref>.supabase.co"
+             export SITE_URL="https://<service-url>"
+             export CORS_ORIGINS="https://<service-url>"
+             export AUTH_REDIRECT_URI="https://<service-url>/auth/callback"
+             export AUTH_REDIRECT_URIS="zendemo://auth-callback"   # comma-separated for >1 client
+             export SMTP_HOST="smtp-relay.brevo.com"
+             export SMTP_PORT="587"
+             export SMTP_FROM="noreply@<domain>"
+             GCP_PROJECT=... task deploy:cloudrun
 
         1a. App Links (optional, and NOT secrets). The association files at /.well-known let the
            operating system verify that an https:// link belongs to this app, which is what closes
@@ -1962,7 +2013,7 @@ tasks:
            serves every client, and a phone is not reachable at the web app's URL, so a native
            build names its own scheme and the server allows it only by EXACT match (ADR-019).
            The list is empty by default, which is the safe default but also means a deployment
-           that omits this secret refuses every native email link with 400 invalid_redirect —
+           that omits this value refuses every native email link with 400 invalid_redirect —
            silently, in that nothing about the web flow looks wrong. It must equal the scheme
            registered in the platform manifests and passed as ZEN_AUTH_REDIRECT_URI to the
            native build; three places, one value. Comma-separated for more than one client.
@@ -2372,7 +2423,34 @@ tasks:
         # The secret set both the job and the service read. Declared here because the migration
         # job needs it too and must not drift from the service's: they are the same application,
         # booting the same startup guards, from the same image.
-        SECRETS="SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_KEY=SUPABASE_KEY:latest,DB_URL=DB_URL:latest,DB_USERNAME=DB_USERNAME:latest,DB_PASSWORD=DB_PASSWORD:latest,CORS_ORIGINS=CORS_ORIGINS:latest,AUTH_REDIRECT_URI=AUTH_REDIRECT_URI:latest,AUTH_REDIRECT_URIS=AUTH_REDIRECT_URIS:latest,SITE_URL=SITE_URL:latest,SMTP_HOST=SMTP_HOST:latest,SMTP_PORT=SMTP_PORT:latest,SMTP_USERNAME=SMTP_USERNAME:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,SMTP_FROM=SMTP_FROM:latest,ZEN_JOBS_TRIGGER_TOKEN=ZEN_JOBS_TRIGGER_TOKEN:latest"
+        #
+        # Nine genuine secrets only (issue #90) — the eight values that are public configuration
+        # (SUPABASE_URL, SITE_URL, CORS_ORIGINS, AUTH_REDIRECT_URI, AUTH_REDIRECT_URIS, SMTP_HOST,
+        # SMTP_PORT, SMTP_FROM) are passed below as plain --set-env-vars literals instead, so
+        # Secret Manager stops billing storage for values with no confidentiality to protect.
+        SECRETS="SUPABASE_KEY=SUPABASE_KEY:latest,DB_URL=DB_URL:latest,DB_USERNAME=DB_USERNAME:latest,DB_PASSWORD=DB_PASSWORD:latest,SMTP_USERNAME=SMTP_USERNAME:latest,SMTP_PASSWORD=SMTP_PASSWORD:latest,ZEN_JOBS_TRIGGER_TOKEN=ZEN_JOBS_TRIGGER_TOKEN:latest"
+
+        # The eight public-configuration values (see comment above). Required, not optional —
+        # Quarkus config validation fails to boot without them, on the job exactly as much as on
+        # the service, which is why splitting a rebind into "remove secret, then add literal" as
+        # two separate deploys is unsafe (see the deploy skill / issue #90): the intermediate
+        # revision has none of these and refuses to start. AUTH_REDIRECT_URIS carries its own
+        # commas, so it gets its own --set-env-vars call with the delimiter switched to `@` via
+        # the leading `^@^` — gcloud's default `,` delimiter would otherwise mis-split it. NOT
+        # `:` (tried first, and wrong): the value itself is a URI scheme like
+        # "zendemo://auth-callback", which contains a `:` of its own, so a `:` delimiter mis-splits
+        # THAT instead — confirmed live: `Bad syntax for dict arg: [//auth-callback]`. `@` appears
+        # in neither a URI scheme nor the comma-joined list, so it's safe.
+        for v in SUPABASE_URL SITE_URL CORS_ORIGINS AUTH_REDIRECT_URI AUTH_REDIRECT_URIS \
+                 SMTP_HOST SMTP_PORT SMTP_FROM; do
+          eval "val=\${$v:-}"
+          if [ -z "$val" ]; then
+            echo "$v must be set — see ONE-TIME SETUP step 1a-config. It is public configuration," >&2
+            echo "not a secret, so it is exported and passed as a literal, not created in Secret" >&2
+            echo "Manager." >&2
+            exit 1
+          fi
+        done
 
         # ═══ MIGRATE, THEN DEPLOY. Never the other way round, and never with the old image. ═══
         #
@@ -2412,6 +2490,14 @@ tasks:
           --max-retries=0 --task-timeout=10m --tasks=1 \
           --memory={{.MIGRATE_JOB_MEMORY}} --cpu={{.SERVICE_CPU}} \
           --set-env-vars="ZEN_MIGRATE_ONLY=true,QUARKUS_HTTP_HOST_ENABLED=false,ZEN_ALLOW_SCHEMA_ROLLBACK=$ROLLBACK" \
+          --set-env-vars="SUPABASE_URL=$SUPABASE_URL" \
+          --set-env-vars="SITE_URL=$SITE_URL" \
+          --set-env-vars="CORS_ORIGINS=$CORS_ORIGINS" \
+          --set-env-vars="AUTH_REDIRECT_URI=$AUTH_REDIRECT_URI" \
+          --set-env-vars="^@^AUTH_REDIRECT_URIS=$AUTH_REDIRECT_URIS" \
+          --set-env-vars="SMTP_HOST=$SMTP_HOST" \
+          --set-env-vars="SMTP_PORT=$SMTP_PORT" \
+          --set-env-vars="SMTP_FROM=$SMTP_FROM" \
           --set-secrets="$SECRETS" \
           >/dev/null
         echo "Migrating with $IMAGE (job {{.MIGRATE_JOB_NAME}}, schema gate: $([ "$ROLLBACK" = true ] && echo OVERRIDDEN || echo on))..."
@@ -2504,6 +2590,14 @@ tasks:
           --port=8080 \
           --allow-unauthenticated \
           --set-env-vars="^@^ZEN_BUILD_ID={{.GIT_SHA}}{{.GIT_DIRTY}}@APPLINKS_ANDROID_PACKAGE=${APPLINKS_ANDROID_PACKAGE:-}@APPLINKS_ANDROID_FINGERPRINTS=${APPLINKS_ANDROID_FINGERPRINTS:-}@APPLINKS_APPLE_APP_IDS=${APPLINKS_APPLE_APP_IDS:-}@ZEN_I18N_SUPPORTED=${ZEN_I18N_SUPPORTED:-}" \
+          --set-env-vars="SUPABASE_URL=$SUPABASE_URL" \
+          --set-env-vars="SITE_URL=$SITE_URL" \
+          --set-env-vars="CORS_ORIGINS=$CORS_ORIGINS" \
+          --set-env-vars="AUTH_REDIRECT_URI=$AUTH_REDIRECT_URI" \
+          --set-env-vars="^@^AUTH_REDIRECT_URIS=$AUTH_REDIRECT_URIS" \
+          --set-env-vars="SMTP_HOST=$SMTP_HOST" \
+          --set-env-vars="SMTP_PORT=$SMTP_PORT" \
+          --set-env-vars="SMTP_FROM=$SMTP_FROM" \
           --set-secrets="$SECRETS"
 
   destroy:cloudrun:
@@ -2588,7 +2682,7 @@ tasks:
         # --- 2. The whole GCP project: one atomic delete, takes everything with it.
         if gcloud projects describe "${GCP_PROJECT}" >/dev/null 2>&1; then
           gcloud projects delete "${GCP_PROJECT}" --quiet \
-            && echo "  deleted GCP project ${GCP_PROJECT} (service, migration job, scheduler, 14 secrets, registry, IAM, APIs; billing unlinked)" \
+            && echo "  deleted GCP project ${GCP_PROJECT} (service, migration job, scheduler, secrets, registry, IAM, APIs; billing unlinked)" \
             || { echo "  FAILED to delete GCP project ${GCP_PROJECT}."; incomplete=1; }
         else
           echo "  GCP project ${GCP_PROJECT} already gone."

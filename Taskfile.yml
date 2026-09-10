@@ -1910,9 +1910,27 @@ tasks:
            versions — a multi-arch index (the tag lands here), the platform-specific image it
            resolves to (what Cloud Run actually runs, and what shows as "untagged" because the
            tag is on the index, not on this child), and a small config/attestation blob — so the
-           repo grows by roughly 3 versions per deploy with nothing pruning it. `--dry-run` first
-           and read the output before applying for real; a keepCount that is too low deletes a
-           digest a live revision could still be rolled back to.
+           repo grows by roughly 3 versions per deploy with nothing pruning it.
+
+           A CLOUD RUN REVISION IS NOT A REFERENCE the registry respects. Cloud Run accumulates
+           revisions forever unless something deletes them, and this policy has no idea a
+           revision exists — it only sees image age and tag state. On an EXISTING repository,
+           PRUNE OLD CLOUD RUN REVISIONS FIRST (they carry no traffic once superseded, so
+           deleting them is safe):
+
+             gcloud run revisions list --service=SERVICE --project=PROJECT --region=REGION \
+               --format='value(metadata.name,metadata.creationTimestamp.date(),status.imageDigest)'
+             # delete every revision you no longer need as a rollback target (keep the last
+             # several; none but the most recent carries traffic, verified by
+             # `gcloud run services describe SERVICE --format='value(status.traffic)'`)
+             gcloud run revisions delete REVISION --project=PROJECT --region=REGION --quiet
+
+           THEN stage the policy in dry run and verify it BEFORE enabling — not by reading the
+           dry-run's own output, which only echoes the policy back, and not via Cloud Logging,
+           which is silent unless Data Access audit logs are separately enabled for
+           artifactregistry.googleapis.com. Verify by simulating the policy directly: list every
+           image with its tags and creation time, and confirm none of the untagged ones older
+           than the `olderThan` window match a digest any surviving revision still points at.
 
              cat > cleanup-policy.json <<'EOF'
              [
@@ -1936,9 +1954,23 @@ tasks:
              gcloud artifacts repositories set-cleanup-policies jzen \
                --project=PROJECT --location=REGION \
                --policy=cleanup-policy.json --dry-run
-             # review the dry run, then drop --dry-run to apply for real
+             gcloud run revisions list --service=SERVICE --project=PROJECT --region=REGION \
+               --format='value(status.imageDigest)' | sort -u > /tmp/live-digests.txt
+             gcloud artifacts docker images list europe-central2-docker.pkg.dev/PROJECT/jzen \
+               --include-tags --format=json > /tmp/images.json
+             # cross-check /tmp/images.json (untagged, createTime older than the policy's
+             # olderThan window) against /tmp/live-digests.txt — any overlap means the policy
+             # would delete a rollback target; fix keepCount or prune more revisions first
+
+           Only once that cross-check comes back empty, enable it for real. `--dry-run` bare or
+           its ABSENCE both leave the repository's existing dry-run state untouched — confirmed
+           live: reissuing the command with neither flag still reported "Dry run is enabled."
+           `--no-dry-run` is the only thing that actually flips it off:
+
              gcloud artifacts repositories set-cleanup-policies jzen \
-               --project=PROJECT --location=REGION --policy=cleanup-policy.json
+               --project=PROJECT --location=REGION --policy=cleanup-policy.json --no-dry-run
+             gcloud artifacts repositories describe jzen --project=PROJECT --location=REGION \
+               --format='value(cleanupPolicyDryRun)'   # must print nothing (i.e. false)
 
         1. The seven genuine secrets. `--set-secrets` below fails the deploy if any is absent,
            so create them all before the first run.

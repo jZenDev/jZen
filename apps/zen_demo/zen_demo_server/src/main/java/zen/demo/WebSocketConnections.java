@@ -25,7 +25,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  * <p>Lives in the application rather than in {@code zen-transport}, deliberately. Putting it in the
  * framework's HTTP module would drag {@code quarkus-websockets-next} into every jZen application,
  * including the ones that never open a socket. Promoting it is the right move when a second
- * application wants it — on evidence, per ADR-008's rule for {@code JobClock}.
+ * application wants it — on evidence, per ADR-008's rule for the shared {@code Clock} producer
+ * (promoted to {@code zen-transport} once a second consumer appeared, DECISIONS ADR-051).
  */
 @ApplicationScoped
 public class WebSocketConnections {

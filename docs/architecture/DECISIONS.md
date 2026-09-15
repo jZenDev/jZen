@@ -17,7 +17,7 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ## ADR-051 — The shared `Clock` producer's future home is `zen-transport`, not a new `zen-time` module
 
-**Date:** 2026-09-15. **Status:** proposed. **Follows:** ADR-008.
+**Date:** 2026-09-15. **Status:** accepted. **Follows:** ADR-008.
 
 ### Decision
 
@@ -61,9 +61,10 @@ boundary behavior against a fixed clock instead of tolerating flakiness.
   into `UserRetentionService`, remove `JobClock` (or narrow it to a thin `zen-jobs`-local alias if
   `zen-jobs` itself is judged clearer keeping its own name for the same bean — a call for that
   follow-up, not this entry), and extend `UserRetentionServiceTest`.
-- Status is **proposed**, not **accepted**: per this repository's own working agreement, a decision
-  of this shape is surfaced before code is written against it, not decided unilaterally in the same
-  change that would depend on it.
+- Accepted on 2026-09-15, ahead of the follow-up it names: per this repository's own working
+  agreement, a decision of this shape is surfaced and confirmed before code is written against it,
+  not decided unilaterally in the same change that would depend on it. `fix/inject-clock-user-retention`
+  is the implementation.
 
 ---
 

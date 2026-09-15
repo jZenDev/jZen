@@ -4,6 +4,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -100,10 +101,12 @@ public class UserRetentionService {
   int batchSize;
 
   private final Event<UserAnonymised> anonymisations;
+  private final Clock clock;
 
   @Inject
-  public UserRetentionService(Event<UserAnonymised> anonymisations) {
+  public UserRetentionService(Event<UserAnonymised> anonymisations, Clock clock) {
     this.anonymisations = anonymisations;
+    this.clock = clock;
   }
 
   /**
@@ -113,7 +116,7 @@ public class UserRetentionService {
    */
   @Transactional
   public List<AccountDeletionWarning> findAccountsDueFirstWarning() {
-    OffsetDateTime cutoff = OffsetDateTime.now().minusDays(warningDays);
+    OffsetDateTime cutoff = OffsetDateTime.now(clock).minusDays(warningDays);
     List<User> due =
         User.find(
                 "lastLoginAt < ?1 and deletionWarningSentAt is null"
@@ -142,7 +145,7 @@ public class UserRetentionService {
    */
   @Transactional
   public List<AccountDeletionWarning> findAccountsDueFinalWarning() {
-    OffsetDateTime cutoff = OffsetDateTime.now().minusDays(finalWarningOffsetDays);
+    OffsetDateTime cutoff = OffsetDateTime.now(clock).minusDays(finalWarningOffsetDays);
     List<User> due =
         User.find(
                 "deletionWarningSentAt < ?1 and finalWarningSentAt is null"
@@ -172,7 +175,7 @@ public class UserRetentionService {
   public void stampFirstWarningDelivered(UUID userId) {
     User user = User.findById(userId);
     if (user != null) {
-      user.deletionWarningSentAt = OffsetDateTime.now();
+      user.deletionWarningSentAt = OffsetDateTime.now(clock);
     }
   }
 
@@ -185,7 +188,7 @@ public class UserRetentionService {
   public void stampFinalWarningDelivered(UUID userId) {
     User user = User.findById(userId);
     if (user != null) {
-      user.finalWarningSentAt = OffsetDateTime.now();
+      user.finalWarningSentAt = OffsetDateTime.now(clock);
     }
   }
 
@@ -204,7 +207,7 @@ public class UserRetentionService {
    */
   @Transactional
   public int anonymiseExpiredAccounts() {
-    OffsetDateTime cutoff = OffsetDateTime.now().minusDays(anonymiseOffsetDays);
+    OffsetDateTime cutoff = OffsetDateTime.now(clock).minusDays(anonymiseOffsetDays);
     List<User> expired =
         User.find(
                 "finalWarningSentAt < ?1"

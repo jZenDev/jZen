@@ -276,7 +276,7 @@ class JobSchedulerTest {
   }
 
   /**
-   * A clock the test moves by hand. It replaces the framework's {@code JobClock} producer, which is
+   * A clock the test moves by hand. It replaces the framework's {@code ZenClockProducer}, which is
    * why {@code Clock} is injected there rather than called statically.
    */
   @Alternative

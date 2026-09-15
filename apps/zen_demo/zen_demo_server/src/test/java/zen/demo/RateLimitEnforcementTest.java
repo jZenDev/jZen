@@ -75,7 +75,8 @@ class RateLimitEnforcementTest {
      * <p>A sleep that waits out the boundary would also work and is rejected for the reason given
      * above: this class does not buy green by inserting sleeps. Substituting the clock is the
      * pattern the codebase already uses for exactly this (see {@code JobSchedulerTest}'s driven
-     * clock, and {@code JobClock}'s note that {@code Clock} is injected so it can be replaced).
+     * clock, and {@code ZenClockProducer}'s note that {@code Clock} is injected so it can be
+     * replaced).
      */
     @Override
     public Set<Class<?>> getEnabledAlternatives() {
@@ -154,7 +155,7 @@ class RateLimitEnforcementTest {
   }
 
   /**
-   * A clock stopped on a window boundary, replacing the framework's {@code JobClock} producer.
+   * A clock stopped on a window boundary, replacing the framework's {@code ZenClockProducer}.
    *
    * <p>The instant is deliberately ON a minute boundary, so {@code floorMod(now, 60_000) == 0} and
    * the frozen "now" is the window's own start: every request in a test lands in the first

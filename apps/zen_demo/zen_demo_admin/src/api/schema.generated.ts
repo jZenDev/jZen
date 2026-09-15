@@ -109,6 +109,13 @@ export interface paths {
                         "application/json": components["schemas"]["AdminUserList"];
                     };
                 };
+                /** @description Malformed range/sort/filter, or an unknown role in filter (ZenError) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
                 /** @description No active session */
                 401: {
                     headers: {
@@ -212,7 +219,7 @@ export interface paths {
                         "application/x-protobuf": components["schemas"]["AdminUser"];
                     };
                 };
-                /** @description Bad Request */
+                /** @description Unknown role value or unsupported language (ZenError) */
                 400: {
                     headers: {
                         [name: string]: unknown;
@@ -404,14 +411,14 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Password changed */
+                /** @description Password changed; every other session was revoked and fresh cookies were issued for this one */
                 204: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content?: never;
                 };
-                /** @description Bad Request */
+                /** @description current_password missing (ordinary change) or the new password is too weak */
                 400: {
                     headers: {
                         [name: string]: unknown;
@@ -715,6 +722,13 @@ export interface paths {
                     };
                     content?: never;
                 };
+                /** @description Not Allowed */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
             };
         };
         put?: never;
@@ -945,6 +959,8 @@ export interface components {
         /** @description Body for POST /api/v1/auth/password; sets a new password for the current session. */
         SetPasswordRequest: {
             password?: string;
+            /** @description Required unless the session came from verifying a Supabase recovery link, which the server decides from the session's own authentication method, never from this request. */
+            currentPassword?: string;
         };
         /** @description GET /api/v1/demo/ping response; message localized from Accept-Language. */
         Ping: {
@@ -1021,7 +1037,7 @@ export interface components {
              * @description How long the run took, in milliseconds.
              */
             durationMs?: number;
-            /** @description Failure detail; empty on success. */
+            /** @description A stable summary of the failure (the exception's simple class name, e.g. "IllegalStateException") when status is "failure", empty on success. Never the raw exception message - that detail is logged server-side and persisted to zen_jobs.last_error for an operator, not returned to whoever can read this response. */
             error?: string;
         };
         /** @description POST /api/v1/jobs/trigger response; what was due at that moment and what happened to it. */

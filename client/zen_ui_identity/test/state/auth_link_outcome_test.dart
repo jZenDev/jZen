@@ -33,7 +33,7 @@ class _FakeRepo implements IdentityRepository {
       const ZenResult.err(ZenUnknownError('not stubbed'));
 
   @override
-  Future<ZenResult<void>> setPassword({required String password}) async => const ZenResult.ok(null);
+  Future<ZenResult<void>> setPassword({required String password, String? currentPassword}) async => const ZenResult.ok(null);
 
   @override
   Future<ZenResult<IdentityContract>> loginWithEmail({

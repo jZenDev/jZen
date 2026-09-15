@@ -101,10 +101,11 @@ const SetPasswordRequest$json = {
   '1': 'SetPasswordRequest',
   '2': [
     {'1': 'password', '3': 1, '4': 1, '5': 9, '10': 'password'},
+    {'1': 'current_password', '3': 2, '4': 1, '5': 9, '10': 'currentPassword'},
   ],
 };
 
 /// Descriptor for `SetPasswordRequest`. Decode as a `google.protobuf.DescriptorProto`.
-final $typed_data.Uint8List setPasswordRequestDescriptor =
-    $convert.base64Decode(
-        'ChJTZXRQYXNzd29yZFJlcXVlc3QSGgoIcGFzc3dvcmQYASABKAlSCHBhc3N3b3Jk');
+final $typed_data.Uint8List setPasswordRequestDescriptor = $convert.base64Decode(
+    'ChJTZXRQYXNzd29yZFJlcXVlc3QSGgoIcGFzc3dvcmQYASABKAlSCHBhc3N3b3JkEikKEGN1cn'
+    'JlbnRfcGFzc3dvcmQYAiABKAlSD2N1cnJlbnRQYXNzd29yZA==');

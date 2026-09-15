@@ -106,6 +106,11 @@ components:
       properties:
         password:
           type: string
+        currentPassword:
+          type: string
+          description: >-
+            Required unless the session came from verifying a Supabase recovery link, which the
+            server decides from the session's own authentication method, never from this request.
     Ping:
       type: object
       description: GET /api/v1/demo/ping response; message localized from Accept-Language.

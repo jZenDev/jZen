@@ -598,6 +598,14 @@ provider is only made meaningful by the backend.
   needed (`gcloud run services describe`, the pattern `build:web` and `run:demo:native` share) or
   passed explicitly (`ZEN_API_URL`, `WEB_API_URL`), and their absence is a **loud failure** naming
   what to set, never a silent fallback.
+- **A WebSocket upgrade leaves CSRF and rate-limiting behind.** Both `CsrfRules` and
+  `RateLimitFilter` are JAX-RS `@Provider`s, and neither runs again once an upgrade completes —
+  the socket is a different protocol from then on. The upgrade request itself is an ordinary
+  `/api/`-shaped request and is charged and CSRF-checked like one, but a cookie-authenticated
+  socket still needs its own explicit `Origin` allowlist check at `@OnOpen` (see
+  `DemoWebSocket`): `SameSite=Lax` permits a top-level, cookie-bearing cross-site request, and
+  CORS itself has no jurisdiction over a WebSocket handshake at all. An application opening a
+  socket inherits none of the HTTP-surface defences for free and must add this check itself.
 
   The reason is teardown. `destroy:cloudrun` deletes the GCP project, the Supabase project and the
   local images, and it cannot edit this repository — so any environment fact committed here

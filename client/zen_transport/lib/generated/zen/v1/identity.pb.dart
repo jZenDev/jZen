@@ -440,14 +440,15 @@ class SessionExchangeRequest extends $pb.GeneratedMessage {
 }
 
 /// POST /api/v1/auth/password request body. Sets a new password for the identity in the
-/// session cookie - the last step of password recovery, and the reason the recovery link has
-/// to establish a session at all.
+/// session cookie.
 class SetPasswordRequest extends $pb.GeneratedMessage {
   factory SetPasswordRequest({
     $core.String? password,
+    $core.String? currentPassword,
   }) {
     final result = create();
     if (password != null) result.password = password;
+    if (currentPassword != null) result.currentPassword = currentPassword;
     return result;
   }
 
@@ -465,6 +466,7 @@ class SetPasswordRequest extends $pb.GeneratedMessage {
       package: const $pb.PackageName(_omitMessageNames ? '' : 'zen.v1'),
       createEmptyInstance: create)
     ..aOS(1, _omitFieldNames ? '' : 'password')
+    ..aOS(2, _omitFieldNames ? '' : 'currentPassword')
     ..hasRequiredFields = false;
 
   @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
@@ -494,6 +496,19 @@ class SetPasswordRequest extends $pb.GeneratedMessage {
   $core.bool hasPassword() => $_has(0);
   @$pb.TagNumber(1)
   void clearPassword() => $_clearField(1);
+
+  /// The caller's current password. Required unless the session was established by verifying a
+  /// Supabase password-recovery link - the server decides that from the session's own
+  /// authentication method (never from a client-supplied flag), because a recovery session exists
+  /// precisely for the case where the user cannot supply this. See DECISIONS.md ADR-050.
+  @$pb.TagNumber(2)
+  $core.String get currentPassword => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set currentPassword($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasCurrentPassword() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearCurrentPassword() => $_clearField(2);
 }
 
 const $core.bool _omitFieldNames =

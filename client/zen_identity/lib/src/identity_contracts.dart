@@ -163,7 +163,14 @@ abstract class IdentityRepository {
 
   /// Sets a new password for the current session — the last step of password recovery, and the
   /// same call an already signed-in user makes to change their password.
-  Future<ZenResult<void>> setPassword({required String password});
+  ///
+  /// [currentPassword] proves the caller knows the password being replaced. The server requires
+  /// it unless the session came from verifying a recovery link (a recovery session cannot supply
+  /// it, which is exactly why recovery exists) — that distinction is the server's alone, derived
+  /// from the session's own authentication method, never from a flag this client could send. Omit
+  /// it on the recovery path; every other caller must pass the caller's current password or the
+  /// server refuses the change with `current_password_required`.
+  Future<ZenResult<void>> setPassword({required String password, String? currentPassword});
 
   /// Rebuilds a session from the refresh token the client already holds.
   ///

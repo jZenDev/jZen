@@ -44,10 +44,16 @@ public class IdentityService {
    * <p>Local, because that is what a sign-out button means. A user ending a session on one device
    * does not expect their phone to be signed out too, and a framework that made every logout a
    * global one would be making a product decision on the application's behalf. "Sign out
-   * everywhere" is a separate, deliberate action; when an application wants it, it passes
-   * {@code global} — the seam is here for it.
+   * everywhere" is a separate, deliberate action.
+   *
+   * <p>{@code global} has a second caller now: {@link #setPassword}. Changing a password is a
+   * compromised-credential response as much as it is a preference change, and requiring the
+   * current password to do it (DECISIONS ADR-050) is worthless containment if every session that
+   * password already opened elsewhere is left running.
    */
   private static final String LOGOUT_SCOPE_LOCAL = "local";
+
+  private static final String LOGOUT_SCOPE_GLOBAL = "global";
 
   private final SupabaseAuthClient authClient;
   private final UserStore userStore;
@@ -189,24 +195,74 @@ public class IdentityService {
   }
 
   /**
-   * Sets a new password for the identity owning {@code accessToken} — the final step of password
-   * recovery, and the only reason a recovery link needs to establish a session at all.
+   * Sets a new password for the identity owning {@code accessToken}.
    *
-   * <p>The token comes from the caller's own session cookie, which SmallRye JWT has already
-   * verified, so unlike {@link #exchangeLinkTokens} this one is trusted on arrival. Password rules
-   * are Supabase's: a rejected password comes back through {@link #classifySupabaseError} as
-   * {@code weak_password}, and jZen does not restate the rule in a second place where the two
-   * could drift apart.
+   * <p>Two distinct callers reach this, and DECISIONS ADR-050 is the record of why they are
+   * treated differently:
+   *
+   * <ul>
+   *   <li><b>An ordinary signed-in user changing their password</b> must prove they know the
+   *       current one — {@code currentPassword} is verified with Supabase's own password grant
+   *       before anything is changed. Skipping this would let a hijacked-but-still-valid access
+   *       token (an unattended device, an XSS that read it before {@code HttpOnly} existed on some
+   *       other client) rotate the password and lock the real owner out permanently.
+   *   <li><b>The last step of password recovery</b> cannot supply {@code currentPassword} — not
+   *       knowing it is the entire reason recovery exists — so {@code recoverySession} (derived by
+   *       the caller from the session's own Supabase {@code amr} claim, never from a client-
+   *       supplied flag) skips the check for exactly this flow and no other.
+   * </ul>
+   *
+   * <p>Both paths finish the same way: the change is followed by a {@code global} revocation of
+   * every session the identity holds, then a fresh sign-in with the new password so the device
+   * that just changed it is not signed out by its own action. Revoking only the presented session
+   * (as an ordinary sign-out does) would leave every other session — including one on a device
+   * that no longer should have access — running on the strength of a password that is no longer
+   * the account's own. The revoke is deliberately best-effort (see {@link #logout}); the password
+   * is already changed by the time it runs, and failing the whole request over a revoke Supabase
+   * refused would report success as failure while leaving the change in place regardless.
+   *
+   * <p>Password rules are Supabase's: a rejected password comes back through {@link
+   * #classifySupabaseError} as {@code weak_password}, and jZen does not restate the rule in a
+   * second place where the two could drift apart.
+   *
+   * @return a fresh {@link Session} for the caller's own device, with new tokens the resource
+   *     turns into new cookies
    */
-  public void setPassword(String accessToken, String password) {
-    if (password == null || password.isBlank()) {
+  public Session setPassword(
+      String accessToken, String currentPassword, String newPassword, boolean recoverySession) {
+    if (newPassword == null || newPassword.isBlank()) {
       throw new AuthException(400, "weak_password", "Please choose a stronger password.");
+    }
+    SupabaseSessionResponse.UserPayload supabaseUser = call(() -> authClient.getUser(bearer(accessToken)));
+    if (supabaseUser == null || supabaseUser.email() == null) {
+      throw AuthException.unauthorized("No active session.");
+    }
+    if (!recoverySession) {
+      if (currentPassword == null || currentPassword.isBlank()) {
+        throw new AuthException(
+            400, "current_password_required", "Please confirm your current password.");
+      }
+      // A rejection here is classified exactly like a login rejection (invalid_credentials -> the
+      // current password is wrong); a provider outage is classified exactly like every other call.
+      call(
+          () ->
+              authClient.token(
+                  "password",
+                  new SupabaseTokenRequest(supabaseUser.email(), currentPassword, null, null, null)));
     }
     call(
         () -> {
-          authClient.updateUser(bearer(accessToken), new UserUpdateRequest(password));
+          authClient.updateUser(bearer(accessToken), new UserUpdateRequest(newPassword));
           return null;
         });
+    revoke(accessToken, supabaseUser.id(), LOGOUT_SCOPE_GLOBAL);
+    SupabaseSessionResponse fresh =
+        call(
+            () ->
+                authClient.token(
+                    "password",
+                    new SupabaseTokenRequest(supabaseUser.email(), newPassword, null, null, null)));
+    return toSession(fresh);
   }
 
   private static String bearer(String accessToken) {
@@ -232,13 +288,24 @@ public class IdentityService {
    * @param userId the session's subject, for the log line only; null when it could not be resolved
    */
   public boolean logout(String accessToken, UUID userId) {
+    return revoke(accessToken, userId == null ? null : userId.toString(), LOGOUT_SCOPE_LOCAL);
+  }
+
+  /**
+   * Shared implementation behind {@link #logout} ({@code local}) and {@link #setPassword}
+   * ({@code global}). {@code userId} is a raw string rather than a {@link UUID} purely because
+   * {@link #setPassword}'s caller is a Supabase {@link SupabaseSessionResponse.UserPayload#id()},
+   * and reparsing it to log a value that is never compared against anything would add a failure
+   * mode this method does not need.
+   */
+  private boolean revoke(String accessToken, String userId, String scope) {
     if (accessToken == null || accessToken.isBlank()) {
       // Logging out without a session is not a failure and not an event: a client that has already
       // lost its cookie still calls this, and a stranger can call it at any time.
       return false;
     }
     try {
-      authClient.logout(bearer(accessToken), LOGOUT_SCOPE_LOCAL);
+      authClient.logout(bearer(accessToken), scope);
       return true;
     } catch (WebApplicationException e) {
       /*
@@ -255,8 +322,9 @@ public class IdentityService {
       }
       LOG.warnf(
           e,
-          "Upstream logout was refused for user %s (HTTP %d): local cookies are cleared, but the"
-              + " refresh token stays valid until it expires",
+          "Upstream %s logout was refused for user %s (HTTP %d): the affected refresh token(s)"
+              + " stay valid until they expire",
+          scope,
           userId,
           status);
       return false;
@@ -264,8 +332,9 @@ public class IdentityService {
       // Timeout, open circuit breaker, DNS, TLS - Supabase is unreachable rather than refusing.
       LOG.warnf(
           e,
-          "Upstream logout failed for user %s: local cookies are cleared, but the session is still"
-              + " live upstream and can be resumed with the refresh token",
+          "Upstream %s logout failed for user %s: the affected session(s) are still live upstream"
+              + " and can be resumed with their refresh token(s)",
+          scope,
           userId);
       return false;
     }

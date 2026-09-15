@@ -52,7 +52,7 @@ class _FakeRepo implements IdentityRepository {
   }
 
   @override
-  Future<ZenResult<void>> setPassword({required String password}) async => setPasswordResult;
+  Future<ZenResult<void>> setPassword({required String password, String? currentPassword}) async => setPasswordResult;
 
   @override
   Future<ZenResult<IdentityContract>> loginWithEmail({

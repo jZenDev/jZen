@@ -184,6 +184,38 @@ void main() {
     });
   });
 
+  group('setPassword', () {
+    test('sends currentPassword when provided', () async {
+      Map<String, dynamic>? sent;
+      final repo = repoReturning((req) {
+        expect(req.url.path, '/api/v1/auth/password');
+        sent = jsonDecode(req.body) as Map<String, dynamic>;
+        return http.Response('', 204, headers: {'x-zen-transport': 'json'});
+      });
+
+      final result = await repo.setPassword(password: 'new-secret', currentPassword: 'old-secret');
+
+      expect(result.isSuccess, isTrue);
+      expect(sent!['password'], 'new-secret');
+      expect(sent!['currentPassword'], 'old-secret');
+    });
+
+    test('omits currentPassword on the recovery path, never sending a placeholder', () async {
+      Map<String, dynamic>? sent;
+      final repo = repoReturning((req) {
+        sent = jsonDecode(req.body) as Map<String, dynamic>;
+        return http.Response('', 204, headers: {'x-zen-transport': 'json'});
+      });
+
+      await repo.setPassword(password: 'new-secret');
+
+      // Proto3 canonical JSON omits a field left at its default ('') rather than sending it as an
+      // empty string - the server must be able to tell "not supplied" from "supplied blank" so its
+      // current_password_required rejection means what it says.
+      expect(sent!.containsKey('currentPassword'), isFalse);
+    });
+  });
+
   group('logout', () {
     test('returns ok on a 204', () async {
       final repo = repoReturning((req) {

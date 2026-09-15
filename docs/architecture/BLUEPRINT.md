@@ -197,6 +197,15 @@ cleared cookie stops working upstream instead of staying valid for its remaining
 failed revocation is logged and does **not** block the cookie clearing — a user who presses sign
 out ends up signed out locally even when the provider is unreachable.
 
+**Setting a new password requires the old one, and revokes every other session** (ADR-050).
+`POST /auth/password` calls GoTrue `POST /logout?scope=global` after the change, not `local` —
+signing out one device is not the point here, containing a possibly-compromised credential is.
+The caller's own device is not signed out by its own action: `IdentityService.setPassword`
+re-authenticates with the new password and returns fresh cookies. An ordinary signed-in caller
+must supply `current_password`, verified with Supabase's own password grant; a session that came
+from verifying a recovery link cannot supply it and is not asked to — `AuthResource` derives that
+distinction from the session's own `amr` claim, never from anything the client sends.
+
 **Why each token gets its own cookie.** jZen serves Cloud Run directly, so nothing strips or
 renames cookies in transit, and the standard SmallRye-JWT path works as designed: normally-named
 cookies, `mp.jwt.token.cookie`, and `proactive=true`, with no session filter and nothing to

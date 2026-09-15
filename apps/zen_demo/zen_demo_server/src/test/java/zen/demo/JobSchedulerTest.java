@@ -3,6 +3,7 @@ package zen.demo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.quarkus.narayana.jta.QuarkusTransaction;
@@ -28,6 +29,7 @@ import zen.jobs.JobScheduler;
 import zen.jobs.JobState;
 import zen.jobs.JobStatus;
 import zen.jobs.ZenJob;
+import zen.proto.v1.JobRun;
 import zen.proto.v1.JobTickResult;
 
 /**
@@ -49,6 +51,7 @@ class JobSchedulerTest {
   private static final String COUNTING_JOB = "test-counting";
   private static final String FAILING_JOB = "test-failing";
   private static final String REENTRANT_JOB = "test-reentrant";
+  private static final String VANISHING_JOB = "test-vanishing";
 
   private static final Duration HOURLY = Duration.ofHours(1);
   private static final OffsetDateTime T0 =
@@ -71,6 +74,7 @@ class JobSchedulerTest {
     disable(COUNTING_JOB);
     disable(FAILING_JOB);
     disable(REENTRANT_JOB);
+    disable(VANISHING_JOB);
   }
 
   @Test
@@ -152,9 +156,18 @@ class JobSchedulerTest {
     assertEquals(1, failed.failureCount);
     assertNotNull(failed.lastError, "the failure detail is recorded for an operator to read");
     assertTrue(
+        failed.lastError.contains("job dependency unavailable"),
+        "the persisted last_error keeps the raw exception detail for an operator");
+
+    JobRun failedRun =
         result.getRunsList().stream()
-            .anyMatch(run -> FAILING_JOB.equals(run.getJobId()) && !run.getError().isEmpty()),
-        "and is reported back to the caller of the trigger");
+            .filter(run -> FAILING_JOB.equals(run.getJobId()))
+            .findFirst()
+            .orElseThrow();
+    assertEquals(
+        "IllegalStateException",
+        failedRun.getError(),
+        "the response carries a stable summary, not the raw exception message");
   }
 
   /**
@@ -195,6 +208,23 @@ class JobSchedulerTest {
     assertEquals(1, ReentrantJob.RUNS.get(), "so the job is not re-entered");
   }
 
+  /**
+   * F20: a job's row can vanish between {@code dueJobs()} reading it and the tick recording an
+   * outcome for it - an operator deleting it mid-tick, in production. The scheduler must not NPE;
+   * it logs and moves on, and the rest of the tick is unaffected.
+   */
+  @Test
+  void aRowThatVanishesMidRunDoesNotCrashTheTick() {
+    arm(VANISHING_JOB, null);
+    arm(COUNTING_JOB, null);
+
+    JobTickResult result = scheduler.tick();
+
+    assertEquals(2, result.getDue());
+    assertEquals(1, CountingJob.RUNS.get(), "a job whose row vanished does not stop the others");
+    assertNull(reload(VANISHING_JOB), "the row stays deleted, not recreated");
+  }
+
   // --- helpers ---------------------------------------------------------------------------------
 
   /** Enables a job at the hourly interval with the given last run, creating nothing new. */
@@ -217,8 +247,14 @@ class JobSchedulerTest {
     QuarkusTransaction.requiringNew()
         .run(
             () -> {
+              // VANISHING_JOB's own test deletes its row permanently (that is the F20 scenario
+              // it proves), and seedRegisteredJobs only re-creates a missing row once at startup
+              // - so every test after it runs finds no row here. Tolerated rather than re-seeded,
+              // since "this job's row is gone" is exactly the state that test leaves behind.
               JobState state = JobState.byId(id);
-              state.enabled = false;
+              if (state != null) {
+                state.enabled = false;
+              }
             });
   }
 
@@ -230,7 +266,12 @@ class JobSchedulerTest {
   public static class DrivenClockProfile implements QuarkusTestProfile {
     @Override
     public Set<Class<?>> getEnabledAlternatives() {
-      return Set.of(DrivenClock.class, CountingJob.class, FailingJob.class, ReentrantJob.class);
+      return Set.of(
+          DrivenClock.class,
+          CountingJob.class,
+          FailingJob.class,
+          ReentrantJob.class,
+          VanishingJob.class);
     }
   }
 
@@ -338,6 +379,34 @@ class JobSchedulerTest {
     public void run() {
       RUNS.incrementAndGet();
       NESTED.set(scheduler.tick());
+    }
+  }
+
+  /** A job that deletes its own row while running, to exercise F20's vanished-row guard. */
+  @Alternative
+  @Singleton
+  public static class VanishingJob implements ZenJob {
+
+    @Override
+    public String id() {
+      return VANISHING_JOB;
+    }
+
+    @Override
+    public Duration defaultInterval() {
+      return HOURLY;
+    }
+
+    @Override
+    public void run() {
+      QuarkusTransaction.requiringNew()
+          .run(
+              () -> {
+                JobState state = JobState.byId(VANISHING_JOB);
+                if (state != null) {
+                  state.delete();
+                }
+              });
     }
   }
 }

@@ -1,6 +1,7 @@
 package zen.identity;
 
 import zen.identity.user.User;
+import zen.identity.user.UserRetentionService;
 import zen.identity.user.UserRole;
 import zen.proto.v1.Identity;
 import java.time.OffsetDateTime;
@@ -46,13 +47,29 @@ public abstract class IdentityMapper {
     Identity.Builder builder =
         Identity.newBuilder()
             .setId(view.id() != null ? view.id() : "")
-            .setLifecycleState("active")
+            .setLifecycleState(lifecycleState(user))
             .setCreatedAtMs(view.createdAtMs())
             .setEmailVerified(view.emailVerified());
     if (view.role() != null) {
       builder.addRoles(view.role());
     }
     return builder.build();
+  }
+
+  /**
+   * Derives the wire {@code lifecycle_state} from the two retention timestamps and the
+   * anonymisation predicate {@link UserRetentionService} already owns, rather than the hard-coded
+   * {@code "active"} this used to return regardless of an account's actual state. Free: both facts
+   * are already columns on the row in hand, so no query, no proto change, no new consumer contract.
+   */
+  private static String lifecycleState(User user) {
+    if (UserRetentionService.isAnonymised(user)) {
+      return "anonymised";
+    }
+    if (user.deletionWarningSentAt != null) {
+      return "warned";
+    }
+    return "active";
   }
 
   @Named("uuidToString")

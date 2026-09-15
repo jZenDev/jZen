@@ -180,17 +180,24 @@ public class JobScheduler {
      * which is what stops a broken job from hammering whatever broke it. */
     recordStart(id, startedAt);
 
-    String error = null;
+    String errorDetail = null;
+    String errorSummary = null;
     try {
       job.run();
     } catch (RuntimeException e) {
-      error = e.toString();
+      errorDetail = e.toString();
+      /* The response carries only a stable summary - the exception's simple class name - never
+       * the raw message: a dependency's exception text (a connection string, a stack fragment,
+       * whatever the thrower happened to interpolate) is not a value this API is allowed to leak
+       * to whoever can read JobTickResult. The full string still goes to the log and to
+       * zen_jobs.last_error, where an operator debugging the job can read it. */
+      errorSummary = e.getClass().getSimpleName();
       LOG.errorf(e, "Job '%s' failed", id);
     }
 
     long durationMs = Duration.between(startedAt, OffsetDateTime.now(clock)).toMillis();
-    JobStatus status = error == null ? JobStatus.SUCCESS : JobStatus.FAILURE;
-    recordOutcome(id, status, durationMs, error);
+    JobStatus status = errorDetail == null ? JobStatus.SUCCESS : JobStatus.FAILURE;
+    recordOutcome(id, status, durationMs, errorDetail);
 
     JobRun.Builder run =
         JobRun.newBuilder()
@@ -198,8 +205,8 @@ public class JobScheduler {
             .setStatus(status.wireValue())
             .setStartedAtMs(startedAt.toInstant().toEpochMilli())
             .setDurationMs(durationMs);
-    if (error != null) {
-      run.setError(error);
+    if (errorSummary != null) {
+      run.setError(errorSummary);
     }
     return run.build();
   }
@@ -209,6 +216,14 @@ public class JobScheduler {
         .run(
             () -> {
               JobState state = JobState.byId(id);
+              if (state == null) {
+                /* The row vanished between dueJobs() reading it and this transaction - an
+                 * operator deleted it, or disabled and removed the job, mid-tick. Not this job's
+                 * problem to solve: the row is gone, so there is nothing to stamp and no next-due
+                 * decision left to make. */
+                LOG.warnf("Job '%s' row vanished before its start could be recorded; skipping", id);
+                return;
+              }
               state.lastRunAt = startedAt;
               state.runCount++;
             });
@@ -219,6 +234,10 @@ public class JobScheduler {
         .run(
             () -> {
               JobState state = JobState.byId(id);
+              if (state == null) {
+                LOG.warnf("Job '%s' row vanished before its outcome could be recorded; skipping", id);
+                return;
+              }
               state.lastStatus = status;
               state.lastDurationMs = durationMs;
               state.lastError = error;

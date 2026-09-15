@@ -5,11 +5,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.protobuf.util.JsonFormat;
 import zen.core.http.ZenStatus;
+import zen.core.i18n.ZenLocales;
 import zen.proto.v1.AdminUser;
 import zen.proto.v1.ZenError;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import io.quarkus.panache.common.Sort;
 import jakarta.annotation.security.RolesAllowed;
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
@@ -24,7 +26,9 @@ import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -80,6 +84,17 @@ public class AdminUserResource {
   private static final String ERROR_INVALID_QUERY = "invalid_query";
   /** ZenError code for an unrecognised {@code role} value in a filter or an update body. */
   private static final String ERROR_INVALID_ROLE = "invalid_role";
+  /** ZenError code for a {@code language} the application does not support, on an update body. */
+  private static final String ERROR_INVALID_LANGUAGE = "invalid_language";
+
+  /**
+   * The languages <em>this application</em> supports (ADR-044) - the same property {@link
+   * UserStore#supported()} reads, so an admin cannot set a user's language to a tag the login
+   * path itself would never write.
+   */
+  @Inject
+  @ConfigProperty(name = "zen.i18n.supported")
+  Optional<List<String>> supportedLocales;
 
   private static final ObjectMapper JSON = new ObjectMapper();
   /**
@@ -129,7 +144,8 @@ public class AdminUserResource {
     PanacheQuery<User> query;
     try {
       bounds = parseRange(range);
-      query = User.find(buildFilter(filter), buildSort(sort), filterParams(filter));
+      JsonNode parsedFilter = filterNode(filter);
+      query = User.find(buildFilter(parsedFilter), buildSort(sort), filterParams(parsedFilter));
     } catch (JsonProcessingException e) {
       return invalidQuery();
     } catch (IllegalArgumentException e) {
@@ -192,7 +208,9 @@ public class AdminUserResource {
         @Content(mediaType = PROTOBUF, schema = @Schema(ref = "AdminUser"))
       })
   @APIResponse(responseCode = ZenStatus.NOT_FOUND, description = "No user with that id (ZenError)")
-  @APIResponse(responseCode = ZenStatus.BAD_REQUEST, description = "Unknown role value (ZenError)")
+  @APIResponse(
+      responseCode = ZenStatus.BAD_REQUEST,
+      description = "Unknown role value or unsupported language (ZenError)")
   @Transactional
   public Response update(@PathParam("id") String id, AdminUser incoming) {
     User user = findUser(id);
@@ -207,9 +225,13 @@ public class AdminUserResource {
         return invalidRole(e.getMessage());
       }
     }
+    String language = emptyToNull(incoming.getLanguage());
+    if (language != null && !supported().contains(language)) {
+      return invalidLanguage(language);
+    }
     user.displayName = emptyToNull(incoming.getDisplayName());
     user.nickname = emptyToNull(incoming.getNickname());
-    user.language = emptyToNull(incoming.getLanguage());
+    user.language = language;
     user.isPremium = incoming.getIsPremium();
     user.isPrivate = incoming.getIsPrivate();
     user.persist();
@@ -246,6 +268,20 @@ public class AdminUserResource {
   private static Response invalidRole(String message) {
     ZenError error = ZenError.newBuilder().setCode(ERROR_INVALID_ROLE).setMessage(message).build();
     return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+  }
+
+  private static Response invalidLanguage(String language) {
+    ZenError error =
+        ZenError.newBuilder()
+            .setCode(ERROR_INVALID_LANGUAGE)
+            .setMessage("Unsupported language: " + language)
+            .build();
+    return Response.status(Response.Status.BAD_REQUEST).entity(error).build();
+  }
+
+  /** The application's locale set, defaulting to jZen's own inventory when unconfigured. */
+  private List<String> supported() {
+    return supportedLocales.filter(set -> !set.isEmpty()).orElse(ZenLocales.SHIPPED);
   }
 
   /**
@@ -286,14 +322,20 @@ public class AdminUserResource {
     return Sort.by(field, ascending ? Sort.Direction.Ascending : Sort.Direction.Descending);
   }
 
-  /** Builds the HQL where clause from the ra filter; empty string means "all rows". */
-  private static String buildFilter(String filter) throws JsonProcessingException {
-    JsonNode node = filterNode(filter);
+  /**
+   * Builds the HQL where clause from the already-parsed ra filter; empty string means "all rows".
+   *
+   * <p>Takes the {@link JsonNode} {@code list} already parsed once, rather than the raw filter
+   * string re-parsed here and again in {@link #filterParams}: two independent parses of the same
+   * input can drift (a fix to one and not the other silently disagrees), and the second parse is
+   * pure waste on top of that.
+   */
+  private static String buildFilter(JsonNode filter) {
     StringBuilder where = new StringBuilder();
-    if (node.hasNonNull(FILTER_ROLE)) {
+    if (filter.hasNonNull(FILTER_ROLE)) {
       where.append(FILTER_ROLE).append(" = :").append(FILTER_ROLE);
     }
-    if (node.hasNonNull(FILTER_QUERY)) {
+    if (filter.hasNonNull(FILTER_QUERY)) {
       if (where.length() > 0) {
         where.append(" and ");
       }
@@ -302,14 +344,14 @@ public class AdminUserResource {
     return where.toString();
   }
 
-  private static Map<String, Object> filterParams(String filter) throws JsonProcessingException {
-    JsonNode node = filterNode(filter);
+  /** The parameters {@link #buildFilter} references, read from the same parsed node it saw. */
+  private static Map<String, Object> filterParams(JsonNode filter) {
     Map<String, Object> params = new HashMap<>();
-    if (node.hasNonNull(FILTER_ROLE)) {
-      params.put(FILTER_ROLE, UserRole.fromValue(node.get(FILTER_ROLE).asText()));
+    if (filter.hasNonNull(FILTER_ROLE)) {
+      params.put(FILTER_ROLE, UserRole.fromValue(filter.get(FILTER_ROLE).asText()));
     }
-    if (node.hasNonNull(FILTER_QUERY)) {
-      params.put(FILTER_QUERY, "%" + node.get(FILTER_QUERY).asText().toLowerCase() + "%");
+    if (filter.hasNonNull(FILTER_QUERY)) {
+      params.put(FILTER_QUERY, "%" + filter.get(FILTER_QUERY).asText().toLowerCase() + "%");
     }
     return params;
   }

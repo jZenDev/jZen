@@ -9,6 +9,7 @@ import zen.proto.v1.DemoProfile;
 import zen.proto.v1.Ping;
 import zen.proto.v1.Terms;
 import io.quarkus.qute.i18n.Localized;
+import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
@@ -105,7 +106,7 @@ public class DemoResource {
 
   @GET
   @Path("/profile")
-  @PermitAll
+  @Authenticated
   @Produces({MediaType.APPLICATION_JSON, PROTOBUF})
   @Operation(summary = "The authenticated user's demo profile")
   @APIResponse(
@@ -118,15 +119,14 @@ public class DemoResource {
   @APIResponse(responseCode = ZenStatus.UNAUTHORIZED, description = "No active session (ZenError)")
   public Response profile() {
     /*
-     * Auth-gated: SmallRye JWT authenticates from the zen_access_token cookie (mp.jwt.token.cookie),
-     * so reaching a non-anonymous identity here proves the session cookie made the round trip - the
-     * exact login -> authenticated-call flow that fails off-web without zen_transport's native
-     * cookie jar. When anonymous we throw the shared AuthException, which AuthExceptionMapper renders
-     * as a ZenError; this is the demo's asserted error path.
+     * @Authenticated is what proves the session: SmallRye JWT has verified the zen_access_token
+     * cookie's signature and expiry before this method runs - the exact login -> authenticated-call
+     * flow that fails off-web without zen_transport's native cookie jar. An anonymous caller never
+     * reaches this body at all; Quarkus's security interceptor throws before it does, and
+     * zen-transport's UnauthorizedExceptionMapper renders that as the ZenError this endpoint used to
+     * throw by hand (2026-09 code review, F23 - AuthResource's own @Authenticated routes were
+     * already relying on this rather than restating the check).
      */
-    if (securityIdentity.isAnonymous()) {
-      throw AuthException.unauthorized("Authentication required to view the demo profile");
-    }
     UUID userId;
     try {
       userId = UUID.fromString(securityIdentity.getPrincipal().getName());

@@ -33,4 +33,9 @@ public class AuthException extends RuntimeException {
   public static AuthException unauthorized(String message) {
     return new AuthException(401, "unauthorized", message);
   }
+
+  /** 409 for a request that conflicts with existing state, e.g. an address another profile owns. */
+  public static AuthException conflict(String code, String message) {
+    return new AuthException(409, code, message);
+  }
 }

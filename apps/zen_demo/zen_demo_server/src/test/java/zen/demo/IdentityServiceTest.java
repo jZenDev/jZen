@@ -22,6 +22,7 @@ import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
 import java.util.Map;
 import java.util.UUID;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
@@ -124,6 +125,63 @@ class IdentityServiceTest {
 
     assertEquals("service_unavailable", thrown.code());
     assertEquals(503, thrown.status());
+  }
+
+  /**
+   * F11: real GoTrue error bodies, pinned rather than invented, so a wording change upstream
+   * cannot silently degrade the classification the way a substring-only match could.
+   * Shape is GoTrue's own since 2024: {@code {"code": <http status>, "error_code": "...",
+   * "msg": "..."}}.
+   */
+  @Test
+  void login_classifiesByGoTrueStructuredErrorCode() {
+    assertGoTrueBodyClassifiedAs(
+        "{\"code\":400,\"error_code\":\"invalid_credentials\",\"msg\":\"Invalid login credentials\"}",
+        "invalid_credentials",
+        401);
+    assertGoTrueBodyClassifiedAs(
+        "{\"code\":400,\"error_code\":\"weak_password\",\"msg\":\"Password should be at least 6"
+            + " characters.\"}",
+        "weak_password",
+        400);
+    assertGoTrueBodyClassifiedAs(
+        "{\"code\":422,\"error_code\":\"user_already_exists\",\"msg\":\"User already"
+            + " registered\"}",
+        "email_taken",
+        409);
+    assertGoTrueBodyClassifiedAs(
+        "{\"code\":429,\"error_code\":\"over_email_send_rate_limit\",\"msg\":\"Email rate limit"
+            + " exceeded\"}",
+        "rate_limited",
+        429);
+  }
+
+  @Test
+  void login_withoutStructuredErrorCode_fallsBackToSubstringMatch() {
+    // An older GoTrue without the error_code field: the pre-existing substring match must still
+    // classify a recognizable message rather than everything collapsing to the generic fallback.
+    assertGoTrueBodyClassifiedAs(
+        "{\"msg\":\"Password should be at least 6 characters.\"}", "weak_password", 400);
+  }
+
+  @Test
+  void login_whenNeitherStructuredNorSubstringMatch_getsTheGenericFallback() {
+    assertGoTrueBodyClassifiedAs("{\"msg\":\"Something GoTrue has never said before.\"}", "unauthorized", 401);
+  }
+
+  private void assertGoTrueBodyClassifiedAs(String body, String expectedCode, int expectedStatus) {
+    doThrow(
+            new WebApplicationException(
+                Response.status(400).entity(body).type("application/json").build()))
+        .when(authClient)
+        .token(any(), any());
+
+    AuthException thrown =
+        assertThrows(
+            AuthException.class, () -> identityService.login("someone@example.com", "secret"));
+
+    assertEquals(expectedCode, thrown.code(), body);
+    assertEquals(expectedStatus, thrown.status(), body);
   }
 
   @Test

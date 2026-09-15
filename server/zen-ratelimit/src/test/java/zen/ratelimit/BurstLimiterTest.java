@@ -93,6 +93,39 @@ class BurstLimiterTest {
   }
 
   @Test
+  void overflowEvictsOnlyTheLeastRecentlyActiveSubject() {
+    // F21: a full table used to be cleared entirely on the next new caller, forgiving every
+    // tracked subject at once - including ones far more recently active than whichever new
+    // address tipped the table over. Now exactly one entry is evicted: the least recently touched.
+    BurstLimiter limiter = new BurstLimiter(new StubConfig(1, 3), clock);
+    limiter.check(RateLimitRule.GLOBAL, "10.0.0.1"); // spends its one-request budget
+    clock.advance(Duration.ofSeconds(1));
+    limiter.check(RateLimitRule.GLOBAL, "10.0.0.2"); // spends its one-request budget
+    clock.advance(Duration.ofSeconds(1));
+    limiter.check(RateLimitRule.GLOBAL, "10.0.0.3"); // spends its one-request budget
+    // Table is now full at the ceiling (3). A fourth, never-seen address forces an eviction.
+    clock.advance(Duration.ofSeconds(1));
+    limiter.check(RateLimitRule.GLOBAL, "10.0.0.4");
+
+    assertEquals(3, limiter.trackedSubjects(), "the ceiling is still enforced, not grown");
+
+    // 2 and 3 were more recently active than 1 when the eviction happened, so they must have
+    // survived: their spent budget is still on record, and a second request is refused.
+    assertFalse(
+        limiter.check(RateLimitRule.GLOBAL, "10.0.0.2").permitted(),
+        "a more recently active subject must not have been evicted to make room");
+    assertFalse(
+        limiter.check(RateLimitRule.GLOBAL, "10.0.0.3").permitted(),
+        "a more recently active subject must not have been evicted to make room");
+
+    // 1 was the least recently active when the table filled, so it - and only it - was evicted;
+    // its counter reset, so this request is freshly permitted instead of refused.
+    assertTrue(
+        limiter.check(RateLimitRule.GLOBAL, "10.0.0.1").permitted(),
+        "the least recently active subject's counter should have been evicted, not preserved");
+  }
+
+  @Test
   void aZeroLimitDisablesTheBucketRatherThanBlockingEverything() {
     // The %test profile relies on this reading: a limit of 0 must not mean "refuse every request".
     BurstLimiter limiter = limiterAllowing(0);

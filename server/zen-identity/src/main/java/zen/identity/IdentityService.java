@@ -12,11 +12,14 @@ import zen.identity.event.UserRegistered;
 import zen.identity.security.RoleAugmentor;
 import zen.identity.user.User;
 import zen.identity.user.UserStore;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
+import java.util.Map;
 import java.util.UUID;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
@@ -340,23 +343,87 @@ public class IdentityService {
     return new AuthException(503, "service_unavailable", "The identity service is temporarily unavailable.");
   }
 
+  private static final ObjectMapper JSON = new ObjectMapper();
+
+  /**
+   * GoTrue's own {@code error_code} to jZen's stable {@code AuthException} code + status, keyed
+   * on the structured field GoTrue has shipped since 2024 rather than on a substring of its human
+   * message. A wording change upstream ("Password should be at least 6 characters." becoming
+   * anything else) used to silently degrade every branch below at once, because the substring
+   * fallback was the *only* signal; it is now the fallback for a GoTrue version old enough not to
+   * send {@code error_code} at all.
+   */
+  private static final Map<String, AuthException> BY_ERROR_CODE =
+      Map.ofEntries(
+          Map.entry(
+              "email_not_confirmed",
+              new AuthException(401, "email_not_confirmed", "Your email is not confirmed yet.")),
+          Map.entry(
+              "user_already_exists",
+              // register() intercepts this code and turns it into the neutral 202 outcome, so it
+              // never reaches the client; login/refresh cannot produce it.
+              new AuthException(409, "email_taken", "An account with this email already exists.")),
+          Map.entry(
+              "email_exists",
+              new AuthException(409, "email_taken", "An account with this email already exists.")),
+          Map.entry(
+              "weak_password",
+              new AuthException(400, "weak_password", "Please choose a stronger password.")),
+          Map.entry(
+              "email_address_invalid",
+              new AuthException(400, "invalid_email", "That email address looks invalid.")),
+          Map.entry(
+              "over_email_send_rate_limit",
+              new AuthException(
+                  429, "rate_limited", "Too many attempts. Please wait a moment and try again.")),
+          Map.entry(
+              "invalid_credentials",
+              new AuthException(401, "invalid_credentials", "Incorrect email or password.")));
+
   private AuthException classifySupabaseError(WebApplicationException e) {
-    String body = "";
+    String body = readBody(e);
+    String errorCode = structuredErrorCode(body);
+    AuthException byCode = errorCode == null ? null : BY_ERROR_CODE.get(errorCode);
+    return byCode != null ? byCode : classifyBySubstring(body);
+  }
+
+  private static String readBody(WebApplicationException e) {
     try {
       jakarta.ws.rs.core.Response resp = e.getResponse();
       if (resp != null && resp.hasEntity()) {
-        body = resp.readEntity(String.class);
+        return resp.readEntity(String.class);
       }
     } catch (RuntimeException ignore) {
       // No readable body; fall through to the generic case.
     }
+    return "";
+  }
+
+  /** {@code null} for a body that is not JSON, or JSON without an {@code error_code} field. */
+  private static String structuredErrorCode(String body) {
+    if (body == null || body.isBlank()) {
+      return null;
+    }
+    try {
+      JsonNode node = JSON.readTree(body);
+      JsonNode code = node.get("error_code");
+      return code != null && code.isTextual() ? code.asText() : null;
+    } catch (java.io.IOException e) {
+      return null;
+    }
+  }
+
+  /**
+   * The pre-structured-field fallback: keys on a substring of GoTrue's human-readable message.
+   * Kept for a GoTrue version old enough to omit {@code error_code}; every branch here is
+   * documented as a fallback, not the primary classification.
+   */
+  private static AuthException classifyBySubstring(String body) {
     String b = body == null ? "" : body.toLowerCase(java.util.Locale.ROOT);
     if (contains(b, "email_not_confirmed", "email not confirmed", "not confirmed")) {
       return new AuthException(401, "email_not_confirmed", "Your email is not confirmed yet.");
     }
     if (contains(b, "already registered", "user_already_exists", "email_exists")) {
-      // register() intercepts this code and turns it into the neutral 202 outcome, so it never
-      // reaches the client; login/refresh cannot produce it. The message is a safe fallback only.
       return new AuthException(409, "email_taken", "An account with this email already exists.");
     }
     if (contains(b, "weak_password", "password should", "password is too")) {

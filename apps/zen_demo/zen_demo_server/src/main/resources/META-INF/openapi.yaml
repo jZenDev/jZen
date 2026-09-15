@@ -206,7 +206,11 @@ components:
           description: How long the run took, in milliseconds.
         error:
           type: string
-          description: Failure detail; empty on success.
+          description: >-
+            A stable summary of the failure (the exception's simple class name, e.g.
+            "IllegalStateException") when status is "failure", empty on success. Never the raw
+            exception message - that detail is logged server-side and persisted to
+            zen_jobs.last_error for an operator, not returned to whoever can read this response.
     JobTickResult:
       type: object
       description: >-

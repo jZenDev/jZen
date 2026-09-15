@@ -122,6 +122,30 @@ class AdminUserResourceTest {
     assertEquals(List.of("bob@example.com"), resp.jsonPath().getList("email"));
   }
 
+  /**
+   * F12 regression guard: {@code role} and {@code q} combined in one filter exercises both
+   * {@code buildFilter} and {@code filterParams} against the same parsed representation. Before
+   * this fix each parsed the raw filter string independently; this would still pass if a future
+   * change reintroduced two parses that happened to agree, but it is the shape most likely to
+   * expose a drift between them (e.g. a role name the where-clause half whitelists but the
+   * params half no longer resolves the same way).
+   */
+  @Test
+  @TestSecurity(user = ADMIN_ID, roles = UserRole.Names.ADMIN)
+  void list_filtersByRoleAndQueryTogether() {
+    Response resp =
+        json()
+            .queryParam("range", "[0,24]")
+            .queryParam("filter", "{\"role\":\"admin\",\"q\":\"bob\"}")
+            .when()
+            .get("/api/v1/admin/users")
+            .andReturn();
+
+    assertEquals(Status.OK.getStatusCode(), resp.statusCode());
+    assertEquals("users 0-0/1", resp.getHeader(CONTENT_RANGE));
+    assertEquals(List.of("bob@example.com"), resp.jsonPath().getList("email"));
+  }
+
   @Test
   @TestSecurity(user = ADMIN_ID, roles = UserRole.Names.ADMIN)
   void get_returnsSingleUser() throws Exception {
@@ -270,6 +294,36 @@ class AdminUserResourceTest {
     // Refused before persist: the role must not have changed.
     User unchanged = QuarkusTransaction.requiringNew().call(() -> User.findById(ALICE));
     assertEquals(UserRole.USER, unchanged.role);
+  }
+
+  @Test
+  @TestSecurity(user = ADMIN_ID, roles = UserRole.Names.ADMIN)
+  void update_unsupportedLanguage_returns400NotAn500() throws Exception {
+    // F14: an admin used to be able to set users.language to any string at all, with nothing
+    // downstream ever checking it against zen.i18n.supported (unconfigured here, so {en, uk} -
+    // ZenLocales.SHIPPED). A tag outside that set must be refused, not silently written.
+    AdminUser payload =
+        AdminUser.newBuilder()
+            .setId(ALICE.toString())
+            .setEmail("alice@example.com")
+            .setLanguage("fr")
+            .build();
+
+    Response resp =
+        jsonMutation()
+            .header(HttpHeaders.CONTENT_TYPE, ZenTransportFormat.JSON.mediaType())
+            .body(JsonFormat.printer().print(payload))
+            .when()
+            .put("/api/v1/admin/users/" + ALICE)
+            .andReturn();
+
+    assertEquals(Status.BAD_REQUEST.getStatusCode(), resp.statusCode());
+    ZenError.Builder error = ZenError.newBuilder();
+    JsonFormat.parser().ignoringUnknownFields().merge(resp.getBody().asString(), error);
+    assertEquals("invalid_language", error.getCode());
+
+    User unchanged = QuarkusTransaction.requiringNew().call(() -> User.findById(ALICE));
+    assertEquals("en", unchanged.language, "the language must not have changed");
   }
 
   @Test

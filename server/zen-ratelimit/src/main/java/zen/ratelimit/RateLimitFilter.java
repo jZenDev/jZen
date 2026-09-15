@@ -2,7 +2,9 @@ package zen.ratelimit;
 
 import io.quarkus.vertx.http.runtime.CurrentVertxRequest;
 import io.vertx.ext.web.RoutingContext;
+import jakarta.annotation.Priority;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.Response;
@@ -16,8 +18,9 @@ import zen.proto.v1.ZenError;
  * <p><strong>Not {@code @PreMatching}, deliberately.</strong> {@code ZenTransportFilter} is
  * pre-matching because it has to rewrite {@code Accept} before JAX-RS picks a writer; this filter
  * must run <em>after</em> that, so an aborted 429 body is serialised in whichever format the
- * caller negotiated. Ordinary (post-matching) filters run after every pre-matching one, so the
- * ordering is structural rather than a priority number someone has to remember.
+ * caller negotiated. Ordinary (post-matching) filters run after every pre-matching one, which is
+ * structural; the ordering <em>among</em> post-matching filters is not, which is why this class
+ * carries the explicit {@code @Priority} below.
  *
  * <p><strong>The 429 is charged before authentication, not after.</strong> A limiter that only
  * counted authenticated requests would count only the traffic that was never the problem: on the
@@ -28,8 +31,18 @@ import zen.proto.v1.ZenError;
  * compiles, and is never instantiated: no error, no warning, a green suite, and a limiter that
  * permits everything. {@code RateLimitWiringTest} in the app module fails the build if that
  * happens.
+ *
+ * <p><strong>Runs strictly before {@code CsrfFilter}, by an explicit {@code @Priority}.</strong>
+ * Both are ordinary (post-matching) filters, registered as {@code @Provider} from separate jars;
+ * without a priority pinning the order between them, the JAX-RS runtime is free to run them in
+ * either order. If {@code CsrfFilter} ran first, an authenticated request with a bad CSRF token
+ * would be aborted with 403 before it was ever charged against a bucket — letting exactly the
+ * "has been at this for a while" traffic the durable tier exists for skip metering entirely. The
+ * value is below {@code Priorities.AUTHENTICATION} so this runs even before authentication,
+ * matching the "429 before authentication" rule above.
  */
 @Provider
+@Priority(Priorities.AUTHENTICATION - 100)
 public class RateLimitFilter implements ContainerRequestFilter {
 
   private static final Logger LOG = Logger.getLogger(RateLimitFilter.class);

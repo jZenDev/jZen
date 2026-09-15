@@ -59,6 +59,16 @@ public enum RateLimitRule {
    * costs about 3.3 requests per second from one source (ADR-027), so a per-address ceiling
    * meaningfully below that is what puts a single-source flood back in reach. It is generous
    * enough that no human, and no client polling on a sane interval, will ever meet it.
+   *
+   * <p><strong>This is the DoS bucket, named honestly.</strong> {@code GLOBAL} has no durable tier
+   * ({@link DurableLimiter}'s javadoc), and its in-memory {@link BurstLimiter} table is bounded at
+   * {@code zen.ratelimit.max-tracked-subjects} distinct callers: past that ceiling, a new caller
+   * evicts the least recently active tracked one rather than growing the table unbounded (an
+   * out-of-memory kill would be strictly worse than any decision this limiter could make). A flood
+   * from more distinct addresses than the ceiling can therefore evict a legitimate caller's
+   * counter — that is the trade the bound makes, and it is bounded by construction, not swallowed:
+   * the durable tier is the one that would matter for a patient, credential-guessing attacker, and
+   * this bucket was never that tier.
    */
   GLOBAL;
 

@@ -1,10 +1,8 @@
 package zen.identity.auth;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.ws.rs.core.Cookie;
 import jakarta.ws.rs.core.NewCookie;
 import java.time.Duration;
-import java.util.Map;
 import java.util.UUID;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -85,11 +83,6 @@ public class SessionService {
 
   public String generateCsrfToken() {
     return UUID.randomUUID().toString();
-  }
-
-  public String readCookie(Map<String, Cookie> cookies, String name) {
-    Cookie cookie = cookies.get(name);
-    return cookie == null ? null : cookie.getValue();
   }
 
   private NewCookie authCookie(String name, String token, Duration maxAge) {

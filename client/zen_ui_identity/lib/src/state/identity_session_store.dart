@@ -248,10 +248,19 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
   }
 
   /// Sets a new password for the current session, and — when this is the end of a recovery — takes
-  /// the gate down. The session is unchanged either way: the user stays signed in, as they already
-  /// were when they typed the new password.
-  Future<ZenResult<void>> setPassword(String password) async {
-    final result = await _repository.setPassword(password: password);
+  /// the gate down. The user stays signed in on this device either way, though not on the same
+  /// session: the server revokes every session the old password could still open and mints a
+  /// fresh one for this device, so cookies are replaced under the hood while nothing here needs to
+  /// react to that.
+  ///
+  /// [currentPassword] is required unless this call is finishing a recovery flow — the server
+  /// derives that from the session itself, not from anything sent here — and its omission on an
+  /// ordinary change comes back as `current_password_required` like any other rejection.
+  Future<ZenResult<void>> setPassword(String password, {String? currentPassword}) async {
+    final result = await _repository.setPassword(
+      password: password,
+      currentPassword: currentPassword,
+    );
     return result.fold((_) {
       ref.read(passwordResetRequiredProvider.notifier).complete();
       return const ZenResult<void>.ok(null);

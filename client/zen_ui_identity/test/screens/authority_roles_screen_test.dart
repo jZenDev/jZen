@@ -39,7 +39,7 @@ class _FakeRepo implements IdentityRepository {
   }) async => const ZenResult.err(ZenUnknownError('not implemented'));
 
   @override
-  Future<ZenResult<void>> setPassword({required String password}) async =>
+  Future<ZenResult<void>> setPassword({required String password, String? currentPassword}) async =>
       const ZenResult.err(ZenUnknownError('not implemented'));
 
   @override

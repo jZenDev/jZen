@@ -5,15 +5,21 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import zen.identity.AuthException;
 import zen.identity.IdentityService;
 import zen.identity.auth.RedirectTargets;
 import zen.identity.auth.SupabaseAuthClient;
 import zen.identity.auth.SupabaseSessionResponse;
+import zen.identity.auth.SupabaseTokenRequest;
+import zen.identity.auth.SupabaseUnavailableException;
 import zen.identity.auth.UserUpdateRequest;
 import zen.identity.user.User;
 import zen.identity.user.UserStore;
@@ -21,6 +27,7 @@ import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Response;
 import java.util.Map;
 import java.util.UUID;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
@@ -48,22 +55,118 @@ class IdentityServiceTest {
   /** Stands in for a session's subject; it only ever reaches a log line. */
   private static final UUID USER_ID = UUID.fromString("00000000-0000-4000-8000-000000000001");
 
-  @Test
-  void setPassword_changesThePasswordOfWhoeverTheTokenBelongsTo() {
-    identityService.setPassword("session-jwt", "a-new-secret");
+  private static SupabaseSessionResponse.UserPayload userPayload(String email) {
+    return new SupabaseSessionResponse.UserPayload(
+        UUID.randomUUID().toString(), email, "authenticated", "2024-01-01T00:00:00Z", Map.of());
+  }
 
-    // No user id is passed, and none could be: Supabase resolves the account from the bearer. That
-    // is what makes it impossible for one session to change another session's password.
-    verify(authClient).updateUser("Bearer session-jwt", new UserUpdateRequest("a-new-secret"));
+  private static SupabaseSessionResponse freshSession(String access, String refresh, String email) {
+    return new SupabaseSessionResponse(
+        access, refresh, userPayload(email), null, null, null, null, null, null);
   }
 
   @Test
   void setPassword_blankPassword_isRefusedBeforeSupabaseIsCalled() {
     AuthException thrown =
-        assertThrows(AuthException.class, () -> identityService.setPassword("session-jwt", "  "));
+        assertThrows(
+            AuthException.class,
+            () -> identityService.setPassword("session-jwt", "old-secret", "  ", false));
 
     assertEquals("weak_password", thrown.code());
     verify(authClient, never()).updateUser(any(), any());
+  }
+
+  /**
+   * ADR-050: an ordinary signed-in user changing their password must prove the current one first.
+   * No user id is ever passed to {@code updateUser} — Supabase resolves the account from the
+   * bearer, which is what makes it impossible for one session to change another session's
+   * password.
+   */
+  @Test
+  void setPassword_ordinaryChange_verifiesCurrentPasswordThenRevokesAndReissues() {
+    // A distinct email per test that reaches toSession(): it upserts into a real (Dev Services)
+    // users table shared across this class's test methods, and UserStore enforces one profile per
+    // email - reusing an address another test already claimed under a different random id would
+    // fail with "Another profile already claims this email address," a test-isolation collision
+    // rather than anything setPassword itself got wrong.
+    String email = "ordinary-change@example.com";
+    when(authClient.getUser("Bearer session-jwt")).thenReturn(userPayload(email));
+    when(authClient.token(eq("password"), argThat(r -> "old-secret".equals(r.password()))))
+        .thenReturn(freshSession("verify-access", "verify-refresh", email));
+    when(authClient.token(eq("password"), argThat(r -> "new-secret".equals(r.password()))))
+        .thenReturn(freshSession("fresh-access", "fresh-refresh", email));
+
+    IdentityService.Session result =
+        identityService.setPassword("session-jwt", "old-secret", "new-secret", false);
+
+    verify(authClient).updateUser("Bearer session-jwt", new UserUpdateRequest("new-secret"));
+    // Every other session this password could still open must not survive the change - a global
+    // revoke, not the local one an ordinary sign-out uses.
+    verify(authClient).logout("Bearer session-jwt", "global");
+    // The caller's own device is not signed out by its own password change: it gets a fresh
+    // session minted with the new password, not the one used only to verify the old one.
+    assertEquals("fresh-access", result.accessToken());
+    assertEquals("fresh-refresh", result.refreshToken());
+  }
+
+  @Test
+  void setPassword_ordinaryChange_missingCurrentPassword_isRefusedBeforeAnyChange() {
+    when(authClient.getUser("Bearer session-jwt")).thenReturn(userPayload("user@example.com"));
+
+    AuthException thrown =
+        assertThrows(
+            AuthException.class,
+            () -> identityService.setPassword("session-jwt", "  ", "new-secret", false));
+
+    assertEquals("current_password_required", thrown.code());
+    assertEquals(400, thrown.status());
+    verify(authClient, never()).updateUser(any(), any());
+    verify(authClient, never()).logout(any(), any());
+  }
+
+  @Test
+  void setPassword_ordinaryChange_wrongCurrentPassword_isRefusedBeforeAnyChange() {
+    when(authClient.getUser("Bearer session-jwt")).thenReturn(userPayload("user@example.com"));
+    doThrow(
+            new WebApplicationException(
+                Response.status(400)
+                    .entity("{\"error_code\":\"invalid_credentials\",\"msg\":\"Invalid login credentials\"}")
+                    .type("application/json")
+                    .build()))
+        .when(authClient)
+        .token(eq("password"), argThat(r -> "wrong-secret".equals(r.password())));
+
+    AuthException thrown =
+        assertThrows(
+            AuthException.class,
+            () -> identityService.setPassword("session-jwt", "wrong-secret", "new-secret", false));
+
+    assertEquals("invalid_credentials", thrown.code());
+    verify(authClient, never()).updateUser(any(), any());
+    verify(authClient, never()).logout(any(), any());
+  }
+
+  /**
+   * The last step of password recovery cannot supply the current password - not knowing it is the
+   * entire reason recovery exists - so {@code recoverySession=true} skips the check {@code
+   * AuthResource} would otherwise have derived from the token's own {@code amr} claim.
+   */
+  @Test
+  void setPassword_recoverySession_needsNoCurrentPasswordButStillRevokesAndReissues() {
+    String email = "recovery-change@example.com";
+    when(authClient.getUser("Bearer recovery-jwt")).thenReturn(userPayload(email));
+    when(authClient.token(eq("password"), argThat(r -> "new-secret".equals(r.password()))))
+        .thenReturn(freshSession("fresh-access", "fresh-refresh", email));
+
+    IdentityService.Session result =
+        identityService.setPassword("recovery-jwt", null, "new-secret", true);
+
+    verify(authClient).updateUser("Bearer recovery-jwt", new UserUpdateRequest("new-secret"));
+    verify(authClient).logout("Bearer recovery-jwt", "global");
+    // Exactly one password-grant call happened - the re-login that mints the fresh session.
+    // Recovery has nothing to verify a current password against, so there must be no second call.
+    verify(authClient, times(1)).token(eq("password"), any());
+    assertEquals("fresh-access", result.accessToken());
   }
 
   @Test
@@ -107,6 +210,79 @@ class IdentityServiceTest {
 
       assertTrue(identityService.logout("session-jwt", USER_ID), "HTTP " + refusal);
     }
+  }
+
+  @Test
+  void login_whenSupabaseFails5xx_isReportedAsServiceUnavailableNotWrongPassword() {
+    // A Supabase outage must not present as "wrong password" (401): that is what
+    // classifySupabaseError's generic 4xx fallback would produce, and it sends a user chasing a
+    // credential problem that does not exist. SupabaseAuthClient's @ClientExceptionMapper
+    // remaps any 5xx response to SupabaseUnavailableException specifically so it cannot be
+    // confused with a rejected request here.
+    doThrow(new SupabaseUnavailableException(503)).when(authClient).token(any(), any());
+
+    AuthException thrown =
+        assertThrows(AuthException.class, () -> identityService.login("someone@example.com", "secret"));
+
+    assertEquals("service_unavailable", thrown.code());
+    assertEquals(503, thrown.status());
+  }
+
+  /**
+   * F11: real GoTrue error bodies, pinned rather than invented, so a wording change upstream
+   * cannot silently degrade the classification the way a substring-only match could.
+   * Shape is GoTrue's own since 2024: {@code {"code": <http status>, "error_code": "...",
+   * "msg": "..."}}.
+   */
+  @Test
+  void login_classifiesByGoTrueStructuredErrorCode() {
+    assertGoTrueBodyClassifiedAs(
+        "{\"code\":400,\"error_code\":\"invalid_credentials\",\"msg\":\"Invalid login credentials\"}",
+        "invalid_credentials",
+        401);
+    assertGoTrueBodyClassifiedAs(
+        "{\"code\":400,\"error_code\":\"weak_password\",\"msg\":\"Password should be at least 6"
+            + " characters.\"}",
+        "weak_password",
+        400);
+    assertGoTrueBodyClassifiedAs(
+        "{\"code\":422,\"error_code\":\"user_already_exists\",\"msg\":\"User already"
+            + " registered\"}",
+        "email_taken",
+        409);
+    assertGoTrueBodyClassifiedAs(
+        "{\"code\":429,\"error_code\":\"over_email_send_rate_limit\",\"msg\":\"Email rate limit"
+            + " exceeded\"}",
+        "rate_limited",
+        429);
+  }
+
+  @Test
+  void login_withoutStructuredErrorCode_fallsBackToSubstringMatch() {
+    // An older GoTrue without the error_code field: the pre-existing substring match must still
+    // classify a recognizable message rather than everything collapsing to the generic fallback.
+    assertGoTrueBodyClassifiedAs(
+        "{\"msg\":\"Password should be at least 6 characters.\"}", "weak_password", 400);
+  }
+
+  @Test
+  void login_whenNeitherStructuredNorSubstringMatch_getsTheGenericFallback() {
+    assertGoTrueBodyClassifiedAs("{\"msg\":\"Something GoTrue has never said before.\"}", "unauthorized", 401);
+  }
+
+  private void assertGoTrueBodyClassifiedAs(String body, String expectedCode, int expectedStatus) {
+    doThrow(
+            new WebApplicationException(
+                Response.status(400).entity(body).type("application/json").build()))
+        .when(authClient)
+        .token(any(), any());
+
+    AuthException thrown =
+        assertThrows(
+            AuthException.class, () -> identityService.login("someone@example.com", "secret"));
+
+    assertEquals(expectedCode, thrown.code(), body);
+    assertEquals(expectedStatus, thrown.status(), body);
   }
 
   @Test

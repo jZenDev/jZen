@@ -97,9 +97,4 @@ public final class CsrfRules {
     }
     return value;
   }
-
-  /** The exempt routes, for tests and for anything that needs to state the list. */
-  public static Set<String> exemptPaths() {
-    return EXEMPT_PATHS;
-  }
 }

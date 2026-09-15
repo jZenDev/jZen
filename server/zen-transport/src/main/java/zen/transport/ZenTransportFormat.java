@@ -1,6 +1,7 @@
 package zen.transport;
 
 import jakarta.ws.rs.core.MediaType;
+import java.util.Locale;
 
 /**
  * The two wire formats behind the {@code X-Zen-Transport} negotiation seam.
@@ -39,7 +40,10 @@ public enum ZenTransportFormat {
    *
    * <p>Negotiation order: explicit {@code X-Zen-Transport} header, then a sniff of the request
    * Content-Type, then default JSON. An unparseable header value falls through rather than
-   * failing, so a client that sends nonsense gets JSON rather than an error.
+   * failing, so a client that sends nonsense gets JSON rather than an error. The Content-Type
+   * sniff compares the subtype exactly (plus the {@code +json} structured-syntax suffix) rather
+   * than by substring, so a made-up subtype like {@code text/protobuf-notes} does not get routed
+   * to binary protobuf.
    */
   public static ZenTransportFormat negotiate(String header, MediaType contentType) {
     ZenTransportFormat fromHeader = parseOrNull(header);
@@ -47,11 +51,11 @@ public enum ZenTransportFormat {
       return fromHeader;
     }
     if (contentType != null) {
-      String ct = contentType.getType() + "/" + contentType.getSubtype();
-      if (ct.contains("protobuf")) {
+      String subtype = contentType.getSubtype().toLowerCase(Locale.ROOT);
+      if (subtype.equals("x-protobuf") || subtype.equals("protobuf")) {
         return PROTOBUF;
       }
-      if (ct.contains("json")) {
+      if (subtype.equals("json") || subtype.endsWith("+json")) {
         return JSON;
       }
     }
@@ -62,7 +66,7 @@ public enum ZenTransportFormat {
     if (value == null || value.isBlank()) {
       return null;
     }
-    switch (value.trim().toLowerCase()) {
+    switch (value.trim().toLowerCase(Locale.ROOT)) {
       case "json":
         return JSON;
       case "protobuf":

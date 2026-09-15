@@ -6,16 +6,20 @@ import zen.identity.auth.SupabaseAuthClient;
 import zen.identity.auth.SupabaseSessionResponse;
 import zen.identity.auth.SupabaseSignupRequest;
 import zen.identity.auth.SupabaseTokenRequest;
+import zen.identity.auth.SupabaseUnavailableException;
 import zen.identity.auth.UserUpdateRequest;
 import zen.identity.event.UserRegistered;
 import zen.identity.security.RoleAugmentor;
 import zen.identity.user.User;
 import zen.identity.user.UserStore;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.WebApplicationException;
+import java.util.Map;
 import java.util.UUID;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.jboss.logging.Logger;
@@ -40,10 +44,16 @@ public class IdentityService {
    * <p>Local, because that is what a sign-out button means. A user ending a session on one device
    * does not expect their phone to be signed out too, and a framework that made every logout a
    * global one would be making a product decision on the application's behalf. "Sign out
-   * everywhere" is a separate, deliberate action; when an application wants it, it passes
-   * {@code global} — the seam is here for it.
+   * everywhere" is a separate, deliberate action.
+   *
+   * <p>{@code global} has a second caller now: {@link #setPassword}. Changing a password is a
+   * compromised-credential response as much as it is a preference change, and requiring the
+   * current password to do it (DECISIONS ADR-050) is worthless containment if every session that
+   * password already opened elsewhere is left running.
    */
   private static final String LOGOUT_SCOPE_LOCAL = "local";
+
+  private static final String LOGOUT_SCOPE_GLOBAL = "global";
 
   private final SupabaseAuthClient authClient;
   private final UserStore userStore;
@@ -121,6 +131,10 @@ public class IdentityService {
         return new Session(null, null, null);
       }
       throw classified;
+    } catch (SupabaseUnavailableException e) {
+      // Same distinction call() makes: the provider failed, not the request - must not be
+      // folded into the enumeration defense above, which exists only for genuine 4xx rejections.
+      throw serviceUnavailable();
     }
     // GoTrue returns a session when the project auto-confirms, and a bare user (no session) when
     // email confirmation is required. effectiveUser() unifies both; the null-token case below is
@@ -181,24 +195,74 @@ public class IdentityService {
   }
 
   /**
-   * Sets a new password for the identity owning {@code accessToken} — the final step of password
-   * recovery, and the only reason a recovery link needs to establish a session at all.
+   * Sets a new password for the identity owning {@code accessToken}.
    *
-   * <p>The token comes from the caller's own session cookie, which SmallRye JWT has already
-   * verified, so unlike {@link #exchangeLinkTokens} this one is trusted on arrival. Password rules
-   * are Supabase's: a rejected password comes back through {@link #classifySupabaseError} as
-   * {@code weak_password}, and jZen does not restate the rule in a second place where the two
-   * could drift apart.
+   * <p>Two distinct callers reach this, and DECISIONS ADR-050 is the record of why they are
+   * treated differently:
+   *
+   * <ul>
+   *   <li><b>An ordinary signed-in user changing their password</b> must prove they know the
+   *       current one — {@code currentPassword} is verified with Supabase's own password grant
+   *       before anything is changed. Skipping this would let a hijacked-but-still-valid access
+   *       token (an unattended device, an XSS that read it before {@code HttpOnly} existed on some
+   *       other client) rotate the password and lock the real owner out permanently.
+   *   <li><b>The last step of password recovery</b> cannot supply {@code currentPassword} — not
+   *       knowing it is the entire reason recovery exists — so {@code recoverySession} (derived by
+   *       the caller from the session's own Supabase {@code amr} claim, never from a client-
+   *       supplied flag) skips the check for exactly this flow and no other.
+   * </ul>
+   *
+   * <p>Both paths finish the same way: the change is followed by a {@code global} revocation of
+   * every session the identity holds, then a fresh sign-in with the new password so the device
+   * that just changed it is not signed out by its own action. Revoking only the presented session
+   * (as an ordinary sign-out does) would leave every other session — including one on a device
+   * that no longer should have access — running on the strength of a password that is no longer
+   * the account's own. The revoke is deliberately best-effort (see {@link #logout}); the password
+   * is already changed by the time it runs, and failing the whole request over a revoke Supabase
+   * refused would report success as failure while leaving the change in place regardless.
+   *
+   * <p>Password rules are Supabase's: a rejected password comes back through {@link
+   * #classifySupabaseError} as {@code weak_password}, and jZen does not restate the rule in a
+   * second place where the two could drift apart.
+   *
+   * @return a fresh {@link Session} for the caller's own device, with new tokens the resource
+   *     turns into new cookies
    */
-  public void setPassword(String accessToken, String password) {
-    if (password == null || password.isBlank()) {
+  public Session setPassword(
+      String accessToken, String currentPassword, String newPassword, boolean recoverySession) {
+    if (newPassword == null || newPassword.isBlank()) {
       throw new AuthException(400, "weak_password", "Please choose a stronger password.");
+    }
+    SupabaseSessionResponse.UserPayload supabaseUser = call(() -> authClient.getUser(bearer(accessToken)));
+    if (supabaseUser == null || supabaseUser.email() == null) {
+      throw AuthException.unauthorized("No active session.");
+    }
+    if (!recoverySession) {
+      if (currentPassword == null || currentPassword.isBlank()) {
+        throw new AuthException(
+            400, "current_password_required", "Please confirm your current password.");
+      }
+      // A rejection here is classified exactly like a login rejection (invalid_credentials -> the
+      // current password is wrong); a provider outage is classified exactly like every other call.
+      call(
+          () ->
+              authClient.token(
+                  "password",
+                  new SupabaseTokenRequest(supabaseUser.email(), currentPassword, null, null, null)));
     }
     call(
         () -> {
-          authClient.updateUser(bearer(accessToken), new UserUpdateRequest(password));
+          authClient.updateUser(bearer(accessToken), new UserUpdateRequest(newPassword));
           return null;
         });
+    revoke(accessToken, supabaseUser.id(), LOGOUT_SCOPE_GLOBAL);
+    SupabaseSessionResponse fresh =
+        call(
+            () ->
+                authClient.token(
+                    "password",
+                    new SupabaseTokenRequest(supabaseUser.email(), newPassword, null, null, null)));
+    return toSession(fresh);
   }
 
   private static String bearer(String accessToken) {
@@ -224,13 +288,24 @@ public class IdentityService {
    * @param userId the session's subject, for the log line only; null when it could not be resolved
    */
   public boolean logout(String accessToken, UUID userId) {
+    return revoke(accessToken, userId == null ? null : userId.toString(), LOGOUT_SCOPE_LOCAL);
+  }
+
+  /**
+   * Shared implementation behind {@link #logout} ({@code local}) and {@link #setPassword}
+   * ({@code global}). {@code userId} is a raw string rather than a {@link UUID} purely because
+   * {@link #setPassword}'s caller is a Supabase {@link SupabaseSessionResponse.UserPayload#id()},
+   * and reparsing it to log a value that is never compared against anything would add a failure
+   * mode this method does not need.
+   */
+  private boolean revoke(String accessToken, String userId, String scope) {
     if (accessToken == null || accessToken.isBlank()) {
       // Logging out without a session is not a failure and not an event: a client that has already
       // lost its cookie still calls this, and a stranger can call it at any time.
       return false;
     }
     try {
-      authClient.logout(bearer(accessToken), LOGOUT_SCOPE_LOCAL);
+      authClient.logout(bearer(accessToken), scope);
       return true;
     } catch (WebApplicationException e) {
       /*
@@ -247,8 +322,9 @@ public class IdentityService {
       }
       LOG.warnf(
           e,
-          "Upstream logout was refused for user %s (HTTP %d): local cookies are cleared, but the"
-              + " refresh token stays valid until it expires",
+          "Upstream %s logout was refused for user %s (HTTP %d): the affected refresh token(s)"
+              + " stay valid until they expire",
+          scope,
           userId,
           status);
       return false;
@@ -256,8 +332,9 @@ public class IdentityService {
       // Timeout, open circuit breaker, DNS, TLS - Supabase is unreachable rather than refusing.
       LOG.warnf(
           e,
-          "Upstream logout failed for user %s: local cookies are cleared, but the session is still"
-              + " live upstream and can be resumed with the refresh token",
+          "Upstream %s logout failed for user %s: the affected session(s) are still live upstream"
+              + " and can be resumed with their refresh token(s)",
+          scope,
           userId);
       return false;
     }
@@ -323,26 +400,99 @@ public class IdentityService {
       return supabaseCall.get();
     } catch (WebApplicationException e) {
       throw classifySupabaseError(e);
+    } catch (SupabaseUnavailableException e) {
+      // The provider itself failed (5xx), not the request - distinct from every 4xx branch
+      // below, which all mean "Supabase understood and rejected this." Surfacing it as 401 would
+      // read to the caller as a wrong password instead of an outage.
+      throw serviceUnavailable();
     }
   }
 
+  private static AuthException serviceUnavailable() {
+    return new AuthException(503, "service_unavailable", "The identity service is temporarily unavailable.");
+  }
+
+  private static final ObjectMapper JSON = new ObjectMapper();
+
+  /**
+   * GoTrue's own {@code error_code} to jZen's stable {@code AuthException} code + status, keyed
+   * on the structured field GoTrue has shipped since 2024 rather than on a substring of its human
+   * message. A wording change upstream ("Password should be at least 6 characters." becoming
+   * anything else) used to silently degrade every branch below at once, because the substring
+   * fallback was the *only* signal; it is now the fallback for a GoTrue version old enough not to
+   * send {@code error_code} at all.
+   */
+  private static final Map<String, AuthException> BY_ERROR_CODE =
+      Map.ofEntries(
+          Map.entry(
+              "email_not_confirmed",
+              new AuthException(401, "email_not_confirmed", "Your email is not confirmed yet.")),
+          Map.entry(
+              "user_already_exists",
+              // register() intercepts this code and turns it into the neutral 202 outcome, so it
+              // never reaches the client; login/refresh cannot produce it.
+              new AuthException(409, "email_taken", "An account with this email already exists.")),
+          Map.entry(
+              "email_exists",
+              new AuthException(409, "email_taken", "An account with this email already exists.")),
+          Map.entry(
+              "weak_password",
+              new AuthException(400, "weak_password", "Please choose a stronger password.")),
+          Map.entry(
+              "email_address_invalid",
+              new AuthException(400, "invalid_email", "That email address looks invalid.")),
+          Map.entry(
+              "over_email_send_rate_limit",
+              new AuthException(
+                  429, "rate_limited", "Too many attempts. Please wait a moment and try again.")),
+          Map.entry(
+              "invalid_credentials",
+              new AuthException(401, "invalid_credentials", "Incorrect email or password.")));
+
   private AuthException classifySupabaseError(WebApplicationException e) {
-    String body = "";
+    String body = readBody(e);
+    String errorCode = structuredErrorCode(body);
+    AuthException byCode = errorCode == null ? null : BY_ERROR_CODE.get(errorCode);
+    return byCode != null ? byCode : classifyBySubstring(body);
+  }
+
+  private static String readBody(WebApplicationException e) {
     try {
       jakarta.ws.rs.core.Response resp = e.getResponse();
       if (resp != null && resp.hasEntity()) {
-        body = resp.readEntity(String.class);
+        return resp.readEntity(String.class);
       }
     } catch (RuntimeException ignore) {
       // No readable body; fall through to the generic case.
     }
+    return "";
+  }
+
+  /** {@code null} for a body that is not JSON, or JSON without an {@code error_code} field. */
+  private static String structuredErrorCode(String body) {
+    if (body == null || body.isBlank()) {
+      return null;
+    }
+    try {
+      JsonNode node = JSON.readTree(body);
+      JsonNode code = node.get("error_code");
+      return code != null && code.isTextual() ? code.asText() : null;
+    } catch (java.io.IOException e) {
+      return null;
+    }
+  }
+
+  /**
+   * The pre-structured-field fallback: keys on a substring of GoTrue's human-readable message.
+   * Kept for a GoTrue version old enough to omit {@code error_code}; every branch here is
+   * documented as a fallback, not the primary classification.
+   */
+  private static AuthException classifyBySubstring(String body) {
     String b = body == null ? "" : body.toLowerCase(java.util.Locale.ROOT);
     if (contains(b, "email_not_confirmed", "email not confirmed", "not confirmed")) {
       return new AuthException(401, "email_not_confirmed", "Your email is not confirmed yet.");
     }
     if (contains(b, "already registered", "user_already_exists", "email_exists")) {
-      // register() intercepts this code and turns it into the neutral 202 outcome, so it never
-      // reaches the client; login/refresh cannot produce it. The message is a safe fallback only.
       return new AuthException(409, "email_taken", "An account with this email already exists.");
     }
     if (contains(b, "weak_password", "password should", "password is too")) {

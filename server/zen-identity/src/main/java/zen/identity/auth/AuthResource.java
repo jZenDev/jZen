@@ -27,7 +27,10 @@ import jakarta.ws.rs.core.NewCookie;
 import jakarta.ws.rs.core.Response;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
+import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.eclipse.microprofile.openapi.annotations.Operation;
 import org.eclipse.microprofile.openapi.annotations.media.Content;
 import org.eclipse.microprofile.openapi.annotations.media.Schema;
@@ -57,10 +60,22 @@ public class AuthResource {
 
   private static final String PROTOBUF = "application/x-protobuf";
 
+  /**
+   * GoTrue's Authentication Method Reference claim: a JSON array of {@code {"method": ..., ...}}
+   * entries recording how the current access token's session was established. {@code recovery} is
+   * the value it carries when the session came from verifying a password-recovery link — see
+   * {@link #isRecoverySession()}.
+   */
+  private static final String AMR_CLAIM = "amr";
+
+  private static final String AMR_METHOD_KEY = "method";
+  private static final String AMR_RECOVERY_METHOD = "recovery";
+
   @Inject IdentityService identityService;
   @Inject SessionService sessionService;
   @Inject IdentityMapper identityMapper;
   @Inject SecurityIdentity securityIdentity;
+  @Inject JsonWebToken jwt;
 
   @POST
   @Path("/login")
@@ -183,8 +198,15 @@ public class AuthResource {
   @Consumes({MediaType.APPLICATION_JSON, PROTOBUF})
   @Operation(summary = "Set a new password for the current session")
   @RequestBody(content = @Content(schema = @Schema(ref = "SetPasswordRequest")))
-  @APIResponse(responseCode = ZenStatus.NO_CONTENT, description = "Password changed")
+  @APIResponse(
+      responseCode = ZenStatus.NO_CONTENT,
+      description =
+          "Password changed; every other session was revoked and fresh cookies were issued for"
+              + " this one")
   @APIResponse(responseCode = ZenStatus.UNAUTHORIZED, description = "No active session")
+  @APIResponse(
+      responseCode = ZenStatus.BAD_REQUEST,
+      description = "current_password missing (ordinary change) or the new password is too weak")
   public Response setPassword(
       SetPasswordRequest request, @CookieParam(SessionService.ACCESS_COOKIE) String accessToken) {
     /*
@@ -192,12 +214,46 @@ public class AuthResource {
      * and expiry before this method runs. The raw cookie is read again here only because Supabase
      * wants the original bearer token, which the parsed SecurityIdentity no longer carries.
      *
-     * This is the endpoint password recovery finishes on. It is not recovery-specific, though -
-     * an ordinary signed-in user changing their password uses the same call, which is why it takes
-     * no recovery token and asks nothing about how the session was obtained.
+     * This is the endpoint password recovery finishes on, and it is also what an ordinary
+     * signed-in user calls to change their password (DECISIONS ADR-050). The two are told apart
+     * by isRecoverySession(), never by anything the client claims - a client-supplied "I'm a
+     * recovery session" flag would let anyone skip proving the current password just by sending it.
      */
-    identityService.setPassword(accessToken, request.getPassword());
-    return Response.noContent().build();
+    IdentityService.Session session =
+        identityService.setPassword(
+            accessToken, request.getCurrentPassword(), request.getPassword(), isRecoverySession());
+    /*
+     * Same cookie set login/register/refresh issue, without the Identity body: the caller already
+     * knows their own identity, and the client's setPassword contract is void-returning. The
+     * fresh tokens still need to reach the browser, or the global revoke a line above would have
+     * signed this device out along with every other one.
+     */
+    return Response.noContent().cookie(sessionCookies(session)).build();
+  }
+
+  /**
+   * Whether the current session was established by verifying a Supabase password-recovery link,
+   * from the token's own {@code amr} claim — never from anything the request supplies. Supabase
+   * (jose4j under SmallRye JWT) delivers a JSON array claim as a {@link List} of {@link Map}
+   * entries, which {@link #amrMethods} reads defensively: an unexpected shape yields no methods
+   * rather than a cast exception, so a token from a Supabase version that changed this claim fails
+   * closed into "not a recovery session" (current_password required) rather than crashing.
+   */
+  private boolean isRecoverySession() {
+    return amrMethods(jwt.getClaim(AMR_CLAIM)).anyMatch(AMR_RECOVERY_METHOD::equals);
+  }
+
+  /** The {@code method} value of each {@code amr} entry, or an empty stream for any other shape. */
+  static Stream<String> amrMethods(Object amrClaim) {
+    if (!(amrClaim instanceof List<?> entries)) {
+      return Stream.empty();
+    }
+    return entries.stream()
+        .filter(Map.class::isInstance)
+        .map(Map.class::cast)
+        .map(entry -> entry.get(AMR_METHOD_KEY))
+        .filter(String.class::isInstance)
+        .map(String.class::cast);
   }
 
   @POST
@@ -297,7 +353,11 @@ public class AuthResource {
 
   /** Builds a 200 {@link Identity} response, attaching whatever session cookies are available. */
   private Response sessionResponse(IdentityService.Session session) {
-    Identity identity = identityMapper.toProto(session.user());
+    return Response.ok(identityMapper.toProto(session.user())).cookie(sessionCookies(session)).build();
+  }
+
+  /** The access/CSRF/refresh cookies for whichever of {@code session}'s tokens are present. */
+  private NewCookie[] sessionCookies(IdentityService.Session session) {
     List<NewCookie> cookies = new ArrayList<>();
     if (session.accessToken() != null) {
       cookies.add(sessionService.accessCookie(session.accessToken()));
@@ -306,6 +366,6 @@ public class AuthResource {
     if (session.refreshToken() != null) {
       cookies.add(sessionService.refreshCookie(session.refreshToken()));
     }
-    return Response.ok(identity).cookie(cookies.toArray(new NewCookie[0])).build();
+    return cookies.toArray(new NewCookie[0]);
   }
 }

@@ -1,6 +1,7 @@
 package zen.demo;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
@@ -39,17 +40,57 @@ public class WebSocketConnections {
   @ConfigProperty(name = "zen.demo.websocket.max-connections", defaultValue = "200")
   int maxConnections;
 
+  /**
+   * Per-address ceiling, well below {@link #maxConnections}. Without it, a single caller who
+   * reaches the global cap first locks out the whole fleet: {@code --max-instances=1} means there
+   * is exactly one instance and no other caller to fail over to. 20 leaves room for a legitimate
+   * user with several tabs/devices while making the whole-instance takeover this closes require
+   * an order of magnitude more sockets than any real client opens.
+   */
+  @ConfigProperty(name = "zen.demo.websocket.max-connections-per-address", defaultValue = "20")
+  int maxConnectionsPerAddress;
+
   private final AtomicInteger open = new AtomicInteger();
+  private final ConcurrentHashMap<String, AtomicInteger> openPerAddress = new ConcurrentHashMap<>();
 
   /**
-   * Claims a slot, or refuses.
+   * Claims a slot for {@code remoteAddress}, or refuses — either because the instance is at its
+   * global ceiling, or because this address alone is already at {@link #maxConnectionsPerAddress}.
    *
    * @return {@code true} when the connection may proceed; the caller must then call
-   *     {@link #release()} exactly once when it closes
+   *     {@link #release(String)} with the same address exactly once when it closes
    */
-  public boolean tryAcquire() {
+  public boolean tryAcquire(String remoteAddress) {
+    if (!tryAcquireGlobal()) {
+      return false;
+    }
+    AtomicInteger perAddress = openPerAddress.computeIfAbsent(remoteAddress, a -> new AtomicInteger());
     // Compare-and-set rather than incrementAndGet-then-check: the latter admits a transient
     // overshoot under concurrent upgrades, which is exactly when the ceiling matters.
+    int current;
+    do {
+      current = perAddress.get();
+      if (current >= maxConnectionsPerAddress) {
+        // Give back the global slot claimed above — the per-address counter was never
+        // incremented for this attempt, so only the global side needs undoing.
+        open.decrementAndGet();
+        return false;
+      }
+    } while (!perAddress.compareAndSet(current, current + 1));
+    return true;
+  }
+
+  /** Frees a slot claimed by {@link #tryAcquire(String)} for the same {@code remoteAddress}. */
+  public void release(String remoteAddress) {
+    open.decrementAndGet();
+    // computeIfPresent removes the entry once it reaches zero, atomically for that key — without
+    // it every distinct address ever seen would keep a counter forever, an unbounded map for the
+    // lifetime of the instance.
+    openPerAddress.computeIfPresent(
+        remoteAddress, (address, counter) -> counter.decrementAndGet() <= 0 ? null : counter);
+  }
+
+  private boolean tryAcquireGlobal() {
     int current;
     do {
       current = open.get();
@@ -58,11 +99,6 @@ public class WebSocketConnections {
       }
     } while (!open.compareAndSet(current, current + 1));
     return true;
-  }
-
-  /** Frees a slot claimed by {@link #tryAcquire()}. */
-  public void release() {
-    open.decrementAndGet();
   }
 
   /** How many sockets are open right now. */

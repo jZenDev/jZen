@@ -1,6 +1,7 @@
 package zen.core.i18n;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
  * The locales jZen itself ships messages and templates for. {@link #SHIPPED} is the single
@@ -64,7 +65,7 @@ public final class ZenLocales {
     if (tag == null || tag.isBlank()) {
       return FALLBACK;
     }
-    String primary = tag.trim().split("[-_]")[0].toLowerCase();
+    String primary = tag.trim().split("[-_]")[0].toLowerCase(Locale.ROOT);
     return supported.contains(primary) ? primary : FALLBACK;
   }
 

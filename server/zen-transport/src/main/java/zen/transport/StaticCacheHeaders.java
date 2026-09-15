@@ -58,7 +58,11 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  * <h2>Which paths this applies to</h2>
  *
  * <p>A build-stable validator is only ever correct for build-stable bytes, so it must not reach a
- * dynamic response — a 304 for a changing payload is a served-stale bug, not a saving. The route runs
+ * dynamic response — a 304 for a changing payload is a served-stale bug, not a saving. {@code /api/}
+ * gets the opposite treatment entirely: {@code ZenTransportResponseFilter} sets
+ * {@code Cache-Control: no-store} on every authenticated response there, because a per-caller API
+ * response must never be cached at all, versus this class's {@code no-cache} — "cacheable, but
+ * revalidate first" — for the fixed-name static entry files. The route runs
  * before everything, so the dynamic roots are named in {@link #DYNAMIC_PREFIXES} and excluded:
  * {@code /api/} (JAX-RS and the WebSocket), {@code /auth/} (the OAuth callback), {@code /.well-known/}
  * (the app-association documents) and {@code /q/} (Quarkus' own endpoints). <b>Adding a JAX-RS root

@@ -63,4 +63,7 @@ public interface ZenStatus {
 
   /** 500 Internal Server Error. */
   String INTERNAL_SERVER_ERROR = "500";
+
+  /** 503 Service Unavailable — an upstream dependency (e.g. Supabase) is unreachable or failing. */
+  String SERVICE_UNAVAILABLE = "503";
 }

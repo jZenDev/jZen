@@ -162,7 +162,7 @@ point* of the script, it is Python. In one sentence: **sh runs things; Python un
 
 ## Backend (Quarkus) multi-module rules
 
-Two rules the walking skeleton established, both mandatory for every backend module:
+Three rules the walking skeleton established, all mandatory for every backend module:
 
 - **Every library module that contributes CDI beans or JAX-RS providers must run the
   `jandex-maven-plugin`.** Quarkus discovers `@Provider`/bean classes from a dependency
@@ -175,6 +175,13 @@ Two rules the walking skeleton established, both mandatory for every backend mod
   `application/json` through a build-time path that ignores writer priority, so it must
   be absent, not merely out-prioritized. (Client-side `quarkus-rest-client-jackson` in
   `zen-identity` is fine — it serializes outbound Supabase calls, which are not proto.)
+- **A post-matching `ContainerRequestFilter` registered from a different module than another
+  one must pin its relative order with an explicit `@Priority`.** JAX-RS leaves the order
+  between two such filters implementation-defined when neither carries one. `zen-ratelimit`'s
+  `RateLimitFilter` and `zen-identity`'s `CsrfFilter` are the reference: rate limiting must
+  charge a request's bucket before CSRF can abort it with 403, or a caller cycling bad CSRF
+  tokens escapes the durable tier entirely — so `RateLimitFilter` pins
+  `Priorities.AUTHENTICATION - 100` and `CsrfFilter` pins `Priorities.AUTHORIZATION`.
 
 ## Database migrations — one authority, one location, a version band per module
 
@@ -591,6 +598,14 @@ provider is only made meaningful by the backend.
   needed (`gcloud run services describe`, the pattern `build:web` and `run:demo:native` share) or
   passed explicitly (`ZEN_API_URL`, `WEB_API_URL`), and their absence is a **loud failure** naming
   what to set, never a silent fallback.
+- **A WebSocket upgrade leaves CSRF and rate-limiting behind.** Both `CsrfRules` and
+  `RateLimitFilter` are JAX-RS `@Provider`s, and neither runs again once an upgrade completes —
+  the socket is a different protocol from then on. The upgrade request itself is an ordinary
+  `/api/`-shaped request and is charged and CSRF-checked like one, but a cookie-authenticated
+  socket still needs its own explicit `Origin` allowlist check at `@OnOpen` (see
+  `DemoWebSocket`): `SameSite=Lax` permits a top-level, cookie-bearing cross-site request, and
+  CORS itself has no jurisdiction over a WebSocket handshake at all. An application opening a
+  socket inherits none of the HTTP-surface defences for free and must add this check itself.
 
   The reason is teardown. `destroy:cloudrun` deletes the GCP project, the Supabase project and the
   local images, and it cannot edit this repository — so any environment fact committed here

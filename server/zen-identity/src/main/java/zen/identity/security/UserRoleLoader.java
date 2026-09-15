@@ -76,16 +76,6 @@ public class UserRoleLoader {
         : new UserSnapshot(false, null, null, null);
   }
 
-  @Transactional(Transactional.TxType.REQUIRED)
-  public UserRole loadRole(UUID userId) {
-    return loadUser(userId).role();
-  }
-
-  @Transactional(Transactional.TxType.REQUIRED)
-  public boolean userExists(UUID userId) {
-    return loadUser(userId).exists();
-  }
-
   private boolean hasUsersTable() {
     if (usersTableConfirmed) {
       return true;

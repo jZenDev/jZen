@@ -16,7 +16,18 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 
-/** Parses a proto3-JSON {@code application/json} body into a protobuf {@link Message}. */
+/**
+ * Parses a proto3-JSON {@code application/json} body into a protobuf {@link Message}.
+ *
+ * <p>{@link JsonFormat.Parser#ignoringUnknownFields()} means a field present in the body but not
+ * in the target message's schema is silently dropped rather than rejected. That is deliberate on
+ * both counts it buys: forward-compatibility with a client sending fields a slightly older server
+ * does not know yet, and a mass-assignment defence (OWASP API3) — a caller cannot smuggle in an
+ * unexpected field and have it land somewhere a stricter parser would have bound it. The trade-off
+ * is that a genuine drift between the wire schema and the message a caller thinks they are sending
+ * is invisible here at runtime; only {@code task verify:contracts}, which fails the build on
+ * generated-file drift, catches that — not this reader.
+ */
 @Provider
 @Consumes(MediaType.APPLICATION_JSON)
 public class ProtoJsonMessageBodyReader implements MessageBodyReader<Message> {

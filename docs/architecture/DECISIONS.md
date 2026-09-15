@@ -15,6 +15,131 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-051 — The shared `Clock` producer's future home is `zen-transport`, not a new `zen-time` module
+
+**Date:** 2026-09-15. **Status:** proposed. **Follows:** ADR-008.
+
+### Decision
+
+ADR-008 scoped `JobClock`'s `Clock` producer to `zen-jobs` deliberately, with an explicit trigger to
+promote it: "a second consumer is the trigger to promote it, on evidence." The 2026-09-14 Java/Quarkus
+code review (`docs/plans/JAVA-QUARKUS-CODE-REVIEW.md`, F15) names that evidence:
+`UserRetentionService` (`zen-identity`) reads `OffsetDateTime.now()` directly in five places, which
+means the same untestable-instant problem `JobClock` exists to solve is now unsolved a second time,
+independently, in a different module.
+
+This entry settles *where* the promoted producer goes, ahead of any code that would depend on the
+answer: **`zen-transport`**, not a new `zen-time` module. Both current and prospective consumers
+(`zen-jobs`, `zen-identity`) already depend on `zen-transport` for the dual-mode HTTP seam, so
+neither gains a new module edge; a `zen-time` module would be a real module — its own `pom.xml`, its
+own Jandex config, its own place in the parent aggregator — built to host one `@Produces` method.
+`zen-core` is ruled out, unchanged from ADR-008: it is deliberately zero-dependency pure Java and
+would have to become a CDI bean archive to host a producer.
+
+**This entry does not itself move `JobClock` or inject `Clock` into `UserRetentionService`.**
+Writing code against an unsettled module home was rejected in the source review; the sequencing is
+this ADR first, then a normal-sized follow-up (`fix/inject-clock-user-retention`) once it is
+accepted: move the producer to `zen-transport`, inject `Clock` into `UserRetentionService`, replace
+its five `OffsetDateTime.now()` calls, and extend `UserRetentionServiceTest` to assert exact-cutoff
+boundary behavior against a fixed clock instead of tolerating flakiness.
+
+### What this supersedes, and why
+
+- **"Scoped to this module rather than promoted into `zen-core` ... `zen-jobs` is the only module
+  that needs a controllable clock today; a second consumer is the trigger to promote it, on evidence
+  (DECISIONS ADR-008)"** (`JobClock` javadoc, restating ADR-008) → **the trigger condition is now
+  met, not reversed.** *Why:* ADR-008 stated a rule and a future test for it; this entry is the
+  record that the test came due, with `zen-identity` as the second consumer, and answers the
+  question ADR-008 left open (where the promoted producer should live) rather than changing the
+  rule itself.
+
+### Consequence
+
+- No module is created or renamed yet, and no `pom.xml` changes yet — this is a location decision,
+  not an implementation. `JobClock` keeps producing `Clock` for `zen-jobs` until the follow-up lands.
+- The follow-up, once started, is a normal Phase-2-sized fix per the source review: inject `Clock`
+  into `UserRetentionService`, remove `JobClock` (or narrow it to a thin `zen-jobs`-local alias if
+  `zen-jobs` itself is judged clearer keeping its own name for the same bean — a call for that
+  follow-up, not this entry), and extend `UserRetentionServiceTest`.
+- Status is **proposed**, not **accepted**: per this repository's own working agreement, a decision
+  of this shape is surfaced before code is written against it, not decided unilaterally in the same
+  change that would depend on it.
+
+---
+
+## ADR-050 — Changing a password proves the old one and revokes every other session
+
+**Date:** 2026-09-15. **Status:** accepted.
+
+### Decision
+
+`POST /api/v1/auth/password` (`AuthResource#setPassword`, `IdentityService#setPassword`) changes
+shape, closing F3 of the 2026-09-14 Java/Quarkus code review
+(`docs/plans/JAVA-QUARKUS-CODE-REVIEW.md`): before this entry the endpoint changed the password of
+whoever the bearer token belonged to and touched nothing else — no proof of the password being
+replaced, and no session anywhere else was affected by the change.
+
+Two callers reach the same endpoint, told apart by the session's own Supabase `amr`
+(Authentication Method Reference) claim — **never by anything the request itself claims**, which
+would let anyone skip the check by sending the flag that waives it:
+
+1. **An ordinary signed-in user changing their password** must now supply `current_password`
+   (`SetPasswordRequest.current_password`, new optional proto field). It is verified by presenting
+   it to Supabase's own password grant before anything is changed. Skipping this would let a
+   still-valid but hijacked access token (an unattended device; a token read before `HttpOnly`
+   protected it) rotate the password and lock the real account owner out — the token alone was
+   sufficient to take over the account permanently, with no proof the caller ever knew the password
+   being replaced.
+2. **The last step of password recovery** cannot supply it — not knowing the current password is
+   the entire reason recovery exists — so a recovery session (`amr` carrying `{"method":
+   "recovery"}`) skips the check. This is the asymmetry the source review flagged as the real
+   design work: the same endpoint must accept both a proven caller and a caller who by construction
+   cannot prove anything beyond having verified the recovery link.
+
+Both paths finish identically: **`IdentityService.setPassword` calls GoTrue
+`POST /logout?scope=global`** (extending the `local`/`global` seam `IdentityService.logout` already
+carried, unused, since the F4-era logout work) so every session the old password could still open
+anywhere else is revoked — not just the one presenting this request, which is what an ordinary
+sign-out revokes. It then **re-authenticates with the new password** and returns a fresh session, so
+the device that just changed the password is not signed out by its own action; `AuthResource`
+turns the fresh tokens into the same cookie set `login`/`register`/`refresh` issue, on what remains
+a `204 No Content` response (the client's `setPassword` contract stays void-returning — cookies
+carry the new session, not a body).
+
+### What this supersedes, and why
+
+- **"Sets a new password for the identity owning `accessToken` — the final step of password
+  recovery, and the only reason a recovery link needs to establish a session at all"**
+  (`IdentityService.setPassword` javadoc, pre-existing) → **refined.** *Why:* this was accurate but
+  incomplete — it documented only the recovery caller because only the recovery caller existed. An
+  ordinary signed-in user changing their password used the identical, unguarded call.
+- **"`local`, because that is what a sign-out button means ... 'Sign out everywhere' is a separate,
+  deliberate action; when an application wants it, it passes `global` — the seam is here for it, not
+  because a second caller is planned"** (`IdentityService` javadoc on `LOGOUT_SCOPE_LOCAL`) →
+  **the second caller now exists.** *Why:* a password change is exactly the deliberate
+  "sign out everywhere" action that javadoc anticipated without naming; F3 is the evidence.
+
+### Consequence
+
+- `proto/zen/v1/identity.proto`'s `SetPasswordRequest` gains `current_password` (field 2, optional,
+  proto3 default `""`) — a full `sync-contracts` regeneration (Java DTOs, Dart messages, admin TS)
+  is required and is part of this change, not a follow-up.
+- `docs/architecture/BLUEPRINT.md` ("XSRF-TOKEN is checked, and logout revokes") gets a paragraph
+  stating the `global`-scope revoke and the `current_password`/recovery split, next to the existing
+  `local`-scope logout paragraph it extends.
+- The Dart `IdentityRepository.setPassword` contract gains an optional `currentPassword` parameter;
+  `zen_demo`'s recovery-only `SetPasswordScreen` is unaffected (it never had an old-password field
+  and still sends none), because the app has no ordinary "change my password while signed in" screen
+  yet to wire the new parameter into — a future one calls the same repository method with it
+  supplied.
+- Verified: `IdentityServiceTest` covers the ordinary path (current password verified, wrong current
+  password refused before any change, missing current password refused before any change) and the
+  recovery path (no current password required, still revoked-and-reissued); a plain unit test
+  (`AuthResourceAmrMethodsTest`, `zen-identity`) covers the `amr`-claim parsing against the shape
+  jose4j (under SmallRye JWT) actually produces, and defensively against any other shape.
+
+---
+
 ## ADR-049 — The consumer rollups land in `Taskfile.app.yml`, and contract regeneration is split from its gate
 
 **Date:** 2026-08-30. **Status:** accepted. **Refines:** ADR-046, ADR-047.

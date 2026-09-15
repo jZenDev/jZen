@@ -72,6 +72,18 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-rest-client-jackson</artifactId>
     </dependency>
+    <!-- AdminUserResource parses the inbound ra-data-simple-rest range/sort/filter query
+         parameters with com.fasterxml.jackson.databind.ObjectMapper. That class already arrives
+         transitively via quarkus-rest-client-jackson above (client-side JSON for outbound
+         Supabase calls), so this was resolving silently either way; declared directly because an
+         inbound parser reaching for it is this module's own decision, not a side effect of one
+         library's transitive graph the next refactor could remove. STANDARDS "No server-side
+         quarkus-rest-jackson" is unaffected: this is bare jackson-databind, not the REST
+         extension that would contest response-writer priority. -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
     <!-- @CircuitBreaker/@Retry/@Timeout on each Supabase call. -->
     <dependency>
       <groupId>io.quarkus</groupId>

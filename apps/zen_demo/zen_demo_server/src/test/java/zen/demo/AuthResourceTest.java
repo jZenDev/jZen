@@ -453,6 +453,7 @@ class AuthResourceTest {
         .statusCode(401);
   }
 
+
   @Test
   void logout_withNoSession_clearsCookiesAndCallsNothing() {
     // The HTTP contract: all three cookies are expired, whatever the caller had. The *revocation*

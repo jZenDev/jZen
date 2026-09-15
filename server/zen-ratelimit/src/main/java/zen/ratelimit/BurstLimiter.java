@@ -79,8 +79,8 @@ public class BurstLimiter {
     String key = rule.key() + '|' + subject;
 
     note(key);
-    Window window = windows.computeIfAbsent(key, k -> new Window(windowStart));
-    long count = window.increment(windowStart);
+    Window window = windows.computeIfAbsent(key, k -> new Window(windowStart, now));
+    long count = window.increment(windowStart, now);
 
     if (count <= limits.burstLimit()) {
       return RateLimitDecision.permit();
@@ -100,9 +100,18 @@ public class BurstLimiter {
    * <p>At the ceiling it first drops windows that have already expired, which is free and usually
    * enough. If the map is <em>still</em> full, every entry is live, meaning more distinct callers
    * are active right now than the configured ceiling — a flood in progress, and by then the
-   * durable tier is the tier doing the work on the buckets that matter. It clears the map and says
-   * so at WARN. This is a bounded, stated degradation, not a swallowed failure: the cost is at most
-   * one burst window of forgiveness, it is logged every time, and the alternative is no service.
+   * durable tier is the tier doing the work on the buckets that matter.
+   *
+   * <p><strong>The single least-recently-active entry is evicted, not the whole table.</strong> A
+   * full clear used to forgive every tracked caller at once on every insert past the ceiling — the
+   * table never actually settles at the ceiling under sustained pressure, it oscillates between
+   * full and empty, and an attacker flooding past the ceiling gets the exact same one-window
+   * forgiveness as every legitimate caller whose counter was cleared alongside them. Evicting one
+   * entry costs one caller's recency at a time and never resets anyone who is still being counted;
+   * a legitimate caller who was active more recently than the flood's oldest address survives.
+   * This state lives only as long as this process instance ({@code --max-instances=1},
+   * {@code --min-instances=0}) — a redeploy or scale-to-zero clears it exactly as it always has,
+   * which is unrelated to this eviction policy and not a regression it introduces.
    */
   private void note(String incoming) {
     if (windows.size() < config.maxTrackedSubjects() || windows.containsKey(incoming)) {
@@ -113,13 +122,28 @@ public class BurstLimiter {
     if (windows.size() < config.maxTrackedSubjects()) {
       return;
     }
-    LOG.warnf(
-        "Burst rate-limit table is full at %d live subjects and is being cleared; this means more"
-            + " distinct client addresses are active than zen.ratelimit.max-tracked-subjects,"
-            + " which is itself a sign of a distributed flood. Up to one burst window of requests"
-            + " may go uncounted; the durable tier is unaffected.",
-        windows.size());
-    windows.clear();
+    evictLeastRecentlyActive();
+  }
+
+  /** Removes the one entry least recently touched by {@link #check}, to make room for a new one. */
+  private void evictLeastRecentlyActive() {
+    String oldestKey = null;
+    long oldestAccess = Long.MAX_VALUE;
+    for (Map.Entry<String, Window> entry : windows.entrySet()) {
+      long accessedAt = entry.getValue().lastAccessedAt();
+      if (accessedAt < oldestAccess) {
+        oldestAccess = accessedAt;
+        oldestKey = entry.getKey();
+      }
+    }
+    if (oldestKey != null && windows.remove(oldestKey) != null) {
+      LOG.debugf(
+          "Burst rate-limit table is full at %d live subjects; evicted the least recently active"
+              + " one to make room. This means more distinct client addresses are active than"
+              + " zen.ratelimit.max-tracked-subjects, which is itself a sign of a distributed"
+              + " flood; the durable tier is unaffected.",
+          config.maxTrackedSubjects());
+    }
   }
 
   /** Drops windows whose period has already closed. They can only ever permit from here. */
@@ -151,26 +175,41 @@ public class BurstLimiter {
    * either side of a window boundary must not leave the new window's count carrying the old
    * window's total. Contention is per caller per bucket and the critical section is two field
    * writes, so this is cheaper than the atomics it replaces would have been correct.
+   *
+   * <p>{@code lastAccessMs} is a plain {@code volatile}, not folded into the same critical
+   * section: it is read by {@link #evictLeastRecentlyActive()} from a different thread while
+   * this window may be mid-increment, and a torn read of "roughly when this was last touched" is
+   * harmless — the worst it costs is evicting a slightly wrong entry among ones that were all
+   * about to be evicted regardless. It is millis from the same {@link Clock} {@code check} reads
+   * everything else from — not the coarser {@code windowStart} bucket, which is often identical
+   * for many callers touched within the same window and so useless for ordering them by recency.
    */
   private static final class Window {
 
     private long start;
     private long count;
+    private volatile long lastAccessMs;
 
-    Window(long start) {
+    Window(long start, long now) {
       this.start = start;
+      this.lastAccessMs = now;
     }
 
-    synchronized long increment(long windowStart) {
+    synchronized long increment(long windowStart, long now) {
       if (windowStart != start) {
         start = windowStart;
         count = 0;
       }
+      lastAccessMs = now;
       return ++count;
     }
 
     synchronized long startedAt() {
       return start;
+    }
+
+    long lastAccessedAt() {
+      return lastAccessMs;
     }
   }
 }

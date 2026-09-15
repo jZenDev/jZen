@@ -105,12 +105,16 @@ class SupabaseIdentityRepository implements IdentityRepository {
   }
 
   @override
-  Future<ZenResult<void>> setPassword({required String password}) async {
-    final result = await _client.post(
-      pb.Identity.new,
-      _password,
-      body: pb.SetPasswordRequest(password: password),
-    );
+  Future<ZenResult<void>> setPassword({required String password, String? currentPassword}) async {
+    // The generated setter marks a field present the moment it is assigned, even to "" - so the
+    // constructor argument is used only when there is a value to send. Passing currentPassword: ''
+    // for the recovery path would serialize an explicit empty string, which the server cannot tell
+    // apart from a caller who forgot to send it.
+    final body = pb.SetPasswordRequest(password: password);
+    if (currentPassword != null) {
+      body.currentPassword = currentPassword;
+    }
+    final result = await _client.post(pb.Identity.new, _password, body: body);
     return result.fold((_) => const ZenResult<void>.ok(null), ZenResult<void>.err);
   }
 

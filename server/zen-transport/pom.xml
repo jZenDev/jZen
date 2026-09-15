@@ -58,6 +58,14 @@
       <artifactId>quarkus-rest</artifactId>
     </dependency>
 
+    <!-- SecurityIdentity, read by ZenTransportResponseFilter to decide whether a response is
+         authenticated and so must carry Cache-Control: no-store (F6). The same dependency
+         zen-identity's CsrfFilter uses for the same CDI type. -->
+    <dependency>
+      <groupId>io.quarkus</groupId>
+      <artifactId>quarkus-security</artifactId>
+    </dependency>
+
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-junit5</artifactId>

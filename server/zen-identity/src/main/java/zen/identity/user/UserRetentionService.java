@@ -247,6 +247,18 @@ public class UserRetentionService {
     }
   }
 
+  /**
+   * Whether {@code user}'s email is already the anonymisation placeholder this class writes in
+   * {@link #anonymiseExpiredAccounts()} - the same fact {@link #NOT_ANONYMISED} tests at the
+   * database, exposed for a caller (namely {@code IdentityMapper}, deriving the wire {@code
+   * lifecycle_state}) that already holds the row in memory and has no reason to re-query it.
+   */
+  public static boolean isAnonymised(User user) {
+    return user != null
+        && user.email != null
+        && user.email.equals(ANONYMISED_EMAIL_PREFIX + user.id + ANONYMISED_EMAIL_DOMAIN);
+  }
+
   private AccountDeletionWarning warning(User user, Stage stage, int daysUntilAnonymisation) {
     return new AccountDeletionWarning(
         user.id, user.email, user.language, stage, daysUntilAnonymisation, new DeliveryReceipt());

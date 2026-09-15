@@ -78,10 +78,14 @@ message SessionExchangeRequest {
 }
 
 // POST /api/v1/auth/password request body. Sets a new password for the identity in the
-// session cookie - the last step of password recovery, and the reason the recovery link has
-// to establish a session at all.
+// session cookie.
 message SetPasswordRequest {
   string password = 1;
+  // The caller's current password. Required unless the session was established by verifying a
+  // Supabase password-recovery link - the server decides that from the session's own
+  // authentication method (never from a client-supplied flag), because a recovery session exists
+  // precisely for the case where the user cannot supply this. See DECISIONS.md ADR-050.
+  string current_password = 2;
 }
 
 // logout, refresh, and the get-current-identity probe take no request body: logout and

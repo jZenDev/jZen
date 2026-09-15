@@ -1,6 +1,7 @@
 package zen.core.i18n;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Resolves an HTTP {@code Accept-Language} header to a supported locale tag. A framework-free pure
@@ -26,7 +27,7 @@ public final class AcceptLanguage {
   public static String resolve(String header, List<String> supported, String fallback) {
     if (header != null && !header.isBlank()) {
       for (String entry : header.split(",")) {
-        String primary = entry.split(";")[0].trim().split("-")[0].toLowerCase();
+        String primary = entry.split(";")[0].trim().split("-")[0].toLowerCase(Locale.ROOT);
         if (!primary.isEmpty() && supported.contains(primary)) {
           return primary;
         }

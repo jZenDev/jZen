@@ -1,5 +1,6 @@
 package zen.identity.auth;
 
+import io.quarkus.rest.client.reactive.ClientExceptionMapper;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
@@ -10,6 +11,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.faulttolerance.CircuitBreaker;
 import org.eclipse.microprofile.faulttolerance.Retry;
 import org.eclipse.microprofile.faulttolerance.Timeout;
@@ -32,7 +34,12 @@ import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
  *
  * <p>Each call carries {@code @CircuitBreaker}/{@code @Retry}/{@code @Timeout}: a Supabase
  * 4xx ({@link WebApplicationException}) skips the breaker and aborts retries (it is a real
- * client error, not a transient fault), while timeouts and 5xx trip the breaker.
+ * client error, not a transient fault), while timeouts and 5xx trip the breaker. The 5xx/4xx
+ * split is enforced by {@link #toException}, which remaps a 5xx response to {@link
+ * SupabaseUnavailableException} before it can ever reach {@code skipOn}/{@code abortOn} as a
+ * {@code WebApplicationException} — without it, the default REST client behavior of throwing
+ * {@code WebApplicationException} for every non-2xx status would make a provider outage look
+ * identical to a rejected request.
  */
 @RegisterRestClient(configKey = "supabase-auth")
 @ClientHeaderParam(name = "apikey", value = "${supabase.key}")
@@ -118,4 +125,17 @@ public interface SupabaseAuthClient {
   @Retry(maxRetries = 2, delay = 500, abortOn = WebApplicationException.class)
   @Timeout(2000)
   void updateUser(@HeaderParam("Authorization") String bearer, UserUpdateRequest request);
+
+  /**
+   * Remaps a Supabase 5xx to {@link SupabaseUnavailableException} so it is distinguishable from a
+   * 4xx client error. Returning {@code null} for every other status falls back to the REST
+   * client's default {@link WebApplicationException} mapping, so 4xx behavior is unchanged.
+   */
+  @ClientExceptionMapper
+  static RuntimeException toException(Response response) {
+    if (response.getStatus() >= 500) {
+      return new SupabaseUnavailableException(response.getStatus());
+    }
+    return null;
+  }
 }

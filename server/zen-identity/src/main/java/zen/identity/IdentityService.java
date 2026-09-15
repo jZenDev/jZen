@@ -6,6 +6,7 @@ import zen.identity.auth.SupabaseAuthClient;
 import zen.identity.auth.SupabaseSessionResponse;
 import zen.identity.auth.SupabaseSignupRequest;
 import zen.identity.auth.SupabaseTokenRequest;
+import zen.identity.auth.SupabaseUnavailableException;
 import zen.identity.auth.UserUpdateRequest;
 import zen.identity.event.UserRegistered;
 import zen.identity.security.RoleAugmentor;
@@ -121,6 +122,10 @@ public class IdentityService {
         return new Session(null, null, null);
       }
       throw classified;
+    } catch (SupabaseUnavailableException e) {
+      // Same distinction call() makes: the provider failed, not the request - must not be
+      // folded into the enumeration defense above, which exists only for genuine 4xx rejections.
+      throw serviceUnavailable();
     }
     // GoTrue returns a session when the project auto-confirms, and a bare user (no session) when
     // email confirmation is required. effectiveUser() unifies both; the null-token case below is
@@ -323,7 +328,16 @@ public class IdentityService {
       return supabaseCall.get();
     } catch (WebApplicationException e) {
       throw classifySupabaseError(e);
+    } catch (SupabaseUnavailableException e) {
+      // The provider itself failed (5xx), not the request - distinct from every 4xx branch
+      // below, which all mean "Supabase understood and rejected this." Surfacing it as 401 would
+      // read to the caller as a wrong password instead of an outage.
+      throw serviceUnavailable();
     }
+  }
+
+  private static AuthException serviceUnavailable() {
+    return new AuthException(503, "service_unavailable", "The identity service is temporarily unavailable.");
   }
 
   private AuthException classifySupabaseError(WebApplicationException e) {

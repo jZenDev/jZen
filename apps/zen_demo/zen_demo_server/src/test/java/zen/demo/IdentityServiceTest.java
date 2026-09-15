@@ -14,6 +14,7 @@ import zen.identity.IdentityService;
 import zen.identity.auth.RedirectTargets;
 import zen.identity.auth.SupabaseAuthClient;
 import zen.identity.auth.SupabaseSessionResponse;
+import zen.identity.auth.SupabaseUnavailableException;
 import zen.identity.auth.UserUpdateRequest;
 import zen.identity.user.User;
 import zen.identity.user.UserStore;
@@ -107,6 +108,22 @@ class IdentityServiceTest {
 
       assertTrue(identityService.logout("session-jwt", USER_ID), "HTTP " + refusal);
     }
+  }
+
+  @Test
+  void login_whenSupabaseFails5xx_isReportedAsServiceUnavailableNotWrongPassword() {
+    // A Supabase outage must not present as "wrong password" (401): that is what
+    // classifySupabaseError's generic 4xx fallback would produce, and it sends a user chasing a
+    // credential problem that does not exist. SupabaseAuthClient's @ClientExceptionMapper
+    // remaps any 5xx response to SupabaseUnavailableException specifically so it cannot be
+    // confused with a rejected request here.
+    doThrow(new SupabaseUnavailableException(503)).when(authClient).token(any(), any());
+
+    AuthException thrown =
+        assertThrows(AuthException.class, () -> identityService.login("someone@example.com", "secret"));
+
+    assertEquals("service_unavailable", thrown.code());
+    assertEquals(503, thrown.status());
   }
 
   @Test

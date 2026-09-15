@@ -207,6 +207,72 @@ class AdminUserResourceTest {
   }
 
   @Test
+  @TestSecurity(user = ADMIN_ID, roles = UserRole.Names.ADMIN)
+  void list_malformedRange_returns400NotAn500() throws Exception {
+    Response resp = json().queryParam("range", "not json").when().get("/api/v1/admin/users").andReturn();
+
+    assertEquals(Status.BAD_REQUEST.getStatusCode(), resp.statusCode());
+    ZenError.Builder error = ZenError.newBuilder();
+    JsonFormat.parser().ignoringUnknownFields().merge(resp.getBody().asString(), error);
+    assertEquals("invalid_query", error.getCode());
+  }
+
+  @Test
+  @TestSecurity(user = ADMIN_ID, roles = UserRole.Names.ADMIN)
+  void list_malformedSort_returns400NotAn500() throws Exception {
+    Response resp = json().queryParam("sort", "not json").when().get("/api/v1/admin/users").andReturn();
+
+    assertEquals(Status.BAD_REQUEST.getStatusCode(), resp.statusCode());
+    ZenError.Builder error = ZenError.newBuilder();
+    JsonFormat.parser().ignoringUnknownFields().merge(resp.getBody().asString(), error);
+    assertEquals("invalid_query", error.getCode());
+  }
+
+  @Test
+  @TestSecurity(user = ADMIN_ID, roles = UserRole.Names.ADMIN)
+  void list_unknownRoleInFilter_returns400NotAn500() throws Exception {
+    Response resp =
+        json()
+            .queryParam("filter", "{\"role\":\"superadmin\"}")
+            .when()
+            .get("/api/v1/admin/users")
+            .andReturn();
+
+    assertEquals(Status.BAD_REQUEST.getStatusCode(), resp.statusCode());
+    ZenError.Builder error = ZenError.newBuilder();
+    JsonFormat.parser().ignoringUnknownFields().merge(resp.getBody().asString(), error);
+    assertEquals("invalid_role", error.getCode());
+  }
+
+  @Test
+  @TestSecurity(user = ADMIN_ID, roles = UserRole.Names.ADMIN)
+  void update_unknownRole_returns400NotAn500() throws Exception {
+    AdminUser payload =
+        AdminUser.newBuilder()
+            .setId(ALICE.toString())
+            .setEmail("alice@example.com")
+            .setRole("superadmin")
+            .build();
+
+    Response resp =
+        jsonMutation()
+            .header(HttpHeaders.CONTENT_TYPE, ZenTransportFormat.JSON.mediaType())
+            .body(JsonFormat.printer().print(payload))
+            .when()
+            .put("/api/v1/admin/users/" + ALICE)
+            .andReturn();
+
+    assertEquals(Status.BAD_REQUEST.getStatusCode(), resp.statusCode());
+    ZenError.Builder error = ZenError.newBuilder();
+    JsonFormat.parser().ignoringUnknownFields().merge(resp.getBody().asString(), error);
+    assertEquals("invalid_role", error.getCode());
+
+    // Refused before persist: the role must not have changed.
+    User unchanged = QuarkusTransaction.requiringNew().call(() -> User.findById(ALICE));
+    assertEquals(UserRole.USER, unchanged.role);
+  }
+
+  @Test
   @TestSecurity(user = ADMIN_ID, roles = UserRole.Names.USER)
   void list_nonAdmin_forbidden() {
     json().when().get("/api/v1/admin/users").then().statusCode(Status.FORBIDDEN.getStatusCode());

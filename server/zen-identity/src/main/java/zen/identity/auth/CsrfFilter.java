@@ -1,7 +1,9 @@
 package zen.identity.auth;
 
 import io.quarkus.security.identity.SecurityIdentity;
+import jakarta.annotation.Priority;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.Priorities;
 import jakarta.ws.rs.container.ContainerRequestContext;
 import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.Cookie;
@@ -54,8 +56,14 @@ import zen.proto.v1.ZenError;
  * compiles, and is never instantiated: no error, no warning, a green suite, and a token that is
  * still issued and still never checked — which is indistinguishable from the defect this closes.
  * {@code CsrfWiringTest} in the app module fails the build if that happens.
+ *
+ * <p><strong>Runs strictly after {@code RateLimitFilter}, by an explicit {@code @Priority}.</strong>
+ * See that class's javadoc for why: a request must be charged against its bucket before this
+ * filter gets a chance to abort it with 403, so a caller cycling bad CSRF tokens is still metered
+ * rather than escaping the durable tier entirely.
  */
 @Provider
+@Priority(Priorities.AUTHORIZATION)
 public class CsrfFilter implements ContainerRequestFilter {
 
   private static final Logger LOG = Logger.getLogger(CsrfFilter.class);

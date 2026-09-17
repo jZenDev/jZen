@@ -2916,7 +2916,7 @@ tasks:
       - scripts/verify-docs.py
 
   audit:
-    desc: Fail if any shipped dependency has a known CVE (Java + TypeScript). Needs network.
+    desc: Fail if any shipped dependency has a known CVE (Java + TypeScript + Dart). Needs network.
     summary: |
       The dependency vulnerability gate (SECURITY-REMEDIATION F20, which the audit recorded as
       its one outright GAP: Maven dependencies had never been CVE-scanned at all).
@@ -2947,9 +2947,15 @@ tasks:
       Suppressions live in `scripts/audit-suppressions.txt` and every entry must carry its reason
       on the same line — the file does not parse otherwise, which is what stops it becoming the
       quiet place findings go.
+
+      `audit:client` (Dart/Flutter) joined later, once the review flagged that this task's own
+      desc — "Java + TypeScript" — was quietly false: the client's pub dependencies were never
+      scanned at all. Same OSV database, `Pub` ecosystem instead of `Maven`/`npm`, its own
+      `scripts/audit-client-suppressions.txt`.
     cmds:
       - task: audit:server
       - task: audit:admin
+      - task: audit:client
 
   audit:server:
     desc: Check every shipped Java dependency against the OSV database (needs network)
@@ -2978,3 +2984,16 @@ tasks:
       # --audit-level: raising the floor is the same move as a suppression with no reason.
       - cd {{.ADMIN_DIR}} && pnpm audit
       - cd {{.DEMO_ADMIN_DIR}} && pnpm audit
+
+  audit:client:
+    desc: Check every shipped Dart/Flutter dependency against the OSV database (needs network)
+    silent: true
+    summary: |
+      Pub resolves one lockfile per workspace, not one per package, so the two workspace
+      lockfiles (`client/pubspec.lock`, `apps/pubspec.lock`) already cover every member package —
+      `zen_core`, `zen_transport`, `zen_identity`, `zen_demo_client`, and the rest. `git`/`path`
+      dependencies and `sdk` entries (`flutter`, `flutter_test`) are skipped by
+      `scripts/audit-client.py` itself: neither is a pub.dev package OSV's `Pub` ecosystem can be
+      asked about.
+    cmds:
+      - scripts/audit-client.py {{.CLIENT_DIR}}/pubspec.lock {{.APPS_DIR}}/pubspec.lock

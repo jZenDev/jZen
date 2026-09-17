@@ -9,9 +9,11 @@
 #   - deploy:cloudrun — deploy is manual, by a person. CI verifies; it never ships.
 #   - verify:deploy — it asserts a LIVE environment (including that the native return address is
 #     configured), so it belongs after a deploy, not before a merge.
-#   - the macOS and iOS runners — they need Xcode, so they would need a `macos-latest` runner at
-#     several times the Linux rate. A cost decision, not an oversight; `build:apps:runners` covers
-#     them locally and announces the skip here rather than passing silently.
+#   - macOS/iOS were excluded here on cost grounds (ADR-045) until ADR-052: `jZenDev/jZen` is a
+#     public repository, and GitHub Actions on public repos runs `macos-latest` jobs without the
+#     private-repo minutes multiplier ADR-045 was reasoning about, so the cost objection does not
+#     hold here. See `macos-runner` below and ADR-052 for the full argument, including why a
+#     private fork must redo the calculation rather than assume this carries over.
 #
 # Toolchain is pinned to match `task doctor` (.fvmrc / .nvmrc / packageManager / .sdkmanrc). JDK is
 # Temurin rather than GraalVM: only the native build needs GraalVM, and that is not run here.
@@ -115,14 +117,8 @@ jobs:
   # runs in parallel. (The job keeps its `android-runner` name so existing required-status-check
   # settings keep matching; it covers Linux desktop too since ADR-045.)
   #
-  # APPLE TARGETS ARE STILL SKIPPED, and the gap is deliberate. `build:apps:runners` builds macOS
-  # and the iOS simulator too, but both need Xcode, so on Linux they are skipped — announced, never
-  # silently. Covering them would mean a `macos-latest` runner, which bills at several times the
-  # Linux rate; that is a cost decision, not an oversight, and it is the same reasoning that keeps
-  # prod on one Cloud Run instance. Until it is taken, Apple runners are covered by `task build`
-  # locally — which they *can* be, unlike Windows. That asymmetry is why Windows got a runner and
-  # macOS did not: an Apple target is verifiable on the delivery machine, and Windows is verifiable
-  # nowhere else (ADR-045).
+  # Apple targets are skipped HERE — announced, never silently — because this host has no Xcode.
+  # They are not skipped by CI as a whole: see `macos-runner` below (ADR-052).
   android-runner:
     runs-on: ubuntu-latest
     steps:
@@ -178,6 +174,33 @@ jobs:
     defaults:
       run:
         shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Flutter 3.44.2
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: "3.44.2"
+          channel: stable
+      - name: go-task
+        uses: arduino/setup-task@bfe25a35f5c1f609e1d6153197b3b42a04ae054c # v3.0.0
+        with:
+          version: "3.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: task build:apps:runners
+
+  # macOS and the iOS simulator (ADR-052). Runs `build:apps:runners` on an actual Apple host, the
+  # only thing that proves either runner still compiles from a clean checkout — no test compiles a
+  # runner, which is exactly how Finding 1 of the 2026-09-14 Dart/Flutter code review (stale
+  # CocoaPods `Frameworks` references surviving an SPM migration) broke both Apple runners with
+  # every suite still green, and had already recurred once before being caught by hand.
+  #
+  # `build:apps:runners` builds macOS in --debug and the iOS SIMULATOR only (--simulator); it does
+  # not sign, provision, or archive for a real device — same throwaway-artifact, compile-check
+  # contract as the other two runner jobs. Android and desktop are skipped here, loudly, since this
+  # host has no Android SDK and Flutter refuses cross-host desktop builds — already covered by
+  # android-runner/windows-runner.
+  macos-runner:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Flutter 3.44.2

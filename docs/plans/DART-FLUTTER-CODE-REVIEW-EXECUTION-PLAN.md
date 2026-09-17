@@ -33,7 +33,10 @@ green before each PR.
 ### Finding 1 — iOS and macOS runners do not build from a clean checkout ✅ DONE
 
 - **Status:** Done — `Pods_Runner*`/`Pods_RunnerTests*` dangling references removed from both
-  `project.pbxproj` files, verified with a real build.
+  `project.pbxproj` files, verified with a real build. Follow-up decided too: a `macos-runner` CI
+  job now runs `task build:apps:runners` on every commit (ADR-052, narrowing ADR-045's now
+  -inapplicable cost exclusion for this public repo), so this exact regression is caught
+  automatically going forward — see "Decisions to surface" item 1.
 - **Branch:** `fix/xcode-runner-stale-pods-references`
 - **Files:** `apps/zen_demo/zen_demo_client/ios/Runner.xcodeproj/project.pbxproj`,
   `apps/zen_demo/zen_demo_client/macos/Runner.xcodeproj/project.pbxproj`.
@@ -342,16 +345,14 @@ green before each PR.
 
 ## Decisions to surface to the user before scheduling
 
-1. **Finding 1** — after the `pbxproj` fix, should `task build:apps:runners` (or an equivalent
-   `flutter build macos`/`flutter build ios --simulator` check) run in CI on a macOS runner so this
-   exact regression can't recur silently a third time? The review calls this out as having already
-   happened once.
-2. **Finding 3** — who generates and holds the `zen_demo` Android release keystore, and does a
-   reference/demo app that isn't shipping to the Play Store need a real one at all, versus
-   documenting the debug-signing as an intentional demo-scope limitation? Both are defensible; pick
-   one before wiring `key.properties`.
-3. **Finding 2** — is a real advisory-scanning tool (e.g. `osv-scanner` against `pubspec.lock`)
-   installable in this environment/CI, or should `audit:client` be a documented, scripted query
-   against `api.osv.dev` per package (lower tooling burden, more code to maintain)?
+1. **Finding 1** ✅ Decided — yes: added a `macos-runner` CI job running `task build:apps:runners`
+   (`.github/workflows/ci.yml`), narrowing ADR-045's cost exclusion via a new `docs/architecture/
+   DECISIONS.md` entry (ADR-052), since `jZenDev/jZen` is a public repo where `macos-latest` CI
+   minutes carry no cost multiplier — the premise ADR-045 excluded them on.
+2. **Finding 3** ✅ Decided — no real keystore: `zen_demo` never ships to the Play Store, so the
+   debug-signing is documented as an intentional demo-scope limitation instead of wiring
+   `key.properties`.
+3. **Finding 2** ✅ Decided — a documented, scripted query against `api.osv.dev` per package
+   (`scripts/audit-client.py`), not an installed scanning tool.
 4. **Finding 10** ✅ Decided — a Taskfile target (`build:apps:runners:release` /
    `zen:build:runners:release`), kept opt-in and not wired into `build`/`build:apps`.

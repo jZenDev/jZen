@@ -15,6 +15,56 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-052 — macOS/iOS join CI, narrowing ADR-045's cost exclusion for this public repo
+
+**Date:** 2026-09-17. **Status:** accepted. **Follows:** ADR-045.
+
+### Decision
+
+`gates`/`android-runner`/`windows-runner` in `.github/workflows/ci.yml` are joined by a new
+`macos-runner` job (`runs-on: macos-latest`) that runs `task build:apps:runners`, giving it the
+same coverage it already has on Linux and Windows: macOS and, since the same task builds it, the
+iOS simulator. Trigger: the 2026-09-14 Dart/Flutter code review's Finding 1 — a partial
+CocoaPods→SPM migration left stale `Frameworks` build-phase entries that broke both Apple runners
+from a clean checkout, undetected by any suite, and the review notes this exact failure mode had
+already recurred once. Nothing before this ADR ever built an Apple runner anywhere but a
+developer's own Mac.
+
+### What this supersedes, and why
+
+- **"macOS and iOS remain outside CI on the existing cost reasoning (a `macos-latest` runner bills
+  at several times the Linux rate...)"** (ADR-045, "Cost, taken deliberately") → **narrowed for
+  this repository.** *Why:* that multiplier is GitHub's **private-repository** minutes billing.
+  `jZenDev/jZen` is a public repository, and GitHub Actions on public repositories runs
+  GitHub-hosted jobs, `macos-latest` included, without metered minutes or an OS multiplier. The
+  cost ADR-045 argued against does not apply here; the reasoning was correct for the case it
+  considered; it stops being a reason once the repository's visibility puts it out of scope. If
+  jZen or a downstream application built on it is ever run from a private fork or mirror, this ADR
+  does not carry over automatically — the cost calculation must be redone against that repo's own
+  billing, and CI-file comments should say so if that fork disables the macOS job for cost.
+- **The CI file's own comment, "the macOS and iOS runners ... they need Xcode, so they would need
+  a `macos-latest` runner at several times the Linux rate. A cost decision, not an oversight"**
+  (`.github/workflows/ci.yml`, top-of-file comment) → **removed**, replaced with a comment pointing
+  at this ADR and stating the public-repo billing fact plainly, so a future reader does not
+  reintroduce ADR-045's now-inapplicable reasoning from memory.
+
+### Consequence
+
+- Every delivery target the reference app declares is now built by CI on every commit — the "except
+  the two Apple ones" carve-out ADR-045 left in its own Consequence section no longer holds.
+  `build:apps:runners`'s per-host skip logic is unchanged and still fires correctly on Linux/Windows
+  runners (Apple targets skipped there, loudly, exactly as before); the new job is simply the host
+  on which the Apple branches finally run instead of skip.
+- iOS coverage in CI is the **simulator** build only (`ios --simulator`, `--debug`), matching what
+  `build:apps:runners` has always built locally — this ADR adds a CI host for the existing check, it
+  does not add release-signing, device provisioning, or App Store submission to CI's scope.
+- Verified: `task build:apps:runners` was already run successfully on this machine (a real macOS
+  host) immediately before this ADR was written, for the same reason the code review demanded it —
+  the CI job runs the identical task, so it is expected to reproduce that result on `macos-latest`
+  once merged; that first CI run is the actual proof and should be checked once the PR opens.
+
+---
+
 ## ADR-051 — The shared `Clock` producer's future home is `zen-transport`, not a new `zen-time` module
 
 **Date:** 2026-09-15. **Status:** accepted. **Follows:** ADR-008.

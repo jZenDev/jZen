@@ -35,6 +35,7 @@ dependencies:
   zen_ui_navigation:
     path: ../../../client/zen_ui_navigation
   app_links: ^7.2.1
+  meta: ^1.16.0
 
 dev_dependencies:
   flutter_test:

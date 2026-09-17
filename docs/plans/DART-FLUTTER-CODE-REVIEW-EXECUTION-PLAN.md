@@ -191,8 +191,15 @@ green before each PR.
 - **verify:contracts:** no. **ADR:** no. **Effort:** XS.
 - **Depends on:** nothing.
 
-### Finding 6 — Native deep-link handler forwards any URI with no scheme/host check
+### Finding 6 — Native deep-link handler forwards any URI with no scheme/host check ✅ DONE
 
+- **Status:** Done — `isRegisteredAuthLink` guard added in `auth_deep_links_native.dart`. It
+  accepts the custom scheme from `zenAuthRedirectUri` (host `auth-callback`) and, since
+  `AndroidManifest.xml` also registers a real `https` App Link (`pathPrefix="/auth/callback"`,
+  a build-time host per STANDARDS "Deployment model") that the plan's single-scheme check would
+  have silently broken in deployed environments, the `https` App Link path too. Rejections are
+  logged via `ZenLogger.instance.debug`. New test:
+  `apps/zen_demo/zen_demo_client/test/auth_deep_links_native_test.dart`.
 - **Branch:** `fix/deep-link-scheme-host-filter`
 - **Files:** `apps/zen_demo/zen_demo_client/lib/src/auth_deep_links_native.dart`.
 - **Steps:**
@@ -311,7 +318,7 @@ green before each PR.
 | 3 | Finding 5, Finding 7, Finding 8 | Small, independent, disjoint files — good batch for one review pass |
 | 4 | Finding 2 ✅ DONE | Closes a real audit blind spot; sequenced after the quick wins so it gets full attention for the tooling-discovery work |
 | 5 | Finding 3 ✅ DONE | Needs the keystore-custody decision first (see below) — start the Gradle wiring only after that's answered |
-| 6 | Finding 6 | Low severity, no dependencies, fine to slot in whenever |
+| 6 | Finding 6 ✅ DONE | Low severity, no dependencies, fine to slot in whenever |
 | 7 | Finding 10 | Needs the doc-vs-task decision first; naturally follows Finding 1/3 since it benefits from both native targets already building |
 
 ## Decisions to surface to the user before scheduling

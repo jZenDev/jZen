@@ -30,8 +30,10 @@ green before each PR.
 
 ## Phase 0 — Unblock the gate (do first; the pattern is documented as having recurred once already)
 
-### Finding 1 — iOS and macOS runners do not build from a clean checkout
+### Finding 1 — iOS and macOS runners do not build from a clean checkout ✅ DONE
 
+- **Status:** Done — `Pods_Runner*`/`Pods_RunnerTests*` dangling references removed from both
+  `project.pbxproj` files, verified with a real build.
 - **Branch:** `fix/xcode-runner-stale-pods-references`
 - **Files:** `apps/zen_demo/zen_demo_client/ios/Runner.xcodeproj/project.pbxproj`,
   `apps/zen_demo/zen_demo_client/macos/Runner.xcodeproj/project.pbxproj`.
@@ -65,8 +67,12 @@ green before each PR.
 
 ## Phase 1 — High-severity, contained fixes (independent, can be parallelized across sessions)
 
-### Finding 2 — `task audit` silently does not cover Dart/pub dependencies
+### Finding 2 — `task audit` silently does not cover Dart/pub dependencies ✅ DONE
 
+- **Status:** Done — `task audit:client` added (`scripts/audit-client.py`, queries OSV's `Pub`
+  ecosystem against both workspace `pubspec.lock` files), wired into the aggregate `audit:` task,
+  with fixture tests under `task test:scripts`. Landed on `fix/xcode-runner-stale-pods-references`
+  rather than a separate branch, at the user's direction.
 - **Branch:** `fix/add-audit-client-task`
 - **Files:** `Taskfile.yml` (new `audit:client` task, wired into the aggregate `audit:` task
   alongside `audit:server`/`audit:admin`); possibly a small script under `.claude/tools/` or inline
@@ -93,8 +99,14 @@ green before each PR.
   `Taskfile.yml` wiring itself.
 - **Depends on:** nothing.
 
-### Finding 3 — Android release build is signed with the debug keystore
+### Finding 3 — Android release build is signed with the debug keystore ✅ DONE
 
+- **Status:** Done — decided (user call) that `zen_demo` does not need a real release keystore: it
+  is a reference/demo app that never ships to the Play Store. Replaced the `TODO` in
+  `build.gradle.kts` with a comment documenting the debug-signing as an intentional demo-scope
+  limitation, with the follow-up path spelled out if real distribution is ever needed. No
+  `key.properties`/keystore generated. Landed on `fix/xcode-runner-stale-pods-references` rather
+  than a separate branch, at the user's direction.
 - **Branch:** `fix/android-release-signing-config`
 - **Files:** `apps/zen_demo/zen_demo_client/android/app/build.gradle.kts`; new
   `apps/zen_demo/zen_demo_client/android/key.properties` (gitignored, never committed — the
@@ -288,11 +300,11 @@ green before each PR.
 
 | Order | Item | Why here |
 |---|---|---|
-| 1 | Finding 1 | Blocks two whole platforms from a clean checkout; documented as a recurring failure mode |
+| 1 | Finding 1 ✅ DONE | Blocks two whole platforms from a clean checkout; documented as a recurring failure mode |
 | 2 | Finding 4 | Small, and easiest to verify visually once Finding 1 unblocks a real iOS/macOS build |
 | 3 | Finding 5, Finding 7, Finding 8 | Small, independent, disjoint files — good batch for one review pass |
-| 4 | Finding 2 | Closes a real audit blind spot; sequenced after the quick wins so it gets full attention for the tooling-discovery work |
-| 5 | Finding 3 | Needs the keystore-custody decision first (see below) — start the Gradle wiring only after that's answered |
+| 4 | Finding 2 ✅ DONE | Closes a real audit blind spot; sequenced after the quick wins so it gets full attention for the tooling-discovery work |
+| 5 | Finding 3 ✅ DONE | Needs the keystore-custody decision first (see below) — start the Gradle wiring only after that's answered |
 | 6 | Finding 6 | Low severity, no dependencies, fine to slot in whenever |
 | 7 | Finding 10 | Needs the doc-vs-task decision first; naturally follows Finding 1/3 since it benefits from both native targets already building |
 

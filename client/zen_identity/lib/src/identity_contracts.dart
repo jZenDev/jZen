@@ -114,21 +114,6 @@ final class IdentityContract {
     emailVerified: emailVerified,
   );
 
-  /// Creates [IdentityContract] from JSON.
-  factory IdentityContract.fromJson(Map<String, dynamic> json) => IdentityContract(
-    id: json['id'] as String,
-    lifecycle: IdentityLifecycleContract.fromJson(json['lifecycle'] as Map<String, dynamic>),
-    authority: AuthorityContract.fromJson(json['authority'] as Map<String, dynamic>),
-    createdAt: json['createdAt'] as int,
-  );
-
-  /// Converts this [IdentityContract] to JSON.
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'lifecycle': lifecycle.toJson(),
-    'authority': authority.toJson(),
-    'createdAt': createdAt,
-  };
 }
 
 /// Interface for identity operations, typically implemented by infrastructure.

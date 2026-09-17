@@ -1,3 +1,6 @@
+import 'package:meta/meta.dart';
+
+import 'impl/strategy.dart';
 // The conditional import below tree-shakes the platform-specific
 // strategy so only one is compiled in (stub / dart:io / Flutter dart:developer).
 import 'impl/strategy_stub.dart'
@@ -11,6 +14,13 @@ import 'impl/strategy_stub.dart'
 abstract class ZenLogger {
   /// The shared logger instance.
   static ZenLogger instance = _DefaultZenLogger();
+
+  /// Builds a logger backed by a caller-supplied [strategy] instead of the
+  /// platform default. For tests that need to assert on formatted messages
+  /// without going through real stdout/stderr or dart:developer.
+  @visibleForTesting
+  factory ZenLogger.withStrategy(ZenLoggerStrategy strategy) =
+      _DefaultZenLogger.withStrategy;
 
   /// Logs a debug message (dev diagnostics).
   void debug(String message, {Map<String, dynamic>? internalData});
@@ -32,7 +42,10 @@ abstract class ZenLogger {
 
 /// Default implementation using configured strategy (IO vs Flutter).
 class _DefaultZenLogger implements ZenLogger {
-  final _strategy = getStrategy();
+  _DefaultZenLogger() : _strategy = getStrategy();
+  _DefaultZenLogger.withStrategy(this._strategy);
+
+  final ZenLoggerStrategy _strategy;
 
   @override
   void debug(String message, {Map<String, dynamic>? internalData}) {

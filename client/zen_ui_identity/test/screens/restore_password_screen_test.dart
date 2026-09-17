@@ -76,6 +76,26 @@ void main() {
     expect(called, isTrue);
   });
 
+  testWidgets('rejects an email that only contains an @ sign', (tester) async {
+    final repo = _FakeRepo(restoreResult: const ZenResult.ok(null));
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [identityRepositoryProvider.overrideWithValue(repo)],
+        child: localizedApp(home: RestorePasswordScreen()),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField), 'a@');
+    await tester.tap(find.text('Send Link'));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invalid email'), findsOneWidget);
+  });
+
   testWidgets('error shows error snackbar with error color', (tester) async {
     final repo = _FakeRepo(restoreResult: const ZenResult.err(ZenNotFoundError('no')));
 

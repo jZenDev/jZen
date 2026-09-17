@@ -1,3 +1,4 @@
+import 'package:zen_core/zen_core.dart';
 import 'package:zen_identity/zen_identity.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -156,8 +157,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       if (value == null || value.isEmpty) {
                         return messages.validationRequired;
                       }
-                      // Basic email regex or just let backend validate
-                      if (!value.contains('@')) {
+                      if (EmailAddress.create(value).isFailure) {
                         return messages.validationEmail;
                       }
                       return null;

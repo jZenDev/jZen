@@ -23,6 +23,10 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   intl: ^0.20.2
+  # Provides the glyphs behind CupertinoIcons.ellipsis / .checkmark_alt used by the adaptive
+  # navigation shell; previously only resolved transitively, which isn't guaranteed to bundle
+  # the font asset.
+  cupertino_icons: ^1.0.9
 
 dev_dependencies:
   flutter_test:

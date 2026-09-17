@@ -49,19 +49,6 @@ void main() {
       final roundTrip = contract.toDomain();
       expect(roundTrip, domain);
     });
-    test('fromJson and toJson round-trip', () {
-      final json = <String, dynamic>{
-        'id': 'id1',
-        'lifecycle': {'state': 'active'},
-        'authority': {
-          'roles': <String>['ADMIN'],
-          'capabilities': <String>[],
-        },
-        'createdAt': 123456,
-      };
-      final contract = IdentityContract.fromJson(json);
-      expect(contract.toJson(), json);
-    });
   });
 
   group('AuthorityContract edge cases', () {

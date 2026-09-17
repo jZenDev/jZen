@@ -30,8 +30,13 @@ green before each PR.
 
 ## Phase 0 — Unblock the gate (do first; the pattern is documented as having recurred once already)
 
-### Finding 1 — iOS and macOS runners do not build from a clean checkout
+### Finding 1 — iOS and macOS runners do not build from a clean checkout ✅ DONE
 
+- **Status:** Done — `Pods_Runner*`/`Pods_RunnerTests*` dangling references removed from both
+  `project.pbxproj` files, verified with a real build. Follow-up decided too: a `macos-runner` CI
+  job now runs `task build:apps:runners` on every commit (ADR-052, narrowing ADR-045's now
+  -inapplicable cost exclusion for this public repo), so this exact regression is caught
+  automatically going forward — see "Decisions to surface" item 1.
 - **Branch:** `fix/xcode-runner-stale-pods-references`
 - **Files:** `apps/zen_demo/zen_demo_client/ios/Runner.xcodeproj/project.pbxproj`,
   `apps/zen_demo/zen_demo_client/macos/Runner.xcodeproj/project.pbxproj`.
@@ -65,8 +70,12 @@ green before each PR.
 
 ## Phase 1 — High-severity, contained fixes (independent, can be parallelized across sessions)
 
-### Finding 2 — `task audit` silently does not cover Dart/pub dependencies
+### Finding 2 — `task audit` silently does not cover Dart/pub dependencies ✅ DONE
 
+- **Status:** Done — `task audit:client` added (`scripts/audit-client.py`, queries OSV's `Pub`
+  ecosystem against both workspace `pubspec.lock` files), wired into the aggregate `audit:` task,
+  with fixture tests under `task test:scripts`. Landed on `fix/xcode-runner-stale-pods-references`
+  rather than a separate branch, at the user's direction.
 - **Branch:** `fix/add-audit-client-task`
 - **Files:** `Taskfile.yml` (new `audit:client` task, wired into the aggregate `audit:` task
   alongside `audit:server`/`audit:admin`); possibly a small script under `.claude/tools/` or inline
@@ -93,8 +102,14 @@ green before each PR.
   `Taskfile.yml` wiring itself.
 - **Depends on:** nothing.
 
-### Finding 3 — Android release build is signed with the debug keystore
+### Finding 3 — Android release build is signed with the debug keystore ✅ DONE
 
+- **Status:** Done — decided (user call) that `zen_demo` does not need a real release keystore: it
+  is a reference/demo app that never ships to the Play Store. Replaced the `TODO` in
+  `build.gradle.kts` with a comment documenting the debug-signing as an intentional demo-scope
+  limitation, with the follow-up path spelled out if real distribution is ever needed. No
+  `key.properties`/keystore generated. Landed on `fix/xcode-runner-stale-pods-references` rather
+  than a separate branch, at the user's direction.
 - **Branch:** `fix/android-release-signing-config`
 - **Files:** `apps/zen_demo/zen_demo_client/android/app/build.gradle.kts`; new
   `apps/zen_demo/zen_demo_client/android/key.properties` (gitignored, never committed — the
@@ -123,8 +138,14 @@ green before each PR.
 - **Depends on:** nothing technically, but should not be started until the keystore-custody
   question is answered (no point wiring a `key.properties` path with nothing behind it).
 
-### Finding 4 — `CupertinoIcons` glyphs used by shared navigation code are not bundled
+### Finding 4 — `CupertinoIcons` glyphs used by shared navigation code are not bundled ✅ DONE
 
+- **Status:** Done — `cupertino_icons: ^1.0.9` added to `zen_ui_navigation/pubspec.yaml` (matching
+  the version already pinned transitively). `task deps` re-resolved both workspaces;
+  `flutter build web --release --wasm --tree-shake-icons` now tree-shakes `CupertinoIcons.ttf`
+  cleanly (257628 → 1472 bytes) with no "Expected to find fonts" warning. `flutter analyze` clean
+  for `zen_ui_navigation`. Landed on `fix/xcode-runner-stale-pods-references` rather than a
+  separate branch, at the user's direction.
 - **Branch:** `fix/declare-cupertino-icons-dependency`
 - **Files:** `client/zen_ui_navigation/pubspec.yaml` (add `cupertino_icons: ^1.x` — check the
   version already pinned transitively in `client/pubspec.lock` and match it unless a newer patch is
@@ -153,7 +174,7 @@ green before each PR.
 
 ## Phase 2 — Medium/low, contained fixes (independent of each other and of Phase 0/1 except where noted)
 
-### Finding 5 — `IdentityContract.toJson`/`.fromJson` are dead code and lose `emailVerified`
+### Finding 5 — `IdentityContract.toJson`/`.fromJson` are dead code and lose `emailVerified` ✅ DONE
 
 - **Branch:** `fix/remove-dead-identity-contract-json`
 - **Files:** `client/zen_identity/lib/src/identity_contracts.dart` (delete `toJson`/`fromJson` on
@@ -173,8 +194,15 @@ green before each PR.
 - **verify:contracts:** no. **ADR:** no. **Effort:** XS.
 - **Depends on:** nothing.
 
-### Finding 6 — Native deep-link handler forwards any URI with no scheme/host check
+### Finding 6 — Native deep-link handler forwards any URI with no scheme/host check ✅ DONE
 
+- **Status:** Done — `isRegisteredAuthLink` guard added in `auth_deep_links_native.dart`. It
+  accepts the custom scheme from `zenAuthRedirectUri` (host `auth-callback`) and, since
+  `AndroidManifest.xml` also registers a real `https` App Link (`pathPrefix="/auth/callback"`,
+  a build-time host per STANDARDS "Deployment model") that the plan's single-scheme check would
+  have silently broken in deployed environments, the `https` App Link path too. Rejections are
+  logged via `ZenLogger.instance.debug`. New test:
+  `apps/zen_demo/zen_demo_client/test/auth_deep_links_native_test.dart`.
 - **Branch:** `fix/deep-link-scheme-host-filter`
 - **Files:** `apps/zen_demo/zen_demo_client/lib/src/auth_deep_links_native.dart`.
 - **Steps:**
@@ -195,8 +223,16 @@ green before each PR.
 - **verify:contracts:** no. **ADR:** no. **Effort:** S.
 - **Depends on:** nothing. Low severity — fine to schedule opportunistically.
 
-### Finding 7 — `zen_logger_test.dart` asserts nothing
+### Finding 7 — `zen_logger_test.dart` asserts nothing ✅ DONE
 
+- **Status:** Done — `ZenLogger` gained a `@visibleForTesting factory ZenLogger.withStrategy`
+  seam so tests can inject a fake `ZenLoggerStrategy` and assert on the formatted message,
+  `isError` flag, and `internalData` interpolation for `debug`/`info`/`warn`/`error`.
+  `ZenLoggerStrategyIO`'s origin-bracket formatting was extracted into a
+  `@visibleForTesting static formatLine` so it's assertable without capturing real
+  stdout/stderr (which dart:io does not expose a fake for). Landed on
+  `fix/xcode-runner-stale-pods-references` rather than a separate branch, at the user's
+  direction.
 - **Branch:** `fix/zen-logger-test-real-assertions`
 - **Files:** `client/zen_core/test/zen_logger_test.dart`; possibly a small test-only fake
   `ZenLoggerStrategy` if one doesn't already exist for injection.
@@ -217,7 +253,7 @@ green before each PR.
 - **verify:contracts:** no. **ADR:** no. **Effort:** S.
 - **Depends on:** nothing.
 
-### Finding 8 — Duplicated, weaker client-side email validation
+### Finding 8 — Duplicated, weaker client-side email validation ✅ DONE
 
 - **Branch:** `fix/shared-email-validator-in-ui`
 - **Files:** `client/zen_ui_identity/lib/src/screens/login_screen.dart`,
@@ -240,8 +276,19 @@ green before each PR.
 - **Depends on:** nothing. Can land alongside Finding 5/7 in the same review pass since all three
   are small and touch disjoint files.
 
-### Finding 10 — no task exercises `--release --obfuscate --split-debug-info` for any client runner
+### Finding 10 — no task exercises `--release --obfuscate --split-debug-info` for any client runner ✅ DONE
 
+- **Status:** Done — added `zen:build:runners:release` in `Taskfile.app.yml` (mirrors
+  `zen:build:runners` but with `--release --obfuscate --split-debug-info=<throwaway dir>`, iOS
+  built unsigned for a real device with `--no-codesign` instead of `--simulator` since `--release`
+  is refused for simulators) and `build:apps:runners:release` in `Taskfile.yml` delegating to it
+  with zen_demo's vars. Opt-in only — not wired into `build:runners`/`build`/`build:apps`, per the
+  user's decision to add a Taskfile target while keeping the review's own "periodic manual check"
+  cadence rather than every-build automation. Verified with a real run on this host:
+  `task build:apps:runners:release` succeeded for macOS (42.9MB), iOS unsigned device build
+  (16.5MB), and Android (`app-release.apk`, 50.2MB); Linux/Windows skipped as host-only, same as
+  `build:runners`. Landed on `fix/xcode-runner-stale-pods-references` rather than a separate
+  branch, at the user's direction.
 - **Branch:** `docs/manual-obfuscated-release-check` (or `fix/...` if a Taskfile target is added —
   see decision below).
 - **Files:** either a new section in a relevant skill/doc (e.g. `.claude/skills/deploy` or
@@ -288,28 +335,24 @@ green before each PR.
 
 | Order | Item | Why here |
 |---|---|---|
-| 1 | Finding 1 | Blocks two whole platforms from a clean checkout; documented as a recurring failure mode |
+| 1 | Finding 1 ✅ DONE | Blocks two whole platforms from a clean checkout; documented as a recurring failure mode |
 | 2 | Finding 4 | Small, and easiest to verify visually once Finding 1 unblocks a real iOS/macOS build |
-| 3 | Finding 5, Finding 7, Finding 8 | Small, independent, disjoint files — good batch for one review pass |
-| 4 | Finding 2 | Closes a real audit blind spot; sequenced after the quick wins so it gets full attention for the tooling-discovery work |
-| 5 | Finding 3 | Needs the keystore-custody decision first (see below) — start the Gradle wiring only after that's answered |
-| 6 | Finding 6 | Low severity, no dependencies, fine to slot in whenever |
-| 7 | Finding 10 | Needs the doc-vs-task decision first; naturally follows Finding 1/3 since it benefits from both native targets already building |
+| 3 | Finding 5, Finding 7 ✅ DONE, Finding 8 ✅ DONE | Small, independent, disjoint files — good batch for one review pass |
+| 4 | Finding 2 ✅ DONE | Closes a real audit blind spot; sequenced after the quick wins so it gets full attention for the tooling-discovery work |
+| 5 | Finding 3 ✅ DONE | Needs the keystore-custody decision first (see below) — start the Gradle wiring only after that's answered |
+| 6 | Finding 6 ✅ DONE | Low severity, no dependencies, fine to slot in whenever |
+| 7 | Finding 10 ✅ DONE | Needs the doc-vs-task decision first; naturally follows Finding 1/3 since it benefits from both native targets already building |
 
 ## Decisions to surface to the user before scheduling
 
-1. **Finding 1** — after the `pbxproj` fix, should `task build:apps:runners` (or an equivalent
-   `flutter build macos`/`flutter build ios --simulator` check) run in CI on a macOS runner so this
-   exact regression can't recur silently a third time? The review calls this out as having already
-   happened once.
-2. **Finding 3** — who generates and holds the `zen_demo` Android release keystore, and does a
-   reference/demo app that isn't shipping to the Play Store need a real one at all, versus
-   documenting the debug-signing as an intentional demo-scope limitation? Both are defensible; pick
-   one before wiring `key.properties`.
-3. **Finding 2** — is a real advisory-scanning tool (e.g. `osv-scanner` against `pubspec.lock`)
-   installable in this environment/CI, or should `audit:client` be a documented, scripted query
-   against `api.osv.dev` per package (lower tooling burden, more code to maintain)?
-4. **Finding 10** — should the obfuscated release build become an automated (if infrequent) Taskfile
-   target, or stay a documented manual check performed before the first real distribution build?
-   The review's own fix suggestion leans toward the latter, but automation is worth considering now
-   that Finding 1 will make the native targets buildable again.
+1. **Finding 1** ✅ Decided — yes: added a `macos-runner` CI job running `task build:apps:runners`
+   (`.github/workflows/ci.yml`), narrowing ADR-045's cost exclusion via a new `docs/architecture/
+   DECISIONS.md` entry (ADR-052), since `jZenDev/jZen` is a public repo where `macos-latest` CI
+   minutes carry no cost multiplier — the premise ADR-045 excluded them on.
+2. **Finding 3** ✅ Decided — no real keystore: `zen_demo` never ships to the Play Store, so the
+   debug-signing is documented as an intentional demo-scope limitation instead of wiring
+   `key.properties`.
+3. **Finding 2** ✅ Decided — a documented, scripted query against `api.osv.dev` per package
+   (`scripts/audit-client.py`), not an installed scanning tool.
+4. **Finding 10** ✅ Decided — a Taskfile target (`build:apps:runners:release` /
+   `zen:build:runners:release`), kept opt-in and not wired into `build`/`build:apps`.

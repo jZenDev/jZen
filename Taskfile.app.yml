@@ -797,6 +797,105 @@ tasks:
         echo
         echo "Every runner this host can build compiles."
 
+  build:runners:release:
+    desc: Compile every native runner in --release --obfuscate --split-debug-info mode
+    silent: true
+    summary: |
+      `build:runners` proves the DEBUG compile path; this proves the RELEASE one, obfuscated and
+      with debug symbols split out, exactly as a real distribution build would run. The two paths
+      are not the same code: a plugin's obfuscation-incompatible reflection, or a symbol Dart's
+      tree shaker only drops in release mode, can pass every debug build and every test while
+      failing here. Nothing before this task ever ran `--obfuscate`.
+
+      NOT wired into `build:runners` or the `build`/`build:apps` rollups — a release compile costs
+      meaningfully more time than a debug one (see the `long-job` skill), so this stays an opt-in,
+      periodic check: run it by hand before a first real distribution build, not on every change.
+
+      Same host limits as `build:runners` (desktop targets are host-only, Apple needs Xcode) plus
+      one more: `--release` is refused for the iOS SIMULATOR, so the iOS leg here builds for a real
+      device with `--no-codesign` instead — an unsigned compile check, not something that installs
+      anywhere, matching the unsigned-local-run MVP boundary the Runner's own entitlements already
+      document. Android's release signing config is whatever the app currently has wired (debug
+      keystore, if that hasn't been addressed separately) — this task only proves the build
+      compiles, it says nothing about who signs it.
+
+      Split debug symbols are written under a throwaway temp directory and removed afterward —
+      same "artifacts are throwaway, this is a compile check" contract as `build:runners`.
+    vars:
+      APP_CLIENT_DIR: '{{.APP_CLIENT_DIR | default .CLIENT_DIR}}'
+      SCHEME: '{{.ZEN_AUTH_REDIRECT_URI | default ""}}'
+      FLUTTER_JDK:
+        sh: |
+          flutter config --list 2>/dev/null | sed -nE 's/^ *jdk-dir: *(.*)$/\1/p' | head -1
+    cmds:
+      - task: generate:l10n
+      - |
+        set -eu
+        cd "{{.ROOT_DIR}}/{{.APP_CLIENT_DIR}}"
+        defines="--dart-define=ZEN_ENV={{.ZEN_ENV}} --dart-define=ZEN_API_URL={{.API}}"
+        if [ -n '{{.SCHEME}}' ]; then
+          defines="$defines --dart-define=ZEN_AUTH_REDIRECT_URI={{.SCHEME}}"
+        fi
+
+        case "$(uname -s)" in
+          Darwin)                 HOST=macos ;;
+          Linux)                  HOST=linux ;;
+          MINGW*|MSYS*|CYGWIN*)   HOST=windows ;;
+          *)                      HOST=unknown ;;
+        esac
+
+        SYMDIR="$(mktemp -d)"
+        trap 'rm -rf "$SYMDIR"' EXIT
+
+        # Same shape as build:runners' build_target, plus --obfuscate/--split-debug-info: a
+        # missing directory or wrong host is a named skip, never a swallowed failure.
+        build_target() {
+          target="$1"; platform="$2"; needs="$3"; dir="$4"; shift 4
+          if [ ! -d "$dir" ]; then
+            return 0
+          fi
+          if [ "$HOST" != "$needs" ]; then
+            echo ">> SKIPPED $target: it only builds on a $needs host, and this is $(uname -s)."
+            return 0
+          fi
+          symbols="$SYMDIR/$platform"
+          mkdir -p "$symbols"
+          echo ">> $target"
+          flutter build "$@" --release --obfuscate --split-debug-info="$symbols" \
+            --dart-define=ZEN_PLATFORM="$platform" $defines
+        }
+
+        build_target "macOS"              macos   macos   macos   macos
+        build_target "iOS (unsigned)"     ios     macos   ios     ios --no-codesign
+        build_target "Linux desktop"      linux   linux   linux   linux
+        build_target "Windows desktop"    windows windows windows windows
+
+        # Android last, same GraalVM-jlink guard as build:runners (ADR-021) — release mode doesn't
+        # change which JDK Flutter needs, only what it does once it has one.
+        if [ -d android ] && [ "$HOST" != "windows" ]; then
+          JDK='{{.FLUTTER_JDK}}'
+          BAD=""
+          case "$JDK" in *graal*|*Graal*|*GRAAL*) BAD="yes" ;; esac
+          if [ -z "$BAD" ] && [ -n "$JDK" ] && [ -x "$JDK/bin/java" ]; then
+            case "$("$JDK/bin/java" -version 2>&1 | head -1)" in *GraalVM*) BAD="yes" ;; esac
+          fi
+          if [ -n "$BAD" ]; then
+            echo "The Android build cannot use this JDK: GraalVM (its jlink cannot run AGP's jdkImage transform)."
+            echo "Flutter takes it from a MACHINE-WIDE setting that outranks JAVA_HOME, so no task can fix it here:"
+            echo "  flutter config --jdk-dir /path/to/a/standard/jdk-25"
+            exit 1
+          fi
+          symbols="$SYMDIR/android"
+          mkdir -p "$symbols"
+          echo ">> Android"
+          flutter build apk --release --obfuscate --split-debug-info="$symbols" \
+            --dart-define=ZEN_PLATFORM=android $defines
+        elif [ -d android ]; then
+          echo ">> SKIPPED Android here: covered by any Linux or macOS host, which already has the SDK."
+        fi
+        echo
+        echo "Every runner this host can build compiles in --release --obfuscate mode."
+
   # ---------------------------------------------------------------------------
   # Run the application locally
   # ---------------------------------------------------------------------------

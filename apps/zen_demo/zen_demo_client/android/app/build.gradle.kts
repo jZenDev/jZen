@@ -42,8 +42,13 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // Debug-signed intentionally: zen_demo is a reference/showcase app that never ships to
+            // the Play Store, so there is no distribution channel that requires a real upload
+            // keystore. A real keystore is a secret an app must custody (rotation, loss recovery,
+            // Play App Signing enrollment) — machinery this demo has no use for. If zen_demo (or an
+            // app built from it) ever needs real distribution, generate a release keystore, add a
+            // gitignored `key.properties` alongside this file, and point signingConfigs.release at
+            // it instead of reusing the debug config.
             signingConfig = signingConfigs.getByName("debug")
         }
     }

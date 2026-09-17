@@ -72,6 +72,26 @@ void main() {
     expect(find.text('Required'), findsNWidgets(2));
   });
 
+  testWidgets('rejects an email that only contains an @ sign', (tester) async {
+    final repo = _FakeRepo();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [identityRepositoryProvider.overrideWithValue(repo)],
+        child: localizedApp(home: LoginScreen()),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+    final fields = find.byType(TextFormField);
+    await tester.enterText(fields.at(0), 'a@');
+    await tester.enterText(fields.at(1), 'password');
+    await tester.tap(find.widgetWithText(FilledButton, 'Log In'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invalid email'), findsOneWidget);
+  });
+
   testWidgets('forgot password and register callbacks are invoked', (tester) async {
     final repo = _FakeRepo();
     var forgot = false;

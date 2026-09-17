@@ -220,8 +220,16 @@ green before each PR.
 - **verify:contracts:** no. **ADR:** no. **Effort:** S.
 - **Depends on:** nothing. Low severity — fine to schedule opportunistically.
 
-### Finding 7 — `zen_logger_test.dart` asserts nothing
+### Finding 7 — `zen_logger_test.dart` asserts nothing ✅ DONE
 
+- **Status:** Done — `ZenLogger` gained a `@visibleForTesting factory ZenLogger.withStrategy`
+  seam so tests can inject a fake `ZenLoggerStrategy` and assert on the formatted message,
+  `isError` flag, and `internalData` interpolation for `debug`/`info`/`warn`/`error`.
+  `ZenLoggerStrategyIO`'s origin-bracket formatting was extracted into a
+  `@visibleForTesting static formatLine` so it's assertable without capturing real
+  stdout/stderr (which dart:io does not expose a fake for). Landed on
+  `fix/xcode-runner-stale-pods-references` rather than a separate branch, at the user's
+  direction.
 - **Branch:** `fix/zen-logger-test-real-assertions`
 - **Files:** `client/zen_core/test/zen_logger_test.dart`; possibly a small test-only fake
   `ZenLoggerStrategy` if one doesn't already exist for injection.
@@ -315,7 +323,7 @@ green before each PR.
 |---|---|---|
 | 1 | Finding 1 ✅ DONE | Blocks two whole platforms from a clean checkout; documented as a recurring failure mode |
 | 2 | Finding 4 | Small, and easiest to verify visually once Finding 1 unblocks a real iOS/macOS build |
-| 3 | Finding 5, Finding 7, Finding 8 | Small, independent, disjoint files — good batch for one review pass |
+| 3 | Finding 5, Finding 7 ✅ DONE, Finding 8 | Small, independent, disjoint files — good batch for one review pass |
 | 4 | Finding 2 ✅ DONE | Closes a real audit blind spot; sequenced after the quick wins so it gets full attention for the tooling-discovery work |
 | 5 | Finding 3 ✅ DONE | Needs the keystore-custody decision first (see below) — start the Gradle wiring only after that's answered |
 | 6 | Finding 6 ✅ DONE | Low severity, no dependencies, fine to slot in whenever |

@@ -171,7 +171,7 @@ green before each PR.
 
 ## Phase 2 — Medium/low, contained fixes (independent of each other and of Phase 0/1 except where noted)
 
-### Finding 5 — `IdentityContract.toJson`/`.fromJson` are dead code and lose `emailVerified`
+### Finding 5 — `IdentityContract.toJson`/`.fromJson` are dead code and lose `emailVerified` ✅ DONE
 
 - **Branch:** `fix/remove-dead-identity-contract-json`
 - **Files:** `client/zen_identity/lib/src/identity_contracts.dart` (delete `toJson`/`fromJson` on

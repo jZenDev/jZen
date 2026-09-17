@@ -250,7 +250,7 @@ green before each PR.
 - **verify:contracts:** no. **ADR:** no. **Effort:** S.
 - **Depends on:** nothing.
 
-### Finding 8 — Duplicated, weaker client-side email validation
+### Finding 8 — Duplicated, weaker client-side email validation ✅ DONE
 
 - **Branch:** `fix/shared-email-validator-in-ui`
 - **Files:** `client/zen_ui_identity/lib/src/screens/login_screen.dart`,
@@ -323,7 +323,7 @@ green before each PR.
 |---|---|---|
 | 1 | Finding 1 ✅ DONE | Blocks two whole platforms from a clean checkout; documented as a recurring failure mode |
 | 2 | Finding 4 | Small, and easiest to verify visually once Finding 1 unblocks a real iOS/macOS build |
-| 3 | Finding 5, Finding 7 ✅ DONE, Finding 8 | Small, independent, disjoint files — good batch for one review pass |
+| 3 | Finding 5, Finding 7 ✅ DONE, Finding 8 ✅ DONE | Small, independent, disjoint files — good batch for one review pass |
 | 4 | Finding 2 ✅ DONE | Closes a real audit blind spot; sequenced after the quick wins so it gets full attention for the tooling-discovery work |
 | 5 | Finding 3 ✅ DONE | Needs the keystore-custody decision first (see below) — start the Gradle wiring only after that's answered |
 | 6 | Finding 6 ✅ DONE | Low severity, no dependencies, fine to slot in whenever |

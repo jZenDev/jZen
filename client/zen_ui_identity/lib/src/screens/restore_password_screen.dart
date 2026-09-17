@@ -108,7 +108,7 @@ class _RestorePasswordScreenState extends ConsumerState<RestorePasswordScreen> {
                       if (value == null || value.isEmpty) {
                         return messages.validationRequired;
                       }
-                      if (!value.contains('@')) {
+                      if (EmailAddress.create(value).isFailure) {
                         return messages.validationEmail;
                       }
                       return null;

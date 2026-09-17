@@ -135,8 +135,14 @@ green before each PR.
 - **Depends on:** nothing technically, but should not be started until the keystore-custody
   question is answered (no point wiring a `key.properties` path with nothing behind it).
 
-### Finding 4 — `CupertinoIcons` glyphs used by shared navigation code are not bundled
+### Finding 4 — `CupertinoIcons` glyphs used by shared navigation code are not bundled ✅ DONE
 
+- **Status:** Done — `cupertino_icons: ^1.0.9` added to `zen_ui_navigation/pubspec.yaml` (matching
+  the version already pinned transitively). `task deps` re-resolved both workspaces;
+  `flutter build web --release --wasm --tree-shake-icons` now tree-shakes `CupertinoIcons.ttf`
+  cleanly (257628 → 1472 bytes) with no "Expected to find fonts" warning. `flutter analyze` clean
+  for `zen_ui_navigation`. Landed on `fix/xcode-runner-stale-pods-references` rather than a
+  separate branch, at the user's direction.
 - **Branch:** `fix/declare-cupertino-icons-dependency`
 - **Files:** `client/zen_ui_navigation/pubspec.yaml` (add `cupertino_icons: ^1.x` — check the
   version already pinned transitively in `client/pubspec.lock` and match it unless a newer patch is

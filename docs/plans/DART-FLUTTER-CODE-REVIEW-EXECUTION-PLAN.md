@@ -273,8 +273,19 @@ green before each PR.
 - **Depends on:** nothing. Can land alongside Finding 5/7 in the same review pass since all three
   are small and touch disjoint files.
 
-### Finding 10 — no task exercises `--release --obfuscate --split-debug-info` for any client runner
+### Finding 10 — no task exercises `--release --obfuscate --split-debug-info` for any client runner ✅ DONE
 
+- **Status:** Done — added `zen:build:runners:release` in `Taskfile.app.yml` (mirrors
+  `zen:build:runners` but with `--release --obfuscate --split-debug-info=<throwaway dir>`, iOS
+  built unsigned for a real device with `--no-codesign` instead of `--simulator` since `--release`
+  is refused for simulators) and `build:apps:runners:release` in `Taskfile.yml` delegating to it
+  with zen_demo's vars. Opt-in only — not wired into `build:runners`/`build`/`build:apps`, per the
+  user's decision to add a Taskfile target while keeping the review's own "periodic manual check"
+  cadence rather than every-build automation. Verified with a real run on this host:
+  `task build:apps:runners:release` succeeded for macOS (42.9MB), iOS unsigned device build
+  (16.5MB), and Android (`app-release.apk`, 50.2MB); Linux/Windows skipped as host-only, same as
+  `build:runners`. Landed on `fix/xcode-runner-stale-pods-references` rather than a separate
+  branch, at the user's direction.
 - **Branch:** `docs/manual-obfuscated-release-check` (or `fix/...` if a Taskfile target is added —
   see decision below).
 - **Files:** either a new section in a relevant skill/doc (e.g. `.claude/skills/deploy` or
@@ -327,7 +338,7 @@ green before each PR.
 | 4 | Finding 2 ✅ DONE | Closes a real audit blind spot; sequenced after the quick wins so it gets full attention for the tooling-discovery work |
 | 5 | Finding 3 ✅ DONE | Needs the keystore-custody decision first (see below) — start the Gradle wiring only after that's answered |
 | 6 | Finding 6 ✅ DONE | Low severity, no dependencies, fine to slot in whenever |
-| 7 | Finding 10 | Needs the doc-vs-task decision first; naturally follows Finding 1/3 since it benefits from both native targets already building |
+| 7 | Finding 10 ✅ DONE | Needs the doc-vs-task decision first; naturally follows Finding 1/3 since it benefits from both native targets already building |
 
 ## Decisions to surface to the user before scheduling
 
@@ -342,7 +353,5 @@ green before each PR.
 3. **Finding 2** — is a real advisory-scanning tool (e.g. `osv-scanner` against `pubspec.lock`)
    installable in this environment/CI, or should `audit:client` be a documented, scripted query
    against `api.osv.dev` per package (lower tooling burden, more code to maintain)?
-4. **Finding 10** — should the obfuscated release build become an automated (if infrequent) Taskfile
-   target, or stay a documented manual check performed before the first real distribution build?
-   The review's own fix suggestion leans toward the latter, but automation is worth considering now
-   that Finding 1 will make the native targets buildable again.
+4. **Finding 10** ✅ Decided — a Taskfile target (`build:apps:runners:release` /
+   `zen:build:runners:release`), kept opt-in and not wired into `build`/`build:apps`.

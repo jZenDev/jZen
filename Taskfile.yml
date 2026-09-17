@@ -587,6 +587,19 @@ tasks:
           ZEN_API_URL: '{{.ZEN_API_URL | default "http://localhost:8085"}}'
           ZEN_AUTH_REDIRECT_URI: '{{.ZEN_AUTH_REDIRECT_URI | default "zendemo://auth-callback"}}'
 
+  build:apps:runners:release:
+    desc: Compile the app's native runners in --release --obfuscate --split-debug-info mode (opt-in, not part of `build`)
+    summary: |
+      The release-hardening counterpart to build:apps:runners — see zen:build:runners:release in
+      Taskfile.app.yml for what it proves and why it is opt-in rather than wired into `build` or
+      `build:apps`. Run this by hand before a first real distribution build, not on every change.
+    cmds:
+      - task: zen:build:runners:release
+        vars:
+          APP_CLIENT_DIR: "{{.DEMO_CLIENT_DIR}}"
+          ZEN_API_URL: '{{.ZEN_API_URL | default "http://localhost:8085"}}'
+          ZEN_AUTH_REDIRECT_URI: '{{.ZEN_AUTH_REDIRECT_URI | default "zendemo://auth-callback"}}'
+
   build:apps:server:
     desc: Build the reference backend (resolves framework libs from the local repo)
     dir: "{{.SERVER_DIR}}"

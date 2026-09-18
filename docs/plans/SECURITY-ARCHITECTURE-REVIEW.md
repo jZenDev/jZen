@@ -14,8 +14,10 @@ see "Phase 7 record"; this is also the phase that opened the production request 
 **Phase 8 CLOSED** (local dynamic verification — see "Phase 8 record"; `task test:native` plus a
 manual dynamic probe pass and an OWASP ZAP passive baseline scan against a local container, entirely
 off the production request budget, which stays at 11 of 12).
-Phase 9 is not yet executed. Sections 4–9 below remain placeholders except where Phases 4–8
-populated §3.5–§3.9.
+**Phase 9 CLOSED** (rank, write, clean up — see "Phase 9 record"). Sections 1, 4–9 below are now
+populated from the evidence Phases 1–8 already recorded in §3.1–§3.9; Phase 9 mints no new evidence
+of its own — it ranks, consolidates, and runs the plan's local cleanup commands. The production
+request ledger is unchanged by this phase, still 11 of 12.
 
 **Scope:**
 - **In scope.** jZen as a framework — `server/zen-*`, `client/zen_*`, `admin/` (`@jzen/admin-core`) —
@@ -132,7 +134,11 @@ write reaches production or the hosted Supabase project.
   tampered-cookie cases (both tested and both behaved as ADR-030 states), did **not** test
   WebSocket authorization past a successful handshake or across a logout/role change, and did
   **not** measure the Phase 3 neutral-202 timing property. Named in full in §3.9's closing
-  paragraph and in "Phase 8 record", not silently dropped. This line is updated as each phase
+  paragraph and in "Phase 8 record", not silently dropped. **Phase 9 assessed no new surface** — its
+  scope (plan §Phase 9) is ranking the findings Phases 1–8 already produced, writing §1/§4–§9, and
+  running the plan's local cleanup commands (`task stop:supabase`, `docker ps -a`,
+  `git status --porcelain`); it opened no new file beyond code already read in Phases 0–8, ran no new
+  test, and spent none of the production request budget. This line is updated as each phase
   closes; "not assessed" is an honest, acceptable entry per chapter (plan §2.3), an *unmarked* one
   is not.
 
@@ -166,7 +172,33 @@ cookie prefixes (Phase 3/7), `Permissions-Policy`/COOP/COEP/CORP (Phase 7), CSP 
 
 ## 1. Summary
 
-*Not started — Phase 9 produces the ranked list.*
+Seven findings from this review remain open; three more (F6, F10, F12 — this review's own numbering,
+minted and closed across earlier phases of the same 2026-08-13–2026-09-18 effort) are already fixed
+and are listed in §6, not here. Ranked by `(active exploitability × impact) / remediation cost`
+(plan §5.5), framework-scope outranking application-scope at equal severity. Fifteen findings with
+mechanisms beat sixty with severities (plan §12) — this review produced ten total, of which seven
+need a decision.
+
+| Rank | Finding | Scope | Class | One line |
+|---|---|---|---|---|
+| 1 | **F8** | framework | architectural | The rate limiter trusts one `X-Forwarded-For` hop by configuration, not by verifying the network topology — demonstrated live to fully collapse if that trust is ever wrong, and nothing would notice. |
+| 2 | **F3** | framework | process | The no-server-side-Jackson invariant that keeps every JSON response legible is enforced by memory and code review only; no build check would catch its reintroduction. |
+| 3 | **F5** | pipeline | process | `audit.yml`'s five third-party actions still run from mutable tags on an unattended weekly schedule, while the identical actions in `ci.yml` were already SHA-pinned. |
+| 4 | **F1** | framework | architectural | A WebSocket's authorization is checked once, at the handshake, and never again — a logout or role change does not revoke an already-open connection. |
+| 5 | **F2** | application | process | The RFC 8252 scheme-hijack mitigation for the email-link sign-in flow (App Links/Universal Links) is optional, unenforced by any gate, and the vulnerable custom scheme is registered in both native shells today. |
+| 6 | **F4** | framework | architectural | Account anonymisation clears jZen's own data but never reaches the Supabase-owned `auth.users` record it authenticates against, which persists indefinitely with no automated erasure path. |
+| 7 | **F7** | application | implementation | react-admin's default telemetry beacon ships to the admin panel unreviewed; it is blocked today only because CSP's `img-src` happens not to name its host. |
+
+**Reading the rank:** F8 and F3 lead because their fixes are nearly free (a deploy-time checklist
+item; a Maven enforcer rule) against a potentially severe, framework-wide failure mode if the
+underlying assumption (no edge in front of Cloud Run; no server-side Jackson) is ever violated. F5
+is a mechanical, zero-research copy-paste fix with a precedent already in the same repository. F1
+and F4 rank lower because their complete fixes are genuinely priced (§5) rather than free, and their
+exploitability today is low or nil. F2 ranks below the framework-scope items at comparable severity
+per the tie-break rule (plan §7), despite naming the single highest-impact scenario in this review
+(full account takeover) — its exploitability is contingent on a native build having actually shipped
+with a live custom-scheme redirect, which this review could not confirm either way. F7 is last: not
+exploitable today, lowest sensitivity, one-line fix.
 
 ## 2. Trust boundaries and the threat model
 
@@ -1152,36 +1184,331 @@ local-only by design (plan §4.2) and spent no production reads.
 
 ## 4. Free wins
 
-*Not started.*
+No invariant (plan §7.1) touched; cost is mechanical or near-zero in every case below.
+
+- **F8 — a checklist line, not a runtime check.** The fix priced in §3.9 is explicitly *not* a code
+  change: a deploy-doc callout that any future ADR adding a CDN/WAF/gateway in front of Cloud Run
+  must also set `zen.ratelimit.forwarded-hops` correctly. Costs nothing; a cleverer runtime trip-wire
+  was considered and rejected in the finding itself as risking becoming its own silent no-op.
+- **F3 — a Maven `bannedDependencies` enforcer rule in `zen-parent`.** Matches the exact artifact id
+  `io.quarkus:quarkus-rest-jackson` (not the sanctioned `quarkus-rest-client-jackson`, not
+  `quarkus-rest-jackson-common`, not bare `jackson-databind` — §3.5 found all three already present
+  legitimately). A few lines of enforcer configuration in a file (`server/pom.xml`) that already
+  carries module-wide Maven policy, inherited automatically by every app via `<relativePath>`.
+- **F5 — copy five already-known SHAs from `ci.yml` to `audit.yml`.** No new research: `audit.yml`'s
+  five mutable tags name the exact major.minor.patch `ci.yml` already pins by commit SHA for the
+  identical actions. A mechanical, low-risk edit with a precedent in the same repository (F12).
+- **F7 — one line: `disableTelemetry` on the `<Admin>` element.** `apps/zen_demo/zen_demo_admin/src/App.tsx`.
+  The only cost is losing react-admin's own anonymous usage signal to its maintainers — a trade-off
+  worth making explicitly rather than by CSP accident, since the panel's admins were never told the
+  call happens and the operator gets nothing back from it today.
+- **F4, minimal half only — an operator runbook, not code.** Naming the exact Supabase Admin API call
+  (`DELETE /auth/v1/admin/users/{id}` with the service-role key) to run manually, on a cadence,
+  against every anonymised `id`. Costs an operator's recurring attention and nothing else; the
+  framework-level alternative (§5) is a different, priced decision.
 
 ## 5. Priced trade-offs
 
-*Not started.*
+An invariant or a real engineering cost is touched in each of these; the cost is stated so the owner
+can decide, not defaulted to "do it."
+
+- **F1 — WebSocket revalidation.** Either a bounded maximum connection lifetime (forces a reconnect,
+  which the client must handle gracefully) or a periodic identity re-check (a DB round trip on a path
+  `RoleAugmentor`'s own javadoc already documents costing ~135ms cross-region, on a mechanism the rest
+  of the framework works to avoid paying). No invariant in §7.1 is touched, but there is no free
+  version of this fix — today's only WebSocket is an echo endpoint with nil practical impact, so the
+  cost may not be worth paying until a second, more sensitive socket exists.
+- **F2 — App Links enforcement.** The fix must be a *warning*, not a hard deploy failure: Apple's
+  Associated Domains entitlement needs a paid Developer Program membership (`Taskfile.yml:2033`), so
+  a first native deploy legitimately may not have App Links ready, and a hard gate would block a
+  deploy with no better option available at that moment. The framework/application seam also matters
+  here — the mechanism (`WellKnownResource`) is framework, but the decision to ship a native build
+  without the mitigation configured is made per-deploy, per-app, so the check's placement (framework
+  vs. deploy script) is itself part of the price.
+- **F4, framework half — a `zen-identity` integration calling GoTrue's admin-delete API.** This
+  crosses a line ADR-007/ADR-008 drew deliberately (jZen does not own `auth.users`) and would need its
+  own ADR naming both as superseded. The cost is concrete and larger than the gap it closes: it
+  introduces the single most powerful Supabase credential (service-role, full admin over every
+  identity) into the running service's environment — precisely the blast-radius expansion ADR-031 and
+  ADR-036 spent their own evidence trail narrowing away from. This review's own asset table (§2.1)
+  would have to rank that new credential above A4 and possibly above A7/A8. Not recommended without
+  the owner weighing that trade explicitly against the minimal, free alternative in §4.
+- **Artifact Registry storage growth (named, not minted as an `F<n>`).** 81 image digests today (up
+  from 51 at the predecessor audit), and the repository's own cleanup policy keeps every tagged image
+  forever by design (rollback/forensics value). Not a security gap — a cost question: whether
+  unbounded storage growth is worth trading against a policy that also deletes untagged images after
+  30 days and the 10 most recent untagged versions. Left to the owner as a cost decision, not
+  re-litigated here.
 
 ## 6. Closed — verified correct, with evidence
 
-*Not started.* Will include one line per confirmed-still-closed item from `SECURITY-REMEDIATION.md`
-F1–F20 and `DATA-API-EXPOSURE.md`, each with the evidence that re-confirmed it — not a restatement of
-the earlier document.
+### 6.1 This review's own findings, already closed
+
+Minted and fixed across earlier phases of this same review (predating the 2026-09-18 session that
+closed Phases 0–9), independently re-verified rather than taken on the closing ADR's word alone
+(§5.3's trap, applied to this review's own prior work as much as to the predecessor's):
+
+| Finding | Closed by | Re-verified this session |
+|---|---|---|
+| **F6** — no SBOM, no image signing, no provenance attestation | ADR-043 (2026-08-14): `cyclonedx-maven-plugin` SBOM on every native build, keyless `cosign sign`/`cosign attest`, fail-closed `cosign verify` before deploy proceeds | Phase 6: read `Taskfile.yml`'s `deploy:cloudrun` body (~lines 2426–2462) against ADR-043's account — matches, no drift |
+| **F10** — the Data API lockdown's default-privilege revoke is captured against the DDL role at the moment the repeatable migration last ran, so a later DDL-role rotation does not retroactively re-point it | ADR-041 (2026-08-14): `MigrateOnlyRunner` asserts the *outcome* (queries `information_schema.role_table_grants`/`pg_default_acl` directly) on every deploy, exit code 3 on real drift | Phase 5: read `MigrateOnlyRunner.java` in full against ADR-041's account — matches exactly |
+| **F12** — `ci.yml`'s third-party actions were pinned by mutable tag, not commit SHA | Closed 2026-08-14: all 23 `uses:` lines in `ci.yml` now SHA-pinned with the tag as a trailing comment | Phase 6: `grep -n 'uses:' .github/workflows/ci.yml` — 23/23 SHA-pinned, confirmed live this session. (F5, §1, is the residual half of this same finding: the identical hardening was never propagated to `audit.yml`.) |
+
+### 6.2 Verified correct this review, one line each
+
+- Every library module contributing a CDI bean or JAX-RS provider carries `jandex-maven-plugin`;
+  `zen-core`/`zen-proto` correctly carry neither (Phase 2, the plan's own census re-run).
+- `RateLimitRule` buckets everything under `/api/` not explicitly named into `GLOBAL` — a new endpoint
+  cannot bypass the limiter by omission (Phase 2).
+- `JobTriggerAuthenticator` fails closed on an unconfigured secret (`expected == null → false`),
+  re-confirmed live with a real 401/401/200 sequence, not only from its unit test (Phase 2, Phase 8).
+- Framework Flyway migrations (`db/migration` under `zen-identity`/`zen-jobs`/`zen-ratelimit`) arrive
+  in any app automatically via classpath merging; `zen_demo_server` ships no migrations of its own
+  (Phase 2).
+- Cookie `httpOnly`/`Secure`/`SameSite=Lax` attributes as coded in `SessionService.java` (Phase 3;
+  wire-verification against a real `Set-Cookie` remains open, §8).
+- Role-resolution revocation latency on the HTTP surface is effectively zero — `RoleAugmentor` reads
+  fresh on every request, no cache, no token claim (Phase 3).
+- No BOLA path exists on `AdminUserResource`, `DemoResource`, or `IdentityService.currentUser` — all
+  three resolve the operated-on identity from the authenticated principal, not a client-supplied id
+  where it matters (Phase 3).
+- BFLA coverage is complete: every mutating endpoint enumerated carries `@RolesAllowed` or is
+  `@PermitAll` with an independent secret/credential check; none is unannotated (Phase 3).
+- CSRF's exemption list is closed and the default is protected — a new mutating endpoint is covered
+  automatically unless deliberately exempted (Phase 3).
+- `RedirectTargets.resolve` is exact-match only, structurally sound as a distinct property from the
+  scheme-hijack it does not claim to solve (Phase 3, see F2).
+- The 1MB HTTP body-size ceiling applies uniformly to both the protobuf and proto-JSON codec paths;
+  `InvalidBodyExceptionMapper` never leaks a stack trace, exception class, or field path — reconfirmed
+  live under a 100,000-level nested payload producing no server-side log entry at all (Phase 4, Phase 8).
+  No `oneof`/`Any` usage exists in any current `.proto` schema (Phase 4).
+- `ZenTransportFilter → RateLimitFilter → authentication → CsrfFilter` ordering is structurally sound
+  and pinned by `RateLimitCsrfOrderingTest` (Phase 4).
+- `quarkus-smallrye-openapi` is confirmed absent from the native (production) dependency tree by
+  running `dependency:tree -Dnative`, not only reading the profile — no regression from the
+  predecessor's Wave 4.2 removal (Phase 4; reconfirmed live via 404s on `/openapi`/`/q/swagger-ui/`/
+  `/q/dev/`/`/q/health` in both production, Phase 7, and a fresh local build, Phase 8).
+- The `zen_runtime` least-privilege role and its fail-closed `auth`-schema assertion; the ADR-037
+  deploy cutover (equal row counts, no "zero rows, not an error" trap) (Phase 5).
+- RLS is coherently Supabase-side only (ADR-031) — stated plainly as providing zero defense-in-depth
+  against a leaked `zen_runtime` credential, not an ambiguous half-measure (Phase 5).
+- Both Data API lockdown layers hold, including for a table created *after* the lockdown migration
+  ran (`DatabasePrivilegeTest.aTableCreatedAfterTheLockdownIsNotExposedEither`) (Phase 5).
+- No new injection surface in the rate-limit upsert, the first-login race fix, or the retention
+  queries — all parameterized (Phase 5).
+- The no-erasure-without-delivered-warning retention property holds by construction; logging across
+  the retention/mail/jobs paths is PII-free (Phase 5).
+- `task audit` is genuinely wired into CI on a weekly cron plus `workflow_dispatch`, not merely
+  described as intended (ADR-039, resolving plan §11 Q4) (Phase 6).
+- Both workflow files declare `permissions: contents: read` with no elevated grant; no CI-to-GCP
+  credential exists at all — deploy is fully human-authenticated (Phase 6).
+- The base image is digest-pinned, runs as non-root `USER 1001`; the Maven wrapper verifies its
+  download by SHA-256, both `pnpm` `packageManager` fields carry a SHA-512 integrity hash (Phase 6).
+- Secret scanning and push-protection are both enabled on the live repository; no credential is
+  committed anywhere across Phases 2–6 (Phase 6).
+- No `String.fromEnvironment` name or literal value in the client is secret-shaped; none of
+  `supabase`/`eyJ`/`service_role`/`anon_key` appears in the staged production web or admin bundle;
+  `--no-web-resources-cdn` holds in the shipped artifact (Phase 7).
+- `verify:boundaries`' three checks fail loudly (`StaleScope`) rather than silently pass on an empty
+  glob (Phase 2, Phase 7).
+- `SecureTokenStore`'s web branch throws `UnsupportedError` rather than falling back to
+  `window.localStorage`; the native branch is correctly configured for Keychain/Keystore (Phase 7).
+- Every response security header (CSP, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`,
+  `Permissions-Policy`, COOP, CORP, HSTS) is byte-identical across the SPA root, `/admin/`, an API
+  path, and a hashed admin asset, verified live against production (Phase 7) and reconfirmed against
+  a build compiled fresh from today's `HEAD` (Phase 8).
+- The admin auth provider refuses to keep a live session for a non-admin credential
+  (`clearSession()` on a non-admin login), even though the underlying Supabase login succeeded (Phase 7).
+- CORS rejects a disallowed-origin preflight with no origin echoed, verified live in production and
+  against a local build (Phase 7, Phase 8).
+- A tampered/forged session cookie degrades to anonymous rather than erroring, verified at the wire
+  against a real container (ADR-030) (Phase 8).
+- An unauthenticated request against an admin path returns 401; a WebSocket handshake rejects a
+  cross-origin attempt before upgrade and an unauthenticated same-origin attempt at the handshake
+  itself (Phase 8).
+- A genuinely forced outbound-dependency failure (GoTrue unreachable) never leaks an exception class,
+  hostname, port, or Supabase URL in the client-visible response body (Phase 8).
+- An OWASP ZAP 2.17.0 passive baseline scan against the local container returned 0 FAIL, 63 PASS, 7
+  WARN, with every WARN already priced by this review or informational noise with no security content
+  (Phase 8).
+
+### 6.3 Predecessor audit (`SECURITY-REMEDIATION.md`, 2026-08-03/04) — confirmed still closed
+
+Not re-reviewed (plan §1: re-finding F1–F20 would make this review worthless). Listed per the plan's
+own instruction (§7) as one line each, citing the predecessor's closure record, not restated here:
+
+| ID | Finding | Status |
+|---|---|---|
+| F1 | No rate limiting anywhere in the backend | Closed — Wave 1, `zen-ratelimit`; independently exercised live this review (Phase 8: burst ceilings fire exactly as configured) |
+| F2 | `--timeout=300s` saturated 200 slots at 0.67 req/s | Closed — Wave 0.1 |
+| F3 | WebSocket: no auth, no connection cap, no frame-size limit | Closed — Wave 1.4; independently re-verified this review (Phase 3/4/8), which also found a *new*, narrower gap in the same area (F1, above) |
+| F4 | `logout` never revoked the refresh token upstream | Closed — Wave 2.1 |
+| F5 | Application connected to Postgres as owner/superuser; RLS bypassed | Closed — Wave 3.1/3.2 (ADR-031); independently re-verified this review (Phase 5) |
+| F6 | Deploy capacity parameters hardcoded in the framework orchestrator | Closed — Wave 0.4 (ADR-028) |
+| F7 | CSRF token issued but never validated | Closed — Wave 2.2; independently re-verified this review (Phase 3) |
+| F8 | No security headers at all | Closed — Wave 4.1 (ADR-035); independently re-verified this review (Phase 7/8, live) |
+| F9 | `verify:boundaries` did not cover the TypeScript admin panel | Closed — Wave 3.3; this review found the *residual* gap it left (native platform-channel code, Phase 2/7) |
+| F10 | Admin `range` had no upper bound | Closed — Wave 0.3 |
+| F11 | `users.email` never synced after profile creation | Closed — Wave 2.3 |
+| F12 | Email addresses logged at WARN | Closed — Wave 0.5; independently re-verified this review (Phase 5: PII-free logging across retention/mail/jobs) |
+| F13 | `quarkus.http.idle-timeout` unset | Closed — Wave 0.2 |
+| F14 | Retention queries loaded unbounded result sets | Closed — Wave 4.6 |
+| F15 | `/openapi` publicly served in production | Closed — Wave 4.2; independently re-verified this review (Phase 4/6/7/8, live 404s) |
+| F16 | `to_regclass` probe ran on every authenticated request | Closed — Wave 4.7 |
+| F17 | CORS `allow-credentials=true` with unvalidated origins | Closed — Wave 0.6; independently re-verified this review (Phase 7/8, live) |
+| F18 | No `UNIQUE` on `users.email`; unused `pgcrypto` | Closed — Wave 4.8 (kept `pgcrypto`, ADR-033) |
+| F19 | react-router GHSA-qwww-vcr4-c8h2 (transitive) | Closed — Wave 4.4 |
+| F20 | Maven dependency CVE scan never run | Closed — Wave 4.3 (ADR-034), now a standing gate; independently re-verified this review (Phase 6: confirmed wired to a weekly cron) |
+
+`DATA-API-EXPOSURE.md`'s finding is closed as ADR-036/037, and its two-layer mechanism plus the
+migration-ordering question it left open are independently re-verified this review (Phase 5,
+including this review's own F10 above).
 
 ## 7. ASVS coverage map
 
-*Not started — Phase 9, populated from evidence gathered across Phases 1–8.* Every ASVS 5.0.0 chapter
-will be marked `pass` / `gap` / `n/a with reason` / `not assessed`.
+ASVS 5.0.0 at Level 2 (§Method, §Standards versions). **No clause id below is cited as fetched and
+confirmed against the ASVS 5.0.0 text** — this review's own findings (F1, F8, and others above) were
+already explicit that a specific requirement number was not looked up to the precision plan §2.1
+demands, and this table applies the same discipline rather than inventing one now under a
+consolidation deadline. Chapter groupings follow ASVS 5.0.0's restructured (from 4.0) thematic areas,
+named descriptively; each mark is grounded in a specific phase's evidence, not asserted from the
+chapter's title alone.
+
+| Chapter | Mark | Grounds |
+|---|---|---|
+| Authentication | **gap** | F2 (email-link scheme-hijack mitigation optional/unenforced). Login/register/logout/JWT-verification mechanism reviewed structurally and found sound (Phase 3). **Not assessed**: JWKS-unreachable fail-mode, JWT clock-skew tolerance, and login/password-reset timing-based enumeration resistance were never forced this review — named as open questions (§8), not confirmed either way. |
+| Session Management | **gap** | F1 (a WebSocket's authorization is checked once, at handshake, never revalidated). Token lifetimes/rotation reviewed and sound (Phase 3). Cookie attributes (`httpOnly`/`Secure`/`SameSite=Lax`, no `__Host-` prefix) verified only from `SessionService.java`'s source, never wire-verified against a real `Set-Cookie` — blocked by the local Supabase port conflict (Phase 7/8); **not assessed** at the wire. |
+| Access Control | **pass**, with a named dynamic gap | BOLA confirmed absent across three resources; BFLA coverage confirmed complete, every mutating endpoint enumerated (Phase 3). No-cookie and tampered-cookie cases verified live and correct (Phase 8). **Not assessed**: the full authenticated matrix — a genuine `user`-role cookie against an admin path, an expired-but-well-formed cookie, a role changed mid-session — needs a real local session the port conflict prevented (§8). |
+| Validation, Sanitization, and Encoding | **pass** | Mass-assignment defense (`ignoringUnknownFields`) is deliberate; no `oneof`/`Any` type-confusion surface exists in any current `.proto` (Phase 4). No new injection surface in the rate-limit upsert, first-login race fix, or retention queries — all parameterized (Phase 5). Malformed, oversized (5MB), and 100,000-level-nested bodies on both codec paths verified live to fail cleanly with no crash and no leaked detail (Phase 8). |
+| Stored Cryptography | **pass** | The JWT signing key is never held by jZen — Supabase-only (A1). Secrets inventory corrected and verified (7–9 genuine Secret Manager entries, not 17); none committed; none reaching a client bundle; no secret value found in a log or error response, corroborated live under a forced outbound failure (Phase 5, Phase 8). Rotation is manual/operator-driven — named as an open question (§8), not a gap, at this team's scale. |
+| Error Handling and Logging | **pass** | `InvalidBodyExceptionMapper` and the generic 500 body both confirmed, by reading and then by forcing a live failure, never to leak a stack trace, exception class, field path, or internal hostname (Phase 4, Phase 8). PII-free logging confirmed across the retention/mail/jobs paths (Phase 5). |
+| Data Protection | **gap** | F4 (anonymisation never reaches the Supabase-owned `auth.users` record; no automated erasure path for it). The no-erasure-without-delivered-warning property that *is* in scope holds by construction (Phase 5). |
+| Communication | **pass**, with a named and re-examined exception | TLS terminates at Cloud Run; HSTS present but deliberately short of `includeSubDomains`/`preload` (ADR-035/027) — re-examined under plan §5.4's rule and found still reasoned (no committed domain yet), not re-litigated as a fresh gap (Phase 7). No edge/CDN/WAF exists to add a second, independently-configured TLS-terminating hop (invariant 4). |
+| Malicious Code / Self-protection | **gap** | F5 (`audit.yml`'s third-party actions still run from mutable tags on an unattended schedule). Otherwise strong: base image digest-pinned and non-root, SBOM generated and keyless-signed with fail-closed verification before deploy (ADR-043, re-confirmed with no drift), secret scanning and push protection both enabled, no committed credential found (Phase 6). |
+| Business Logic | **gap** | F8 (the rate limiter's `X-Forwarded-For` trust collapses completely if the no-edge assumption is ever violated — demonstrated live). The buckets and ceilings that *are* in scope today fire exactly as configured, verified live (Phase 8). The neutral-202 enumeration-resistance property is structurally confirmed but not timing-measured — **not assessed** on the timing half (§8). |
+| Files and Resources | **n/a with reason** | No file-upload, attachment, or resource-handling feature exists anywhere in jZen's reviewed surface across Phases 2–8 — there is no such module, endpoint, or client capability to assess. |
+| API and Web Service | **gap** | F3 (the no-server-side-Jackson invariant that keeps `application/json` responses canonical is unenforced by any gate). Otherwise sound: `@PreMatching` ordering (`ZenTransportFilter → RateLimitFilter → auth → CsrfFilter`) is structurally correct and pinned by a test; `X-Zen-Transport` cannot steer a request to an unintended resource; the OpenAPI/Swagger/dev/health surface is confirmed absent from production, both from the dependency tree and live on the wire (Phase 4, Phase 6, Phase 7, Phase 8). |
+| Configuration | **gap** | F7 (react-admin's default telemetry beacon ships unreviewed; blocked today only by a CSP directive written for an unrelated purpose). Otherwise sound: every response security header verified byte-identical live across four surfaces; `verify:boundaries` fails loudly rather than silently passing on an empty scope, though it still does not cover native platform-channel code (a confirmed, currently-inert gap named in Phase 2/7, not separately minted as an `F<n>`) (Phase 7, Phase 8). |
+
+**Summary:** 2 chapters pass cleanly (Validation/Sanitization/Encoding, Error Handling/Logging); 3
+pass with a named, already-priced exception (Access Control, Stored Cryptography, Communication); 7
+carry an open gap this review already named as an `F<n>` (Authentication, Session Management, Data
+Protection, Malicious Code/Self-protection, Business Logic, API/Web Service, Configuration); 1 is
+genuinely not applicable (Files and Resources). 2 + 3 + 7 + 1 = 13, all named. No chapter is left
+unmarked.
 
 ## 8. Open questions
 
-*Not started.* Will include, at minimum, the exact command for a human to run the hosted Supabase
-Data API lockdown check that this review deliberately does not run (plan §4.4), and the plan's own
-open questions (§11) not already settled: Q4 (is `task audit` wired into CI or a schedule anywhere —
-ADR-039 exists and should be checked against reality in Phase 6, not assumed from its title), Q5
-(assume a second jZen application is imminent per ADR-026), Q7 (a follow-on penetration test, named
-as a recommendation only).
+Every item below needed a running system, a live credential, or an owner decision this review's
+rules of engagement withheld — each is named rather than silently dropped, with the exact command a
+human should run.
+
+1. **The hosted Supabase Data API lockdown (plan §4.4) — verified locally this review, never against
+   the hosted project, by owner decision.** To check it directly (read-only, but a live credential
+   against production infrastructure — get the owner's go-ahead first):
+   ```
+   curl -s -o /dev/null -w '%{http_code}\n' \
+     -H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+     "https://<project-ref>.supabase.co/rest/v1/users?select=id&limit=1"
+   ```
+   Expect `401`/`403`/an empty array. A `200` with rows would mean the local verification (Phase 5)
+   does not describe the hosted project and is the highest-priority thing to re-open in this review.
+
+2. **The local Supabase port conflict that blocked all of Phase 8's authenticated dynamic testing.**
+   Port 54322 is held by an unrelated project's own stack (`supabase_db_bugeater-quarkus`) on this
+   machine. To unblock a future session without touching that project's containers, override jZen's
+   local Supabase ports for one run:
+   ```
+   supabase start --workdir apps/zen_demo/zen_demo_server -x db=54422,api=54421,studio=54423,inbucket_smtp=54425
+   ```
+   (or edit `supabase/config.toml`'s `[db].port`/`[api].port` for the duration of the session), then
+   re-run the five dynamic checks Phase 8 could not: wire-verify cookie attributes against a real
+   `Set-Cookie`; the full BOLA/BFLA matrix with a genuine `user`-role cookie against an admin path and
+   a role changed mid-session; WebSocket authorization after a successful upgrade and across a
+   logout/role change; the Phase 3 neutral-202 timing measurement; and `task run:demo`'s manual
+   walkthrough.
+
+3. **JWKS-unreachable behaviour (Phase 3) — reasoned from code, never forced.** Block egress to the
+   JWKS endpoint from a running container and observe whether sessions degrade to anonymous as
+   `SessionCookieAuthenticationMechanism` predicts, and whether the DEBUG-level log line is the only
+   signal:
+   ```
+   docker network disconnect <network> <container> && curl -i http://localhost:18080/api/v1/auth/identity \
+     -H 'Cookie: zen_access_token=<a still-valid token>'
+   ```
+
+4. **JWT clock-skew tolerance (Phase 3) — no explicit property set; SmallRye JWT's own default
+   applies, unconfirmed.** Mint a token with a skewed `iat`/`exp` (or run the container under a
+   shifted clock) and observe the acceptance boundary:
+   ```
+   faketime '+10 minutes' <the process that verifies the token>
+   ```
+
+5. **Login/password-reset timing-based enumeration resistance (Phase 3) — the structural half (same
+   status code, same shape) is confirmed; the timing half needs a measurement.**
+   ```
+   hyperfine --warmup 5 \
+     'curl -s -o /dev/null -X POST http://localhost:18080/api/v1/auth/register -d "email=known@example.com&password=x"' \
+     'curl -s -o /dev/null -X POST http://localhost:18080/api/v1/auth/register -d "email=unknown-$RANDOM@example.com&password=x"'
+   ```
+
+6. **Whether a native build with the live `zendemo://` custom scheme has actually shipped to a real
+   device or store listing** — this determines whether F2's exploitability is "contingent" or
+   "demonstrated." Not answerable from the repository; check the actual release artifacts:
+   ```
+   gh release list --repo jZenDev/jZen
+   ```
+   and check the Play Console / App Store Connect listings directly (outside any tool this review has).
+
+7. **A real forked-repository PR, to observe `GITHUB_TOKEN` scoping empirically** rather than
+   reasoning it from GitHub's documented trigger-scoping rule (Phase 6). Open a PR from a fork that
+   adds a trivial, harmless workflow step, then inspect the token's actual permissions on that run:
+   ```
+   gh run view <run-id> --repo jZenDev/jZen --json jobs --jq '.jobs[].steps'
+   ```
+
+8. **Artifact Registry storage growth** (named in §5, not minted as a finding) — track it before
+   deciding whether the keep-tagged-forever policy needs revisiting:
+   ```
+   gcloud artifacts docker images list europe-central2-docker.pkg.dev/jzen-prod/jzen \
+     --project=jzen-prod --format="value(package)" | wc -l
+   ```
+   Re-run monthly; compare against the 81 counted this review (up from 51 at the predecessor audit).
+
+9. **Secret rotation cadence** (Phase 5, named as an open question, not a gap at this team's scale) —
+   check how old the live secrets actually are before deciding whether manual, operator-driven
+   rotation needs a reminder:
+   ```
+   gcloud secrets versions list <secret-name> --project=jzen-prod --format="table(name,createTime,state)"
+   ```
+
+10. **Plan §11's own open items not already settled by a phase.** Q4 (is `task audit` wired into CI —
+    **answered, not open**: yes, per ADR-039 and `audit.yml` itself, Phase 6) and Q7 (a follow-on
+    penetration test, active and authorised, against a dedicated deployment) remain a recommendation
+    only — named here, not performed, and not costed, since it needs a scope and a provider decision
+    outside this review's remit. Q5 (assume a second jZen application is imminent, per ADR-026) is a
+    standing assumption this review already applied throughout, not a question to re-answer.
 
 ## 9. Appendix
 
-*Not started.* Will carry the full control inventory, the silent-no-op census, and the gate-coverage
-table from Phase 2, Part C.
+The full control inventory, the silent-no-op census, and the gate-coverage table already live in
+**§3.1 (Part A — Control inventory)**, **§3.2 (Part B — The silent-no-op census)**, and **§3.3 (Part
+C — Gate audit)** — Phase 2's centrepiece deliverable, at over 100 lines combined. Reproducing them
+here would duplicate rather than consolidate, so this section is a pointer rather than a copy, per
+this phase's own instruction to prefer a short pointer over duplicating substantial content:
+
+- **Control inventory** (13 controls, each with code location, test location, whether a second jZen
+  application inherits it, and its fail-open/fail-closed and silent/not-silent properties) — §3.1.
+- **Silent-no-op census** (four named mechanisms — three from `CLAUDE.md`, one new this review — and
+  six paper-attack scenarios attempted against the framework, one succeeding: a native platform-channel
+  network call bypasses `verify:boundaries` entirely) — §3.2.
+- **Gate-coverage table** (`verify:boundaries`, `verify:docs`, `verify:contracts`, `audit`, `test:e2e`
+  — what each actually checks, what its name implies but does not, and whether it can pass having
+  checked nothing) — §3.3.
+
+Also carried in the same phase-by-phase structure rather than duplicated here: the trust-boundary
+diagram and asset/threat tables (§2), and every per-phase question-and-answer table (§3.4–§3.9) that
+this section's rankings (§1, §4–§7) were drawn from.
 
 ---
 
@@ -1791,3 +2118,77 @@ access-control matrix; WebSocket authorization after a successful upgrade and ac
 logout/role-change mid-connection; the Phase 3 neutral-202 timing measurement; and `task
 run:demo`'s manual walkthrough. All five need a real local Supabase session, which this phase could
 not obtain without touching another project's running container.
+
+---
+
+## Phase 9 record
+
+**Method:** no new code was read and no new test was run — Phase 9 is ranking, writing, and local
+cleanup only (plan §Phase 9), consolidating the evidence Phases 0–8 already recorded rather than
+gathering more. §1 (Summary) ranks the seven open findings (F1–F5, F7, F8) by
+`(active exploitability × impact) / remediation cost` with the framework-over-application tie-break
+(plan §5.5, §7); §4/§5 sort each finding's fix into free (no invariant, cost near zero) or priced (a
+real invariant or engineering cost); §6 consolidates every "closed this phase" paragraph already
+scattered through §3.4–§3.9, plus this review's own F6/F10/F12 (minted and closed in earlier phases
+of this same review, before the 2026-09-18 session that closed Phases 0–8), plus a one-line-each
+citation of the predecessor's F1–F20 and the `DATA-API-EXPOSURE.md` finding, none re-reviewed (plan
+§1); §7 maps all thirteen ASVS 5.0.0 chapters to pass/gap/n-a/not-assessed, grounded in the phase that
+produced the evidence for each mark, with no clause id fabricated (§2.1's rule, already applied
+throughout this document, applied again here); §8 names every "not verified"/"deferred" item already
+scattered through the document as a question with the exact command a human should run; §9 points at
+§3.1–§3.3 rather than duplicating them.
+
+**Cleanup commands run this phase, output recorded verbatim:**
+
+```
+$ task stop:supabase
+task: [stop:supabase] supabase stop
+WARN: config section [inbucket] is deprecated. Please use [local_smtp] instead.
+{"project_id_filter":"jzen","backup":true,"message":"Stopped supabase local development setup."}
+```
+
+jZen's own Supabase project (`project_id_filter: "jzen"`) was not running — consistent with Phase 8's
+own record that `task run:supabase` never started this session (port 54322 held by an unrelated
+project's stack) — so this command found nothing of jZen's to stop and reported a normal, empty
+success rather than an error.
+
+```
+$ docker ps -a
+```
+Returns 29 containers, **none belonging to this review**: `supabase_*_bugeater-quarkus`,
+`supabase_*_prudent`, `bugeater-prod-run`, `bugeater-mailhog`, and five `penpot-*` containers — every
+one pre-existing, none named `jzen`, `zen-native-smoke`, or `zap`, and none started by this session.
+This matches this review's own Phase 8 record verbatim ("every container, image build... created this
+phase was removed at the end of it; `docker ps -a` after cleanup shows nothing from this session") —
+re-confirmed one phase later, from a fresh shell, rather than taken on Phase 8's own word. Per the
+standing rule against touching another project's processes (memory: "no broad process kills"), none
+of the 29 listed containers were stopped or removed by this phase.
+
+```
+$ git status --porcelain
+```
+Returns nothing before this phase's own edits (verified at the start of this session against a clean
+working tree, `docs/security-architecture-review` branch) — the only file this phase modifies is
+`docs/plans/SECURITY-ARCHITECTURE-REVIEW.md` itself. No code, ADR, or other tracked file is touched,
+per the plan's own constraint (§Phase 9, and this task's instruction) and per this document's own
+"No ADR" / "No code changes" rules (plan §8).
+
+**Done-when check (plan §Phase 9):** §7 and §8 populated ✓ (this document's own, not the plan's —
+Phase 9 writes *this* report's §7/§8, which the plan's §6 Phase 9 text points at via "§7 and §8
+below"). `task stop:supabase` run and recorded ✓. `docker ps -a` run and recorded, confirmed to carry
+nothing from this review ✓. `git status --porcelain` run and recorded, confirmed clean before this
+phase's own edit ✓. The web bundle was not rebuilt this phase (Phase 7 already deferred that; Phase 9
+adds no reason to revisit it), so the "leave `task test:native` passing if Phase 7 rebuilt the bundle"
+clause does not apply.
+
+**Phase 9: CLOSED.** All nine phases the plan names are now closed; every section of this document's
+own skeleton (§1–§9) carries real content grounded in a specific phase's evidence rather than a
+placeholder.
+
+**Explicitly not done in Phase 9, and not this review's job at any phase** (per the plan's own scope,
+§Phase 9 and §8's "No ADR"/"No code changes" rules): fixing any of the seven open findings; writing an
+ADR for any finding that implies one (each finding names the ADR a fix would supersede instead, per
+plan §8); re-opening or re-verifying any Phase 0–8 evidence beyond what §6's consolidation required;
+running any of the ten §8 commands against production or a live credential without the owner's
+separate go-ahead (§8 item 1 says so explicitly); resolving the local Supabase port conflict that
+blocked part of Phase 8 (§8 item 2 names the workaround for a future session, not this one).

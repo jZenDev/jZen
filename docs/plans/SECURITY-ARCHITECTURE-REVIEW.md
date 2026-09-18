@@ -11,8 +11,11 @@ CLOSED** (the transport seam and the two parsers — see "Phase 4 record"). **Ph
 data plane, privileges, and privacy — see "Phase 5 record"). **Phase 6 CLOSED** (supply chain and
 build integrity — see "Phase 6 record"). **Phase 7 CLOSED** (the client and the browser surface —
 see "Phase 7 record"; this is also the phase that opened the production request ledger, plan §4.3).
-Phases 8–9 are not yet executed. Sections 4–9 below remain placeholders except where Phases 4–7
-populated §3.5–§3.8.
+**Phase 8 CLOSED** (local dynamic verification — see "Phase 8 record"; `task test:native` plus a
+manual dynamic probe pass and an OWASP ZAP passive baseline scan against a local container, entirely
+off the production request budget, which stays at 11 of 12).
+Phase 9 is not yet executed. Sections 4–9 below remain placeholders except where Phases 4–8
+populated §3.5–§3.9.
 
 **Scope:**
 - **In scope.** jZen as a framework — `server/zen-*`, `client/zen_*`, `admin/` (`@jzen/admin-core`) —
@@ -71,10 +74,12 @@ write reaches production or the hosted Supabase project.
   read, and plan §4.2/§4.3 forbid a `POST` (login) against production to manufacture one. Cookie
   attributes stay verified statically from `SessionService.java` (Phase 3) and are deferred to
   Phase 8's local container, which can log in against a disposable local Supabase account.
-- **Tools:** none run yet. Phase 8 is the only phase that runs a scanner (an OWASP ZAP baseline
-  passive scan against the local container) and it will be recorded here by name, version and
-  configuration when it runs.
-- **What was NOT assessed (as of Phase 7):** Phases 8–9 have not started. Phase 4, like Phases 1–3,
+- **Tools:** `task test:native` (native image build + built-in smoke gate, PASS); OWASP ZAP
+  **2.17.0** (`ghcr.io/zaproxy/zaproxy:stable@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51
+  521a5be45f5f5081ef`), run as `zap-baseline.py -a` (passive baseline) against the local container —
+  0 FAIL, 63 PASS, 7 WARN, all named and accounted for in §3.9/"Phase 8 record". Both run entirely
+  against `localhost`; neither touched production.
+- **What was NOT assessed (as of Phase 8):** Phase 9 has not started. Phase 4, like Phases 1–3,
   ran no `@QuarkusTest` and no `gcloud` or network read against production; it is a static read of
   the transport-seam code cited in §3.5, plus one local, read-only `mvnw dependency:tree` run (both
   with and without `-Dnative`) to confirm the OpenAPI/Jackson dependency questions rather than trust
@@ -114,8 +119,22 @@ write reaches production or the hosted Supabase project.
   directly (the marmelab telemetry call in **F7** below is reasoned from `SecurityHeaders.java`'s
   `img-src` directive and `ra-core`'s own source, not watched failing live — deferred to Phase 8),
   and did **not** independently wire-verify cookie attributes (see the ledger note above; deferred to
-  Phase 8's local container). This line is updated as each phase closes; "not assessed" is an honest,
-  acceptable entry per chapter (plan §2.3), an *unmarked* one is not.
+  Phase 8's local container). Phase 8 ran `task test:native` to completion (PASS) and a manual
+  dynamic probe pass plus an OWASP ZAP passive baseline scan against a second, hand-built copy of
+  the same image, entirely local and off the production request budget — but local Supabase
+  (`task run:supabase`) could not be started this session, because its fixed local port (54322) is
+  already bound by an unrelated project's own Supabase stack already running on this machine, and
+  this session's standing rule against touching another project's processes meant it was left alone
+  rather than stopped. It therefore did **not** obtain a genuine authenticated session locally, and
+  so did **not** wire-verify cookie attributes against a real `Set-Cookie` (deferred again, now
+  environmentally rather than by rules-of-engagement, to a future session with a free port), did
+  **not** exercise the full BOLA/BFLA access-control matrix beyond the no-cookie and
+  tampered-cookie cases (both tested and both behaved as ADR-030 states), did **not** test
+  WebSocket authorization past a successful handshake or across a logout/role change, and did
+  **not** measure the Phase 3 neutral-202 timing property. Named in full in §3.9's closing
+  paragraph and in "Phase 8 record", not silently dropped. This line is updated as each phase
+  closes; "not assessed" is an honest, acceptable entry per chapter (plan §2.3), an *unmarked* one
+  is not.
 
 ---
 
@@ -980,6 +999,157 @@ tree beyond the one behaviour (`F7`) found by reading its source directly.
 
 ---
 
+### 3.9 Part I — Phase 8: Local dynamic verification
+
+The only phase that runs a scanner and forces live traffic, entirely against a local container —
+never production (plan §4.2). `task test:native` was run to completion (native image built fresh
+from today's `HEAD`, `WEB_API_URL=http://localhost:18080` since this machine's `gcloud` is not
+configured against the jZen GCP project this session), and a second, hand-built instance of the
+same `zen-native-smoke:local` image was kept running afterward — `task test:native`'s own container
+is torn down by its `trap cleanup EXIT`, so a second copy is what a manual dynamic probe needs — for
+curl-based header/cookie/malformed-body/rate-limit/jobs-trigger/WebSocket-handshake probes and an
+OWASP ZAP 2.17.0 passive baseline scan (`ghcr.io/zaproxy/zaproxy:stable@sha256:781a2bdaea47324e7bab
+583e2263f21d257b0aee61ed51521a5be45f5f5081ef`, `zap-baseline.py -a`). Both the smoke container and
+the scan container were removed at the end of this phase; `docker ps -a` carries nothing from this
+session.
+
+**Environmental constraint, stated once here rather than repeated per row below:** local Supabase
+(`task run:supabase`) could not be started this session — its fixed local port (54322) is already
+bound by `supabase_db_bugeater-quarkus`, an unrelated project's own Supabase stack already running
+on this machine, and this session's standing rule against touching another project's processes
+means that container was left alone rather than stopped. The smoke container's own
+`SUPABASE_URL=http://localhost:54321` therefore resolves to nothing reachable from inside it. This
+rules out every dynamic probe that needs a *genuine* authenticated session — a real login, a real
+`Set-Cookie`, WebSocket authorization surviving past the handshake. Where a row below is affected,
+it says so; the root cause is this paragraph.
+
+| Question (plan §Phase 8) | Answer, with evidence |
+|---|---|
+| `task test:native` itself | **Green, exit 0**, full log kept. This is a *dynamic* confirmation of two gates Phase 5 could previously only read: the schema-rollback refusal (exit 2 against a database ahead of the image, then the deliberate `ZEN_ALLOW_SCHEMA_ROLLBACK=true` override proceeding) and this review's own **F10**/ADR-041 Data API exposure gate (exit 3 against a live `anon` grant on a table, clearing once the grant is revoked). Also confirms the %prod no-migrate-at-boot property (ADR-038) and the static-asset ETag surviving a container restart (the predecessor audit's F2, re-verified). |
+| Security headers, from the wire, on a build compiled today | **Byte-identical** to the production ledger (Phase 7) on `/`, `/admin/`, and an unauthenticated API path: CSP, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, COOP, CORP all present, matching `SecurityHeaders.java` verbatim. `/openapi`, `/q/swagger-ui/`, `/q/dev/` all `404` — reconfirms Phase 4/6/7's dependency-tree reading, this time against an image built fresh from today's `HEAD` rather than the 2026-08-17 bundle Phase 7 was limited to. |
+| CORS preflight, from the wire | `OPTIONS /api/v1/auth/identity` with `Origin: https://evil.example.com` → `403 CORS Rejected - Invalid origin`, no origin echoed. Matches the production ledger's row #4 exactly. |
+| Malformed and oversized bodies on both codec paths | **No crash, no stack trace, no 500 in the client-visible body, for any malformed input tried.** Garbage JSON and garbage protobuf to `/api/v1/auth/register` both return `400 {"code":"invalid_body","message":"The request body could not be parsed as the negotiated transport format."}`. A 5MB JSON body returns `413`. A JSON body nested 100,000 levels deep returns the same clean `400 invalid_body` — and produces **no server-side log entry at all**, at any level, meaning the rejection happens before the request reaches application code or `ZenExceptionMapper`, not via a caught `StackOverflowError`. This does not establish Gson's exact numeric recursion-depth default (Phase 4's open item stays open on that specific number), but it does establish the operationally relevant fact: the un-set depth limit named there as a "structural gap, reasoned not verified" produces no crash, no expensive log write, and no leaked exception under a 100k-level payload in practice. |
+| Jobs trigger: wrong / no / correct token | `POST /api/v1/jobs/trigger` with no header → `401`; with a wrong-length wrong token → `401`; with the container's real configured secret → `200`, and the job actually ran against the disposable local Postgres. Confirms `JobTriggerAuthenticator`'s fail-closed behaviour end to end, not only from its own unit test. |
+| Rate limiting: auth and job-trigger buckets, from the wire | **Both fire exactly on their configured burst ceilings**, confirmed by cumulative counting across probes rather than assumed: the job-trigger bucket (burst-limit 5/min) returned `401` for its first two wrong-token attempts in a fresh sequence and `429` starting at the third, once five total calls had accumulated in the window; the auth bucket (burst-limit 10/min) showed the same shape once its own cumulative count crossed ten. A blocked request carries `Retry-After` and `X-RateLimit-Tier: burst`, and the body is the generic `{"code":"rate_limited",...}` `ZenError` — no internal detail leaks through a 429 either. |
+| A 500 from a genuinely broken outbound dependency — does it leak anything? | **No.** With `SUPABASE_URL` unreachable from inside the container (the environmental constraint above), repeated login attempts eventually trip SmallRye Fault Tolerance's circuit breaker (`CircuitBreakerOpenException`, visible server-side in the structured JSON log with a full stack trace) — but the client-visible body is always the fixed `{"code":"internal_error","message":"Something went wrong. Please try again."}`, with no exception class name, no hostname, no port, and no Supabase URL anywhere in it. This is a live, forced confirmation of a Phase 5 item ("a secret value reaching a log or an error response: not found") under an actual failure, not only a static read of `ZenExceptionMapper`. **A secondary, unplanned observation**: an outbound GoTrue outage during *login* surfaces to the caller as a loud, distinctive `500`/circuit-breaker condition — architecturally different from a JWKS outage during *token validation* (Phase 3), which the code recovers silently into an anonymous identity. Both are fail-closed on authorization, but an operator would see very different symptoms for what is, from the user's perspective, the same underlying Supabase-availability problem. |
+| Tampered / forged session cookie | `GET /api/v1/auth/identity` with `Cookie: zen_access_token=not.a.valid.jwt.at.all` → `204` (anonymous), the same response an absent cookie produces. Confirms ADR-030's "an unverifiable session cookie means anonymous" at the wire level, not only from `SessionCookieAuthenticationMechanism`'s source. |
+| No cookie against an admin path | `GET /api/v1/admin/users` with no credential → `401`. |
+| The WebSocket handshake: origin checking and authentication | **Both confirmed live**, closing two of Phase 4's open WebSocket questions. A cross-origin handshake attempt (`Origin: https://evil.example.com`) is rejected at `403 CORS Rejected - Invalid origin` before any upgrade occurs. A same-origin handshake attempt with no session cookie is rejected at `401` — the socket is never upgraded for an anonymous caller. **Not tested, per the environmental constraint above**: authorization *after* a successful upgrade, and what happens to an already-open connection across a logout or a role change mid-connection (Phase 4's sharper question) — both need a real, authenticated session. |
+| `X-Forwarded-For` cannot spoof the rate limiter's key — verified against the shipping image, not just reasoned (plan §5.2) | **Confirmed, and it produced this phase's one finding (F8, below).** The %prod default `zen.ratelimit.forwarded-hops=1` is exactly what ships to Cloud Run. Fired directly against the job-trigger bucket (bypassing any proxy, since this local container has none in front of it): eight requests each carrying a **different** single-entry `X-Forwarded-For` value all returned `401` (never `429`) — each spoofed value was accepted as a fresh, trusted identity. The same eight requests with one **constant** spoofed value correctly hit `429` starting at the sixth call, matching the configured burst-limit of 5. This is the exact bypass `ClientAddress`'s own javadoc names as the failure mode of "forwarding on, hops above 0, but nothing actually vouches for the header" — reproduced here, live, against the production configuration. |
+
+**One finding minted this phase:**
+
+```
+### F8 — The rate limiter's entire X-Forwarded-For trust decision rests on an assumption ("nothing
+but Cloud Run's own frontend can be the TCP peer") that Phase 8 could demonstrate breaking, and no
+gate would catch the break
+
+**Class:** architectural
+**Scope:** framework (`zen-ratelimit`'s `ClientAddress`/`RateLimitAddressGuard`; the %prod default
+           `forwarded-hops=1` ships from zen-ratelimit's own `microprofile-config.properties`, and
+           every application inherits it unless it overrides the property)
+**Confidence:** verified — reproduced live against the exact %prod-profile shipping image (plan
+           §5.2's "confirm the layer, not only the outcome"), not reasoned from `ClientAddress`'s
+           javadoc alone.
+**Standard:** ASVS 5.0.0 V11 (business logic / anti-automation — rate limiting), and OWASP API
+           Security Top 10 API4:2023 (Unrestricted Resource Consumption). No single ASVS clause
+           names "trusted-proxy-hop count" directly.
+**Boundary:** B1 (browser/mobile → Cloud Run) and, implicitly, invariant 4 of plan §7.1 ("nothing
+           sits between the client and Cloud Run — no CDN, no WAF, no API gateway").
+**Where:** server/zen-ratelimit/src/main/java/zen/ratelimit/ClientAddress.java (the resolution
+           logic), server/zen-ratelimit/src/main/resources/META-INF/microprofile-config.properties
+           (`zen.ratelimit.forwarded-hops=1` under the %prod-equivalent default — no %prod override
+           exists in this repository, so this literal value is what `apps/zen_demo`, and any second
+           application that does not override it, inherits), server/zen-ratelimit/src/main/java/
+           zen/ratelimit/RateLimitAddressGuard.java (the boot-time consistency check, which only
+           catches an INTERNAL inconsistency between this property and Vert.x's own forwarding
+           config — it has no way to know whether the deployment's actual network topology has one
+           hop of trusted proxy or zero).
+**Evidence:** Against `task test:native`'s own image, hit directly with no Cloud Run in front of it
+           (this phase's local container): 8 job-trigger requests with 8 distinct single-entry
+           `X-Forwarded-For` values → `401` × 8, never `429`, against a configured burst-limit of 5.
+           The same 8 requests with one constant spoofed value → `401`, `401`, then `429` × 6,
+           exactly at the configured ceiling. `RateLimitAddressGuard` did not refuse to boot,
+           because its check is internal-consistency-only (see "Where").
+**Exploitability today:** **Not exploitable in the actual deployment, and that is the finding's
+           point rather than an exemption from it.** Cloud Run terminates every external TCP
+           connection itself; nothing in today's architecture lets an internet caller reach the
+           container's socket directly the way this phase's local `curl` did, so the "the last hop
+           is trustworthy" assumption `forwarded-hops=1` encodes is currently true by construction
+           — ADR-027's "no edge" invariant is precisely what makes it true. The exploit path is
+           entirely hypothetical today.
+**Impact:** The instant that assumption stops holding — a CDN, WAF, or API gateway is added in
+           front of Cloud Run (invariant 4, priced and rejected/deferred by ADR-027, but not
+           architecturally impossible to reintroduce later) without a matching review of
+           `zen.ratelimit.forwarded-hops`, or a future jZen application is deployed behind something
+           other than bare Cloud Run — every rate limit in the system becomes fully
+           attacker-controlled with a single request header, on the highest-consequence endpoint
+           jZen ships (`/api/v1/jobs/trigger`, which drives anonymisation) as much as on login.
+           `RateLimitAddressGuard` would not catch it: its check only compares two *configuration*
+           values for mutual consistency, and both would still agree with each other while
+           disagreeing with the actual network the deployment now sits behind.
+**Silent?** Yes, exactly in the shape plan §1 and §Phase 2 ask this review to look for: no test,
+           gate, or boot-time check reads the deployment's real topology, only its own declared
+           configuration. Every suite stays green, `RateLimitAddressGuard` boots happily, and the
+           only symptom would be a limiter that quietly blocks nobody — indistinguishable from not
+           being attacked, per that same class's own javadoc.
+**Fix:** No code change proposed here (plan §8's rule against proposing fixes mid-review) — this is
+           an existing, already-well-reasoned trust boundary (`ClientAddress`'s javadoc already
+           states the exact risk this finding demonstrates), not an oversight. What is missing is a
+           trip-wire: a deploy-time or startup check that fails loudly if `forwarded-hops > 0` is
+           configured for an environment that is not Cloud Run's own known network path, or —
+           cheaper — a deploy-doc callout (this review's report is one) that any future ADR adding
+           an edge in front of Cloud Run must name this property explicitly as a consequence.
+**What the fix costs:** A trip-wire that is too clever risks becoming its own silent-no-op (the
+           exact class of defect it exists to prevent) if the "is this Cloud Run's own network path"
+           signal is ever wrong. The cheap version — a checklist item, not a runtime check — costs
+           nothing and is arguably what plan invariant 4 already implies but does not say explicitly
+           against this specific property.
+**Invariant touched:** #4 (plan §7.1) directly — this finding is what makes invariant 4 load-bearing
+           for a property (`forwarded-hops`) that is not otherwise named alongside it anywhere in
+           the codebase or in ADR-027.
+**ADR consequence:** None today (ADR-027 already prices and defers an edge on cost/performance
+           grounds; this finding adds a *security* consequence to that same trade that is not named
+           in ADR-027's own text). Any future ADR that adds a CDN/WAF/gateway in front of Cloud Run
+           would need to supersede ADR-027 and must also set `zen.ratelimit.forwarded-hops`
+           correctly as part of that change, not as an afterthought.
+```
+
+**Closed this phase, verified correct with the evidence cited in the question table above** (candidates for §6, not restated there yet — Phase 9's consolidated pass): `task test:native`'s full built-in gate suite (migrate-only empty-db, the schema-rollback gate and its override, this review's own F10/ADR-041 Data API exposure gate and its clearing, %prod no-migrate-at-boot, both transport modes, the restart/ETag survival); security headers byte-identical to production across three surfaces on a build compiled fresh from today's `HEAD`; the CORS preflight rejection; the OpenAPI/Swagger/dev/health `404` surface; malformed/oversized/deeply-nested body handling on both codec paths, with no crash and no server log for the deepest payload; `JobTriggerAuthenticator`'s fail-closed behaviour (no/wrong/correct token) exercised live including a real job run; auth- and job-trigger-bucket rate limiting firing on their exact configured ceilings; the tampered-cookie-to-anonymous property (ADR-030); the WebSocket handshake's origin check and authenticated-handshake requirement; and the generic-body-on-500 property under a genuinely forced outbound failure, not only a static read.
+
+**One finding minted**: **F8** (above) — the rate limiter's `X-Forwarded-For` trust decision, demonstrated breaking live under conditions that do not occur in today's deployment but would if invariant 4 (no edge) is ever relaxed without a matching change to `forwarded-hops`.
+
+**An OWASP ZAP 2.17.0 passive baseline scan** (`ghcr.io/zaproxy/zaproxy:stable@sha256:781a2bdaea47
+324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5081ef`, `zap-baseline.py -a` against the running
+container's SPA root) returned **0 FAIL, 63 PASS, 7 WARN**. Every WARN is either already priced in
+this review (`style-src 'unsafe-inline'`, §3.1/ADR-035) or informational noise with no security
+content: storable/cacheable static assets (intended, per `StaticCacheHeaders`), a Unix timestamp
+inside Flutter's own generated `flutter_bootstrap.js`, two "suspicious comment" hits that are
+Flutter-authored boilerplate strings rather than application secrets, and a missing `Sec-Fetch-Dest`
+header that nothing in this stack currently reads. **One WARN not previously named in this review**:
+`Cross-Origin-Embedder-Policy Header Missing or Invalid` — Phase 7's table already states COEP's
+absence is deliberate (`SecurityHeaders`'s own javadoc: "a stricter page-wide opt-in this policy
+does not make"), so this corroborates an existing, already-reasoned decision rather than opening a
+new gap.
+
+**Explicitly not done in Phase 8** (environmental limitation, named once at the top of this section
+rather than per row): any dynamic probe requiring a genuine authenticated session. `task
+run:supabase` could not be started — its fixed local port (54322) is already bound by an unrelated
+project's own Supabase stack running on this machine, and this session's standing rule against
+touching another project's processes means it was left alone rather than stopped. This rules out:
+wire-verifying cookie attributes (`Secure`, `HttpOnly`, `SameSite`, the `__Host-` prefix question)
+against a real `Set-Cookie` header — still deferred, now to a future session with a free port or a
+dedicated compose override; the full BOLA/BFLA access-control matrix (a genuine user-role cookie
+against an admin path, an expired-but-well-formed cookie, a role changed mid-session) beyond the
+no-cookie and tampered-cookie cases actually exercised above; WebSocket authorization after a
+successful upgrade and across a logout or role change mid-connection; and the neutral-202
+enumeration timing measurement named as open in Phase 3. `task run:demo`'s full manual walkthrough
+(plan §Phase 8: "against that container, and against `task run:demo`") was not performed, for the
+same reason. The production request ledger is untouched this phase (still 11 of 12) — Phase 8 is
+local-only by design (plan §4.2) and spent no production reads.
+
+---
+
 ## 4. Free wins
 
 *Not started.*
@@ -1537,3 +1707,87 @@ asserts it; confirming whether a native build carrying the live `zendemo://` sch
 shipped to a real device or store listing (F2 stays "contingent," not "demonstrated"); and an
 independent dependency audit of react-admin's own transitive tree beyond the one behaviour (F7) found
 by reading its source directly. Phases 8–9 entirely.
+
+---
+
+## Phase 8 record
+
+**Method:** `task test:native` run to completion against today's `HEAD`
+(`WEB_API_URL=http://localhost:18080`, since this machine's `gcloud` session is not configured
+against the jZen GCP project) — full log kept, exit 0. A second, hand-built copy of the resulting
+`zen-native-smoke:local` image was then run and kept alive (migrate-only against a disposable
+Postgres, then the serving container on `:18080`) for manual dynamic probes, since `task
+test:native`'s own container is torn down by its `trap cleanup EXIT`. Probes: `curl`-based checks
+for security headers, cookie behaviour, CORS preflight, malformed/oversized/deeply-nested request
+bodies on both codec paths, the jobs-trigger endpoint (no/wrong/correct token), rate limiting on the
+auth and job-trigger buckets (including a deliberate `X-Forwarded-For`-spoofing attempt), a tampered
+session cookie, an unauthenticated admin-path request, and a WebSocket handshake from both a
+cross-origin and a same-origin, unauthenticated caller. An OWASP ZAP 2.17.0 passive baseline scan
+(`ghcr.io/zaproxy/zaproxy:stable@sha256:781a2bdaea47324e7bab583e2263f21d257b0aee61ed51521a5be45f5f5
+081ef`, `zap-baseline.py -a`) ran against the same container over the Docker bridge network. Every
+container, image build (other than the reusable `zen-native-smoke:local` and the pulled ZAP image),
+and network created this phase was removed at the end of it; `docker ps -a` after cleanup shows
+nothing from this session, confirmed directly rather than assumed.
+
+**Environmental limitation, recorded once:** `task run:supabase` failed — its fixed local port
+(54322) is already bound by `supabase_db_bugeater-quarkus`, an unrelated project's own Supabase
+stack already running on this machine for 27+ hours. Per this session's standing rule against
+touching another project's processes (no broad process kills; a busy well-known port from another
+project is environmental, not a blocker to force past), that container was left running rather than
+stopped, and no genuine authenticated session was obtained locally this phase. Every dynamic probe
+this rules out is named in §3.9's closing paragraph rather than silently skipped.
+
+**Dynamic evidence, entirely local, spending none of the production request budget** (still 11 of
+12, unchanged from Phase 7): `task test:native`'s own built-in assertions (migrate-only empty-db,
+the schema-rollback gate and its deliberate override, this review's own F10/ADR-041 Data API
+exposure gate and its clearing, %prod no-migrate-at-boot, both transport modes on `verify:endpoints`,
+the ETag-across-restart property) all passed; security headers, CORS preflight, and the
+OpenAPI/Swagger/dev/health `404` surface reconfirmed byte-identical to the production ledger against
+a build compiled fresh from today's `HEAD`; malformed, oversized (5MB), and deeply-nested
+(100,000-level) request bodies on both the JSON and protobuf codec paths all produced clean,
+non-crashing `400`/`413` responses with no server-side log entry for the deepest payload;
+`JobTriggerAuthenticator` exercised end to end including one real job run; the auth and job-trigger
+rate-limit buckets both confirmed firing exactly on their configured burst ceilings, with generic
+`ZenError` bodies on every `429`; a tampered session cookie confirmed degrading to anonymous rather
+than erroring (ADR-030); an unauthenticated request against an admin path confirmed `401`; the
+WebSocket handshake confirmed rejecting a cross-origin attempt before upgrade and an unauthenticated
+same-origin attempt at the handshake itself; and a deliberate `X-Forwarded-For`-spoofing attempt
+against the job-trigger bucket, which succeeded in full — the direct evidence behind this phase's one
+finding.
+
+**One finding minted** (§3.9): **F8** — the rate limiter's `%prod` default of trusting one hop of
+`X-Forwarded-For` (`zen.ratelimit.forwarded-hops=1`) is, by design and today correctly, an assumption
+that nothing but Cloud Run's own frontend can be the TCP peer; Phase 8 demonstrated live that the
+assumption fully collapses — the rate limiter becomes completely attacker-controlled — the moment
+that is no longer true, which is not the case in today's deployment (ADR-027's "no edge" invariant
+is exactly what keeps it true) but would be the silent, gate-invisible consequence of ever adding a
+CDN, WAF, or API gateway in front of Cloud Run without a matching review of this property.
+
+**One OWASP ZAP passive baseline scan run**, 0 FAIL / 63 PASS / 7 WARN, every WARN already priced by
+this review or informational noise with no security content, plus one WARN (missing
+Cross-Origin-Embedder-Policy) that corroborates an existing, already-reasoned decision (§3.1/ADR-035)
+rather than opening a new one.
+
+**Done-when check (plan §Phase 8):** the plan's own bullet list for this phase — a ZAP baseline scan
+as a cross-check on Phase 7's manual reading ✓; authenticated manual probes for the Phase 3
+access-control questions ✗ **partial** (no-cookie and tampered-cookie cases exercised; a genuine
+valid-session matrix blocked by the environmental limitation above, named rather than silently
+dropped); oversized and malformed bodies on both codec paths ✓; rate-limit behaviour confirmed
+against the shipping image, including the `X-Forwarded-For` question plan §Phase 8 asks explicitly
+("confirm the limiter keys on a resolved client address that X-Forwarded-For cannot spoof... verify
+it against the shipping image") ✓, and this exact check is what produced F8; the jobs trigger with a
+wrong token, no token, and (added beyond the plan's own list, for completeness) a correct one ✓.
+"Record every scanner's name, version and configuration" ✓ — ZAP 2.17.0, `zap-baseline.py -a`, image
+digest recorded above.
+
+**Phase 8: CLOSED**, with one item left genuinely open rather than closed on incomplete evidence:
+the full authenticated access-control matrix and any test needing a real Supabase session, blocked
+by a port collision with another project on this machine and deferred, honestly, to a future session
+rather than forced past the standing rule against touching another project's processes.
+
+**Explicitly not done in Phase 8** (named in full in §3.9's closing paragraph): wire-verifying
+cookie attributes against a real `Set-Cookie` header; the genuine-session half of the BOLA/BFLA
+access-control matrix; WebSocket authorization after a successful upgrade and across a
+logout/role-change mid-connection; the Phase 3 neutral-202 timing measurement; and `task
+run:demo`'s manual walkthrough. All five need a real local Supabase session, which this phase could
+not obtain without touching another project's running container.

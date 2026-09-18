@@ -6,8 +6,9 @@ A working document, not a source of truth. The architecture docs in
 **Reviewed:** 2026-09-18. **Phase 0 CLOSED** (orientation and scope freeze). **Phase 1 CLOSED**
 (assets, trust boundaries, threat model). **Phase 2 CLOSED** (the inheritance audit and
 silent-no-op census — see "Phase 2 record" for the closure check against the plan's own deliverable
-list). **Phase 3 CLOSED** (identity, session, authorization — see "Phase 3 record"). Phases 4–9 are
-not yet executed. Sections 4–9 below remain placeholders.
+list). **Phase 3 CLOSED** (identity, session, authorization — see "Phase 3 record"). **Phase 4
+CLOSED** (the transport seam and the two parsers — see "Phase 4 record"). Phases 5–9 are not yet
+executed. Sections 4–9 below remain placeholders except where Phase 4 populated §3.5.
 
 **Scope:**
 - **In scope.** jZen as a framework — `server/zen-*`, `client/zen_*`, `admin/` (`@jzen/admin-core`) —
@@ -46,14 +47,16 @@ write reaches production or the hosted Supabase project.
 - **Tools:** none run yet. Phase 8 is the only phase that runs a scanner (an OWASP ZAP baseline
   passive scan against the local container) and it will be recorded here by name, version and
   configuration when it runs.
-- **What was NOT assessed (as of Phase 3):** Phases 4–9 have not started. Phase 3, like Phases 1–2,
-  ran no `@QuarkusTest`, no `gcloud` read, and no network call — it is a static read of the
-  identity/session/authorization code cited in §3.4, plus two greps against native client manifests
-  and the deploy script's own documentation. It did **not** empirically test JWKS-unreachable
-  behaviour, clock-skew tolerance, or login-timing enumeration resistance — those need a running
-  server or a running clock and are named as open items in §3.4 rather than asserted from reading.
-  This line is updated as each phase closes; "not assessed" is an honest, acceptable entry per
-  chapter (plan §2.3), an *unmarked* one is not.
+- **What was NOT assessed (as of Phase 4):** Phases 5–9 have not started. Phase 4, like Phases 1–3,
+  ran no `@QuarkusTest` and no `gcloud` or network read against production; it is a static read of
+  the transport-seam code cited in §3.5, plus one local, read-only `mvnw dependency:tree` run (both
+  with and without `-Dnative`) to confirm the OpenAPI/Jackson dependency questions rather than trust
+  a grep of `pom.xml` alone. It did **not** empirically fuzz either codec path with oversized or
+  malformed bodies, measure JSON/protobuf recursion-depth behaviour under an actual attack payload,
+  or force a `quarkus-rest-jackson` regression to observe the 500 CLAUDE.md describes — those need a
+  running server and are named as open items in §3.5 for Phase 8. This line is updated as each phase
+  closes; "not assessed" is an honest, acceptable entry per chapter (plan §2.3), an *unmarked* one is
+  not.
 
 ---
 
@@ -438,6 +441,119 @@ scheme redirect has actually shipped to users, which would raise F2 from "contin
 "demonstrated" (Phase 6/7); re-deriving `JobTriggerResource`'s CSRF/RolesAllowed status independently
 rather than citing Phase 2's inventory (not re-read this phase, no change expected).
 
+### 3.5 Part E — Phase 4: The transport seam and the two parsers
+
+jZen's dual-mode transport is the mechanism no generic OWASP list names (plan §Phase 4). Answered
+from code read this phase — `ProtobufMessageBodyReader.java`, `ProtoJsonMessageBodyReader.java`,
+`InvalidBodyExceptionMapper.java`, `ZenTransportFilter.java`, `ZenTransportFormat.java`,
+`RateLimitFilter.java` (javadoc + `@Priority`), `DemoWebSocket.java`, `WebSocketConnections.java` —
+plus `application.properties`'s HTTP-limits and WebSocket blocks, every `proto/zen/v1/*.proto` file
+(grepped for `oneof`/`Any`), every non-`target` `pom.xml` (grepped for `jackson`), and two local
+`mvnw -f apps/zen_demo/zen_demo_server/pom.xml dependency:tree` runs — with and without `-Dnative` —
+to confirm dependency-tree claims from a command rather than from a `pom.xml` read alone.
+
+| Question (plan §Phase 4) | Answer, with evidence |
+|---|---|
+| Message size limits, each codec | Both codecs share one ceiling: `quarkus.http.limits.max-body-size=1M` (`apps/zen_demo/zen_demo_server/src/main/resources/application.properties:239`), a Vert.x/Quarkus HTTP-server setting — nothing in `zen-transport` itself bounds size. `ProtobufMessageBodyReader.readFrom` (`server/zen-transport/.../ProtobufMessageBodyReader.java:34-36`) calls `builder.mergeFrom(entityStream)` with no override, relying on protobuf-java's own `CodedInputStream` default (64MB, moot beneath the 1M HTTP cap). `ProtoJsonMessageBodyReader` sets no explicit JSON size bound either — it inherits the same 1M ceiling upstream. |
+| Recursion / nesting depth | **No explicit override exists in `zen-transport` for either codec** (grepped the package for `recursion`/`nesting`/`depth`: zero hits). Protobuf-java's own default recursion limit (100) applies unmodified to the binary path; the JSON path (`JsonFormat.parser()`, backed by Gson) has no depth limit set by jZen and was not independently forced this phase to observe Gson's own default. Not a finding on its own — the 1M body cap bounds how much nesting a single request can encode — but it is a **structural gap, reasoned not verified**, and is named for Phase 8's "oversized and malformed bodies on both codec paths" dynamic step rather than asserted safe here. |
+| Unknown-field handling | `ProtoJsonMessageBodyReader` uses `JsonFormat.parser().ignoringUnknownFields()` (`.../ProtoJsonMessageBodyReader.java:35`), documented at lines 22-29 as a **deliberate** mass-assignment defense — an unrecognised JSON field is dropped, not rejected and not merged into an unrelated one. Protobuf's own wire format has the equivalent behaviour built in (unknown fields are preserved in the unknown-field set, never assigned). |
+| `Any` / `oneof` usage | **None.** Every `proto/zen/v1/*.proto` file (`demo.proto`, `jobs.proto`, `health.proto`, `identity.proto`, `admin.proto`, `common.proto`) was grepped for `oneof` and `google.protobuf.Any`; zero matches. The `Any`-based type-confusion and `oneof`-ambiguity classes the plan names are not live attack surface in this schema today — worth re-checking whenever a new `.proto` message is added, not a standing property of the mechanism. |
+| Malformed body → what is produced | `InvalidBodyExceptionMapper` (`server/zen-transport/.../InvalidBodyExceptionMapper.java:32-42`) catches `InvalidProtocolBufferException` from either reader (the JSON reader throws this narrower type from `JsonFormat.Parser#merge`, documented in the class's own javadoc as intentional, lines 14-17) and returns HTTP 400 with a fixed `ZenError{code="invalid_body", message="The request body could not be parsed as the negotiated transport format."}` — **confirmed by reading the method body: no field path, no byte offset, no exception class name, no stack trace ever reaches the response.** Matches CLAUDE.md's "nothing swallows a failure" rule without over-disclosing internals. |
+| `@PreMatching` ordering vs. `RateLimitFilter` vs. authentication | `ZenTransportFilter` is `@Provider @PreMatching` with **no `@Priority`** (`server/zen-transport/.../ZenTransportFilter.java:21-23`) — pre-matching filters run before resource matching and before every ordinary (post-matching) filter as a structural JAX-RS property, not a priority contest. `RateLimitFilter` is an ordinary `@Provider` with explicit `@Priority(Priorities.AUTHENTICATION - 100)` (`server/zen-ratelimit/.../RateLimitFilter.java:44-45`), whose own javadoc (lines 9-34) states outright that it must run before authentication and `CsrfFilter` so a 429 is charged even against unauthenticated or malformed-credential traffic. Net order: `ZenTransportFilter`'s header rewrite → `RateLimitFilter` → authentication (`quarkus.http.auth.proactive=true`, `application.properties:153`) → `CsrfFilter` → resource method / body parsing. **Actual `MessageBodyReader` parsing happens only inside JAX-RS's invocation of the resource method — after rate limiting and authentication have already had their chance to reject** — so a malicious body cannot reach parser work ahead of the limiter; only `ZenTransportFilter`'s cheap header-string comparison runs pre-limit, which is not a parsing-cost DoS vector. Ordering is pinned by `RateLimitCsrfOrderingTest` (`apps/zen_demo/zen_demo_server/src/test/java/zen/demo/RateLimitCsrfOrderingTest.java:65-81`), which proves the rate limiter charges its bucket before `CsrfFilter` can abort a request. |
+| Header-driven dispatch (`X-Zen-Transport`) | `ZenTransportFormat.negotiate` (`server/zen-transport/.../ZenTransportFormat.java:44-63`) resolves in order: explicit `X-Zen-Transport` header (case-insensitive, only `json`/`protobuf` recognised) → Content-Type subtype sniff (**exact** match on `x-protobuf`/`protobuf`, or a `json`/`+json` suffix — not a substring match, so e.g. `text/protobuf-notes` cannot be steered to the binary parser, per the class's own documented intent at lines 42-46) → default JSON. An unrecognised header value falls through to sniffing/default rather than erroring. `ZenTransportFilter` rewrites `Accept` only for paths under `api/` (lines 33-38), so framework endpoints (`/openapi`, `/q/health`) are untouched. Both readers are additionally gated by `@Consumes` media type and `Message.class` assignability, so the header can only choose between the two legitimate proto-message parsers already registered for the matched resource — resource/method selection is independent of this negotiation, so the header cannot redirect a request to an unrelated endpoint. |
+| The WebSocket (`/api/v1/demo/ws`) | Frame size: `quarkus.websockets-next.server.max-frame-size=65536` (`application.properties:263`); the same file notes explicitly (lines 255-261) that `max-body-size` does **not** apply to WebSocket frames, so this is a separate, correctly-set limit rather than an assumed inheritance. Connection cap: `WebSocketConnections` (`apps/zen_demo/zen_demo_server/src/main/java/zen/demo/WebSocketConnections.java`) enforces a global cap (default 200, lines 41-42) and a per-address cap (default 20, lines 51-52), both backed by plain `AtomicInteger`/`ConcurrentHashMap` fields (lines 54-55) — **confirmed in-memory, not distributed.** The class's own javadoc (lines 19-29) states this is valid only because `--max-instances=1` gives exactly one instance (ADR-027/029) and that raising `--max-instances` would raise the fleet-wide total proportionally rather than silently breaking — the authors already priced the premise this control depends on. `DemoWebSocket.onOpen` (lines 88-101) checks `Origin` against `quarkus.http.cors.origins` and calls `connections.tryAcquire(remoteAddress)`, closing with 1008/1013 on rejection. Authorization re-validation mid-connection is Phase 3's **F1**, not re-litigated here — Phase 4 only re-confirms the size/connection limits sit alongside that gap, not instead of it. |
+| The OpenAPI surface — regression check | `quarkus-smallrye-openapi` is added only by an explicit Maven profile activated on `!native` (`apps/zen_demo/zen_demo_server/pom.xml:283-291`), and production builds pass `-Dnative` (`Taskfile.yml:504`). **Verified by running `dependency:tree` with `-Dnative`**, not merely by reading the profile: `quarkus-smallrye-openapi` does not appear anywhere in the resulting tree. Without `-Dnative` it does appear, as intended (`task generate:api:schema` needs it). No other `server/zen-*` module declares it. **No regression from the Wave 4.2 removal.** |
+| The Jackson prohibition | `quarkus-rest-jackson` (the JAX-RS JSON provider that must be *absent*, not merely outranked, per CLAUDE.md) does not appear in any `server/zen-*` or `apps/zen_demo/zen_demo_server` `pom.xml` — confirmed by grepping every non-`target` `pom.xml` for `jackson`. The only real hits: `server/pom.xml:141-142` (a `jackson-bom` import, version-pinning only, documented as removable once upstream Quarkus catches up); `server/zen-identity/pom.xml:73-74` (`quarkus-rest-client-jackson`, the sanctioned **outbound** client provider for Supabase calls); and `server/zen-identity/pom.xml:84-86` (a **direct** `jackson-databind` dependency — not the REST extension — used by `AdminUserResource` to parse inbound `ra-data-simple-rest` query parameters; the accompanying comment argues this does not register a JAX-RS provider and so cannot contest response-writer priority, which matches what was found: no evidence anywhere that a Jackson `MessageBodyWriter` is ever registered). `dependency:tree -Dnative` (run twice this phase, output captured to confirm rather than assumed) additionally surfaces `io.quarkus:quarkus-jackson` (the base Jackson CDI/`ObjectMapper` support module) **and** `io.quarkus:quarkus-rest-jackson-common` plus `io.quarkus.resteasy.reactive:resteasy-reactive-jackson`, all transitively under `quarkus-rest-client-jackson`. The latter two share a name with the forbidden extension but are not it: `quarkus-rest-jackson-common` is shared runtime code between the client and server RESTEasy Reactive Jackson integrations, and the JAX-RS-provider registration itself happens in the **deployment** (build-time augmentation) artifact for `quarkus-rest-jackson`, which does not appear on this tree at all — so this reads as benign on inspection, but it is close enough in name to `quarkus-rest-jackson` that a `grep` for the banned string alone (rather than the exact artifact id) could false-positive on it, or a future reviewer could wave off the real thing by pattern-matching the wrong direction. A Jackson `ObjectMapper` CDI bean does exist server-side either way, which is a slightly wider surface than a literal reading of "Jackson only touches the outbound client call." **No enforcer rule, build check, or test was found anywhere in the inspected modules that would fail if the real `quarkus-rest-jackson` extension were added** — see **F3** below. |
+
+**One finding minted this phase:**
+
+```
+### F3 — The no-server-side-Jackson invariant is enforced by convention and code review only; no gate would catch its reintroduction
+
+**Class:** process
+**Scope:** framework (the missing gate would apply to any `server/zen-*` module or any future
+           `apps/*/zen_*_server`, not to `zen_demo` specifically)
+**Confidence:** verified (the absence of a gate) / reasoned-from-code (the failure mode, which is
+              CLAUDE.md's own documented account, not independently forced this phase — Phase 8's
+              job per plan §Phase 4)
+**Standard:** No ASVS/API-Top-10 clause names this — it is jZen's own architectural invariant
+              (STANDARDS "proto-first; no server-side quarkus-rest-jackson", CLAUDE.md, §7.1 item 10
+              of this plan). Closest framing: ASVS 5.0.0's general configuration-hardening intent,
+              not a specific citable clause (plan §2.1's rule against citing from memory applies —
+              this is named directionally, not mapped).
+**Boundary:** B1 (every JSON response on the client-facing surface depends on `ProtoJsonMessageBodyWriter`
+              staying the sole `application/json` writer)
+**Where:** Absence, not presence — checked and not found in `server/zen-transport/pom.xml`,
+           `server/zen-identity/pom.xml`, `apps/zen_demo/zen_demo_server/pom.xml`,
+           `.github/workflows/ci.yml`, and every `*Test.java` under `zen-transport`'s and
+           `zen_demo_server`'s `src/test` trees consulted in Phases 2 and 4.
+**Evidence:** `grep -rn jackson` across every non-`target` `pom.xml` in the repository (Phase 4, this
+              session) returns only the three benign hits in the question table above — none is
+              `quarkus-rest-jackson`, and none is a test or CI step that would fail if it were added.
+              CLAUDE.md states the mechanism of harm precisely: "Jackson's writer greedily claims
+              `application/json` through a build-time path that ignores writer priority and
+              serializes proto builder internals (500s)" — i.e. the regression would not surface as
+              a compile error, a dependency-tree diff someone is looking at, or even necessarily a
+              local-dev failure if the two writers happen to agree on simple payloads, only as a
+              production 500 on whichever proto message exposes builder internals first.
+**Exploitability today:** Not externally exploitable — this is a self-inflicted regression risk (a
+              future contributor adding `quarkus-rest-jackson` "to get Jackson annotations working"
+              on one endpoint, per CLAUDE.md's own framing of why the rule exists), not something an
+              attacker can trigger directly. The risk is entirely about *when this is caught*: today,
+              only by a reviewer who has memorised CLAUDE.md's rule and one non-'no-verify'd person.
+**Impact:** Every `application/json` response server-wide silently starts being served by Jackson
+              instead of `ProtoJsonMessageBodyWriter` — per CLAUDE.md, this produces 500s by
+              serializing protobuf builder internals rather than the canonical proto3 JSON shape,
+              i.e. a whole-surface outage disguised as a dependency addition, not a targeted bug.
+**Silent?** Yes for the addition itself — `mvn` resolves and builds successfully with the dependency
+              present; the failure only appears at request time in the response body, which
+              `InvalidBodyExceptionMapper`-style masking does not apply to (this is a *writer*
+              failure, not a *reader* failure, so that mapper is not in the path at all).
+**Fix:** Add a build-time or CI check that fails if the exact artifact
+         `io.quarkus:quarkus-rest-jackson` (the extension itself, not `quarkus-rest-client-jackson`,
+         not `quarkus-rest-jackson-common`, and not bare `jackson-databind` — §3.5's table found all
+         three of the latter present today, legitimately) appears anywhere in the resolved dependency
+         tree of a `quarkus`-packaged module — e.g. a Maven enforcer `bannedDependencies` rule
+         matching the artifact id precisely, placed in `zen-parent` (`server/pom.xml`), which every
+         app module inherits via `<relativePath>`, so a second application gets the check
+         automatically rather than having to remember CLAUDE.md's prose or grep for a substring that
+         also matches its own sanctioned dependencies.
+**What the fix costs:** The rule must match the artifact id exactly, not a `jackson`-substring —
+         §3.5 found `quarkus-rest-jackson-common` and `resteasy-reactive-jackson` already present via
+         the sanctioned client extension, and a substring-based rule would either false-positive on
+         those or, if loosened to avoid that, risk missing the real one. Precise, not free — a few
+         lines of enforcer configuration, not a redesign, and `zen-parent` is exactly where
+         module-wide Maven policy already lives (CLAUDE.md, "Backend
+         structure").
+**Invariant touched:** none (§7.1) — this fix *enforces* an existing invariant (§7.1 item 10) rather
+         than trading against one.
+**ADR consequence:** none directly superseded; no ADR currently states how this rule is enforced
+         (only that it exists), so a fix documents a mechanism rather than reversing a decision.
+```
+
+**Closed this phase, verified correct with the evidence cited in the question table above**
+(candidates for §6, not restated there yet — Phase 9's consolidated pass): the 1MB HTTP body-size
+ceiling applies uniformly to both codec paths; `InvalidBodyExceptionMapper` never leaks a stack
+trace, exception class, or field path; no `oneof`/`Any` usage exists in any current `.proto` schema;
+`ZenTransportFilter`→`RateLimitFilter`→authentication→`CsrfFilter` ordering is structurally sound and
+pinned by `RateLimitCsrfOrderingTest`; `X-Zen-Transport` cannot steer a request to an unintended
+resource or an unregistered writer/reader, only between the two legitimate parsers already bound to
+the matched resource; the WebSocket frame-size and connection-cap limits are correctly scoped
+in-memory to the `--max-instances=1` premise and that premise is stated in the enforcing class's own
+javadoc; `quarkus-smallrye-openapi` is confirmed absent from the native (production) dependency tree,
+re-verified by running the command rather than reading the profile alone — no regression from Wave
+4.2.
+
+**Explicitly not done in Phase 4** (deferred to their own phases, per the plan): forcing either codec
+path with an oversized or deeply-nested malformed body and observing the actual failure (Phase 8);
+independently confirming Gson's (the JSON path's underlying parser) own recursion-depth default,
+rather than noting that jZen sets no override (Phase 8, if pursued); forcing a `quarkus-rest-jackson`
+reintroduction in a scratch branch to observe the CLAUDE.md-documented 500 directly, rather than
+relying on CLAUDE.md's own account (judged out of scope for a static phase — would require a
+throwaway code change this review's own rules discourage, plan §10: "A finding appears to require
+editing a tracked file to demonstrate. It does not."); re-deriving the WebSocket revocation gap
+independently of Phase 3's **F1** (no change expected, cited not re-argued).
+
 ## 4. Free wins
 
 *Not started.*
@@ -685,3 +801,78 @@ issuing code (Phase 7/8); confirming whether a native build with a live scheme r
 shipped to users, which would move F2 from "contingent" to "demonstrated" exploitability (Phase 6/7);
 re-deriving `JobTriggerResource`'s CSRF/RolesAllowed status independently of Phase 2's inventory (no
 change expected, not re-read). Phases 4–9 entirely.
+
+---
+
+## Phase 4 record
+
+**Method:** static read plus two local, read-only `mvnw dependency:tree` runs (with and without
+`-Dnative`, against `apps/zen_demo/zen_demo_server/pom.xml`) — no `@QuarkusTest` run, no `gcloud`
+read, no network call, no forced failure. Grounded in, read this session, in full:
+`ProtobufMessageBodyReader.java`, `ProtoJsonMessageBodyReader.java`, `InvalidBodyExceptionMapper.java`,
+`ZenTransportFilter.java`, `ZenTransportFormat.java`, `RateLimitFilter.java` (javadoc + `@Priority`),
+`WebSocketConnections.java`, `DemoWebSocket.java` (re-consulted, not re-argued, for its Phase-3 **F1**
+gap); every `proto/zen/v1/*.proto` file, grepped for `oneof`/`google.protobuf.Any`; every non-`target`
+`pom.xml` in the repository, grepped for `jackson`; `apps/zen_demo/zen_demo_server/src/main/resources/
+application.properties`'s HTTP-limits and WebSocket blocks; `Taskfile.yml`'s native-build invocation
+(`-Dnative`, confirming which profile ships to production); and `RateLimitCsrfOrderingTest.java`
+(confirming the filter-ordering claim is pinned by a test, not merely argued in a javadoc).
+
+**Commands run this phase** (both read-only, no write, no network beyond local Maven resolution):
+
+```
+server/mvnw -B -f apps/zen_demo/zen_demo_server/pom.xml dependency:tree                    # no profile
+server/mvnw -B -f apps/zen_demo/zen_demo_server/pom.xml dependency:tree -Dnative           # production profile
+```
+
+Result: `quarkus-smallrye-openapi` present without `-Dnative`, absent with it — confirming the
+`!native` profile activation in `pom.xml:283-291` behaves as documented and that Wave 4.2's removal
+has not regressed. The actual `quarkus-rest-jackson` extension (and its deployment/build-time
+augmentation artifact, which is what would register a competing JAX-RS provider) is absent from both
+trees. **Found on closer inspection of the `-Dnative` tree, not merely assumed absent from a
+top-level grep**: `quarkus-jackson` (base CDI/`ObjectMapper` support), `quarkus-rest-jackson-common`,
+and `resteasy-reactive-jackson` are all present, transitively, under `quarkus-rest-client-jackson` —
+shared runtime code for the client/server Jackson integrations, not the provider-registering
+extension itself, and consistent with the sanctioned outbound-only usage, but close enough in name
+to be worth naming precisely (§3.5's table) rather than folding into a blanket "no jackson server-side"
+claim.
+
+**One finding minted** (§3.5): **F3** — the no-server-side-Jackson invariant (STANDARDS, CLAUDE.md,
+plan §7.1 item 10) is enforced today by convention and code review only; no Maven enforcer rule, CI
+step, or test was found anywhere in the modules read across Phases 2 and 4 that would fail if
+`quarkus-rest-jackson` were reintroduced. Scoped as process/framework rather than a live
+vulnerability — nothing in this review found the invariant actually violated, only unguarded.
+
+**Two items answered "reasoned from code, not forced" rather than asserted as either a finding or a
+closure** (§5.3's trap, same discipline as Phase 3): the JSON codec path's recursion/nesting-depth
+behaviour (no explicit jZen override exists; Gson's own default was not independently measured this
+phase); and the precise cost/DoS-shape of a maximally-nested payload within the 1MB body cap. Both
+are carried into Phase 8's "oversized and malformed bodies on both codec paths" step rather than
+closed here.
+
+**Phase 3's F1 (WebSocket revocation) is re-touched, not re-argued**: Phase 4 independently confirmed
+the frame-size and connection-cap limits sit correctly alongside that gap (they bound size and count,
+not session lifetime), and that `WebSocketConnections`' own javadoc already prices the
+`--max-instances=1` premise its in-memory counters depend on — no new finding minted for the cap
+mechanism itself.
+
+**Done-when check (plan §Phase 4):** every bullet the plan names for this phase — size/recursion
+limits on each codec, unknown-field handling, `Any`/`oneof` usage, malformed-body output,
+`@PreMatching` ordering vs. rate limiting and authentication, header-driven dispatch, the WebSocket's
+frame-size/connection-cap/per-instance scoping, the OpenAPI-surface regression check, and the Jackson
+prohibition — is answered with evidence in §3.5's table ✓. One finding minted in the plan's §7
+template ✓ (F3). Items needing a forced failure or a running server rather than a reading are named
+as open rather than guessed ✓.
+
+**Phase 4: CLOSED.** All bullets the plan names for this phase are answered with evidence in §3.5,
+one is minted as a finding in the plan's own template, and the items that could not be answered by
+reading (plus two read-only `dependency:tree` runs) alone are named explicitly rather than asserted
+either way — the same discipline as Phases 0–3 (plan §5.3's trap).
+
+**Explicitly not done in Phase 4** (deferred to their own phases, per the plan): forcing and
+observing an oversized or deeply-nested malformed body on either codec path (Phase 8, needs a running
+server); independently measuring Gson's JSON recursion-depth default (Phase 8, if pursued); forcing a
+`quarkus-rest-jackson` reintroduction to observe the documented 500 directly rather than citing
+CLAUDE.md's account (out of scope for a static phase per plan §10 — no tracked file is edited to
+demonstrate a finding); re-arguing Phase 3's **F1** independently (re-touched, not re-derived, above).
+Phases 5–9 entirely.

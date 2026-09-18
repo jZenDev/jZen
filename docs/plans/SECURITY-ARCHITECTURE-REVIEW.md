@@ -3,8 +3,10 @@
 A working document, not a source of truth. The architecture docs in
 [`../architecture/`](../architecture/) remain authoritative, and ADRs win on conflict.
 
-**Reviewed:** 2026-09-18 (Phase 0 — orientation and scope freeze; Phase 1 — assets, trust
-boundaries, threat model). Phases 2–9 are not yet executed. Sections 4–9 below remain placeholders.
+**Reviewed:** 2026-09-18. **Phase 0 CLOSED** (orientation and scope freeze). **Phase 1 CLOSED**
+(assets, trust boundaries, threat model — see "Phase 1 record" for the closure check against the
+plan's own deliverable list). Phases 2–9 are not yet executed. Sections 4–9 below remain
+placeholders.
 
 **Scope:**
 - **In scope.** jZen as a framework — `server/zen-*`, `client/zen_*`, `admin/` (`@jzen/admin-core`) —
@@ -310,6 +312,11 @@ get-wrong guarantee than "a wrong token is rejected."
 **Done-when check (plan §Phase 1 deliverable):** one boundary diagram ✓ (§2.4, ASCII). The asset
 table ✓ (§2.1, 11 assets, ranked). The per-boundary threat table ✓ (§2.3, STRIDE, live threats only,
 out-of-scope threats stated with a reason per boundary and system-wide).
+
+**Phase 1: CLOSED.** All three deliverables the plan names for this phase exist in the report. What
+remains open (below) is deferred to later phases by the plan's own phase boundaries, not left
+undone within this one — Phase 1 is a static threat model, and the items below are dynamic
+verification or finding-ranking work that Phase 1 was never scoped to produce.
 
 **Explicitly not done in Phase 1** (deferred to their own phases, per the plan): quantifying or
 ranking the two findings-in-waiting above (Phase 2/3, and only after the §7 finding template is

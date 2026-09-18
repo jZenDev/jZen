@@ -9,8 +9,10 @@ silent-no-op census — see "Phase 2 record" for the closure check against the p
 list). **Phase 3 CLOSED** (identity, session, authorization — see "Phase 3 record"). **Phase 4
 CLOSED** (the transport seam and the two parsers — see "Phase 4 record"). **Phase 5 CLOSED** (the
 data plane, privileges, and privacy — see "Phase 5 record"). **Phase 6 CLOSED** (supply chain and
-build integrity — see "Phase 6 record"). Phases 7–9 are not yet executed. Sections 4–9 below remain
-placeholders except where Phases 4–6 populated §3.5–§3.7.
+build integrity — see "Phase 6 record"). **Phase 7 CLOSED** (the client and the browser surface —
+see "Phase 7 record"; this is also the phase that opened the production request ledger, plan §4.3).
+Phases 8–9 are not yet executed. Sections 4–9 below remain placeholders except where Phases 4–7
+populated §3.5–§3.8.
 
 **Scope:**
 - **In scope.** jZen as a framework — `server/zen-*`, `client/zen_*`, `admin/` (`@jzen/admin-core`) —
@@ -44,12 +46,35 @@ See "Standards versions" for the full list with release dates and the date each 
 set of unauthenticated production reads plus control-plane (`gcloud`) reads against the deployed
 `zen-demo-server` service (plan §4.3–§4.4). No test, scan, or fuzz run is pointed at production; no
 write reaches production or the hosted Supabase project.
-- **Production request ledger:** not yet opened — Phase 7/8 is where the budgeted 12 reads (plan
-  §4.3) are spent and logged, one row per request (method, path, purpose, response code, cold/warm).
+- **Production request ledger:** opened this phase, spent to 11 of the budgeted 12 (plan §4.3),
+  every row read-only against `https://zen-demo-server-tovqpjhspa-lm.a.run.app` (the hostname
+  confirmed as this build's `ZEN_API_URL` by grepping the staged web bundle, not assumed):
+
+  | # | Method | Path | Purpose | Response | Cold/warm |
+  |---|---|---|---|---|---|
+  | 1 | GET | `/` | Security headers on the SPA root | 200, headers matched `SecurityHeaders.java` verbatim | warm |
+  | 2 | GET | `/admin/` | Security headers on the admin panel document | 200, identical header set to #1 | warm |
+  | 3 | GET | `/api/v1/auth/identity` | Security headers on an unauthenticated API path | 204 (anonymous, ADR-030), identical header set | warm |
+  | 4 | OPTIONS | `/api/v1/auth/identity` | CORS preflight from a disallowed origin (`https://evil.example.com`) | 403, no `Access-Control-Allow-Origin` echoed for that origin | warm |
+  | 5 | GET | `/openapi` | OpenAPI surface reachability in prod | 404 | warm |
+  | 6 | GET | `/q/swagger-ui/` | Swagger UI reachability in prod | 404 | warm |
+  | 7 | GET | `/q/dev/` | Quarkus dev UI reachability in prod | 404 | warm |
+  | 8 | GET | `/q/health` | Health endpoint reachability in prod | 404 | warm |
+  | 9 | GET | `/.well-known/assetlinks.json` | Android App Links association reachability | 404 (unconfigured today — corroborates F2) | warm |
+  | 10 | GET | `/.well-known/apple-app-site-association` | Apple App Links association reachability | 404 (unconfigured today — corroborates F2) | warm |
+  | 11 | GET | `/admin/assets/index-B6vlUAQw.js` | Whether a hashed admin static asset gets the same headers as the document (spare budget) | 200, identical header set to #1/#2, plus `cache-control: public, immutable, max-age=86400` | warm |
+
+  Request #12 (the reserved cookie-attribute read) was **deliberately not spent**: every cookie
+  jZen sets (`zen_access_token`, `zen_refresh_token`, `XSRF-TOKEN`) is issued only from
+  `AuthResource`'s login/register success path, per `SessionService.csrfCookie`'s single call site
+  (`AuthResource.java:364`) — there is no unauthenticated GET that produces a `Set-Cookie` header to
+  read, and plan §4.2/§4.3 forbid a `POST` (login) against production to manufacture one. Cookie
+  attributes stay verified statically from `SessionService.java` (Phase 3) and are deferred to
+  Phase 8's local container, which can log in against a disposable local Supabase account.
 - **Tools:** none run yet. Phase 8 is the only phase that runs a scanner (an OWASP ZAP baseline
   passive scan against the local container) and it will be recorded here by name, version and
   configuration when it runs.
-- **What was NOT assessed (as of Phase 6):** Phases 7–9 have not started. Phase 4, like Phases 1–3,
+- **What was NOT assessed (as of Phase 7):** Phases 8–9 have not started. Phase 4, like Phases 1–3,
   ran no `@QuarkusTest` and no `gcloud` or network read against production; it is a static read of
   the transport-seam code cited in §3.5, plus one local, read-only `mvnw dependency:tree` run (both
   with and without `-Dnative`) to confirm the OpenAPI/Jackson dependency questions rather than trust
@@ -74,7 +99,22 @@ write reaches production or the hosted Supabase project.
   `task audit` itself this phase (its cadence and last-clean result are read from ADR-039 and
   `audit.yml`'s own configuration, not re-executed), and it did **not** attempt to force an
   unpinned-action supply-chain compromise or any other dynamic proof — Phase 6 is static-plus-reads,
-  consistent with Phases 0–5. This line is updated as each phase closes; "not assessed" is an honest,
+  consistent with Phases 0–5. Phase 7 read `client/zen_secure_store`, `client/zen_identity`,
+  `client/zen_core`, `scripts/verify-boundaries.py`, `SecurityHeaders.java`, `CorsCredentialsGuard.java`,
+  `admin/src/{authProvider,dataProvider}.ts`, `apps/zen_demo/zen_demo_admin/src/App.tsx`, the native
+  Android/iOS/macOS platform-channel files, and the relevant `DECISIONS.md` entries; it grepped the
+  **already-staged** production web and admin bundles under
+  `apps/zen_demo/zen_demo_server/src/main/resources/META-INF/resources` (built 2026-08-17, not
+  rebuilt this phase — `task build:web` was not re-run, so a secret introduced after that build date
+  would not be caught by this grep) for provider hosts/keys/`eyJ`-shaped tokens, and read
+  `react-admin`'s own telemetry source under `admin/node_modules/.pnpm/...`/`ra-core`. It spent 11 of
+  the production-read budget (above) and made **no** `gcloud`/`gh` control-plane calls (Phase 6
+  already exhausted that surface's open questions). It did **not** run `task build:web` fresh, did
+  **not** open a real browser against the live admin panel to observe a CSP violation in the console
+  directly (the marmelab telemetry call in **F7** below is reasoned from `SecurityHeaders.java`'s
+  `img-src` directive and `ra-core`'s own source, not watched failing live — deferred to Phase 8),
+  and did **not** independently wire-verify cookie attributes (see the ledger note above; deferred to
+  Phase 8's local container). This line is updated as each phase closes; "not assessed" is an honest,
   acceptable entry per chapter (plan §2.3), an *unmarked* one is not.
 
 ---
@@ -810,6 +850,136 @@ the same discipline Phase 5 applied to secret-rotation tooling for an equally sm
 
 ---
 
+### 3.8 Part H — Phase 7: The client and the browser surface
+
+The browser-facing half of jZen — compile-time config, the one-server rule from the client's side,
+token storage, security headers, the admin panel, and deep links — per the plan's Phase 7 question
+list. Answered from code read this phase — `client/zen_secure_store/lib/src/secure_token_store*.dart`,
+`client/zen_identity/lib/src/zen_identity_config.dart`, `client/zen_core/lib/src/zen_constants.dart`,
+`scripts/verify-boundaries.py`, `server/zen-transport/src/main/java/zen/transport/{SecurityHeaders,CorsCredentialsGuard}.java`,
+`admin/src/{authProvider,dataProvider}.ts`, `apps/zen_demo/zen_demo_admin/src/App.tsx`,
+`apps/zen_demo/zen_demo_client/{android,ios,macos}` — plus the relevant `DECISIONS.md` entries, the
+already-staged production bundle under `.../META-INF/resources`, `ra-core`'s own telemetry source,
+and 11 live, read-only requests against the deployed service (the ledger in the Method block above).
+
+| Question (plan §Phase 7) | Answer, with evidence |
+|---|---|
+| Compile-time config — is anything secret in the bundle? | **No.** Every `String.fromEnvironment` name in the client is now enumerated (`ZEN_API_URL`, `ZEN_AUTH_REDIRECT_URI`, `ZEN_ENV`, `ZEN_PLATFORM` — `zen_identity_config.dart:6,23`, `zen_constants.dart:19,38`), and all four are non-secret by design: an API base URL, a native redirect scheme, a build environment tag, a platform tag. Grepping the **already-staged** production web bundle (built 2026-08-17) for `supabase`, `eyJ`, `service_role`, `anon_key` returns zero hits in both the Flutter app and the admin bundle. The bundle's only external hosts, extracted directly from `main.dart.js`, are `fonts.gstatic.com` (the one CSP allow-lists) and jZen's own deployed hostname — confirming `--no-web-resources-cdn` (§3.5/ADR-035) holds in the actual shipped artifact, not only in the build flag. `ZEN_API_URL` is baked in as the real production hostname (`https://zen-demo-server-tovqpjhspa-lm.a.run.app`), confirming compile-time config produces a build that actually points at the right server rather than a placeholder. **Caveat, stated plainly:** this bundle predates today's session by a month; it answers "is this mechanism sound" (yes — no secret name is ever passed to a build define anywhere in the codebase), not "is today's HEAD's bundle clean" — `task build:web` was not re-run this phase (plan §10: a finding must not require editing a tracked file or forcing a rebuild to demonstrate what static reading already answers). |
+| The one-server rule (B1), from the client's side | `verify:boundaries` (read in full this phase, `scripts/verify-boundaries.py`) runs three regex checks — no provider SDK dependency, no provider host/credential string, no absolute-URL literal — scoped explicitly to `client/*/lib`, `apps/*/*/lib` (Dart) and `admin/src`, `apps/*/*_admin/src` (TypeScript), both scopes fail loudly (`StaleScope`) rather than silently pass if a glob matches nothing. **Confirmed, re-reading rather than re-asserting Phase 2's finding: Kotlin and Swift platform-channel code is not in either scope.** `apps/zen_demo/zen_demo_client/android/app/src/main/kotlin/.../MainActivity.kt` (5 lines) and every `.swift` file under `ios/`/`macos/` (12–32 lines each) were read directly this phase — all are Flutter-generated boilerplate (`GeneratedPluginRegistrant`, a bare `FlutterActivity`/`FlutterAppDelegate`), none makes a network call or references Supabase. **The gap Phase 2 named on paper is confirmed still open on the code that exists today, and still unexploited today** — there is no plugin or platform-channel call for it to catch. No `HttpOverrides`, `badCertificateCallback`, or `WebView` usage was found anywhere in `client/` or `apps/*/lib` (grepped this phase, zero hits) — the client has no certificate-pinning override and no embedded browser surface to audit. |
+| Token storage (MASVS-STORAGE) — mobile vs. web | **Sound today, and already hardened past a real incident this review's own numbering can't currently place precisely (see below).** `SecureTokenStore`'s native branch (`secure_token_store_io.dart`) wraps `FlutterSecureStorage` with `KeychainAccessibility.first_unlock_this_device` on iOS/macOS and the plugin's own post-10.x cipher on Android (no `AndroidOptions`, deliberately — the class's own comment explains `encryptedSharedPreferences` is deprecated and ignored); only the refresh token is persisted, the access token stays in-memory for its 1h life. **The web branch does not fall back to `window.localStorage` — it throws `UnsupportedError` at construction**, with a doc-comment naming exactly the property `flutter_secure_storage_web` would otherwise silently violate: "the refresh token belongs in the httpOnly `zen_refresh_token` cookie on web instead ... nothing should construct one." This is a **closed, already-fixed** version of the exact MASVS-STORAGE gap plan §Phase 7 asks Phase 7 to go looking for (a claimed security property that is silently absent on one platform) — DECISIONS.md's entry dated 2026-07-31 (refining ADR-016/ADR-023) records the incident that motivated the throw-loudly design: a caller-side guard (`zenIsWeb ? null : SecureTokenStore()`, still present today at `apps/zen_demo/zen_demo_client/lib/main.dart:37`, confirmed by reading it this phase) is "redundant now, not wrong" belt-and-braces, with the class itself now the actual guarantee. **Not independently re-verified against a live web build's `localStorage` this phase** (that would require constructing the class on web to watch it throw, which the code already asserts and a unit test — `secure_token_store_web_test.dart`, present but not re-run this phase — presumably covers). |
+| Security headers, from the wire, in a real browser | **Verified live against production, not only read from `SecurityHeaders.java`.** Ledger rows #1–#3 confirm the identical header set — CSP, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` denying geolocation/camera/microphone/payment/usb, `Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Resource-Policy: same-origin`, `Strict-Transport-Security: max-age=31536000` — on the SPA root, `/admin/`, and an unauthenticated API path, byte-for-byte matching `SecurityHeaders.CONTENT_SECURITY_POLICY`'s Java source. `Cross-Origin-Embedder-Policy` is confirmed absent, and the class's own javadoc states this is deliberate (COEP is a stricter page-wide opt-in this policy does not make). HSTS carries no `includeSubDomains`/`preload`, matching the javadoc's stated reason (no real domain yet, ADR-027 defers it) — not re-litigated here, ADR-035/027 already priced it and §5.4's rule is to re-examine the reasoning, not the mechanism, and the reasoning (a `*.run.app` hostname, no committed domain) is still true today. **A browser-console CSP-violation check was not performed live this phase** (no browser was driven against the running admin panel with DevTools open) — see **F7** below, which reasons the one live violation this policy would actually produce from the CSP source and `ra-core`'s own telemetry code rather than watching it happen. |
+| The admin panel — auth, session, XSS surface, header parity | **Auth provider reviewed in full** (`admin/src/authProvider.ts`): login/logout/checkAuth/getPermissions all resolve through `GET {authBase}/identity` (200 = session, 204 = anonymous) — **no token is ever read from JS**, matching `dataProvider.ts`'s CSRF handling (the JS-readable `XSRF-TOKEN` cookie echoed as a header on mutating requests only, GET/HEAD exempt — same protected-by-default shape Phase 3 verified server-side). `login` explicitly checks `hasAdminRole` and calls `clearSession()` (which itself sends the CSRF header) if the authenticated identity lacks the admin role — **a non-admin credential cannot leave a live admin-panel session even though the underlying login succeeded**, closing the BFLA-adjacent question of whether the panel merely hides the admin UI from a non-admin versus actually refusing to hold their session. **Header parity, verified live rather than assumed:** ledger row #11 (a hashed, cache-busted `.js` asset under `/admin/assets/`, not the document) carries the identical CSP/frame/COOP/CORP/Permissions-Policy/HSTS set as rows #1–#3, confirming `SecurityHeaders`' Vert.x-router placement (§3.1/ADR-035) covers every static file the admin bundle ships, not only its `index.html`. **XSS surface in react-admin's own dependency tree was not independently audited this phase** (that is `task audit`'s job, Phase 6, not re-run here) — but one concrete, previously-unreviewed behaviour was found reading `ra-core`'s source directly: see **F7**. |
+| Deep links and App Links | **Re-confirms F2 (Phase 3) rather than reopening it, with two pieces of fresh evidence.** First, live: ledger rows #9–#10 show both `/.well-known/assetlinks.json` and `/.well-known/apple-app-site-association` returning 404 **on the actual deployed service today** — App Links is not a hypothetical unconfigured state, it is the live, current state of the one production instance this review can read, which raises F2's own "contingent, not demonstrated" framing partway (the mechanism is confirmed unconfigured in the one environment that exists) without fully resolving it (whether a *native build* with the live `zendemo://` scheme has shipped to a real device is still unverifiable from a repository/API read, per F2's original text). Second, from DECISIONS.md's 2026-08-01 entry (refining ADR-018/019/021, closing backlog item 8's Android half): the Android mitigation is real and tested (`WellKnownResourceTest`/`WellKnownResourceConfiguredTest`, an APK-manifest dump confirming both intent-filters build), while the iOS half is **not implemented for a non-technical reason** — Apple's Associated Domains entitlement needs a paid Developer Program membership, and adding the entitlement without one would break every iOS build on an unpaid machine (the same trap a macOS Keychain entitlement sprang earlier per that entry's own cross-reference). This is consistent with, and sharpens, F2's existing "optional and unenforced" framing: Android's optionality is a configuration choice; iOS's is presently a hard platform constraint, and F2's fix (a deploy-time warning) would need to say so rather than treat both platforms as symmetrically deferrable. |
+
+**One finding minted this phase:**
+
+```
+### F7 — react-admin's default telemetry beacon ships to production unreviewed; it is blocked by
+this app's own CSP, but silently and for a reason the code does not record
+
+**Class:** implementation
+**Scope:** application (`zen_demo_admin`'s own `<Admin>` call) — but the underlying default (no
+           `disableTelemetry` prop) is the react-admin package's, and `@jzen/admin-core`'s
+           `createAuthProvider`/`createDataProvider` factories do not set it either, so a second
+           app assembling the framework scaffold the same way (`import { Admin } from
+           "react-admin"` directly, as `App.tsx` does) inherits the identical unreviewed default —
+           this is scoped "application" only because the one call site that could disable it lives
+           in application code, not because a second app would do anything differently.
+**Confidence:** verified (the call exists, is unguarded, and CSP's `img-src` does not name its
+              host) / reasoned-from-code (that the browser actually refuses it and logs a CSP
+              violation — not watched live this phase, see the question table above).
+**Standard:** No ASVS clause names third-party telemetry directly; framed here under ASVS 5.0.0's
+              general third-party-content/configuration-hardening intent (cited directionally, plan
+              §2.1's rule against citing a number from memory applies to "no clean fit" too, not
+              only to the requirement that exists). OWASP Proactive Controls' "minimize attack
+              surface area" is the closer fit in spirit.
+**Boundary:** B1/B9 (the admin panel's own document load, same boundary as the rest of the panel)
+**Where:** apps/zen_demo/zen_demo_admin/src/App.tsx:21-28 (`<Admin dataProvider=... authProvider=...
+           loginPage={LoginPage}>` — no `disableTelemetry` prop), contrasted with
+           admin/node_modules/.pnpm/ra-core@5.15.0.../src/core/CoreAdminUI.tsx:340-352 (`ra-core`'s
+           own source, read this phase: `disableTelemetry = false` by default; when false, not in a
+           test env, and running in a browser, it constructs `new Image()` and sets `img.src =
+           "https://react-admin-telemetry.marmelab.com/react-admin-telemetry?domain=" +
+           window.location.hostname` on every mount), and
+           server/zen-transport/src/main/java/zen/transport/SecurityHeaders.java:137
+           (`"img-src 'self' data: blob:"` — `react-admin-telemetry.marmelab.com` is not, and has
+           never been, in this list).
+**Evidence:** The call is an `<img>` element's `src`, not a `fetch`/`XHR` — so it is `img-src`, not
+              `connect-src`, that governs it, and `img-src` in `CONTENT_SECURITY_POLICY` (read in
+              full this phase, §3.1/ADR-035's policy) allow-lists only `'self'`, `data:`, and
+              `blob:`. Ledger rows #2 and #11 confirm this exact CSP string is live on both the
+              admin document and its hashed JS asset in production today. `window.location.hostname`
+              on the deployed service is the public `*.run.app` hostname already known from the
+              bundle grep above — not itself a secret — so the payload this call would have sent is
+              not sensitive; what matters is that nobody decided to send it, and CSP's silence about
+              this specific host is coincidental (the directive was written for the app's own
+              images, not to block a telemetry beacon nobody named).
+**Exploitability today:** Not exploitable — no attacker action is involved, and CSP already stops
+              the network request before it leaves the browser. This is a hygiene/process finding,
+              not a live vulnerability: an unreviewed third-party outbound call shipped into the
+              highest-privilege surface in the system, whose only reason it does not currently
+              exfiltrate anything is that a directive written for an unrelated purpose happens to
+              cover it.
+**Impact:** If today's CSP is ever loosened — and the class's own javadoc names exactly this
+              pressure ("a CSP nobody can explain is a CSP that gets widened by the next person who
+              meets a console error") — widening `img-src` to quiet an unrelated, legitimate image
+              load could simultaneously and silently re-enable this call, sending the admin panel's
+              hostname to a third party on every admin login, with no one having decided that
+              trade-off because no one flagged that the old, narrower `img-src` had been quietly
+              doing that job.
+**Silent?** Yes, in the specific sense the plan's Phase 7 question asks about: no test, gate, or
+              comment anywhere in `admin/` or `apps/zen_demo/zen_demo_admin/` records that this call
+              exists or that CSP is what stops it — a console CSP violation is the only signal, on
+              every admin panel load, that nothing currently reads (plan §Phase 7: "a CSP that
+              reports violations nobody reads is a CSP heading for a `'unsafe-inline'` patch," here
+              applied to `img-src` instead).
+**Fix:** Pass `disableTelemetry` explicitly on the `<Admin>` element — one line, in
+         `apps/zen_demo_admin/src/App.tsx` today. Framework-level version: `@jzen/admin-core` could
+         export a thin `<ZenAdmin>` wrapper around `<Admin>` that defaults `disableTelemetry` to
+         `true` and lets an app opt back in, so a second app assembling the scaffold the way
+         `App.tsx` does inherits the decided-on-purpose default rather than react-admin's own.
+**What the fix costs:** Nothing technical. The only cost is losing react-admin's own anonymous usage
+         signal to its maintainers (Marmelab) — a trade-off worth making explicitly rather than by
+         CSP accident, since the operator gets nothing back from it today and the panel's admins
+         were never told it happens.
+**Invariant touched:** none (§7.1) — arguably reinforces item 4 (no edge/third-party in the
+         request path) in spirit, though CSP already enforces it in practice.
+**ADR consequence:** none; no ADR states a policy on react-admin's own telemetry either way.
+```
+
+**Closed this phase, verified correct with the evidence cited in the question table above**
+(candidates for §6, not restated there yet — Phase 9's consolidated pass): no `String.fromEnvironment`
+name or literal value in the client is secret-shaped, and none of `supabase`/`eyJ`/`service_role`/
+`anon_key` appears in the already-staged production web or admin bundle; `--no-web-resources-cdn`
+holds in the shipped artifact (only `fonts.gstatic.com` and jZen's own host appear as external
+references); `verify:boundaries`' three checks and their `StaleScope` fail-loud design, re-read and
+re-confirmed against the live script; the web branch of `SecureTokenStore` throwing rather than
+falling back to `window.localStorage`, and the native branch's Keychain/Keystore configuration, both
+already fixed ahead of this review per DECISIONS.md's 2026-07-31 entries; every response security
+header (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, COOP, CORP,
+HSTS) verified live and byte-identical across the SPA root, `/admin/`, an API path, and a hashed admin
+asset; the admin auth provider's non-admin-session refusal (`clearSession()` on a non-admin login);
+CORS's disallowed-origin preflight rejection, verified live; the OpenAPI/Swagger/dev/health surface's
+404 in production, verified live, corroborating Phase 4's dependency-tree finding from the wire; and
+the Android App Links mechanism's test coverage per DECISIONS.md's 2026-08-01 entry.
+
+**Explicitly not done in Phase 7** (deferred to Phase 8, or out of this review's scope entirely, per
+the plan): re-running `task build:web` to grep a bundle built from today's `HEAD` rather than the
+staged one from 2026-08-17; driving a real browser against the live admin panel with DevTools open to
+watch **F7**'s CSP violation actually appear in the console, rather than reasoning it from
+`SecurityHeaders.java` and `ra-core`'s source; wire-verifying cookie attributes (`Secure`, `HttpOnly`,
+`SameSite`, the absence of a `__Host-` prefix) against a real `Set-Cookie` header, which needs a
+successful login this phase's rules of engagement forbid producing against production (see the ledger
+note in the Method block) — deferred to Phase 8's local, disposable-account container; independently
+re-running `secure_token_store_web_test.dart` to watch the web branch's `UnsupportedError` fire, rather
+than reading the class that already asserts it; confirming whether a native build carrying the live
+`zendemo://` scheme has actually shipped to a real device or store listing (F2's "contingent" status
+stays contingent, not "demonstrated" — this needs build-artifact or store evidence outside the
+repository); and an independent `task audit`-style dependency audit of react-admin's own transitive
+tree beyond the one behaviour (`F7`) found by reading its source directly.
+
+---
+
 ## 4. Free wins
 
 *Not started.*
@@ -1291,3 +1461,79 @@ a branch-protection finding for the absence of required PR review or signed comm
 not minted — a solo-maintainer repository cannot meaningfully require a second reviewer, named as an
 open question instead, the same discipline Phase 5 applied to secret rotation for an equally
 small-team context). Phases 7–9 entirely.
+
+---
+
+## Phase 7 record
+
+**Method:** static read of `client/zen_secure_store/lib/src/secure_token_store*.dart`,
+`client/zen_identity/lib/src/zen_identity_config.dart`, `client/zen_core/lib/src/zen_constants.dart`,
+`scripts/verify-boundaries.py`, `server/zen-transport/src/main/java/zen/transport/SecurityHeaders.java`,
+`server/zen-transport/src/main/java/zen/transport/CorsCredentialsGuard.java`,
+`admin/src/authProvider.ts`, `admin/src/dataProvider.ts`, `apps/zen_demo/zen_demo_admin/src/App.tsx`,
+`apps/zen_demo/zen_demo_client/lib/main.dart`, every `.kt`/`.swift` file under
+`apps/zen_demo/zen_demo_client/{android,ios,macos}`, `admin/node_modules/.pnpm/ra-core@5.15.0.../
+node_modules/ra-core/src/core/CoreAdminUI.tsx` (react-admin's own telemetry source, read directly
+rather than assumed from its public docs), and the relevant `DECISIONS.md` entries (the App Links
+Android/iOS split dated 2026-08-01, and the token-store Wasm-compatibility and Keychain/Keystore
+decisions dated 2026-07-31) — plus a grep of the **already-staged** production web and admin bundles
+under `apps/zen_demo/zen_demo_server/src/main/resources/META-INF/resources` (built 2026-08-17, not
+rebuilt this phase) for provider hosts, keys, and `eyJ`-shaped tokens.
+
+**Dynamic evidence, live against production, read-only:** 11 of the plan's 12-request budget (§4.3),
+logged in the ledger in the Method block near the top of this document — security headers on the SPA
+root, `/admin/`, an unauthenticated API path, and a hashed admin static asset (all four byte-identical
+to `SecurityHeaders.java`'s source); a CORS preflight from a disallowed origin (403, no origin
+echoed); the OpenAPI/Swagger/dev/health surface (all 404 in prod, corroborating Phase 4's
+dependency-tree finding from the wire); and both App Links well-known association files (both 404,
+corroborating Phase 3's **F2** with a live read of the one environment that exists). Request #12 (the
+reserved cookie-attribute read) was deliberately not spent — see the ledger note for why, and why it
+is deferred to Phase 8's local, disposable-account container rather than skipped for no reason.
+
+**One finding minted** (§3.8): **F7** — react-admin's default telemetry beacon (an unguarded `<Admin>`
+call in `apps/zen_demo/zen_demo_admin/src/App.tsx`, no `disableTelemetry` prop) ships to production
+unreviewed and is blocked today only because `SecurityHeaders.java`'s `img-src` directive happens not
+to name its host — a coincidence, not a decision, and exactly the kind of CSP-widening trap the
+class's own javadoc already warns about for an unrelated reason.
+
+**One already-fixed gap re-confirmed rather than re-found**: the web build of `SecureTokenStore`
+throws `UnsupportedError` at construction instead of falling back to `flutter_secure_storage_web`'s
+`window.localStorage`, closing exactly the MASVS-STORAGE gap plan §Phase 7 asks this phase to look
+for. DECISIONS.md's 2026-07-31 entries show this was already found and fixed ahead of this review,
+and `apps/zen_demo/zen_demo_client/lib/main.dart`'s `zenIsWeb ? null : SecureTokenStore()` guard is
+confirmed still in place, now redundant belt-and-braces rather than the only thing standing between
+the refresh token and an XSS-readable browser store.
+
+**One gap confirmed still open, on paper, and still unexploited in practice**: `verify:boundaries`
+(read in full, both this phase and Phase 2) does not scan `apps/zen_demo/zen_demo_client/{android,
+ios,macos}` at all. Reading every `.kt`/`.swift` file under those trees this phase (all Flutter
+boilerplate, 5–32 lines each) confirms there is currently nothing there for the gap to hide — the
+paper attack Phase 2 described has no live instance today.
+
+**Done-when check (plan §Phase 7):** every bullet the plan names for this phase — compile-time config
+and bundle secrets; the one-server rule from the client's side; token storage (MASVS-STORAGE) on
+mobile vs. web; security headers from the wire in a real browser; the admin panel's auth, session,
+XSS surface, and header parity; deep links and App Links — is answered with evidence in §3.8's table
+✓. One finding minted in the plan's §7 template ✓ (F7). One already-closed gap and one still-open,
+still-unexploited gap are each independently re-verified against current code rather than taken on a
+prior pass's or an ADR's word alone ✓. The production request budget is opened and 11 of 12 rows are
+logged in the Method block's ledger ✓.
+
+**Phase 7: CLOSED.** Every bullet the plan names for this phase is answered with evidence in §3.8,
+one new finding is minted in the plan's own template (F7), the MASVS-STORAGE web-fallback gap is
+re-confirmed closed rather than re-discovered, the native-platform-channel gap in `verify:boundaries`
+is re-confirmed open but inert, and the items needing a live browser session, a fresh bundle rebuild,
+or a login against production (which the rules of engagement forbid) are named as explicitly
+deferred to Phase 8 — the same discipline as Phases 0–6 (plan §5.3's trap).
+
+**Explicitly not done in Phase 7** (deferred to Phase 8, or out of this review's scope entirely, per
+the plan): re-running `task build:web` against today's `HEAD` rather than grepping the 2026-08-17
+staged bundle; driving a real browser with DevTools open against the live admin panel to watch **F7**'s
+CSP violation actually appear, rather than reasoning it from `SecurityHeaders.java` and `ra-core`'s
+source; a login against production to wire-verify cookie attributes (forbidden by plan §4.2/§4.3 —
+deferred to Phase 8's local, disposable-account container); re-running `secure_token_store_web_test.dart`
+to watch the web branch's `UnsupportedError` fire live rather than reading the class that already
+asserts it; confirming whether a native build carrying the live `zendemo://` scheme has actually
+shipped to a real device or store listing (F2 stays "contingent," not "demonstrated"); and an
+independent dependency audit of react-admin's own transitive tree beyond the one behaviour (F7) found
+by reading its source directly. Phases 8–9 entirely.

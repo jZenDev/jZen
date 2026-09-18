@@ -4,9 +4,9 @@ A working document, not a source of truth. The architecture docs in
 [`../architecture/`](../architecture/) remain authoritative, and ADRs win on conflict.
 
 **Reviewed:** 2026-09-18. **Phase 0 CLOSED** (orientation and scope freeze). **Phase 1 CLOSED**
-(assets, trust boundaries, threat model — see "Phase 1 record" for the closure check against the
-plan's own deliverable list). Phases 2–9 are not yet executed. Sections 4–9 below remain
-placeholders.
+(assets, trust boundaries, threat model). **Phase 2 CLOSED** (the inheritance audit and
+silent-no-op census — see "Phase 2 record" for the closure check against the plan's own deliverable
+list). Phases 3–9 are not yet executed. Sections 4–9 below remain placeholders.
 
 **Scope:**
 - **In scope.** jZen as a framework — `server/zen-*`, `client/zen_*`, `admin/` (`@jzen/admin-core`) —
@@ -45,11 +45,11 @@ write reaches production or the hosted Supabase project.
 - **Tools:** none run yet. Phase 8 is the only phase that runs a scanner (an OWASP ZAP baseline
   passive scan against the local container) and it will be recorded here by name, version and
   configuration when it runs.
-- **What was NOT assessed (as of Phase 1):** Phases 2–9 have not started. Phase 1 itself did not run
-  any code or test — it is a static read of the classes and migrations cited in §2, confirming the
-  plan's candidate boundary list against what the code actually does rather than diagramming from
-  memory. This line is updated as each phase closes; "not assessed" is an honest, acceptable entry
-  per chapter (plan §2.3), an *unmarked* one is not.
+- **What was NOT assessed (as of Phase 2):** Phases 3–9 have not started. Phase 2 ran one read-only
+  shell script (the jandex bean/plugin census) and otherwise did not execute code, run a test, or
+  make a network call — it is a static read of the modules, migrations and gate scripts cited in §3,
+  plus a paper attack rather than a built one. This line is updated as each phase closes; "not
+  assessed" is an honest, acceptable entry per chapter (plan §2.3), an *unmarked* one is not.
 
 ---
 
@@ -196,11 +196,102 @@ exists by design, ADR-028/029).
 
 ## 3. Architectural findings
 
-*Not started — Phase 2, the centrepiece.* Will carry the control inventory (where each control's code
-and tests live, whether a new app inherits it, and whether it fails open or closed and silently) and
-the silent-no-op census, extending the three instances `CLAUDE.md` already names (a library module
-missing `jandex-maven-plugin`; a client reaching Supabase directly; `quarkus-rest-jackson` present
-server-side).
+### 3.1 Part A — Control inventory
+
+Populated from the modules cited in the plan, not from docs. "Inherited?" means: does a second jZen
+application (ADR-026) get this the moment it adds the dependency and runs `jandex-maven-plugin`, or
+must it additionally remember to configure, wire, or copy something.
+
+| Control | Code | Tests | Inherited by a new app? | Fails open or closed if absent/misconfigured? | Silent? |
+|---|---|---|---|---|---|
+| `SecurityHeaders` (CSP/HSTS/frame headers on `/`, `/admin/`, API) | `zen-transport/SecurityHeaders.java`, `@Observes Router` at `MIN_VALUE` | `SecurityHeadersTest`, `SecurityHeadersWiringTest`, `SecurityHeadersBehindProxyTest` (app) | Yes — dependency + Jandex only | **Open.** Missing Jandex → bean never discovered → no headers, no error | **Yes**, by the class's own javadoc |
+| `StaticCacheHeaders` | `zen-transport`, same Vert.x-route pattern | `StaticCacheHeadersWiringTest` (app) | Yes | Open, same mechanism as above | Yes |
+| `CorsCredentialsGuard` | `zen-transport` | `CorsCredentialsGuardTest`, `CorsCredentialsGuardWiringTest` (app) | Yes | Open (Jandex-gated `@Provider`) | Yes |
+| `ZenTransportFilter` (transport negotiation) | `zen-transport`, `@PreMatching @Provider` | `ZenTransportHeadersTest`, `ZenTransportFormatTest` (app) | Yes | Not verified this phase what an absent filter defaults `Accept` to | Not verified |
+| Proto/ProtoJson `MessageBodyReader`/`Writer` | `zen-transport` | `ZenTransportFormatTest`, `InvalidBodyExceptionMapperTest` (app) | Yes | Malformed body → `InvalidBodyExceptionMapper` → `ZenError` (by test name; mapper body not re-read this phase) | Not silent — a mapper exists and is named in a test |
+| `CsrfFilter` + `CsrfRules` | `zen-identity` | `CsrfFilterTest`, `CsrfRulesTest`, `CsrfWiringTest` (app) | Yes | **Closed by default shape**: `CsrfRules` is a closed exemption enum — a new endpoint is protected unless explicitly added to the exempt set, i.e. the secure default is "protected" | Wiring absence would be silent (Jandex), but the exemption list itself is not |
+| `RateLimitFilter` + `RateLimitRule` | `zen-ratelimit` | `BurstLimiterTest`, `RateLimitRuleTest`, `RateLimitEnforcementTest`, `RateLimitWiringTest`, `RateLimitCsrfOrderingTest` (app) | Yes, and **new endpoints are covered without any app action**: `RateLimitRule.resolve` buckets `JOB_TRIGGER` and `AUTH` by exact path and puts *everything else under `/api/`* in `GLOBAL` — confirmed by reading `RateLimitRule.java` this phase | Jandex-gated open failure for the mechanism itself; the bucket design is fail-safe once wired | Wiring silent; bucketing is not |
+| `JobTriggerAuthenticator` | `zen-jobs` | `JobTriggerAuthenticatorTest`, `JobTriggerResourceTest` (app) | **No** — `ZEN_JOBS_TRIGGER_TOKEN` is an app-provisioned secret; the mechanism ships, the credential does not | **Closed**: `expected == null → false` rejects every call when unconfigured (re-confirmed, Phase 1 finding) | Not silent — every call is rejected, which is itself the signal |
+| `SessionCookieAuthenticationMechanism` / `SessionService` | `zen-identity` | `ExpiredSessionCookieTest` (app); no dedicated unit test found under `zen-identity/src/test` this phase | Yes | Deliberately **open to anonymous** on an unverifiable cookie (ADR-030) | Documented in the ADR, not silent, but easy to misread as "auth failed loudly" when it instead degrades to anonymous |
+| `RoleAugmentor` / `UserRoleLoader` | `zen-identity` | `RoleAugmentorTest` (app), `UserRoleLoaderLatchTest` | Yes | Resolution failure → role-less identity (closed on privilege); not independently re-verified this phase | Not assessed this phase |
+| `AdminUserResource` | `zen-identity`, reusable framework resource | `AdminUserResourceTest`, `AdminUserRangeTest` (app) | Yes, and **unconditionally** — the highest-privilege JAX-RS surface in the system arrives the moment `zen-identity` is on the classpath; whether an app can opt *out* of exposing it was not checked this phase | Class-level `@RolesAllowed(ADMIN)`, confirmed — no method-level override found in the file | Not silent (annotation present, verified by direct read) |
+| Framework Flyway migrations (`V1__init_identity`, `R__identity_application_role`, `R__identity_data_api_lockdown`, `V100__init_jobs`, `R__jobs_row_level_security`, `V200__init_rate_limit`, `R__ratelimit_row_level_security`) | `zen-identity`, `zen-jobs`, `zen-ratelimit`, each under `src/main/resources/db/migration` | `DatabasePrivilegeTest` (app) | **Yes, automatically** — `quarkus.flyway.locations=db/migration` is a classpath location, and Flyway merges every jar's `db/migration/` on the classpath; `zen_demo_server` ships **no migrations of its own** (confirmed: no `db/migration` directory in the app), so every table, every RLS policy and the Data API lockdown arrive purely from the framework dependency | The repeatable (`R__`) ones re-assert on every deploy by construction — a real strength (ADR-036's reasoning depends on exactly this) | Not silent — Flyway logs every applied migration |
+| `UserRetentionService` / `UserRetentionJob` (GDPR retention) | `zen-identity` | `UserRetentionTest`, `UserRetentionCutoffTest`, `RetentionBatchingTest`, `RetentionDeliveryGateTest` (app) | **Partially.** The code and the no-erasure-without-delivered-warning logic are inherited; the *schedule* is not — nothing runs it unless the app also provisions Cloud Scheduler → `POST /api/v1/jobs/trigger` with a matching `ZEN_JOBS_TRIGGER_TOKEN` (see B4) | If the trigger is never wired, retention silently never runs — accounts simply age forever with no warning and no erasure | **New candidate silent no-op** (§3.2 below) — a fourth instance, not one of the three `CLAUDE.md` already names |
+
+**The inheritance risk runs in both directions**, not only "an app forgets to add something": `AdminUserResource` shows the opposite failure mode — an app gets the entire admin surface *whether it wants it or not* the moment `zen-identity` is a dependency, and whether that surface can be selectively disabled per-app is an open question this phase did not answer.
+
+### 3.2 Part B — The silent-no-op census
+
+**Jandex coverage, checked directly** (the plan's own script, run this phase):
+
+```
+server/zen-core          beans:0 jandex:0
+server/zen-email         beans:1 jandex:1
+server/zen-identity      beans:16 jandex:1
+server/zen-jobs          beans:3 jandex:1
+server/zen-proto         beans:0 jandex:0
+server/zen-ratelimit     beans:6 jandex:1
+server/zen-transport     beans:13 jandex:1
+```
+
+Every module that contributes a CDI bean or JAX-RS provider has `jandex-maven-plugin`; `zen-core` and
+`zen-proto` correctly have neither. **This specific census is currently clean** — a "closed, verified"
+line for §6, not a finding — but it says nothing about the *next* module added, which is exactly what
+makes the pattern worth re-running rather than trusting from memory.
+
+**Four silent-no-op mechanisms are now named** (three from `CLAUDE.md`, one new this phase):
+
+1. A library module missing `jandex-maven-plugin` (`CLAUDE.md`, re-confirmed clean above).
+2. A client reaching Supabase directly (`CLAUDE.md`; `verify:boundaries` is the gate — see §3.3).
+3. `quarkus-rest-jackson` present server-side (`CLAUDE.md`; not independently re-verified this phase —
+   deferred to Phase 4, which the plan already assigns it to).
+4. **New: an app that never wires Cloud Scheduler → `/api/v1/jobs/trigger`.** `UserRetentionService`'s
+   code ships and compiles whether or not anything ever calls it. There is no health check, no
+   metric, and no test that fails when the trigger is simply never configured — `JobTriggerAuthenticatorTest`
+   and `JobTriggerResourceTest` both exercise the endpoint *being called*, not the absence of a caller.
+   An app can therefore satisfy GDPR Art. 5(1)(e) in code review while never actually running
+   retention in production, and nothing in the gate suite would say so. Candidate scope: framework
+   documentation plus, possibly, a boot-time or health-check warning if the trigger token is
+   configured but Cloud Scheduler has never called it within some window — not designed this phase,
+   named as a Phase-2 finding for Phase 5/9 to price.
+
+**The paper attack — could an app stay green while being insecure?** Attempted on paper, not built:
+
+- *Skip `SecurityHeaders`*: cannot be done by omission (it is Jandex-inherited automatically), only by
+  actively excluding `zen-transport` from the app's dependency tree — but the app has no server
+  without it (it is where the transport seam lives), so this is not a realistic path.
+- *Register a competing `MessageBodyWriter` for `application/json`*: nothing in the framework detects
+  a second writer claiming the same media type; SmallRye/RESTEasy Reactive's own provider-priority
+  rules would decide, silently, which one wins. **Not verified this phase** whether jZen has a test
+  that would catch this — candidate for Phase 4's parser review.
+- *Add `quarkus-rest-jackson` for one endpoint*: `CLAUDE.md` documents this as the reason the
+  dependency must be *absent*, not merely deprioritized, because Jackson's writer claims
+  `application/json` through a build-time path that ignores writer priority. Re-verifying it is still
+  absent is Phase 4's job, not repeated here.
+- *Define a resource under `/api/` that the rate limiter's bucket enum doesn't expect*: cannot bypass
+  `RateLimitFilter` this way — confirmed above, everything under `/api/` not explicitly named falls to
+  `GLOBAL`. This path is closed by design, not merely by accident.
+- *Create a new table without extending the Data API lockdown*: `R__identity_data_api_lockdown.sql`
+  is repeatable and, per its own header (read in Phase 0), revokes default privileges — whether that
+  default-privilege revoke actually covers a table created by a migration that runs *after* it is a
+  Phase 5 question (ordering matters and was not re-verified this phase).
+- *Add a platform-channel network call in Kotlin/Swift*: **this one succeeds.** See §3.3 — the gate
+  that is supposed to catch a client bypassing the one-server rule does not scan native platform
+  code at all.
+
+### 3.3 Part C — Gate audit
+
+| Gate | What it actually checks | What its name implies but it does not check | Can it pass having checked nothing? |
+|---|---|---|---|
+| `verify:boundaries` (`scripts/verify-boundaries.py`, read in full this phase) | Three regex-based checks — no provider SDK in `pubspec.yaml`/`package.json`, no provider host/credential string, no absolute-URL literal — scoped to `client/*/lib`, `apps/*/*/lib` (Dart) and `admin/src`, `apps/*/*_admin/src` (TypeScript `.ts`/`.tsx`), generated code excluded | **Kotlin and Swift platform-channel code** (`apps/zen_demo/zen_demo_client/android/**/*.kt`, `ios/**/*.swift`, `macos/**/*.swift` — confirmed present, currently boilerplate) is never scanned. A native plugin implementation that called Supabase directly from a platform channel would pass this gate cleanly. This matches the plan's own speculation (§Phase 2) and is now confirmed rather than assumed. | **No** for the scopes it does cover — `StaleScope` deliberately fails the gate if a glob matches nothing, which is itself a defence against the exact "silent pass" pattern ADR-034 found in `ossindex-maven-plugin`. The gap is a coverage gap, not a "passes while checking nothing" defect. |
+| `verify:docs` | Two mechanically-checkable drift rules (a README task-name reference exists in `task --list`; a module `LICENSE` matches root) | Everything else a README claims — behavioural accuracy, security-relevant statements about a task's effect | Passes on repositories with correct task names and licences regardless of whether the prose around them is true |
+| `verify:contracts` (`sync:contracts` before ADR-049) | Regenerates Java DTOs, Dart messages, `openapi.json`, admin TypeScript and typed l10n, fails on drift from the tracked output | Whether the *contract itself* is secure (e.g., an overly permissive field) — it is a drift gate, not a design review | No — regeneration either matches tracked output or it does not |
+| `audit` (`task audit`, `.github/workflows/audit.yml` read this phase) | Java (OSV), TypeScript and Dart dependencies against known CVEs; **confirmed actually wired** — a weekly cron (`17 6 * * 1`) plus `workflow_dispatch`, not merely described in ADR-034/039 as intended. This resolves §8's Q4 as answered rather than open. | New advisories between runs (up to a week of exposure by design — a deliberate trade-off, not a defect) | No — it queries a real remote service and fails on a real match (ADR-034 precedent: it already caught two HIGH advisories once) |
+| `test:e2e` | Real Supabase + Quarkus, no mocks: register/login/logout, a typed round trip in both transport modes, the WebSocket echo, a `ZenError` path | It is a **functional** happy/typed-path suite, not a security suite — no malformed input, no auth-bypass attempt, no expired/tampered cookie in this gate (those live in `ExpiredSessionCookieTest`, a separate `@QuarkusTest`, not in `test:e2e` itself) | No — it is a real integration run against a real stack, but its green result answers a narrower question than "the security-relevant paths work," and a reader of the task name alone could over-read it |
+
+**Deliverable check against the plan:** control inventory ✓ (§3.1, 13 controls). Silent-no-op census ✓
+(§3.2 — jandex re-verified clean, four mechanisms named, six paper-attack scenarios attempted, one
+succeeds). Gate-coverage table ✓ (§3.3, five gates).
 
 ## 4. Free wins
 
@@ -325,3 +416,72 @@ filled in with confidence/exploitability/fix cost); verifying B5's lockdown actu
 merely available in `WellKnownResource` (Phase 7); confirming whether `RoleAugmentor`'s per-request
 role read actually bounds the WebSocket's revocation gap in practice, or only in the HTTP surface
 (Phase 3). Phases 2–9 entirely.
+
+---
+
+## Phase 2 record
+
+**Method:** static read plus one read-only shell census, no `@QuarkusTest` run, no `gcloud` read, no
+network call. Grounded in, read this session: every `*.java` filename under `zen-transport`,
+`zen-identity`, `zen-ratelimit`, `zen-jobs` (`src/main/java`, listed by module); the full text of
+`SecurityHeaders.java`, `RateLimitFilter.java`, `RateLimitRule.java`, `CsrfRules.java` (header),
+`AdminUserResource.java` (header + annotations), `UserRetentionService.java` (header); every test
+filename under each framework module's `src/test` and under `apps/zen_demo/zen_demo_server/src/test`;
+`scripts/verify-boundaries.py` in full (259 lines); the `verify:boundaries`, `verify:docs`,
+`verify:contracts`, `audit`, `test:e2e` task summaries in `Taskfile.yml`; `.github/workflows/audit.yml`
+in full; `apps/zen_demo/zen_demo_server/src/main/resources/application.properties`'s Flyway block; and
+a directory listing confirming `zen_demo_server` ships no `db/migration` of its own.
+
+**Command run this phase** (the plan's own jandex census, reproduced verbatim in §3.2):
+
+```
+for m in server/zen-*; do
+  printf '%-24s beans:%s jandex:%s\n' "$m" \
+    "$(grep -rlE '@Provider|@ApplicationScoped|@Singleton|@Observes' $m/src/main/java 2>/dev/null | wc -l)" \
+    "$(grep -c jandex-maven-plugin $m/pom.xml 2>/dev/null)"
+done
+```
+
+Result: every module with beans has the plugin; `zen-core`/`zen-proto` correctly have neither. This
+census is clean today — a "closed, verified" candidate for §6, not a finding — and is recorded as
+evidence rather than inherited from `CLAUDE.md`'s prose claim that it holds.
+
+**The dependency-tree command the plan also names**
+(`server/mvnw -B -f apps/zen_demo/zen_demo_server/pom.xml dependency:tree`) was **not run this
+phase** — it requires a full Maven resolution and was judged lower value than the static reads above
+for the time available; ADR-034's Wave 4.2 already found and fixed the one case this would have
+caught (`quarkus-smallrye-openapi` arriving transitively), and Phase 4 re-verifies that specific
+regression from the wire instead. Named here rather than silently skipped.
+
+**One new finding-in-waiting**, not yet written up as `F<n>` per §7 (that is Phase 3's job; recorded
+here so it is not lost): an app that never wires Cloud Scheduler → `/api/v1/jobs/trigger` gets
+`UserRetentionService`'s code but never its behaviour, and nothing in the test suite or a gate
+distinguishes "retention is wired and idle because nothing is due yet" from "retention has never run
+once" (§3.2, item 4).
+
+**One gate gap confirmed rather than assumed**: `verify:boundaries` does not scan Kotlin or Swift
+platform-channel source, confirmed by reading the script's scope constants
+(`DART_LIB_SCOPES`/`TS_SRC_SCOPES`) against an actual directory listing that shows `.kt`/`.swift`
+files exist in the client's native shells today (currently unmodified boilerplate — no live
+violation, a coverage gap rather than an active finding).
+
+**Done-when check (plan §Phase 2 deliverable):** the control inventory ✓ (§3.1, 13 rows, the
+"inherited" column populated for each). The silent-no-op census ✓ (§3.2 — the jandex script rerun,
+the three `CLAUDE.md` instances re-cited plus one new one, six paper-attack scenarios attempted on
+paper with one succeeding). The gate-coverage table ✓ (§3.3, five gates: `verify:boundaries`,
+`verify:docs`, `verify:contracts`, `audit`, `test:e2e`).
+
+**Phase 2: CLOSED.** All three deliverables the plan names for this phase exist in the report, each
+grounded in a specific file, test name, or command output rather than recalled from the plan's own
+description of what should be there (plan §5.3's trap, same discipline as Phase 1).
+
+**Explicitly not done in Phase 2** (deferred to their own phases, per the plan): quantifying or
+ranking the new retention-scheduling finding and the `verify:boundaries` coverage gap into `F<n>`
+entries with confidence/exploitability/fix cost (Phase 3 owns the finding template, plan §7); the
+`dependency:tree` command (not run, reasoned above); verifying whether `ZenTransportFilter`'s absence
+has a safe default (deferred to Phase 4, which owns the transport seam); re-reading
+`InvalidBodyExceptionMapper`'s body to confirm it never leaks a stack trace (Phase 4); verifying
+whether a second `MessageBodyWriter` for `application/json` would actually be silently preferred, or
+whether SmallRye/RESTEasy Reactive provider-priority rules would prevent it (Phase 4); confirming the
+Data API lockdown's migration-ordering question — does the default-privilege revoke cover a table
+created by a *later* migration (Phase 5). Phases 3–9 entirely.

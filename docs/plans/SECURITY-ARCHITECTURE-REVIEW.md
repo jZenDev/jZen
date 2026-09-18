@@ -6,7 +6,8 @@ A working document, not a source of truth. The architecture docs in
 **Reviewed:** 2026-09-18. **Phase 0 CLOSED** (orientation and scope freeze). **Phase 1 CLOSED**
 (assets, trust boundaries, threat model). **Phase 2 CLOSED** (the inheritance audit and
 silent-no-op census — see "Phase 2 record" for the closure check against the plan's own deliverable
-list). Phases 3–9 are not yet executed. Sections 4–9 below remain placeholders.
+list). **Phase 3 CLOSED** (identity, session, authorization — see "Phase 3 record"). Phases 4–9 are
+not yet executed. Sections 4–9 below remain placeholders.
 
 **Scope:**
 - **In scope.** jZen as a framework — `server/zen-*`, `client/zen_*`, `admin/` (`@jzen/admin-core`) —
@@ -45,11 +46,14 @@ write reaches production or the hosted Supabase project.
 - **Tools:** none run yet. Phase 8 is the only phase that runs a scanner (an OWASP ZAP baseline
   passive scan against the local container) and it will be recorded here by name, version and
   configuration when it runs.
-- **What was NOT assessed (as of Phase 2):** Phases 3–9 have not started. Phase 2 ran one read-only
-  shell script (the jandex bean/plugin census) and otherwise did not execute code, run a test, or
-  make a network call — it is a static read of the modules, migrations and gate scripts cited in §3,
-  plus a paper attack rather than a built one. This line is updated as each phase closes; "not
-  assessed" is an honest, acceptable entry per chapter (plan §2.3), an *unmarked* one is not.
+- **What was NOT assessed (as of Phase 3):** Phases 4–9 have not started. Phase 3, like Phases 1–2,
+  ran no `@QuarkusTest`, no `gcloud` read, and no network call — it is a static read of the
+  identity/session/authorization code cited in §3.4, plus two greps against native client manifests
+  and the deploy script's own documentation. It did **not** empirically test JWKS-unreachable
+  behaviour, clock-skew tolerance, or login-timing enumeration resistance — those need a running
+  server or a running clock and are named as open items in §3.4 rather than asserted from reading.
+  This line is updated as each phase closes; "not assessed" is an honest, acceptable entry per
+  chapter (plan §2.3), an *unmarked* one is not.
 
 ---
 
@@ -293,6 +297,147 @@ makes the pattern worth re-running rather than trusting from memory.
 (§3.2 — jandex re-verified clean, four mechanisms named, six paper-attack scenarios attempted, one
 succeeds). Gate-coverage table ✓ (§3.3, five gates).
 
+### 3.4 Part D — Phase 3: Identity, session, authorization
+
+ASVS session-management/access-control chapters plus API Top 10 BOLA/BFLA, per the plan's Phase 3
+question list. Answered from code read this phase — `SessionService.java`,
+`SessionCookieAuthenticationMechanism.java`, `RoleAugmentor.java`, `UserRoleLoader.java`,
+`CsrfRules.java`, `CsrfFilter.java`, `RedirectTargets.java`, `WellKnownResource.java`,
+`AuthResource.java`, `IdentityService.java`, `AdminUserResource.java`, `DemoResource.java`,
+`DemoWebSocket.java` — plus `application.properties`'s JWT/session block, the native client's
+`AndroidManifest.xml`/`Info.plist`, and `Taskfile.yml`'s deploy documentation for App Links.
+
+| Question (plan §Phase 3) | Answer, with evidence |
+|---|---|
+| Cookie attributes, end to end | All four cookies (`zen_access_token`, `zen_refresh_token`, `XSRF-TOKEN`, and the generic `clearCookie`) are `Path=/`, `SameSite=Lax`, `Secure` in every profile but `%dev`/`%test` (`session.cookie.secure`, defaulted `true`, overridden `false` only there). **None carries the `__Host-` prefix.** Not re-verified from the wire this phase (Phase 7/8's job); read from `SessionService.java` directly. |
+| Token lifetimes, rotation, revocation | Access 1h, refresh 7d, refresh rotates on every Supabase `/token` call (code comment, not independently wire-verified). Logout and password-change both call upstream revocation and treat its failure as logged-but-non-fatal — `IdentityService.revoke()` — a **documented, priced** risk (the session stays live upstream for up to 7 days if Supabase is unreachable at the moment of revocation), not a silent one: the javadoc states the exposure explicitly and the WARN log line is the signal. |
+| JWT verification | ES256 against JWKS (`mp.jwt.verify.publickey.location`), issuer pinned to `${SUPABASE_URL}/auth/v1`. `smallrye.jwt.jwks.cache-time-to-live=10800` (3h) / `refresh-interval=3600` (1h). **No explicit clock-skew property is set** — SmallRye JWT's own default applies, unconfirmed this phase. **What happens when JWKS is unreachable was not tested**; reasoned from code: `SessionCookieAuthenticationMechanism` recovers any `AuthenticationFailedException` — which a failed JWKS fetch would produce — into an anonymous identity, so a JWKS outage degrades every session to anonymous rather than 5xx. That is fail-closed on authorization (no forged identity is ever accepted) but **silently mass-signs-out every session** for the outage's duration, bounded below by the 1h/3h cache — and nothing observed this phase logs, alerts, or distinguishes that from ordinary token expiry (`SessionCookieAuthenticationMechanism`'s own javadoc: logged at DEBUG, deliberately, to avoid amplification). Recorded as an open question for Phase 8, not asserted as a finding — it was not forced and observed. |
+| Role resolution | `RoleAugmentor` reads the `users.role` column fresh on **every** authenticated request (no cache, no token claim) via `UserRoleLoader`, so a role change or a failed load (caught, logged at WARN, degrades to the unaugmented identity — closed on privilege) takes effect on the very next request. Revocation latency is therefore effectively zero on the HTTP surface. **Confirmed exception: the WebSocket** — see F1 below. |
+| **BOLA** | `AdminUserResource` is gated `@RolesAllowed(ADMIN)` and its `/{id}` path takes a client-supplied id by design (an admin operating on any user is the function, not a bug). `DemoResource.profile()` and `IdentityService.currentUser(UUID)` never take a client-supplied id — both resolve strictly from `securityIdentity.getPrincipal()`, and `currentUser`'s own javadoc states the identity match is on the id, never merely on attribute presence. **No BOLA path found** across the three resources the plan names. |
+| **BFLA** | Every mutating (non-GET/HEAD/OPTIONS) endpoint enumerated: `AdminUserResource.update` — class-level `@RolesAllowed(ADMIN)`, no method-level override. `AuthResource` — `login`/`register`/`restore-password`/`session`/`logout` are `@PermitAll` by necessity (no session yet, or ending one that may already be gone); `password` is `@Authenticated`; `refresh` is `@PermitAll` but its credential is the refresh cookie, checked inside `IdentityService.refresh`. `JobTriggerResource` (not re-read this phase, per Phase 2's inventory) is `@PermitAll` and secret-gated. **No unannotated mutating endpoint found.** With `quarkus.http.auth.proactive=true`, an unannotated endpoint would default to whatever the identity resolves to (anonymous if no cookie) — moot here since none exists. |
+| CSRF | `CsrfRules.applies` is a closed allowlist of **safe methods** (`GET`/`HEAD`/`OPTIONS`) union a closed **exemption set** of six paths, each justified in the class javadoc. **The default is protected**: a new mutating `/api/` endpoint is covered automatically unless someone deliberately adds it to `EXEMPT_PATHS` — confirmed by reading the boolean logic directly (`§3.4`'s own read, not inherited from the javadoc's claim). |
+| Open redirect | `RedirectTargets.resolve` is exact-match only, confirmed structurally sound (§3.4). **But its soundness only bounds where a link may point — not who can intercept it once it lands on a native scheme**, which is exactly RFC 8252 §8.6's problem and `WellKnownResource`'s own stated reason to exist. See **F2**. |
+| **The email-link flow (B6)** | Tokens travel in the URL fragment (never reaches the server), are exchanged for cookies only after `IdentityService.exchangeLinkTokens` presents the access token to Supabase's own `/user` endpoint (server-side validation of a client-supplied credential — sound). The redirect target is validated before Supabase is ever asked to mail anything (`RedirectTargets.resolve` runs first in `register`/`restorePassword`). The residual risk is squarely the scheme-hijack: `zendemo://auth-callback` is registered today in both `AndroidManifest.xml:39` and `Info.plist:66`, live in the native manifests, not merely a hypothetical from the doc comment. App Links/Universal Links — the mitigation `WellKnownResource`'s own javadoc names as the fix — are optional, unenforced, and default to unset (`APPLINKS_*` all default to empty string in `application.properties`; `Taskfile.yml:2023` labels the whole step "**optional**"). See **F2**. |
+| Enumeration and timing | `IdentityService.register` intercepts Supabase's `email_taken`/`user_already_exists` and returns the identical no-session outcome a genuine pending confirmation produces (202, same shape) — confirmed by reading the branch, not by timing measurement. `restorePassword` always returns 204 regardless of whether the email exists. **Not independently timing-tested this phase** (Phase 8); the code path gives both cases the same status code and body shape, which is the structural half of the neutral-202 property, not the timing half. |
+
+**Two findings minted this phase** (this review's own numbering — distinct from the predecessor
+`SECURITY-REMEDIATION.md` F1–F20, which are a closed, different document):
+
+```
+### F1 — A WebSocket's authorization is checked once, at the handshake, and never again for the connection's life
+
+**Class:** architectural
+**Scope:** framework (the pattern — zen-transport's WebSocket integration provides no re-validation
+           hook — not `zen_demo`-specific; `DemoWebSocket` is simply today's only instance)
+**Confidence:** verified
+**Standard:** No single ASVS/API-Top-10 requirement id is cited — the governing chapter is ASVS
+              5.0.0's Session Management chapter (session state must not outlive its authorization),
+              but the exact clause number was not confirmed against the fetched text this phase, so
+              this is reasoned-from-code rather than a mapped citation (plan §2.1's rule against
+              citing from memory). Closest named API Top 10 (2023) item: API2 Broken Authentication.
+**Boundary:** B1 / B9 (folded into these per Phase 1's grounding — the socket authenticates on the
+              same cookie and the same `RoleAugmentor` role source as the HTTP surface)
+**Where:** apps/zen_demo/zen_demo_server/src/main/java/zen/demo/DemoWebSocket.java (the pattern is
+           framework-level; there is no dedicated zen-transport WebSocket module to point at instead)
+**Evidence:** `DemoWebSocket`'s own class javadoc, item 1 of "Four things bound this socket": "the
+              handshake is authenticated... enforced during the HTTP upgrade" — no further reference
+              to `SecurityIdentity` or a re-check exists anywhere in `onMessage`/`onClose`/the class.
+              `RoleAugmentor` (§3.4's Role-resolution row) reloads the role on every HTTP request but
+              has no equivalent per-frame hook for a socket, because nothing calls it after upgrade.
+**Exploitability today:** Low. Requires a legitimate session to be revoked (logout elsewhere, global
+              revoke on password change, an admin demoting the role) *while* a socket stays open —
+              the connection keeps functioning as whatever it was authorized for at handshake, for as
+              long as the client holds it, with no documented maximum lifetime. For today's only
+              instance (an echo endpoint) the practical impact is nil; the concern is the *pattern*
+              a second, more sensitive WebSocket resource would inherit unexamined.
+**Impact:** A revoked, logged-out, or demoted identity retains a live channel to whatever that
+              WebSocket resource does, for the life of the connection.
+**Silent?** Yes — no test asserts a message is refused after logout or a role change on an
+              already-open socket; nothing logs, meters, or alerts on this state.
+**Fix:** Give long-lived sockets an explicit revalidation policy at the framework level: either a
+         bounded maximum connection lifetime that forces a reconnect (which re-runs the authenticated
+         handshake), or a periodic identity re-check keyed off the captured access token's own
+         expiry. Framework-level so a second app inherits it rather than rediscovering the gap.
+**What the fix costs:** A max-lifetime approach adds a reconnect burden the client must handle
+         gracefully; a periodic re-check adds a DB round trip on a path the rest of the framework
+         works to avoid (`RoleAugmentor`'s own javadoc documents a ~135ms cross-region cost it exists
+         to eliminate) — there is no free version of this fix.
+**Invariant touched:** none (§7.1).
+**ADR consequence:** none directly superseded; no existing ADR states a WebSocket revocation policy,
+         so a fix would be new ground rather than a reversal.
+```
+
+```
+### F2 — App Links / Universal Links, the RFC 8252 scheme-hijack mitigation, are optional and nothing ties their absence to the risk that makes them necessary
+
+**Class:** process
+**Scope:** application (`zen_demo`'s deploy discipline) — the underlying mechanism
+           (`WellKnownResource`, the custom-scheme redirect target) is framework, but the *decision*
+           to ship a native build without configuring the mitigation is made per-deploy, per-app
+**Confidence:** verified
+**Standard:** OWASP MASVS 2.1.0, MASVS-PLATFORM (deep-link/URL-scheme handling) as the governing
+              group; no single clause id fetched to the precision the plan's §2.1 rule requires, so
+              treat the citation as directional. RFC 8252 §8.6 is the primitive risk it addresses and
+              is already cited by `WellKnownResource`'s own javadoc.
+**Boundary:** B6
+**Where:** Taskfile.yml:2023 ("1a. App Links (optional, and NOT secrets)"),
+           server/zen-identity/src/main/java/zen/identity/auth/WellKnownResource.java (serves 404
+           until configured — a deliberate, documented default),
+           apps/zen_demo/zen_demo_client/android/app/src/main/AndroidManifest.xml:39 and
+           apps/zen_demo/zen_demo_client/ios/Runner/Info.plist:66 (the `zendemo://auth-callback`
+           scheme is registered today, not hypothetical)
+**Evidence:** `Taskfile.yml:2053` states plainly: "Unset is a supported state... The custom scheme
+              keeps working either way." `APPLINKS_ANDROID_PACKAGE`/`APPLINKS_ANDROID_FINGERPRINTS`/
+              `APPLINKS_APPLE_APP_IDS` all default to empty string in
+              `application.properties:30-34`. No script in `Taskfile.yml`'s deploy path checks
+              whether `AUTH_REDIRECT_URIS` names a non-`https` scheme while `APPLINKS_*` is unset —
+              confirmed by reading the deploy documentation block (lines ~2000–2100) in full; it
+              documents the risk in prose but enforces nothing.
+**Exploitability today:** Contingent, not demonstrated. Live only once a native build with a
+              configured custom-scheme redirect target actually ships to real users; this review
+              cannot see from the repository whether that has happened (Phase 6/7 territory — build
+              artifacts, App/Play Store listings). What *is* established is that the mechanism the
+              mitigation exists for (the registered scheme) is present today in both native shells,
+              not merely available in principle.
+**Impact:** Per `WellKnownResource`'s own javadoc: a hostile app that wins the scheme race on the
+              user's device receives the live access **and** refresh tokens carried in the email
+              link's fragment — full account takeover, delivered by the victim's own genuine,
+              correctly-addressed email.
+**Silent?** Yes — no gate, test, or deploy-time check connects "a native redirect target is
+              configured" to "App Links is configured to match it."
+**Fix:** Add a check to the same deploy script that already validates the eight PUBLIC configuration
+         values (`Taskfile.yml`'s 1a-config step, which the plan's own reading confirms "fails closed
+         with the name of whichever is missing"): if `AUTH_REDIRECT_URIS` contains a non-`https`
+         scheme and every `APPLINKS_*` value is unset, warn explicitly rather than silently
+         succeeding. Framework-level (the check belongs beside `WellKnownResource`'s own reasoning,
+         not duplicated per app) so a second application inherits the warning.
+**What the fix costs:** Must be a warning, not a hard failure — `Taskfile.yml:2033` already notes
+         Apple App IDs require a paid developer account, so a first native deploy legitimately may
+         not have App Links ready yet, and a hard gate would block a deploy that has no better option
+         available at that moment.
+**Invariant touched:** none (§7.1).
+**ADR consequence:** none directly superseded; a fix would newly formalize a policy (App Links
+         required before, or loudly flagged absent when, a native scheme redirect goes live) that no
+         current ADR states either way.
+```
+
+**Closed this phase, verified correct with the evidence cited in the question table above** (candidates
+for §6, not restated there yet — that section waits for Phase 9's consolidated pass): cookie
+`httpOnly`/`Secure`/`SameSite=Lax` attributes as coded; role-resolution revocation latency on the
+HTTP surface (effectively zero, read fresh every request); BOLA on `AdminUserResource`,
+`DemoResource`, and `IdentityService.currentUser`; BFLA coverage across every enumerated mutating
+endpoint; CSRF's exempt-by-exception (protected-by-default) design; `RedirectTargets`' exact-match
+soundness as a distinct question from the scheme-hijack it does not claim to solve; the structural
+half of the enumeration-resistance property on `register`/`restore-password`.
+
+**Explicitly not done in Phase 3** (deferred to their own phases, per the plan): forcing and
+observing JWKS-unreachable behaviour, clock-skew tolerance, and login-timing enumeration resistance
+— all need a running server or a running clock (Phase 8); wire-verifying cookie attributes rather
+than reading `SessionService.java` (Phase 7/8); confirming whether a native build with a live
+scheme redirect has actually shipped to users, which would raise F2 from "contingent" to
+"demonstrated" (Phase 6/7); re-deriving `JobTriggerResource`'s CSRF/RolesAllowed status independently
+rather than citing Phase 2's inventory (not re-read this phase, no change expected).
+
 ## 4. Free wins
 
 *Not started.*
@@ -485,3 +630,58 @@ whether a second `MessageBodyWriter` for `application/json` would actually be si
 whether SmallRye/RESTEasy Reactive provider-priority rules would prevent it (Phase 4); confirming the
 Data API lockdown's migration-ordering question — does the default-privilege revoke cover a table
 created by a *later* migration (Phase 5). Phases 3–9 entirely.
+
+---
+
+## Phase 3 record
+
+**Method:** static read only — no `@QuarkusTest` run, no `gcloud` read, no network call, no forced
+failure. Grounded in, read this session, in full: `SessionService.java`,
+`SessionCookieAuthenticationMechanism.java`, `RoleAugmentor.java`, `UserRoleLoader.java`,
+`CsrfRules.java`, `CsrfFilter.java`, `RedirectTargets.java`, `WellKnownResource.java`,
+`AuthResource.java`, `IdentityService.java`, `AdminUserResource.java`, `DemoResource.java`,
+`DemoWebSocket.java`; `application.properties`'s JWT/session/redirect/App-Links config block;
+`apps/zen_demo/zen_demo_client/android/app/src/main/AndroidManifest.xml` and
+`apps/zen_demo/zen_demo_client/ios/Runner/Info.plist` (grep for the registered custom scheme);
+`Taskfile.yml`'s deploy documentation (~lines 2000–2100, the PUBLIC-config and App-Links steps); and
+`apps/zen_demo/zen_demo_client/test/auth_deep_links_native_test.dart` (confirming the scheme is
+exercised, not dead code).
+
+**Two findings minted** (§3.4): **F1** (a WebSocket's authorization is checked only at handshake,
+never revalidated for the connection's life — framework-scope, confirmed by reading
+`DemoWebSocket`'s own javadoc against its actual method bodies) and **F2** (App Links/Universal
+Links, the documented mitigation for the RFC 8252 custom-scheme hijack on the email-link flow, are
+optional and unenforced by any gate — confirmed by reading `Taskfile.yml`'s own deploy documentation
+and the native manifests that already register the scheme it warns about).
+
+**One item raised in Phase 1 as a finding-in-waiting is now resolved rather than minted**: B4's
+fail-closed property (an unconfigured `ZEN_JOBS_TRIGGER_TOKEN` rejects every call) was re-confirmed
+structurally sound in Phase 2's control inventory and needed no further Phase 3 action — it is a
+session/authz-adjacent control but not an identity/session-management question this phase owns.
+
+**Three items explicitly answered "not tested, reasoned from code" rather than asserted as either a
+finding or a closure** (per §5.3's trap — reading the code is not reviewing the system): JWKS-
+unreachable behaviour (reasoned: degrades every session to anonymous, fails closed on authorization
+but silently mass-signs-out for the outage's duration); JWT clock-skew tolerance (no explicit
+property set; SmallRye JWT's own default applies, unconfirmed); and the timing half of the
+enumeration-resistance property (the structural half — identical status/shape — is confirmed; timing
+itself needs a running measurement). All three are carried into Phase 8 rather than closed here.
+
+**Done-when check (plan §Phase 3):** the plan's own question table (Cookie attributes; Token
+lifetimes/rotation/revocation; JWT verification; Role resolution; BOLA; BFLA; CSRF; Open redirect;
+the email-link flow; Enumeration and timing) is answered in full ✓ (§3.4's table, ten rows). Findings
+minted where evidence supported one, in the plan's §7 template ✓ (F1, F2). Items needing a running
+system rather than a reading are named as open rather than guessed ✓.
+
+**Phase 3: CLOSED.** All ten Phase-3 questions the plan names are answered with evidence in §3.4,
+two are minted as findings in the plan's own template, and the items that could not be answered by
+reading alone are named explicitly rather than asserted either way — the same discipline as Phases
+0–2 (plan §5.3's trap).
+
+**Explicitly not done in Phase 3** (deferred to their own phases, per the plan): forcing and
+observing JWKS-unreachable behaviour, clock-skew tolerance, and login-timing enumeration resistance
+(Phase 8, needs a running server/clock); wire-verifying cookie attributes rather than reading the
+issuing code (Phase 7/8); confirming whether a native build with a live scheme redirect has actually
+shipped to users, which would move F2 from "contingent" to "demonstrated" exploitability (Phase 6/7);
+re-deriving `JobTriggerResource`'s CSRF/RolesAllowed status independently of Phase 2's inventory (no
+change expected, not re-read). Phases 4–9 entirely.

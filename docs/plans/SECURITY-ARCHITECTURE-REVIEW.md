@@ -8,8 +8,9 @@ A working document, not a source of truth. The architecture docs in
 silent-no-op census — see "Phase 2 record" for the closure check against the plan's own deliverable
 list). **Phase 3 CLOSED** (identity, session, authorization — see "Phase 3 record"). **Phase 4
 CLOSED** (the transport seam and the two parsers — see "Phase 4 record"). **Phase 5 CLOSED** (the
-data plane, privileges, and privacy — see "Phase 5 record"). Phases 6–9 are not yet executed.
-Sections 4–9 below remain placeholders except where Phases 4–5 populated §3.5–§3.6.
+data plane, privileges, and privacy — see "Phase 5 record"). **Phase 6 CLOSED** (supply chain and
+build integrity — see "Phase 6 record"). Phases 7–9 are not yet executed. Sections 4–9 below remain
+placeholders except where Phases 4–6 populated §3.5–§3.7.
 
 **Scope:**
 - **In scope.** jZen as a framework — `server/zen-*`, `client/zen_*`, `admin/` (`@jzen/admin-core`) —
@@ -48,7 +49,7 @@ write reaches production or the hosted Supabase project.
 - **Tools:** none run yet. Phase 8 is the only phase that runs a scanner (an OWASP ZAP baseline
   passive scan against the local container) and it will be recorded here by name, version and
   configuration when it runs.
-- **What was NOT assessed (as of Phase 5):** Phases 6–9 have not started. Phase 4, like Phases 1–3,
+- **What was NOT assessed (as of Phase 6):** Phases 7–9 have not started. Phase 4, like Phases 1–3,
   ran no `@QuarkusTest` and no `gcloud` or network read against production; it is a static read of
   the transport-seam code cited in §3.5, plus one local, read-only `mvnw dependency:tree` run (both
   with and without `-Dnative`) to confirm the OpenAPI/Jackson dependency questions rather than trust
@@ -62,7 +63,18 @@ write reaches production or the hosted Supabase project.
   against the hosted project and a throwaway Postgres respectively), which this phase treats as
   evidence rather than reproducing. It did **not** independently re-run the grant enumeration against
   a fresh local Supabase stack, and it did **not** probe the hosted Data API (plan §4.4, an owner
-  decision, unchanged). This line is updated as each phase closes; "not assessed" is an honest,
+  decision, unchanged). Phase 6 read `.github/workflows/ci.yml`, `.github/workflows/audit.yml`,
+  `.github/dependabot.yml`, the Dockerfile, and ADR-039/ADR-043 as its primary sources, and made a
+  bounded number of **read-only `gcloud`/`gh` control-plane calls** — `gcloud artifacts
+  repositories`/`docker images list`, `gcloud artifacts repositories get-iam-policy`, `gcloud
+  projects get-iam-policy`, `gh api repos/.../security_and_analysis`, `gh secret list`, `gh api
+  .../branches/main/protection` — all metadata reads against `jzen-prod` and the GitHub repository,
+  none costing the production HTTP request budget (plan §4.3, which reserves that budget for reads
+  against the deployed *service*, not the control plane) and none a mutation. It did **not** run
+  `task audit` itself this phase (its cadence and last-clean result are read from ADR-039 and
+  `audit.yml`'s own configuration, not re-executed), and it did **not** attempt to force an
+  unpinned-action supply-chain compromise or any other dynamic proof — Phase 6 is static-plus-reads,
+  consistent with Phases 0–5. This line is updated as each phase closes; "not assessed" is an honest,
   acceptable entry per chapter (plan §2.3), an *unmarked* one is not.
 
 ---
@@ -680,6 +692,124 @@ as an open question for Phase 9, not designed here). Phases 6–9 entirely.
 
 ---
 
+### 3.7 Part G — Phase 6: Supply chain and build integrity
+
+The surface with the least prior coverage per the plan (§Phase 6). Answered from code and config
+read this phase — `.github/workflows/ci.yml` (full), `.github/workflows/audit.yml` (full),
+`.github/dependabot.yml`, `apps/zen_demo/zen_demo_server/src/main/docker/Dockerfile.native-micro`,
+`server/.mvn/wrapper/maven-wrapper.properties`, `admin/package.json`'s and
+`apps/zen_demo/zen_demo_admin/package.json`'s `packageManager` field, `Taskfile.yml`'s
+`deploy:cloudrun` task and its `1f`/`1g` summary steps — plus `DECISIONS.md` ADR-039 (the `task
+audit` CI wiring) and ADR-043 (the SBOM/signing decision) in full, and a bounded set of read-only
+`gcloud`/`gh` control-plane queries against `jzen-prod` and the `jZenDev/jZen` GitHub repository
+(listed in the Method note above).
+
+| Question (plan §Phase 6) | Answer, with evidence |
+|---|---|
+| Is `task audit` run anywhere automatically? | **Yes — settled, not aspirational.** ADR-039 (`docs/architecture/DECISIONS.md:1018`) records that `.github/workflows/audit.yml` runs `task audit` on a weekly `cron: "17 6 * * 1"` plus `workflow_dispatch`, confirmed by reading the workflow file directly this phase: it exists, its trigger block matches the ADR's account exactly, and its one job runs `task audit` as its final step. This resolves plan §11 Q4 — reading the workflow settles the question the plan left open, the same discipline as Phases 1–5 (§5.3's trap: read the code, not the ADR's claim about the code). `.github/dependabot.yml` additionally covers the `github-actions` ecosystem on a weekly schedule — deliberately not Java/TypeScript/Dart, which `task audit` already answers, so this is not two tools answering the same question. |
+| Workflow token permissions, and what a malicious PR from a fork can reach | Both workflow files declare `permissions: contents: read` at the top level (`ci.yml:35-36`, `audit.yml:16-17`) — explicit in the tracked file rather than inherited from the (already read-only, confirmed via `gh api .../security_and_analysis` returning no elevated default) repository setting; `ci.yml`'s own comment names this precisely as closing a finding of this same review (F12, closed 2026-08-14). No job in either file requests `packages:`, `id-token:`, or any other elevated scope. All `ci.yml` triggers are `pull_request`/`push` (not `pull_request_target`), so a fork's PR runs with a read-only, repo-scoped `GITHUB_TOKEN` and no access to repository secrets by GitHub's own trigger-scoping rule — confirmed structurally, not by testing a real fork PR this phase. **`gh secret list` against the live repository returns zero entries** — there is no repository-level secret for a malicious workflow run to exfiltrate even if permissions were wider, which matches ADR-043's own finding that no CI deploy credential exists at all (see below). |
+| Action pinning by tag vs. digest; third-party actions and what each is trusted with | **Confirmed, re-reading rather than trusting the plan's or F12's account: `ci.yml` is fully SHA-pinned, `audit.yml` is not, and this asymmetry — flagged as a correction-in-waiting in Phase 1 (§2.2) and explicitly deferred there to Phase 6 — is unresolved today.** Every `uses:` line in `ci.yml` (`actions/checkout`, `actions/setup-java`, `subosito/flutter-action`, `actions/setup-node`, `arduino/setup-protoc`, `arduino/setup-task`, `actions/setup-python`, `supabase/setup-cli` — re-grepped this phase, 23 occurrences across 6 jobs) pins to a 40-character commit SHA with the human-readable tag as a trailing comment (e.g. `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1`). Every `uses:` line in `audit.yml` (`actions/checkout@v7`, `actions/setup-java@v6`, `actions/setup-node@v7`, `arduino/setup-task@v3`, `actions/setup-python@v7` — 5 occurrences) is a **mutable tag**, unchanged from before F12 was worked. Trust granted: none of the five actions `audit.yml` invokes touch secrets or deploy anything (the job's own `permissions: contents: read` bounds the blast radius to whatever the action does on the runner, plus a read-only `GITHUB_TOKEN` passed to `arduino/setup-task`'s `repo-token` input for its own rate-limit-avoidance API calls) — but a force-moved or compromised tag on any of the five would still execute arbitrary code on a runner that has that token, on a **schedule nobody reviews before it fires** (`workflow_dispatch`/`cron`, not a PR someone is already looking at), which is exactly the CICD-SEC-1/CICD-SEC-3-shaped risk (Insufficient Flow Control / Dependency Chain Abuse) the OWASP CI/CD Top 10 names and `ci.yml`'s own SHA-pinning already defends against for every *other* workflow in this repository. See **F5** below. |
+| How does the deploy authenticate to GCP — a long-lived key, or workload identity federation? | **Neither — there is no CI-to-GCP authentication path at all, because CI never deploys.** `ci.yml`'s own header comment states this as a design decision ("deploy:cloudrun — deploy is manual, by a person") and it is verifiable independently of the comment: `gh secret list` returns zero repository secrets (no `GCP_SA_KEY`-shaped entry, no `WORKLOAD_IDENTITY_PROVIDER`), no `google-github-actions/auth` or `google-github-actions/deploy-cloudrun` action appears anywhere in either workflow file, and `gh api repos/jZenDev/jZen/environments` returns zero environments. `gcloud projects get-iam-policy jzen-prod` (read-only control-plane call, this phase) shows exactly one human principal with `roles/owner` (`a.merezhanyi@gmail.com`) and the project's default Compute Engine service account with `roles/editor` — no distinct CI/automation service account holds any role. `Taskfile.yml`'s `deploy:cloudrun` task requires an interactive `gcloud auth login` (already the operator's own session) and, since ADR-043, an interactive Sigstore OIDC login for `cosign sign`/`cosign attest` — both human-in-the-loop, both re-confirmed this phase by reading the task body rather than only ADR-043's account of it. This is the workload-identity-federation-vs-long-lived-key question resolved by there being no third option needed: **the question presupposes a CI deploy credential this repository does not have**, which is itself the strongest answer available to CICD-SEC-2 (Inadequate Identity and Access Management). |
+| Base image pinned by digest; non-root `USER`; SBOM; signing; provenance | **Base image and non-root user re-verified unchanged from the predecessor audit.** `Dockerfile.native-micro:14` pins `quay.io/quarkus/ubi9-quarkus-micro-image@sha256:d4295e70be7c3df55523bcbcc0fd696d518484de2579d5d87546d422649a1296` (a digest, not a tag); `Dockerfile.native-micro:23` sets `USER 1001` after the `chown`/`chmod` block gives that uid ownership of `/work` — both read directly from the file this phase, not inherited from the predecessor's account. **SBOM and signing are no longer "no" — ADR-043 (2026-08-14, `DECISIONS.md:780`) already closed this exact plan bullet as this review's own F6**, before today's session reopened Phase 6: `cyclonedx-maven-plugin` writes a CycloneDX SBOM to `target/bom.json` on every native `mvn package` (253 components, measured); `deploy:cloudrun` runs `cosign sign` (keyless, Sigstore Fulcio+Rekor, no stored key) on the pushed image and `cosign attest --type cyclonedx` on the SBOM, then refuses to migrate or deploy unless `cosign verify`/`cosign verify-attestation` both succeed against a required, no-default `COSIGN_CERT_IDENTITY` — fail-closed, confirmed by reading `Taskfile.yml`'s `deploy:cloudrun` body this phase (lines ~2426–2462) against ADR-043's account, which matches. **Provenance, stated plainly, per ADR-043's own discipline of not claiming an SLSA level**: the build itself is not hermetic or reproducible and still runs on a developer's workstation (`task build:server:native`) — CI never touches the artifact that ships, by the same deliberate design `ci.yml`'s header already argues for. This phase adds nothing beyond re-confirming ADR-043's claim against the current `Taskfile.yml` and `Dockerfile.native-micro` — **no drift found**. |
+| `dart pub global activate protoc_plugin`, `corepack`, and the `mvnw`/wrapper scripts — checksum-less fetches at build time | **Mixed, and narrower than the plan's framing suggests.** `server/.mvn/wrapper/maven-wrapper.properties` pins Maven 3.9.12 **with an explicit `distributionSha256Sum`** — the wrapper verifies the download before running it, not merely pins a version string; this is a closed item, not a gap. `corepack enable` (both workflow files) activates whatever `packageManager` each `package.json` declares, and every `package.json` in the repository that matters here (`admin/package.json`, `apps/zen_demo/zen_demo_admin/package.json`, re-grepped this phase) pins `pnpm@10.30.3` **with a trailing `+sha512.<hash>` integrity hash** — corepack refuses to run a `pnpm` whose downloaded tarball doesn't match, so this is also checksum-verified, not merely version-pinned. The one real gap: `dart pub global activate protoc_plugin 25.0.0` (`ci.yml:72`) pins an exact version but carries **no content hash** — `dart pub` trusts pub.dev's HTTPS-served package index and its own registry-level integrity, the same trust model as an unpinned `npm install <pkg>@<version>` would have before `corepack`'s hash pinning existed for the package manager itself. Not minted as a finding (it is a lower-severity, narrower-blast-radius gap than F5 — protoc-gen-dart only runs inside `verify:contracts`/`test:e2e`, a PR-reviewed path, not an unattended schedule), but named here rather than silently folded into the mvnw/corepack items it does not share their property with. `arduino/setup-protoc`'s own `version: "29.x"` input is a *range*, not an exact pin, though the action invocation itself is SHA-pinned in `ci.yml` — the same minor, non-finding observation. |
+| Secret scanning / push protection; any credential committed | **Both enabled, confirmed by reading the live repository setting rather than assuming a default.** `gh api repos/jZenDev/jZen --jq '.security_and_analysis'` (this phase) returns `secret_scanning: enabled` and `secret_scanning_push_protection: enabled` (`secret_scanning_validity_checks` and `secret_scanning_non_provider_patterns` are both `disabled` — narrower coverage than the maximum available, named here rather than assumed on). No credential was found committed anywhere across Phases 2–6's reads, consistent with `gh secret list`'s empty result and the Phase 5 finding that none of the seven/nine genuine secrets appear in a tracked `pom.xml`, `application.properties`, or test fixture. The predecessor's note on dev/test trigger tokens scoped to non-shipping profiles was not independently re-verified this phase (out of Phase 6's own question list; Phase 5 already covers `ZEN_JOBS_TRIGGER_TOKEN`'s scoping). |
+| Artifact Registry: who can push; are old images a liability or just storage | **One repository, `jzen` (europe-central2), 81 image digests today** (`gcloud artifacts docker images list`, this phase — up from "51 at last count" in the predecessor audit, confirming the count keeps growing rather than being a one-time observation). `gcloud artifacts repositories get-iam-policy jzen` returns an empty binding set — the repository has no IAM policy of its own, so push/pull rights flow entirely from the **project-level** IAM policy, which (per the GCP-auth question above) grants exactly one human `roles/owner` and the default Compute service account `roles/editor` — **the same single owner who can push can also deploy, delete the project, and read every secret; there is no narrower "can push images" role**, which is consistent with a solo-maintainer repository but is itself worth naming: the least-privilege reasoning ADR-031/036/037 applied carefully to the *database* roles has no analog at the registry. **Old images are storage, not a live liability**, and this is now a repository *policy*, not merely an observation: `gcloud artifacts repositories describe jzen --format="yaml(cleanupPolicies)"` shows three active policies — `keep-tagged` (every tagged image, i.e. every image ever pushed by a deploy that used a commit-SHA tag, is kept forever), `keep-recent-untagged` (the 10 most recent untagged versions), and `delete-old-untagged` (anything untagged older than 30 days is deleted). Read together: **nothing here ever deletes a tagged production image**, which is why the count has grown from 51 to 81 rather than being bounded — a deliberate trade-off (an old tagged image stays available for rollback/forensics) rather than an oversight, but the growth is unbounded by construction and was not weighed against Artifact Registry's storage cost in any document read this phase. Not minted as a finding — storage cost at this scale is a Free-wins/Priced-trade-off-shaped question for Phase 9, not a security gap. |
+
+**One finding minted this phase:**
+
+```
+### F5 — `audit.yml`'s third-party actions run on an unattended schedule from mutable tags, while every other workflow in the repository was hardened to commit-SHA pins
+
+**Class:** process
+**Scope:** pipeline (the workflow-hardening gap is specific to `audit.yml`; the pattern it
+           deviates from — SHA-pinning every third-party action — is already established
+           elsewhere in this same repository, so this is an inconsistency, not a missing
+           practice)
+**Confidence:** verified
+**Standard:** OWASP Top 10 CI/CD Security Risks v1.0 — CICD-SEC-3 (Dependency Chain Abuse) as the
+              primary fit (an upstream action's mutable tag is exactly the dependency-chain
+              vector the item names); CICD-SEC-1 (Insufficient Flow Control Mechanisms)
+              secondarily, because the run that would execute a moved tag is a `cron`/
+              `workflow_dispatch` fire, not a PR a human is already looking at.
+**Boundary:** B7 (GitHub Actions → the repository)
+**Where:** .github/workflows/audit.yml:23,26,32,38,44 (`actions/checkout@v7`,
+           `actions/setup-java@v6`, `actions/setup-node@v7`, `arduino/setup-task@v3`,
+           `actions/setup-python@v7` — all mutable-tag references), contrasted with
+           .github/workflows/ci.yml's 23 equivalent `uses:` lines, all commit-SHA-pinned since
+           F12 (closed 2026-08-14, `DECISIONS.md`'s ADR entry for that finding).
+**Evidence:** `grep -n 'uses:' .github/workflows/audit.yml` (this phase) returns five bare
+              `@vN` tags; the identical `grep` against `ci.yml` returns 23 lines, every one a
+              40-character SHA with the tag preserved only as a trailing comment. `git log -1
+              --format=%ai -- .github/workflows/audit.yml` (this phase) shows its last commit as
+              2026-08-28 — after F12's fix landed (2026-08-14) — so this is not an oversight that
+              predates the hardening; the hardening was applied to one workflow file and not
+              propagated to the other one that already existed alongside it.
+**Exploitability today:** Low-to-moderate. Requires either the upstream maintainer of one of the
+              five actions to force-move its tag maliciously, or an attacker to compromise that
+              maintainer's account — the same precondition Phase 1's B7 threat table already
+              named as live for exactly this reason. The window is real: unlike a PR-triggered
+              workflow, `audit.yml` fires on a **weekly cron nobody is reviewing at the moment
+              it runs**, so a moved tag executes automatically rather than needing a human to
+              approve a workflow run first (GitHub does gate first-time-contributor PR workflow
+              runs, but that protection does not apply to scheduled runs at all).
+**Impact:** Arbitrary code execution on a `ubuntu-latest` runner carrying a read-only, repo-scoped
+              `GITHUB_TOKEN` (no repository secrets exist to steal, per this phase's `gh secret
+              list` finding) and network egress — bounded blast radius (no deploy credential, no
+              write scope) but still a foothold: a compromised action here could, for example,
+              exfiltrate the runner's environment or tamper with `task audit`'s own output before
+              it reaches a human, undermining the one gate this workflow exists to run.
+**Silent?** Yes — no gate compares `ci.yml`'s and `audit.yml`'s pinning discipline against each
+              other; Dependabot's `github-actions` ecosystem entry (`.github/dependabot.yml`)
+              will propose version bumps for the mutable tags exactly as configured, which is not
+              the same property as flagging that they are unpinned in the first place.
+**Fix:** Pin `audit.yml`'s five `uses:` lines to the same commit SHAs `ci.yml` already uses for
+         the identical actions — all five of `audit.yml`'s tags (`checkout@v7`, `setup-java@v6`,
+         `setup-node@v7`, `setup-task@v3`, `setup-python@v7`) name the exact same major.minor.patch
+         `ci.yml` already pins by SHA (`v7.0.1`, `v6.0.0`, `v7.0.0`, `v3.0.0`, `v7.0.0`
+         respectively), so no new SHA needs to be looked up — this is a copy from one file to the
+         other, not new research. A mechanical, low-risk change with a precedent already in the
+         same repository.
+**What the fix costs:** Nothing architectural — a few lines of `sed`-shaped editing, and the
+         resulting file loses none of the readability `ci.yml`'s own "SHA with a trailing
+         version comment" convention already preserves. The only ongoing cost is what `ci.yml`
+         already pays: a SHA pin needs a human (or Dependabot) to bump it when a new action
+         version is wanted, rather than picking one up automatically — a cost this repository
+         has already decided is worth paying once, for `ci.yml`.
+**Invariant touched:** none (§7.1).
+**ADR consequence:** none directly superseded; this closes the residual half of F12 (already an
+         accepted ADR) rather than opening new ground — a fix would most naturally land as an
+         addendum noting the closure, not a new decision.
+```
+
+**Closed this phase, verified correct with the evidence cited in the question table above**
+(candidates for §6, not restated there yet — Phase 9's consolidated pass): `task audit`'s CI
+wiring (ADR-039, re-confirmed by reading the live workflow rather than trusting the ADR's account —
+resolves plan §11 Q4); both workflows' `permissions: contents: read` scoping and the absence of any
+elevated grant; the complete absence of a CI-to-GCP credential (no key, no workload identity, no
+environment, no secret) and the deploy's fully human-authenticated path via `gcloud auth login` plus
+Sigstore's interactive OIDC login; the base image's digest pin and non-root `USER 1001`; ADR-043's
+SBOM/signing/fail-closed-verification posture, re-confirmed against the current `Taskfile.yml` and
+Dockerfile with no drift found; the Maven wrapper's SHA-256-verified download and both `pnpm`
+`packageManager` fields' SHA-512 integrity hashes; secret scanning and push protection both enabled
+on the live repository, and no committed credential found across Phases 2–6; and the Artifact
+Registry cleanup policy's actual shape (tagged images kept forever, untagged pruned after 30 days) as
+a real, read policy rather than an assumption from the predecessor's "51 at last count" note.
+
+**Explicitly not done in Phase 6** (deferred to Phase 9, or out of this review's scope entirely, per
+the plan): pricing the Artifact Registry storage-growth question as a free-win or a priced
+trade-off (Phase 9); designing or costing a least-privilege registry-push role narrower than
+project-level `owner` (named as an open question, not designed here — a solo-maintainer repository
+may reasonably decline this); independently re-running `task audit` this session rather than citing
+ADR-039's account of its last clean result (Phase 5's own precedent for citing rather than
+re-deriving a result already recorded elsewhere); testing a real forked-repository PR to observe
+`GITHUB_TOKEN` scoping empirically rather than reasoning it from GitHub's documented trigger-scoping
+rule; branch-protection posture (no required PR review, no required signed commits — read this
+phase via `gh api .../branches/main/protection` but not minted as a finding, since a solo-maintainer
+repository cannot meaningfully require a second reviewer) — named as an open question for Phase 9,
+the same discipline Phase 5 applied to secret-rotation tooling for an equally small-team context.
+
+---
+
 ## 4. Free wins
 
 *Not started.*
@@ -1089,3 +1219,75 @@ probing the hosted Supabase Data API (plan §4.4, an owner decision, unchanged);
 conclusion on F4's GDPR Art. 17 completeness (an architectural finding was minted instead, per the
 plan's own instruction); designing a rotation-alerting mechanism for the seven/nine secrets (named as
 an open question for Phase 9). Phases 6–9 entirely.
+
+---
+
+## Phase 6 record
+
+**Method:** static read of `.github/workflows/ci.yml`, `.github/workflows/audit.yml`,
+`.github/dependabot.yml`, `apps/zen_demo/zen_demo_server/src/main/docker/Dockerfile.native-micro`,
+`server/.mvn/wrapper/maven-wrapper.properties`, `Taskfile.yml`'s `deploy:cloudrun` task and deploy
+summary, `admin/package.json`'s and `apps/zen_demo/zen_demo_admin/package.json`'s `packageManager`
+fields, and `DECISIONS.md` ADR-039 and ADR-043 in full — plus a bounded set of **read-only
+control-plane calls**, none against the deployed service and none costing the plan's §4.3 production
+HTTP request budget: `gcloud auth list`, `gcloud projects get-iam-policy jzen-prod`, `gcloud
+artifacts repositories list --project=jzen-prod`, `gcloud artifacts docker images list
+europe-central2-docker.pkg.dev/jzen-prod/jzen --project=jzen-prod` (twice — once for a sample, once
+`--format="value(package)" | wc -l` for a count), `gcloud artifacts repositories describe jzen
+--project=jzen-prod --location=europe-central2 --format="yaml(cleanupPolicies,...)"`, `gcloud
+artifacts repositories get-iam-policy jzen --project=jzen-prod --location=europe-central2`, `gh api
+repos/jZenDev/jZen` (visibility), `gh api repos/jZenDev/jZen --jq '.security_and_analysis'`, `gh
+secret list --repo jZenDev/jZen`, `gh api repos/jZenDev/jZen/environments`, `gh api
+repos/jZenDev/jZen/branches/main/protection`. No `gcloud`/`gh` mutation was run; no production
+service endpoint was queried this phase (that budget is reserved for Phases 7/8 per the plan).
+
+**One finding minted** (§3.7): **F5** — `.github/workflows/audit.yml`'s five third-party actions
+(`actions/checkout`, `actions/setup-java`, `actions/setup-node`, `arduino/setup-task`,
+`actions/setup-python`) are still pinned by mutable tag, unchanged since before F12 (closed
+2026-08-14) SHA-pinned the identical actions everywhere in `ci.yml` — an asymmetry Phase 1 (§2.2)
+already flagged by reading both workflow files and explicitly deferred to Phase 6, now confirmed
+still live and written up in the plan's §7 template.
+
+**Two plan bullets resolved as already-closed rather than newly found**, read and cited rather than
+re-derived: **Is `task audit` wired into CI?** — yes, per ADR-039 and `audit.yml` itself, resolving
+plan §11 Q4 (an "open question" the plan flagged that Phase 6 was explicitly tasked with settling,
+not a finding). **Base image digest pin, non-root `USER`, SBOM, signing, provenance** — ADR-043
+(2026-08-14) had already closed this exact bullet as this review's own earlier F6, before today's
+2026-09-18 session reopened Phase 6; this phase's contribution is re-confirming ADR-043's claim
+against the current `Dockerfile.native-micro` and `Taskfile.yml` rather than trusting the ADR's
+account unexamined (§5.3's trap, same discipline as Phase 5's re-verification of its own F10) —
+**no drift found**.
+
+**One correction-shaped observation, not minted as a finding**: the Artifact Registry image count
+has grown from "51 at last count" (predecessor audit) to 81 today, and reading the repository's
+actual cleanup policy (three rules, this phase) shows why — tagged images are kept forever by
+policy, not by oversight. Named as an open question for Phase 9 (a storage-cost pricing question,
+not a security gap) rather than a finding, the same discipline Phase 5 applied to the Artifact
+Registry's least-privilege-vs-single-owner question.
+
+**Done-when check (plan §Phase 6):** every bullet the plan names for this phase — is `task audit`
+wired in; workflow token permissions and fork-PR blast radius; action pinning by tag vs. digest;
+GCP deploy authentication (key vs. workload identity); base image digest pin and non-root user;
+SBOM/signing/provenance; checksum-less build-time fetches (`dart pub global activate`, `corepack`,
+the Maven wrapper); secret scanning/push protection and any committed credential; Artifact Registry
+push rights and old-image liability — is answered with evidence in §3.7's table ✓. One finding
+minted in the plan's §7 template ✓ (F5). Two bullets resolved as already-closed by an existing ADR
+rather than re-opened as new findings, each re-verified against current code rather than taken on
+the ADR's word alone ✓.
+
+**Phase 6: CLOSED.** Every bullet the plan names for this phase is answered with evidence in §3.7,
+one new finding is minted in the plan's own template (F5), two bullets already closed by ADR-039/
+ADR-043 in an earlier pass of this same review are independently re-verified rather than re-derived
+or silently skipped, and the items needing a live-repository test (a real forked PR, an
+independent `task audit` re-run) or a pricing decision (registry storage growth, a narrower
+push-role design) rather than a reading are named as explicitly deferred — the same discipline as
+Phases 0–5 (plan §5.3's trap).
+
+**Explicitly not done in Phase 6** (deferred to Phase 9, or out of this review's scope entirely, per
+the plan): pricing the Artifact Registry storage-growth question or a narrower push-role design
+(Phase 9); independently re-running `task audit` this session; testing GITHUB_TOKEN scoping against
+a real forked-repository PR rather than reasoning it from GitHub's documented trigger-scoping rule;
+a branch-protection finding for the absence of required PR review or signed commits (read this phase,
+not minted — a solo-maintainer repository cannot meaningfully require a second reviewer, named as an
+open question instead, the same discipline Phase 5 applied to secret rotation for an equally
+small-team context). Phases 7–9 entirely.

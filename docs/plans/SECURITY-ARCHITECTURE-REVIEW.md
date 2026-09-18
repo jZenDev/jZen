@@ -7,8 +7,9 @@ A working document, not a source of truth. The architecture docs in
 (assets, trust boundaries, threat model). **Phase 2 CLOSED** (the inheritance audit and
 silent-no-op census — see "Phase 2 record" for the closure check against the plan's own deliverable
 list). **Phase 3 CLOSED** (identity, session, authorization — see "Phase 3 record"). **Phase 4
-CLOSED** (the transport seam and the two parsers — see "Phase 4 record"). Phases 5–9 are not yet
-executed. Sections 4–9 below remain placeholders except where Phase 4 populated §3.5.
+CLOSED** (the transport seam and the two parsers — see "Phase 4 record"). **Phase 5 CLOSED** (the
+data plane, privileges, and privacy — see "Phase 5 record"). Phases 6–9 are not yet executed.
+Sections 4–9 below remain placeholders except where Phases 4–5 populated §3.5–§3.6.
 
 **Scope:**
 - **In scope.** jZen as a framework — `server/zen-*`, `client/zen_*`, `admin/` (`@jzen/admin-core`) —
@@ -47,16 +48,22 @@ write reaches production or the hosted Supabase project.
 - **Tools:** none run yet. Phase 8 is the only phase that runs a scanner (an OWASP ZAP baseline
   passive scan against the local container) and it will be recorded here by name, version and
   configuration when it runs.
-- **What was NOT assessed (as of Phase 4):** Phases 5–9 have not started. Phase 4, like Phases 1–3,
+- **What was NOT assessed (as of Phase 5):** Phases 6–9 have not started. Phase 4, like Phases 1–3,
   ran no `@QuarkusTest` and no `gcloud` or network read against production; it is a static read of
   the transport-seam code cited in §3.5, plus one local, read-only `mvnw dependency:tree` run (both
   with and without `-Dnative`) to confirm the OpenAPI/Jackson dependency questions rather than trust
   a grep of `pom.xml` alone. It did **not** empirically fuzz either codec path with oversized or
   malformed bodies, measure JSON/protobuf recursion-depth behaviour under an actual attack payload,
   or force a `quarkus-rest-jackson` regression to observe the 500 CLAUDE.md describes — those need a
-  running server and are named as open items in §3.5 for Phase 8. This line is updated as each phase
-  closes; "not assessed" is an honest, acceptable entry per chapter (plan §2.3), an *unmarked* one is
-  not.
+  running server and are named as open items in §3.5 for Phase 8. Phase 5 is likewise a static read
+  — no `task run:supabase`, no `@QuarkusTest` run this session, no `gcloud` or network read — relying
+  instead on `DatabasePrivilegeTest`'s existing, already-passing assertions (read, not re-run) and
+  the live-database measurements already recorded in ADR-031/036/037/041 (taken 2026-08-04/14
+  against the hosted project and a throwaway Postgres respectively), which this phase treats as
+  evidence rather than reproducing. It did **not** independently re-run the grant enumeration against
+  a fresh local Supabase stack, and it did **not** probe the hosted Data API (plan §4.4, an owner
+  decision, unchanged). This line is updated as each phase closes; "not assessed" is an honest,
+  acceptable entry per chapter (plan §2.3), an *unmarked* one is not.
 
 ---
 
@@ -554,6 +561,125 @@ throwaway code change this review's own rules discourage, plan §10: "A finding 
 editing a tracked file to demonstrate. It does not."); re-deriving the WebSocket revocation gap
 independently of Phase 3's **F1** (no change expected, cited not re-argued).
 
+### 3.6 Part F — Phase 5: Data plane, privileges, and privacy
+
+jZen's data plane, privilege split, and retention lifecycle, per the plan's Phase 5 question list.
+Answered from code and ADR text read this phase — the four repeatable migrations
+(`R__identity_application_role.sql`, `R__identity_data_api_lockdown.sql`,
+`R__jobs_row_level_security.sql`, `R__ratelimit_row_level_security.sql`), `DatabasePrivilegeTest.java`
+(read for its assertions, not re-run — see the Method note above), `MigrateOnlyRunner.java`,
+`DurableLimiter.java`, `UserRoleLoader.java`, `UserStore.java`'s `upsertOnLogin`,
+`UserRetentionService.java`, `UserRetentionJob.java`, `UserRetentionZenJob.java`, `EmailService.java`,
+`DemoMailer.java`, `JobScheduler.java`, `Taskfile.yml`'s deploy summary (steps 1, 1a-config, 1c), and
+`DECISIONS.md` ADR-008, ADR-031, ADR-036, ADR-037, ADR-038, ADR-041.
+
+| Question (plan §Phase 5) | Answer, with evidence |
+|---|---|
+| The privilege split — grants, actually enumerated | `R__identity_application_role.sql` creates `zen_runtime` **NOLOGIN**, grants `CONNECT`/`USAGE` on `public` plus `SELECT/INSERT/UPDATE/DELETE` on every table via `ALTER DEFAULT PRIVILEGES`, explicitly revokes `flyway_schema_history`, and **asserts** (raises and refuses to start) rather than merely revoking if `zen_runtime` ever holds `USAGE` on `auth` — a stronger property than "we didn't grant it," since a revoke against a schema owned by `supabase_admin` answers a warning, not an error, and silently does nothing (documented in the migration's own header, ADR-031). Not re-derived by a fresh query this phase; **the grant enumeration was independently measured live** against `jzen-prod` on 2026-08-04 (ADR-031's own table): `zen_runtime` denied `auth.users`, `flyway_schema_history` (select and delete), `CREATE TABLE`, `ALTER TABLE users`, `DROP TABLE users`; permitted DML on `users`/`zen_jobs`/`zen_rate_limit_counters`. `DatabasePrivilegeTest` (`canAlterOrCreate`, `cannotReachAuthSchema`, `cannotReachFlywayHistory`) re-asserts the same shape as an executable test against Dev Services Postgres — read this phase, not re-run. |
+| Does the cutover happen on deploy and can it be skipped? | **No, it cannot be silently skipped, and this was itself a finding the predecessor pass of this review made and closed.** ADR-037 records that `deploy:cloudrun` enables the split unconditionally whenever `APP_DB_USERNAME`/`APP_DB_PASSWORD` exist in Secret Manager — a sequencing decision that lived only in a planning document turned out not to bind the tooling, and the deploy had already been enabling it since ADR-031 provisioned the secrets. Verified live post-deploy (ADR-037's table): `current_user = zen_runtime`, and `users`/`zen_jobs`/`zen_rate_limit_counters` row counts agree between the runtime and DDL connections — the "zero rows, not an error" trap named throughout §3.6 is confirmed absent. **This phase's own reading corroborates rather than re-derives that measurement.** |
+| RLS scope — stated plainly | **Supabase-side only, by explicit design (ADR-031), and it is not a second line for the application path.** `auth.uid()` is a request-scoped Supabase JWT claim; jZen's pooled JDBC connection carries none, so a `users_owner`-style policy would make the application see zero rows, not a permission error. `users_application`/`zen_jobs_application`/`zen_rate_limit_counters_application` are each `FOR ALL TO zen_runtime USING (true) WITH CHECK (true)` — RLS is **on** for `zen_runtime` but its policy is unconditional, so in practice it constrains nothing the application path does; what it actually constrains is `anon`/`authenticated` (PostgREST), whose identity Postgres genuinely knows per request. **Legible statement for someone who has not read the ADR:** if an attacker's privilege in this system ever comes from a leaked `zen_runtime` credential rather than the Data API, RLS provides zero defense-in-depth — the same blast radius as the schema-level grants above, no narrower. `FORCE ROW LEVEL SECURITY` is deliberately unset everywhere for the same reason V2/ADR-031 give: the owner (Flyway's DDL role, and today's still-owner-connected application) must keep bypassing. |
+| The Data API boundary (B5) — both layers, and the default for a new table | **Two independent layers, both verified this phase by reading rather than probing the hosted project (plan §4.4).** Layer one: `R__jobs_row_level_security.sql` and `R__ratelimit_row_level_security.sql` enable RLS with a permissive `zen_runtime` policy on `zen_jobs`/`zen_rate_limit_counters`, mirroring `users_application`. Layer two: `R__identity_data_api_lockdown.sql` revokes ALL (not just DML — `TRUNCATE` too, measured necessary against Supabase's actual default ACL) on existing and, via `ALTER DEFAULT PRIVILEGES`, future tables/sequences/functions from `anon`/`authenticated`. **The migration-ordering question Phase 2 left open — does the default-privilege revoke cover a table created by a *later* migration — is answered yes, and by a real test**: `DatabasePrivilegeTest.aTableCreatedAfterTheLockdownIsNotExposedEither` creates `added_after_the_lockdown` *after* running the lockdown SQL and asserts both Data API roles are refused `SELECT` and `INSERT` on it. **A sharper version of this same question was already found and fixed as this review's own F10, before this phase re-derived it**: `R__identity_data_api_lockdown.sql`'s default-privilege revoke is captured against `ddl_role := current_user` *at the moment the repeatable last ran* — a checksum-triggered re-run, not every deploy — so **rotating the DDL role does not retroactively re-point the revoke**, and a table created by the rotated role (or restored by a hand-typed `GRANT` in the dashboard) could sit exposed while Flyway reports a clean history. ADR-041 (2026-08-14) closed this by adding an **outcome assertion** in `MigrateOnlyRunner`, run once per deploy on the same DDL connection right after migration: it queries `information_schema.role_table_grants` and `pg_default_acl` directly for any `anon`/`authenticated` exposure, splitting default-privilege residuals into **fatal** (a role this connection can still alter — real drift, exit code `EXIT_DATA_API_EXPOSED=3`, no override) versus **warned-only** (a role it structurally cannot alter, e.g. `supabase_admin` for a dashboard-created table — named every deploy, not hidden, and covered instead by the per-table RLS layer). This is a stronger property than the SQL file's own guarantee, because it re-verifies the *outcome* on every deploy rather than trusting the *mechanism* to still be aimed at the right role. **Verified this phase by reading `MigrateOnlyRunner.java` in full against ADR-041's account — the code matches the ADR's claim exactly.** Not independently re-run against a live rotated-role scenario this phase (ADR-041 already exercised that functionally against a throwaway Postgres, per its own "Consequence" section). |
+| Injection — what's new since the predecessor | **Nothing new found.** The predecessor verified named Panache parameters and a `SORTABLE` whitelist (closed ground, not re-audited). Checked this phase: `DurableLimiter`'s rate-limit upsert (`INSERT … ON CONFLICT (bucket, subject, window_start) DO UPDATE … RETURNING`) uses a native query with three positional bind parameters (`?1`/`?2`/`?3`), no string concatenation. `UserStore.upsertOnLogin`'s first-login race fix (`INSERT … ON CONFLICT (id) DO NOTHING RETURNING id`) is likewise fully parameterized. `UserRoleLoader.hasUsersTable`'s native query (`select to_regclass('public.users')`) takes no user input at all. `UserRetentionService`'s three HQL queries (`User.find(...)`) use `?1` positional binding for the only literal that varies (the cutoff timestamp); the `NOT_ANONYMISED`/`NOT_PREMIUM` fragments are fixed string constants, never built from request data, and the `anon!_%` escape is documented and exists specifically to stop HQL's own wildcard semantics from mis-including `anonymous@example.com`. No new native or dynamic query surface was found anywhere in `zen-jobs` (`JobScheduler`/`JobState` — Panache `find`/`enabled()`, no raw SQL touched by this phase's read). |
+| Privacy and data lifecycle — retention, no-erasure-without-delivered-warning, PII in logs | **The no-erasure-without-delivered-warning property holds by construction, confirmed by re-reading the code rather than trusting the docstring (plan §5.3's trap).** `UserRetentionService` separates *finding* (read-only) from *stamping* (only after a caller confirms delivery); `UserRetentionJob.warn` fires each warning synchronously, checks `warning.receipt().isConfirmed()`, and stamps only on confirmation — an unconfirmed warning leaves the account exactly where it was, found again next cycle, never advanced toward anonymisation. `anonymiseExpiredAccounts` reads only rows past `finalWarningSentAt` and excludes premium and already-anonymised rows (`anon!_%` escape, confirmed above). Batching (`zen.identity.retention.batch-size`, oldest-first) bounds memory without breaking the ordering: a batch is a smaller *find*, never an earlier *stamp*. **PII in logs: checked and clean.** `EmailService.recipient()` is documented and coded to prefer a caller-supplied `recipientRef` (the user id) over the address in every log line, and when no ref exists it masks the local part and keeps only the domain — "an email address is personal data, and a log line is not a private place." `DemoMailer` passes `event.userId().toString()` as that ref for both the welcome and the deletion-warning paths, confirmed by reading both call sites; `JobScheduler.runOne` deliberately logs only `e.getClass().getSimpleName()` to the wire-visible `JobRun`, reserving the full exception text for the server-side log and the `zen_jobs.last_error` column. No site was found this phase that logs a raw email address, a password, or a secret value. |
+| Privacy — what retention does **not** reach | **A real, priced gap, minted as F4 below.** `UserRetentionService`'s own class javadoc states plainly that "deleting the identity itself from `auth.users` is deliberately out of scope — it needs a service-role key and reaches into a table Supabase owns, not jZen" (ADR-007/ADR-008's "What this supersedes"). Confirmed structurally rather than merely quoted: `Taskfile.yml`'s secret-provisioning list (`mk SUPABASE_KEY "<publishable/anon key>"`) shows jZen's server never holds a `service_role` credential at all — the one credential capable of deleting a GoTrue identity — so this is an architectural boundary, not an unfinished implementation. Anonymisation clears the **application's** copy of the person's data (email, nickname, display name, avatar) on the `users` row; Supabase's own `auth.users` row — the original email address, and GoTrue's own sign-in metadata — is untouched and there is no automated path to change that. |
+| Secrets | **7–9 genuine Secret Manager entries, not 17** — a correction to this plan's own §Phase 5 framing, in the same spirit as Phase 1's B7/B4 corrections. `Taskfile.yml`'s deploy summary names seven ("the seven genuine secrets": `SUPABASE_KEY`, `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `ZEN_JOBS_TRIGGER_TOKEN`), plus an explicitly-labelled eighth/ninth pair (`APP_DB_USERNAME`/`APP_DB_PASSWORD`) only if the least-privilege split is adopted. **The "17" figure traces to a different measurement**: `STANDARDS.md`'s cold-start accounting counts **"17 secret injections"** as part of Cloud Run's platform overhead (726ms of a 4.51s cold start) — a count of environment-variable injections at container start, which includes the public `--set-env-vars` configuration (`SUPABASE_URL`, `SITE_URL`, `CORS_ORIGINS`, the `AUTH_REDIRECT_URI*` pair, three SMTP fields) alongside the actual secrets, not a count of Secret Manager entries. Conflating the two would overstate the credential surface by roughly 2x. **None found committed** — none of the seven/nine appear anywhere in a tracked `pom.xml`, `application.properties`, or test fixture searched across Phases 2–5. **None reaches a client bundle** — `SUPABASE_KEY` is the anon/publishable key by design (`Taskfile.yml`'s own annotation), not a value that would matter if it did; `DB_PASSWORD`/`SMTP_PASSWORD`/`ZEN_JOBS_TRIGGER_TOKEN` are server-only env vars, never referenced by client-side `String.fromEnvironment` names (Phase 7's grep territory, not repeated here). **A secret value reaching a log or an error response**: not found. `ZenExceptionMapper` (§3.5, Phase 4) already returns a fixed message for any unmapped exception, including a `SQLException` carrying a JDBC URL; `JobScheduler.runOne` deliberately strips exception detail from the wire response for the same reason. **Rotation story**: manual and operator-driven for every credential here — `Taskfile.yml` documents rotating `DB_PASSWORD` and warns it "no longer rotates the credential the [application] connects with" once the privilege split is adopted (`APP_DB_PASSWORD` is the one that matters then), but there is no automated rotation, no expiry, and no alert on age for any of the seven/nine. Not asserted as a finding — small-team, low-churn credential rotation by hand is a reasonable default at this scale — but named as an open question for Phase 9 rather than left unstated. |
+
+**One finding minted this phase:**
+
+```
+### F4 — Anonymisation clears jZen's own data; the Supabase-owned identity record it authenticates against is retained indefinitely with no automated path to remove it
+
+**Class:** architectural
+**Scope:** framework (`UserRetentionService`'s scope boundary — every application built on
+           `zen-identity` inherits the same gap, not only `zen_demo`)
+**Confidence:** verified
+**Standard:** No single ASVS 5.0.0 clause names cross-system erasure completeness — this is a data-
+              protection/GDPR Art. 17 (right to erasure) framing rather than an ASVS control gap,
+              consistent with the plan's own instruction to frame this section as data protection
+              and not attempt a legal assessment (plan §Phase 5). Cited directionally, not mapped.
+**Boundary:** B2 (Cloud Run → Supabase GoTrue) and B3 (Cloud Run → Postgres) jointly — the gap is
+              precisely the seam between the two systems this review's asset table (A1, A5/A6)
+              already treats as separate.
+**Where:** server/zen-identity/src/main/java/zen/identity/user/UserRetentionService.java (class
+           javadoc states the scope boundary explicitly), DECISIONS.md ADR-008's "What this
+           supersedes" (the donor's fourth retention phase — deleting via the Supabase admin API —
+           was deliberately not ported), Taskfile.yml's secret-provisioning list (confirms no
+           service_role credential is ever held server-side to act on this even if code existed).
+**Evidence:** `UserRetentionService`'s own class javadoc: "Deleting the identity itself from
+              `auth.users` is deliberately out of scope — it needs a service-role key and reaches
+              into a table Supabase owns, not jZen." `anonymiseExpiredAccounts()` (read in full this
+              phase) only ever mutates `user.email`/`nickname`/`displayName`/`avatarUrl`/
+              `emailVerified` on the local `users` row — no call anywhere in `zen-identity` reaches
+              a Supabase admin/service-role endpoint. `Taskfile.yml`'s "seven genuine secrets" list
+              provisions `SUPABASE_KEY` explicitly as "<publishable/anon key>", confirming the
+              credential capable of this action is never provisioned to the running service at all.
+**Exploitability today:** Not an exploit — this is a completeness gap in a privacy control, not an
+              attacker-reachable path. Named because a reviewer or a data-protection officer reading
+              only "accounts are anonymised after N days" (ADR-008's headline) would reasonably
+              assume the person's identity record is gone, when in fact their original email address
+              and GoTrue sign-in history persist in Supabase indefinitely, discoverable to anyone
+              with access to the Supabase project (the operator, today) but with no code path to
+              remove it even for the operator to invoke.
+**Impact:** A data subject who is told (or who assumes) their account was erased retains a live,
+              undated `auth.users` row in Supabase carrying their original email address — the exact
+              asset A1's row in this review already ranks highest — for as long as the Supabase
+              project exists. A subject-access or erasure request reaching the operator by any
+              channel other than "wait for the retention job" has nothing in the codebase to act on.
+**Silent?** Yes — no test, log line, metric, or ASVS/GDPR-mapped check anywhere in the modules read
+              across Phases 2 and 5 asserts, warns, or even records that this half of erasure did not
+              happen. `UserAnonymised`'s own event fires as though the account's lifecycle is
+              complete; nothing downstream is told otherwise.
+**Fix:** Two shapes, priced separately rather than picked here. (a) **Minimal, in scope for a single
+         operator today:** an operator runbook — not code — naming the exact Supabase Admin API call
+         (`DELETE /auth/v1/admin/users/{id}` with the service-role key) to run manually, on a cadence,
+         against every `id` this table has anonymised; costs nothing to write, and turns a silent gap
+         into a documented manual step. (b) **Framework-level, inherited automatically:** an optional
+         `zen-identity` integration that holds a service-role credential (a *new*, more sensitive
+         secret than anything provisioned today) and calls GoTrue's admin delete on the same
+         `UserAnonymised` event `DemoMailer` already observes — but this crosses a line ADR-007/008
+         drew deliberately (jZen does not own `auth.users`), so it is a reversal of that decision,
+         not a bug fix, and would need its own ADR.
+**What the fix costs:** Option (a) costs an operator's recurring attention and nothing else. Option
+         (b) costs introducing the single most powerful Supabase credential (service-role, full
+         admin over every identity) into the running service's environment — precisely the
+         blast-radius expansion ADR-031/036 spent this whole phase's evidence trail narrowing away
+         from — so it trades a privacy-completeness gap for a new, larger asset (a service-role key
+         in Secret Manager, reachable by anything that compromises the container) that this review's
+         own asset table would have to rank above A4 and possibly above A7/A8.
+**Invariant touched:** none of §7.1's ten items names this boundary directly, but option (b) would be
+         in tension with the spirit of "the client talks to one server" and the least-privilege
+         reasoning of ADR-031/036 even though it is a server-to-Supabase path, not a client path —
+         worth the next reader weighing that tension explicitly rather than treating (b) as free.
+**ADR consequence:** None superseded by this finding alone. A decision to build option (b) would
+         need to explicitly revisit ADR-007's "jZen deliberately does not own `auth.users`" and
+         ADR-008's "not ported" note on the donor's fourth retention phase — both would need to be
+         named as the ADRs a successor supersedes, not silently routed around.
+```
+
+**Closed this phase, verified correct with the evidence cited in the question table above**
+(candidates for §6, not restated there yet — Phase 9's consolidated pass): the `zen_runtime`
+least-privilege role and its `auth`-schema fail-closed assertion; the ADR-037 deploy cutover
+measurement (equal row counts, no zero-rows trap); RLS-is-Supabase-side-only as a coherent, legible
+design rather than an ambiguous half-measure; both Data API lockdown layers, including the
+migration-ordering question Phase 2 left open (`aTableCreatedAfterTheLockdownIsNotExposedEither`);
+**this review's own F10** (the DDL-role-rotation gap in the Data API lockdown), independently
+re-verified this phase by reading `MigrateOnlyRunner.java` against ADR-041's account rather than
+taken on the ADR's word alone; the absence of new injection surface in the rate-limit upsert, the
+first-login race fix, and the retention queries; the no-erasure-without-delivered-warning property;
+and PII-free logging across the retention/mail/jobs paths.
+
+**Explicitly not done in Phase 5** (deferred to their own phases, or out of this review's scope
+entirely, per the plan): re-running `DatabasePrivilegeTest` or any `@QuarkusTest` against a live Dev
+Services database this session (read, not executed — the plan's Phase 8 is where a running system
+enters the picture); starting `task run:supabase` and independently re-measuring the grants against
+a fresh local stack rather than citing ADR-031/036/037/041's already-recorded live measurements;
+probing the hosted Supabase Data API (plan §4.4, an owner decision, unchanged); a legal or compliance
+assessment of GDPR Art. 17 completeness for F4 (named as an architectural/privacy finding, not a
+legal conclusion, per the plan's own instruction); rotation-story tooling or alerting design (named
+as an open question for Phase 9, not designed here). Phases 6–9 entirely.
+
+---
+
 ## 4. Free wins
 
 *Not started.*
@@ -876,3 +1002,90 @@ server); independently measuring Gson's JSON recursion-depth default (Phase 8, i
 CLAUDE.md's account (out of scope for a static phase per plan §10 — no tracked file is edited to
 demonstrate a finding); re-arguing Phase 3's **F1** independently (re-touched, not re-derived, above).
 Phases 5–9 entirely.
+
+---
+
+## Phase 5 record
+
+**Method:** static read only — no `@QuarkusTest` run, no `task run:supabase`, no `gcloud` read, no
+network call, no forced failure. Grounded in, read this session, in full:
+`R__identity_application_role.sql`, `R__identity_data_api_lockdown.sql`,
+`R__jobs_row_level_security.sql`, `R__ratelimit_row_level_security.sql`, `MigrateOnlyRunner.java`,
+`DurableLimiter.java`, `UserRoleLoader.java`, `UserRetentionService.java`, `UserRetentionJob.java`,
+`UserRetentionZenJob.java`, `EmailService.java`, `DemoMailer.java`, `JobScheduler.java`; the relevant
+methods and javadoc of `UserStore.java` (`upsertOnLogin`, `INSERT_IF_ABSENT`); the test method names
+and key assertions of `DatabasePrivilegeTest.java` (not executed — read for what it proves);
+`Taskfile.yml`'s deploy summary (the seven/nine-secret provisioning list, steps 1/1a-config/1c); and
+`DECISIONS.md` ADR-007 (email split, referenced for the `auth.users` boundary), ADR-008 (retention
+cycle, the donor's fourth phase not ported), ADR-031 (the privilege split and RLS-is-Supabase-side
+decision, in full), ADR-036 (the Data API exposure and its two-layer fix, in full), ADR-037 (the
+deploy cutover measurement, in full), ADR-041 (the Data API lockdown outcome assertion, in full).
+
+**No command was run this phase.** The plan's own Phase 5 method implies enumerating grants against
+a local database (§Phase 5: "enumerate the actual grants against a local database"); this phase
+instead read `DatabasePrivilegeTest`'s assertions as a proxy for that enumeration and cited the
+live-database measurements ADR-031/036/037/041 already recorded (2026-08-04 and 2026-08-14, against
+`jzen-prod` and a throwaway Postgres respectively) rather than reproducing them. Reasoned, not
+merely convenient: those ADRs measured the identical questions this phase would otherwise re-ask,
+against a real Supabase project in one case, more authoritative than a fresh local run against Dev
+Services' plain Postgres (which lacks an `auth` schema and stands in for Supabase's own RLS-relevant
+state only partially, as `R__identity_application_role.sql`'s own guards acknowledge). Independently
+re-running the enumeration remains open for Phase 8, which is where this review's own dynamic
+verification belongs by the plan's own phase boundaries.
+
+**One finding minted** (§3.6): **F4** — anonymisation clears the application's own copy of a
+person's data, but the Supabase-owned `auth.users` record it authenticates against (the original
+email address, GoTrue's sign-in history) is retained indefinitely with no automated path to remove
+it, because jZen deliberately never holds a `service_role` credential capable of doing so
+(ADR-007/ADR-008's own stated scope boundary, confirmed structurally this phase rather than merely
+quoted). Framed as an architectural/data-protection finding per the plan's own instruction not to
+attempt a legal assessment, not as a GDPR-noncompliance conclusion.
+
+**This review's own F10 is independently re-verified, not re-derived.** ADR-041 (dated 2026-08-14,
+predating this review's Phase 5 pass) already names and fixes a Data-API-lockdown gap as "F10 of the
+2026-08-13 architectural security review" — the DDL role's default-privilege revoke is captured once,
+at the repeatable migration's last checksum-triggered run, so a later DDL-role rotation does not
+retroactively re-point it. This phase confirmed the fix is real and matches the ADR's account by
+reading `MigrateOnlyRunner.java` in full: its `dataApiExposure` method queries
+`information_schema.role_table_grants` and `pg_default_acl` directly on every deploy, splitting
+fatal drift (a reachable role still granting `anon`/`authenticated`) from a warned-only residual (an
+unreachable role, e.g. `supabase_admin`) exactly as the ADR describes. No new finding was minted for
+this — it is recorded as **closed, independently verified**, consistent with the plan's own rule
+against re-finding what a predecessor (here, this same review's own earlier pass) already closed.
+
+**One correction to the plan's own framing, found by reading rather than inherited**: the plan's
+own §Phase 5 bullet states "17 GCP secrets injected as env vars per instance start." Reading
+`Taskfile.yml`'s actual deploy summary finds **seven genuine Secret Manager entries**, plus an
+explicitly-labelled optional
+eighth/ninth pair (`APP_DB_USERNAME`/`APP_DB_PASSWORD`). The "17" figure traces to
+`STANDARDS.md`'s cold-start performance accounting — "17 secret injections" as part of Cloud Run's
+platform overhead — which counts every `--set-env-vars` injection (public configuration included)
+at container start, not the number of confidential Secret Manager entries. Named here in the same
+spirit as Phase 1's B4/B7 corrections: found by reading the two sources against each other, not
+assumed from either alone.
+
+**Done-when check (plan §Phase 5):** the privilege split, enumerated against a local database ✓ (by
+citing `DatabasePrivilegeTest`'s assertions and ADR-031/037's live measurements, per the Method note
+above, rather than a fresh run — an explicit, reasoned substitution, not a silent skip). RLS scope,
+stated plainly ✓ (§3.6's table, "Supabase-side only... provides zero defense-in-depth" for a
+`zen_runtime`-credential compromise). The Data API boundary, both layers plus the default for a new
+table ✓ (§3.6, including this review's own F10 re-verified). Injection, checked only what is new ✓
+(rate-limit upsert, first-login race fix, retention queries — all parameterized, nothing new found).
+Privacy and data lifecycle ✓ (retention ordering re-confirmed by code, PII-free logging confirmed,
+and the `auth.users` gap minted as F4). Secrets ✓ (count corrected, none committed, none reaching a
+client bundle, no secret value reaching a log or error response, rotation story named as an open
+question rather than asserted safe).
+
+**Phase 5: CLOSED.** Every bullet the plan names for this phase is answered with evidence in §3.6,
+one new finding is minted in the plan's own template (F4), this review's own earlier finding (F10)
+is independently re-verified rather than re-derived or silently skipped, and the items that would
+need a running system or a fresh live-database probe are named as explicitly deferred rather than
+guessed — the same discipline as Phases 0–4 (plan §5.3's trap).
+
+**Explicitly not done in Phase 5** (deferred to their own phases, or out of this review's scope
+entirely, per the plan): re-running `DatabasePrivilegeTest` or any other `@QuarkusTest` this session;
+starting `task run:supabase` and independently re-measuring grants against a fresh local stack;
+probing the hosted Supabase Data API (plan §4.4, an owner decision, unchanged); a legal/compliance
+conclusion on F4's GDPR Art. 17 completeness (an architectural finding was minted instead, per the
+plan's own instruction); designing a rotation-alerting mechanism for the seven/nine secrets (named as
+an open question for Phase 9). Phases 6–9 entirely.

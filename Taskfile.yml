@@ -88,7 +88,7 @@ vars:
   # it is a var with a loud-failure default, the same shape as GCP_PROJECT).
   RUNTIME_SERVICE_ACCOUNT: '{{.RUNTIME_SERVICE_ACCOUNT | default ""}}'
 
-  # F6 of docs/plans/SECURITY-ARCHITECTURE-REVIEW.md: nothing verifies that the image in
+  # F6 of docs/plans/implemented/SECURITY-ARCHITECTURE-REVIEW.md: nothing verifies that the image in
   # Artifact Registry is the one built from the reviewed commit. deploy:cloudrun signs it with
   # cosign KEYLESS (Sigstore/Fulcio+Rekor) rather than a stored key pair — no private key to put
   # in Secret Manager or rotate, and the trust anchor is a real identity (an OIDC login) rather
@@ -1435,7 +1435,7 @@ tasks:
       local container, so a deployment is held to exactly the standard the pre-deploy gate
       enforces. Override with `SERVICE_URL=https://... task verify:deploy` for any environment.
 
-      Also asserts the runtime identity (F1, docs/plans/SECURITY-ARCHITECTURE-REVIEW.md): reads
+      Also asserts the runtime identity (F1, docs/plans/implemented/SECURITY-ARCHITECTURE-REVIEW.md): reads
       back the service's and the migrate job's `serviceAccountName` and FAILS if either is the
       project's default Compute Engine account (`roles/editor`) or cannot be read at all — a
       fix that is asserted only at deploy time regresses silently the next time someone deploys
@@ -1453,7 +1453,7 @@ tasks:
         fi
         [ -n "$URL" ] || { echo "No service URL. Set SERVICE_URL=... or GCP_PROJECT=..."; exit 1; }
 
-        # F1 (docs/plans/SECURITY-ARCHITECTURE-REVIEW.md): the runtime identity is asserted, not
+        # F1 (docs/plans/implemented/SECURITY-ARCHITECTURE-REVIEW.md): the runtime identity is asserted, not
         # trusted to deploy:cloudrun's --service-account flag having been set correctly once. The
         # insecure value is what a MISSING declaration produces, so an empty read here is a
         # FAILURE, never a pass — ADR-034's rule that a gate must not be able to pass having
@@ -2227,7 +2227,7 @@ tasks:
             boot on a secret it cannot read.
 
         1f. THE RUNTIME SERVICE ACCOUNT (required — this is finding F1 of
-            docs/plans/SECURITY-ARCHITECTURE-REVIEW.md). deploy:cloudrun REFUSES to run without
+            docs/plans/implemented/SECURITY-ARCHITECTURE-REVIEW.md). deploy:cloudrun REFUSES to run without
             RUNTIME_SERVICE_ACCOUNT set: the platform default it would otherwise fall back to is
             the project's Compute Engine default service account, which carries `roles/editor`
             project-wide on every project that has ever enabled the Compute Engine API — write
@@ -2255,7 +2255,7 @@ tasks:
                 GCP_PROJECT=PROJECT task deploy:cloudrun
 
         1g. COSIGN_CERT_IDENTITY (required — this is finding F6 of
-            docs/plans/SECURITY-ARCHITECTURE-REVIEW.md). deploy:cloudrun signs the pushed image
+            docs/plans/implemented/SECURITY-ARCHITECTURE-REVIEW.md). deploy:cloudrun signs the pushed image
             and its SBOM with cosign KEYLESS — no key pair to create here, no Secret Manager
             entry, nothing to rotate. There genuinely is no setup step: "1g" exists only to name
             the var, not to provision anything.

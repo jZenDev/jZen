@@ -1,7 +1,7 @@
 # Execution plan: the architectural security review (OWASP-framed)
 
 A working document, not a source of truth. The architecture docs in
-[`../architecture/`](../architecture/) remain authoritative, and ADRs win on conflict.
+[`../../architecture/`](../../architecture/) remain authoritative, and ADRs win on conflict.
 
 **Written:** 2026-08-13
 **Produces:** `docs/plans/SECURITY-ARCHITECTURE-REVIEW.md` and nothing else. No code change, no
@@ -619,7 +619,7 @@ document that established it and prices the change.
 ```
 # The architectural security review
 
-A working document, not a source of truth. The architecture docs in ../architecture/ remain
+A working document, not a source of truth. The architecture docs in ../../architecture/ remain
 authoritative.
 
 **Reviewed:** <date>

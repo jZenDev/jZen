@@ -30,7 +30,7 @@ concurrency:
   cancel-in-progress: true
 
 # Stated in the repository rather than only inherited from the (already read-only) repo setting —
-# F12 of docs/plans/SECURITY-ARCHITECTURE-REVIEW.md: flipping that setting silently widens every
+# F12 of docs/plans/implemented/SECURITY-ARCHITECTURE-REVIEW.md: flipping that setting silently widens every
 # job below, and nothing in the tree would say so without this line.
 permissions:
   contents: read

@@ -37,8 +37,11 @@ import java.util.List;
  * header completely" — the safe default, and the correct one for {@code %dev}, {@code %test} and
  * any bare-metal run. {@code %prod} sets 1, because jZen serves Cloud Run directly with nothing in
  * front of it (ADR-027). <strong>Putting an edge (a CDN, a load balancer) in front changes this
- * number</strong>, and getting it wrong reopens the bypass; {@link RateLimitAddressGuard} refuses
- * to boot on the configurations that are provably inconsistent.
+ * number</strong>, and getting it wrong reopens the bypass. Raising it is also only correct if the
+ * origin is unreachable except through that edge — a caller who goes around it supplies the extra
+ * entry themselves. ADR-053 makes re-deciding both part of any change that adds an edge. {@link
+ * RateLimitAddressGuard} refuses to boot on the configurations that are provably inconsistent, but
+ * it compares settings with each other, not with the real network, so it cannot catch this one.
  *
  * <p>Pure static logic with no container behind it, so the dangerous inputs can be expressed
  * directly in {@code ClientAddressTest}. An assembled application only ever has the safe one.

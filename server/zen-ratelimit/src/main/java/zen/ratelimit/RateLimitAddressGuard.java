@@ -38,6 +38,14 @@ import org.eclipse.microprofile.config.ConfigProvider;
  * revision that throws during boot never receives traffic and the previous revision keeps serving,
  * so the misconfiguration costs a failed deploy rather than an unprotected service. Same
  * reasoning, and same shape, as {@code CorsCredentialsGuard} in zen-transport.
+ *
+ * <p><strong>What this cannot catch.</strong> It checks the two settings against each other, never
+ * against the network. Put an edge in front of Cloud Run and leave both at their current values,
+ * and they still agree — forwarding on, one hop — while the hop being trusted is no longer the
+ * right one. The pairing is consistent and wrong, and this guard passes it. The only trip-wire for
+ * that case is procedural: ADR-027 is the decision that keeps an edge out, and ADR-053 requires any
+ * change that supersedes it to re-decide {@code forwarded-hops} and close the origin's ingress in
+ * the same change. See {@link ClientAddress} for why both halves matter.
  */
 @ApplicationScoped
 public class RateLimitAddressGuard {

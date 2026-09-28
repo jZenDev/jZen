@@ -15,6 +15,76 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-053 — Adding an edge in front of Cloud Run must also re-decide `zen.ratelimit.forwarded-hops`
+
+**Date:** 2026-09-28. **Status:** accepted. **Amends:** ADR-027 ("The trigger"). **Follows:**
+ADR-029.
+
+### Decision
+
+- **A third invariant rides on ADR-027's "no edge" position, and it is now named alongside the other
+  two.** ADR-027 deferred Cloudflare because an edge would break two written constraints: the
+  cookie-carried session (STANDARDS "Deployment model") and the untouched `.well-known` files. The
+  rate limiter's client address is a third. `%prod` sets `zen.ratelimit.forwarded-hops=1`, which
+  says "exactly one proxy the operator controls appended to `X-Forwarded-For`, and it is Cloud
+  Run's own frontend". That is true by construction only while nothing sits in front of Cloud Run.
+- **Any ADR that supersedes ADR-027's "No edge is introduced", or any jZen application deployed
+  behind something other than bare Cloud Run, must re-decide `forwarded-hops` in the same change.**
+  Both halves of that decision are required, not just the new number:
+  1. **The count.** Each proxy the operator controls appends one entry; an edge in front of Cloud
+     Run makes it 2.
+  2. **The origin lockdown.** Raising the count is only correct if the origin cannot be reached
+     *around* the edge. If the `run.app` URL still accepts public traffic (Cloud Run `--ingress=all`),
+     a caller who goes there directly sends one invented entry, Cloud Run appends the real peer,
+     and `hops=2` reads the invented one. Every rate limit, `/api/v1/jobs/trigger` included, then
+     keys on a value the caller picks. The edge ADR must restrict ingress to the edge
+     (`--ingress=internal-and-cloud-load-balancing` for a Google load balancer; for a third-party
+     edge, whatever stops direct access) or keep `hops=1` and accept the edge's own address as
+     every caller's identity — which is the other silent failure, the limiter blocking everyone.
+- **The trip-wire is documentation, deliberately.** ADR-027's own trigger list, STANDARDS
+  "Deployment model", `ClientAddress` and `RateLimitAddressGuard` now point at each other, so the
+  change that adds an edge cannot find one of them without the others.
+
+### What this supersedes, and why
+
+- **"Cloudflare free, gated on verifying that cookies and `.well-known` paths pass through untouched
+  and that Bot Fight Mode is off. It needs its own ADR, because it amends two invariants this one is
+  preserving."** (ADR-027, "The trigger") → **refined: three invariants.** *Why:* the architectural
+  security review (`docs/plans/implemented/SECURITY-ARCHITECTURE-REVIEW.md`, §3.9, finding F8, ranked
+  first) reproduced the failure against the shipping image: eight requests to the job-trigger
+  bucket, each with a different spoofed `X-Forwarded-For`, returned `401` eight times against a
+  ceiling of 5; the same eight with one constant value returned `401, 401, 429×6`. ADR-029 already
+  says an edge "changes this number", but ADR-029 is not the entry an edge proposal would amend.
+  ADR-027 is, and its trigger named only the cookie and `.well-known` constraints — so the one
+  property whose failure is total and silent was the one nobody would have been sent to look at.
+- **Not superseded:** `RateLimitAddressGuard`'s scope. It compares two configuration values
+  (`proxy-address-forwarding` and `forwarded-hops`) for mutual consistency. Behind a new edge both
+  would still agree with each other while disagreeing with the network, so it would not fire. That
+  limit is now stated on the class rather than left for a reader to infer.
+
+### What was rejected, and why
+
+- **A boot-time topology declaration** (a `zen.ratelimit.trusted-proxy-topology`-style value that
+  must accompany `forwarded-hops > 0`, with `RateLimitAddressGuard` refusing to boot without it)
+  → **deferred until an edge is actually proposed.** Priced at 0.5–1 day. *Why:* no runtime signal
+  distinguishes "no edge" from "edge present" — the frontend's appended entry looks the same either
+  way — so the check would be a second configuration value a deploy must remember to set correctly.
+  That is the risk this entry exists to close, moved one level down rather than removed, and a
+  trip-wire that can be satisfied by inheriting a default is itself a silent no-op. The edge ADR is
+  the moment to reconsider it, because it is the first moment the declaration could say something
+  other than `cloud-run-direct`.
+
+### Consequence
+
+- ADR-027's trigger, read together with this entry, is: an edge needs its own ADR because it amends
+  **three** invariants — cookies, `.well-known`, and `forwarded-hops` plus origin ingress.
+- STANDARDS "Deployment model" ("Nothing sits between the client and Cloud Run") names the rate
+  limiter as the third thing an edge breaks. `ClientAddress`, `RateLimitAddressGuard`, and the
+  `%prod` value's comment in zen_demo's `application.properties` cite this entry.
+- No runtime behaviour changes. Closes GitHub issue #103 (F8, option A).
+
+---
+
 ## ADR-052 — macOS/iOS join CI, narrowing ADR-045's cost exclusion for this public repo
 
 **Date:** 2026-09-17. **Status:** accepted. **Follows:** ADR-045.

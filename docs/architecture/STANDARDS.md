@@ -588,6 +588,13 @@ provider is only made meaningful by the backend.
   auth path, and the only way back is to pack the tokens into whatever single cookie survives,
   add a filter to unpack them, and turn proactive auth off so login and register are not 401'd
   before that filter runs. Do not introduce such an edge without accepting all three.
+  **An edge also breaks the rate limiter, silently and completely.** `%prod` sets
+  `zen.ratelimit.forwarded-hops=1` because Cloud Run's frontend is the only proxy that appends to
+  `X-Forwarded-For`. An edge changes that count, and raising it is only safe if the origin's
+  ingress is closed to everything but the edge; otherwise a caller who goes around it picks their
+  own rate-limit identity with one header. `RateLimitAddressGuard` cannot see this — it checks two
+  settings against each other, not against the network. The change that adds an edge re-decides
+  both (ADR-053).
 - **Native prod builds.** Prod ships a native image (`task build:server:native` →
   `Dockerfile.native-micro`). Container builds are pinned to `linux/amd64` so the image
   matches Cloud Run regardless of the developer's machine. The native image is also what

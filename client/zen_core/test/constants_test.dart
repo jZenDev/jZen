@@ -33,6 +33,7 @@ void main() {
     test('platform booleans are derived from zenPlatform', () {
       expect(zenIsMobile, zenIsAndroid || zenIsIOS);
       expect(zenIsDesktop, zenIsMacOS || zenIsLinux || zenIsWindows);
+      expect(zenIsApplePlatform, zenIsIOS || zenIsMacOS);
     });
 
     test('UI layout constants are defined', () {

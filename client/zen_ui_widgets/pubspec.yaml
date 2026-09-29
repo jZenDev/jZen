@@ -1,0 +1,32 @@
+name: zen_ui_widgets
+description: Shared adaptive widgets for jZen - dialogs, sheets and other chrome that is neither navigation nor identity.
+# Lockstep with the product version - see docs/architecture/STANDARDS.md "Versioning".
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+  # showCupertinoSheet's `scrollableBuilder`; the older `builder` is deprecated.
+  flutter: ">=3.40.0"
+
+resolution: workspace
+
+# Depends on zen_core for the compile-time platform constants and on flutter for the widgets,
+# nothing else. It owns no strings (a presentation has no wording of its own), so it has no
+# l10n and no delegate to register.
+dependencies:
+  zen_core:
+    path: ../zen_core
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+topics:
+  - adaptive
+  - widgets
+  - zen
+  - flutter

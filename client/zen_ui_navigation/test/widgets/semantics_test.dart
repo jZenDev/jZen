@@ -5,35 +5,126 @@ import 'package:zen_ui_navigation/src/widgets/navigation_desktop.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_mobile.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_web.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 
+import '../support/a11y.dart';
+
 void main() {
+  // What a screen reader hears, read from the merged semantics tree. Each layout must expose
+  // exactly one actionable node per destination, announce the destination's label once, carry
+  // the selected state on that same node, and read a badge as a value after the label. Before
+  // this was checked, every destination was announced two or three times and the web top menu
+  // nested three "button" nodes of which only the innermost could be activated.
   group('Semantics Tests', () {
-    testWidgets('navigationBadge has correct semantics', (WidgetTester tester) async {
+    void expectOneNodePerDestination(WidgetTester tester, {required int selected}) {
+      final nodes = [
+        for (final node in actionableNodes(tester))
+          if (node.label.contains('Item ')) node,
+      ];
+      expect(nodes, hasLength(3), reason: 'one actionable node per destination');
+      for (int i = 0; i < 3; i++) {
+        final node = nodes[i];
+        expect(occurrences(node.label, 'Item $i'), 1, reason: 'label "${node.label}" repeats');
+        expect(
+          node.flagsCollection.isSelected,
+          i == selected ? ui.Tristate.isTrue : ui.Tristate.isFalse,
+          reason: 'selected state on destination $i',
+        );
+      }
+      expect(nodes.last.value, '4 new', reason: 'the badge is read as a value, after the label');
+    }
+
+    testWidgets('navigationBadge contributes only its count', (WidgetTester tester) async {
+      final handle = tester.ensureSemantics();
       final item = ZenNavigationItem(
         id: 'home',
         label: 'Home Label',
         icon: Icons.home,
+        badgeCount: 3,
         builder: (c) => const Text('home'),
       );
 
-      await tester.pumpWidget(
-        MaterialApp(
-          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-          supportedLocales: NavigationLocalizations.supportedLocales,
-          home: Scaffold(body: navigationBadge(item, true)),
+      await pumpNavigation(tester, (_) => Center(child: navigationBadge(item)));
+
+      // The host control owns the label; the badge must not repeat it or claim a role.
+      expect(find.bySemanticsLabel('Home Label'), findsNothing);
+      final node = tester.getSemantics(find.byType(Badge));
+      expect(node.value, '3 new');
+      expect(node.flagsCollection.isButton, isFalse);
+      handle.dispose();
+    });
+
+    testWidgets('Desktop NavigationRail: one node per destination', (WidgetTester tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpNavigation(
+        tester,
+        (ctx) => buildDesktopNavigation(
+          context: ctx,
+          selectedIndex: 1,
+          onItemSelected: (_) {},
+          items: auditItems(),
         ),
       );
 
-      // Use finder that looks for the semantics label
-      final findSemantics = find.bySemanticsLabel('Home Label');
-      expect(findSemantics, findsOneWidget);
+      expectOneNodePerDestination(tester, selected: 1);
+      handle.dispose();
+    });
 
-      final semantics = tester.getSemantics(findSemantics);
-      final data = semantics.getSemanticsData();
-      expect(data.label, 'Home Label');
-      expect(data.flagsCollection.isSelected, ui.Tristate.isTrue);
+    testWidgets('Web top menu: one node per destination', (WidgetTester tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpNavigation(
+        tester,
+        (ctx) => buildPlatformNavigation(
+          context: ctx,
+          selectedIndex: 1,
+          onItemSelected: (_) {},
+          items: auditItems(),
+        ),
+      );
+
+      expectOneNodePerDestination(tester, selected: 1);
+      for (final node in actionableNodes(tester)) {
+        expect(node.flagsCollection.isButton, isTrue, reason: '${node.label} is a button');
+      }
+      handle.dispose();
+    });
+
+    testWidgets('Web drawer: one node per destination', (WidgetTester tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpNavigation(
+        tester,
+        (ctx) => buildPlatformNavigation(
+          context: ctx,
+          selectedIndex: 1,
+          onItemSelected: (_) {},
+          items: auditItems(),
+        ),
+        size: const Size(400, 800),
+      );
+      await tester.tap(find.byTooltip('Open navigation menu'));
+      await tester.pumpAndSettle();
+
+      expectOneNodePerDestination(tester, selected: 1);
+      handle.dispose();
+    });
+
+    testWidgets('Mobile bottom bar: one node per destination', (WidgetTester tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpNavigation(
+        tester,
+        (ctx) => buildMobileNavigation(
+          context: ctx,
+          selectedIndex: 1,
+          onItemSelected: (_) {},
+          items: auditItems(),
+        ),
+        size: const Size(400, 800),
+      );
+
+      expectOneNodePerDestination(tester, selected: 1);
+      handle.dispose();
     });
 
     testWidgets('Mobile more button has correct semantics', (WidgetTester tester) async {
@@ -62,53 +153,40 @@ void main() {
       expect(find.bySemanticsLabel(RegExp(r'.*More Menu.*')), findsWidgets);
     });
 
-    testWidgets('Desktop NavigationRail items have explicit semantics', (
+    testWidgets('desktop and web wrap the menu and the page in landmarks', (
       WidgetTester tester,
     ) async {
-      final items = [ZenNavigationItem(id: 'h', label: 'Home', builder: (c) => const Text('H'))];
-
-      await tester.pumpWidget(
-        MaterialApp(
-          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-          supportedLocales: NavigationLocalizations.supportedLocales,
-          home: Scaffold(
-            body: Builder(
-              builder: (context) => buildDesktopNavigation(
-                context: context,
-                selectedIndex: 0,
-                onItemSelected: (_) {},
-                items: items,
-              ),
-            ),
-          ),
+      final handle = tester.ensureSemantics();
+      for (final build in <Widget Function(BuildContext)>[
+        (ctx) => buildDesktopNavigation(
+          context: ctx,
+          selectedIndex: 0,
+          onItemSelected: (_) {},
+          items: auditItems(),
         ),
-      );
-
-      expect(find.bySemanticsLabel('Home'), findsWidgets);
-    });
-
-    testWidgets('Web top menu items have explicit semantics', (WidgetTester tester) async {
-      final items = [ZenNavigationItem(id: 'h', label: 'Home', builder: (c) => const Text('H'))];
-
-      await tester.pumpWidget(
-        MediaQuery(
-          data: const MediaQueryData(size: Size(1200, 800)),
-          child: MaterialApp(
-            localizationsDelegates: NavigationLocalizations.localizationsDelegates,
-            supportedLocales: NavigationLocalizations.supportedLocales,
-            home: Builder(
-              builder: (ctx) => buildPlatformNavigation(
-                context: ctx,
-                selectedIndex: 0,
-                onItemSelected: (_) {},
-                items: items,
-              ),
-            ),
-          ),
+        (ctx) => buildPlatformNavigation(
+          context: ctx,
+          selectedIndex: 0,
+          onItemSelected: (_) {},
+          items: auditItems(),
         ),
-      );
+      ]) {
+        await pumpNavigation(tester, build);
 
-      expect(find.bySemanticsLabel('Home'), findsWidgets);
+        final roles = <ui.SemanticsRole>[];
+        bool visit(SemanticsNode node) {
+          roles.add(node.getSemanticsData().role);
+          node.visitChildren(visit);
+          return true;
+        }
+
+        visit(rootSemantics(tester));
+        expect(
+          roles,
+          containsAll(<ui.SemanticsRole>[ui.SemanticsRole.navigation, ui.SemanticsRole.main]),
+        );
+      }
+      handle.dispose();
     });
   });
 

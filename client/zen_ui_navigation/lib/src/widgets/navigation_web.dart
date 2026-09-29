@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../zen_navigation.dart';
 import '../zen_navigation_item.dart';
 import 'navigation_badge.dart';
+import 'navigation_focus.dart';
 
 /// Platform-specific navigation builder for web
 /// It renders an AppBar w/ Drawer on narrow screens and
@@ -26,56 +27,98 @@ Widget _widget({
     return Scaffold(
       appBar: AppBar(title: Text(items[selectedIndex].label)),
       drawer: Drawer(
-        child: ListView(
-          children: <Widget>[
-            for (int i = 0; i < items.length; i++)
-              ListTile(
-                title: Text(items[i].label),
-                leading: navigationBadge(items[i], i == selectedIndex),
-                selected: i == selectedIndex,
-                onTap: () {
-                  onItemSelected(i);
-                  onItemSelectedId?.call(items[i].id);
-                  Navigator.of(context).pop();
-                },
-              ),
-          ],
+        child: NavigationRegion(
+          child: ListView(
+            children: <Widget>[
+              for (int i = 0; i < items.length; i++)
+                ListTile(
+                  // ListTile announces the label and selected state itself; the ring goes in the
+                  // title because that is inside the tile's focus node.
+                  title: FocusRing(child: Text(items[i].label)),
+                  leading: navigationBadge(items[i]),
+                  selected: i == selectedIndex,
+                  onTap: () {
+                    onItemSelected(i);
+                    onItemSelectedId?.call(items[i].id);
+                    Navigator.of(context).pop();
+                  },
+                ),
+            ],
+          ),
         ),
       ),
-      body: items[selectedIndex].builder(context),
+      body: NavigationContent(child: items[selectedIndex].builder(context)),
     );
   }
 
   // TOP MENU
   return Column(
     children: <Widget>[
-      Material(
-        elevation: 3,
-        child: Row(
-          children: <Widget>[
-            for (int i = 0; i < items.length; i++)
-              Semantics(
-                label: items[i].label,
-                button: true,
-                selected: i == selectedIndex,
-                child: TextButton.icon(
-                  onPressed: () {
-                    onItemSelected(i);
-                    onItemSelectedId?.call(items[i].id);
-                  },
-                  icon: navigationBadge(items[i], i == selectedIndex),
-                  label: Text(items[i].label),
-                  style: TextButton.styleFrom(
-                    foregroundColor: i == selectedIndex
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
+      // Full width by hand: the scroll view below sizes its row to the labels, and in a centring
+      // column the bar would shrink to match instead of spanning the window.
+      SizedBox(
+        width: double.infinity,
+        child: Material(
+          elevation: 3,
+          child: NavigationRegion(
+            // Scrolls rather than overflows: at 200% text size (WCAG SC 1.4.4) the labels no longer
+            // fit a row that was sized for 100%, and a clipped destination cannot be reached.
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: <Widget>[
+                  for (int i = 0; i < items.length; i++)
+                    _TopMenuDestination(
+                      item: items[i],
+                      selected: i == selectedIndex,
+                      onPressed: () {
+                        onItemSelected(i);
+                        onItemSelectedId?.call(items[i].id);
+                      },
+                    ),
+                ],
               ),
-          ],
+            ),
+          ),
         ),
       ),
-      Expanded(child: items[selectedIndex].builder(context)),
+      Expanded(child: NavigationContent(child: items[selectedIndex].builder(context))),
     ],
   );
+}
+
+/// One destination of the wide top menu.
+///
+/// A TextButton reports that it is a button and takes its label from its text, but it has no
+/// notion of being the *current* destination — so the selected state is added and merged into
+/// the button's own node, giving a screen reader one actionable "Home, selected, button" rather
+/// than a stack of nested nodes of which only the innermost responds.
+class _TopMenuDestination extends StatelessWidget {
+  const _TopMenuDestination({required this.item, required this.selected, required this.onPressed});
+
+  final ZenNavigationItem item;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    return MergeSemantics(
+      child: Semantics(
+        selected: selected,
+        child: TextButton(
+          onPressed: onPressed,
+          style: TextButton.styleFrom(
+            foregroundColor: selected ? scheme.primary : scheme.onSurface,
+          ),
+          child: FocusRing(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[navigationBadge(item), const SizedBox(width: 8), Text(item.label)],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

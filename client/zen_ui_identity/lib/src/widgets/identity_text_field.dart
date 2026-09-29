@@ -57,48 +57,52 @@ class IdentityTextField extends StatelessWidget {
           ),
         ),
         SizedBox(height: theme.spacing / 2),
-        Semantics(
-          label: label,
-          textField: true,
-          child: TextFormField(
-            controller: controller,
-            obscureText: obscureText,
-            keyboardType: keyboardType,
-            autofillHints: autofillHints,
-            textInputAction: textInputAction,
-            onFieldSubmitted: onFieldSubmitted,
-            validator: validator,
-            enabled: enabled,
-            style: theme.subtitleStyle.copyWith(color: Theme.of(context).colorScheme.onSurface),
-            decoration: InputDecoration(
-              hintText: hint,
-              errorText: errorText,
-              filled: true,
-              fillColor: theme.surfaceColor,
-              suffixIcon: suffixIcon,
-              contentPadding: EdgeInsets.symmetric(
-                horizontal: theme.spacing,
-                vertical: theme.spacing,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: borderSide,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: borderSide,
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: borderSide.copyWith(width: 2, color: theme.brandColor),
-              ),
-              errorBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: errorBorderSide,
-              ),
-              focusedErrorBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: errorBorderSide.copyWith(width: 2),
+        // Merged into the field's own node. Left as a separate Semantics, the label sat on a node
+        // a screen reader never focuses, and the focusable field was named by its hint alone —
+        // "you@example.com, text field", with no word of what the field is for.
+        MergeSemantics(
+          child: Semantics(
+            label: label,
+            child: TextFormField(
+              controller: controller,
+              obscureText: obscureText,
+              keyboardType: keyboardType,
+              autofillHints: autofillHints,
+              textInputAction: textInputAction,
+              onFieldSubmitted: onFieldSubmitted,
+              validator: validator,
+              enabled: enabled,
+              style: theme.subtitleStyle.copyWith(color: Theme.of(context).colorScheme.onSurface),
+              decoration: InputDecoration(
+                hintText: hint,
+                errorText: errorText,
+                filled: true,
+                fillColor: theme.surfaceColor,
+                suffixIcon: suffixIcon,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: theme.spacing,
+                  vertical: theme.spacing,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: borderSide,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: borderSide,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: borderSide.copyWith(width: 2, color: theme.brandColor),
+                ),
+                errorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: errorBorderSide,
+                ),
+                focusedErrorBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: errorBorderSide.copyWith(width: 2),
+                ),
               ),
             ),
           ),

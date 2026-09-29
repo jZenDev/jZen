@@ -36,14 +36,24 @@
       "nanoid": "^3.3.18"
     }
   },
+  "//devDependencies": {
+    "@mui/material": "Test-only: the palette contrast audit calls createTheme on the scaffold's themes. Pinned to exactly the version react-admin resolves, so it is the same single copy rather than a second MUI; bump it together with react-admin."
+  },
   "devDependencies": {
+    "@mui/material": "9.2.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@types/node": "^22.10.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "axe-core": "^4.13.0",
+    "jsdom": "^30.1.1",
     "openapi-typescript": "^7.5.2",
     "prettier": "^3.9.6",
     "typescript": "^5.7.2",
-    "vite": "^7.3.1"
+    "vite": "^7.3.1",
+    "vitest": "^5.0.2"
   }
 }

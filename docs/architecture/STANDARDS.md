@@ -645,6 +645,61 @@ provider is only made meaningful by the backend.
   the check must understand the file — `strings | grep` finds nothing in a dart2wasm bundle and
   would pass vacuously. See [`DECISIONS.md`](./DECISIONS.md) ADR-037.
 
+## Accessibility — WCAG 2.2 AA, on desktop and web
+
+Every interactive surface jZen ships — the `zen_ui_*` packages on desktop and web, and the admin
+scaffold with the panels built on it — meets **WCAG 2.2 level AA**. The bar is a gate, not a
+review item: each rule below has a test that fails when it is broken (ADR-054).
+
+- **One control, one announcement.** A control's label, role and state belong to the node a
+  screen reader lands on and activates, once. Stock Material/Cupertino controls (`NavigationRail`,
+  `BottomNavigationBar`, `ListTile`, buttons, text fields) already announce themselves, so do
+  **not** wrap them in `Semantics(label:, button:, selected:)` — that is what made every navigation
+  destination read two or three times, with a nested "button" that could not be activated. Add
+  only what the control cannot know (a badge count as a `value`; a `selected` state on a
+  `TextButton`, merged into its node with `MergeSemantics`). A form field's label goes on the
+  focusable field, not on a sibling node beside it. Checked by walking the *merged* semantics tree
+  (`zen_ui_navigation/test/widgets/semantics_test.dart`), never by finding a `Semantics` widget.
+- **Everything reachable and operable by keyboard, in reading order** (2.1.1, 2.4.3). Tab and
+  Shift+Tab reach every control; Enter and Space activate; arrow keys move between navigation
+  destinations on web as on desktop (a web build maps arrows to scrolling unless told otherwise).
+  A mouse-only affordance needs a keyboard twin — react-admin's `Datagrid rowClick` is an
+  `onClick` on a `<tr>` with no tab stop, so a list pairs it with `ShowButton` / `EditButton`.
+- **Focus is always visible, at 3:1** (2.4.7, 1.4.11). Material 3's focus overlay is ~10% opacity,
+  about 1.2:1 on a light surface, so framework navigation draws `FocusRing` (a 2 px ring in
+  `colorScheme.primary`). It follows the CSS `:focus-visible` rule: shown after a key press and
+  whenever assistive technology is attached (which moves focus through the semantics tree without
+  key events), hidden after any pointer press — mouse, touch or pen. Flutter's own highlight mode
+  cannot be used for this: it counts a mouse as keyboard-style input and hides only for touch.
+- **Focus follows navigation.** In the admin, a route change moves focus to `#main-content`
+  (the scaffold's `Layout`); otherwise the control that navigated unmounts and focus falls to
+  `<body>`.
+- **Landmarks.** Framework navigation is a `navigation` landmark and the page it selects is `main`
+  (`<nav>` / `<main>` on web).
+- **Text contrast 4.5:1, non-text 3:1** (1.4.3, 1.4.11), in **every theme that ships** — light and
+  dark. A framework widget never makes text legibility depend on a colour it cannot check: status
+  colours are the application's, so `IdentityStatusChip` draws its label in `onSurface` and uses
+  the status colour for the border and tint only; the label, not the colour, carries the meaning
+  (1.4.1). Framework fallbacks (`IdentityThemeExtension.fallback()`) and the admin scaffold's
+  `lightTheme` / `darkTheme` are themselves audited to AA. Flutter checks rendered text with
+  `meetsGuideline(textContrastGuideline)`; the admin audits its palettes, because jsdom has no
+  layout and axe cannot measure contrast there.
+- **Text reflows at 200%** (1.4.4, 1.4.10). A row sized for 100% text scrolls rather than
+  clipping a destination off-screen.
+- **Automated in `task test`.** Flutter: semantics, keyboard, focus-ring and contrast suites in
+  `zen_ui_navigation` and `zen_ui_identity`, green on the VM and under `--platform chrome`.
+  Admin: `task test:admin` runs axe-core (tags `wcag2a` … `wcag22aa`; best-practice rules are
+  deliberately excluded) over the login page and every resource view, a keyboard-only walkthrough,
+  and the palette audit. A new view or widget is added to these suites in the same change.
+- **A control the API cannot honour is not rendered.** react-admin's defaults offer bulk and
+  single delete; where the backend has no `DELETE`, the panel removes them (`bulkActionButtons=
+  {false}`, a Save-only toolbar). This is also why the list has no row checkboxes: react-admin
+  5.15 puts their "Select this row" label on a role-less wrapper and leaves each input unnamed
+  (4.1.2), so an app that *does* enable bulk actions must fix that before the axe gate passes.
+
+Out of scope here: native mobile touch-target sizing, handled separately; and per-view
+`document.title` in the admin (2.4.2 is met by the app-level title today).
+
 ## Authorization (RBAC)
 
 The mechanism is the platform's (Jakarta Security), not a bespoke one — see

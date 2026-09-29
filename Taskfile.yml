@@ -1011,10 +1011,14 @@ tasks:
         dart test test/session_client_web_test.dart -p chrome --compiler dart2wasm
 
   test:admin:
-    desc: Typecheck the admin panel (also typechecks the @jzen/admin-core scaffold it imports)
+    desc: Typecheck the admin panel and scaffold, then run its tests (axe-core WCAG 2.2 AA gate)
     dir: "{{.DEMO_ADMIN_DIR}}"
     cmds:
       - pnpm exec tsc -b
+      # Renders the real panel (scaffold layout and themes, this app's resources) in jsdom with
+      # in-memory providers: axe-core over every view, a keyboard-only walkthrough, focus on
+      # navigation, and a contrast audit of both palettes. See STANDARDS "Accessibility".
+      - pnpm exec vitest run
 
   test:scripts:
     desc: Run the fixture tests for the Python dev scripts (the boundary, modules, docs and CVE gates)

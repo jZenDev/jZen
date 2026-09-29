@@ -687,7 +687,9 @@ review item: each rule below has a test that fails when it is broken (ADR-054).
 - **Text reflows at 200%** (1.4.4, 1.4.10). A row sized for 100% text scrolls rather than
   clipping a destination off-screen.
 - **Automated in `task test`.** Flutter: semantics, keyboard, focus-ring and contrast suites in
-  `zen_ui_navigation` and `zen_ui_identity`, green on the VM and under `--platform chrome`.
+  `zen_ui_navigation`, `zen_ui_identity` and `zen_ui_widgets`, green on the VM and under
+  `--platform chrome`. A control added to `zen_ui_widgets` ships with its suite (both idioms are
+  built directly, since one run reaches only the host's branch) and uses `FocusRing` (ADR-055).
   Admin: `task test:admin` runs axe-core (tags `wcag2a` … `wcag22aa`; best-practice rules are
   deliberately excluded) over the login page and every resource view, a keyboard-only walkthrough,
   and the palette audit. A new view or widget is added to these suites in the same change.

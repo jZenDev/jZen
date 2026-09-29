@@ -15,6 +15,57 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-055 — `zen_ui_widgets` owns the generic controls, and the focus ring lives there
+
+**Date:** 2026-09-29. **Status:** accepted.
+
+### Decision
+
+- **`zen_ui_widgets` is the home of the generic controls apps kept hand-rolling** on stock Material:
+  `ZenButton`, `ZenSwitchRow`, `ZenSegmentedControl`, `ZenSelect`, `ZenDateField` /
+  `ZenDateRangeField`, `ZenAmountField` / `ZenAmountRangeField`, beside `showAdaptivePresentation`.
+  The framework owns the shape (variant, focus, one announcement, contrast); the app supplies the
+  content and callbacks. Identity- and navigation-specific pieces stay in their own packages.
+- **`FocusRing` moved from `zen_ui_navigation` to `zen_ui_widgets`** (exported), and
+  `zen_ui_navigation` now depends on `zen_ui_widgets`. One ring, one modality rule, instead of a
+  copy per package. `FocusRing.wrapping` rings a whole control; the ring's subtree is now a stable
+  `Stack`, because swapping a bare child for a `Stack` remounted a focused control and dropped focus.
+- **Each control is built to STANDARDS "Accessibility" from its first commit**, not audited later:
+  merged-semantics, keyboard, focus-ring and contrast tests per control, in both idioms.
+- **Idioms.** Cupertino on Apple platforms, Material elsewhere, chosen on compile-time constants.
+  Two deliberate exceptions, each because the Cupertino form is not keyboard-operable on desktop:
+  `ZenSelect` and `ZenDateField` use a wheel picker only on **iOS** (`zenIsIOS`); macOS keeps the
+  Material dropdown and calendar. Text input (`ZenAmountField`) is one Material field on every platform.
+- **Range fields close the unenforced `from <= to` / `min <= max` gap once.** Date pickers cannot
+  produce an inverted pair (each stops at the other); an inverted pair handed in, and any amount
+  pair, is reported in words under the end field and fails an enclosing `Form`.
+- **The money type stays app-side.** `ZenAmountField` is the field and validation shape: decimal
+  keyboard, the locale's separator, `normalizeAmount` to canonical text. Minor units, currency and
+  precision beyond `maxFractionDigits` are the application's.
+- **Stock gaps fixed in the wrappers:** a disabled `CupertinoButton` still advertises a tap action and
+  no disabled state; a web `CupertinoButton` ignores Enter. `ZenButton` states both.
+- **The package owns a few strings** (`ZenWidgetsLocalizations`, `en`/`uk`, degrading delegate
+  `zenWidgetsLocaleDelegate`, ADR-009/044). The class is prefixed `Zen` because Flutter already
+  exports `WidgetsLocalizations`. An app using only `showAdaptivePresentation` needs no delegate.
+
+### What this supersedes, and why
+
+- **"It owns no strings ... so it has no l10n and no delegate to register"** (the `zen_ui_widgets`
+  pubspec written for ADR-less #106) → **changed.** *Why:* validation errors and "Select a date"
+  are wording the controls speak, and a control that makes the app supply its own error text would
+  reintroduce the per-app drift this package exists to close.
+- **`FocusRing` as a `zen_ui_navigation` internal** (ADR-054) → **moved.** *Why:* the new controls
+  need it and a second copy would be a second source of truth for an accessibility rule.
+
+### Consequence
+
+Apps drop their local buttons/pickers and depend on `zen_ui_widgets`. `zen_ui_widgets` tests are green
+on the VM under macos, ios, linux, windows and android defines and under `--platform chrome`.
+Not yet covered: an `IdentityStatusChip` extraction (it reads `IdentityThemeExtension`, so it stays
+in `zen_ui_identity` until a generic status palette exists).
+
+---
+
 ## ADR-054 — WCAG 2.2 AA is the accessibility bar for desktop and web, enforced by tests
 
 **Date:** 2026-09-28. **Status:** accepted.

@@ -1,5 +1,6 @@
 import 'package:zen_core/zen_core.dart';
 import 'package:flutter/material.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show FocusRing;
 
 import '../zen_navigation.dart';
 import '../zen_navigation_item.dart';

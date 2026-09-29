@@ -1,0 +1,27 @@
+{
+  "@@locale": "en",
+  "invalidAmount": "Enter a valid amount",
+  "@invalidAmount": {
+    "description": "Error under an amount field whose text is not a number."
+  },
+  "invalidAmountRange": "The minimum must not be greater than the maximum",
+  "@invalidAmountRange": {
+    "description": "Error under the maximum of an amount range whose minimum is larger."
+  },
+  "invalidDateRange": "The start date must not be after the end date",
+  "@invalidDateRange": {
+    "description": "Error under the end of a date range that ends before it starts."
+  },
+  "selectDate": "Select a date",
+  "@selectDate": {
+    "description": "Placeholder of a date field that has no date yet."
+  },
+  "clearDate": "Clear date",
+  "@clearDate": {
+    "description": "Tooltip and screen-reader name of the button that empties an optional date field."
+  },
+  "done": "Done",
+  "@done": {
+    "description": "Button that confirms the choice in a wheel picker."
+  }
+}

@@ -852,6 +852,13 @@ packages:
       relative: true
     source: path
     version: "0.1.0"
+  zen_ui_widgets:
+    dependency: transitive
+    description:
+      path: "../client/zen_ui_widgets"
+      relative: true
+    source: path
+    version: "0.1.0"
 sdks:
   dart: ">=3.12.0 <4.0.0"
   flutter: ">=3.44.0"

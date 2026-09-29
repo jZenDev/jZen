@@ -16,6 +16,8 @@ framework in [`client/`](../../../client/README.md); this app composes them:
 - **`zen_transport`** — the dual-mode `ZenClient` and `ZenWebSocket`.
 - **`zen_identity`** — `SupabaseIdentityRepository`, injected into the UI.
 - **`zen_ui_identity`** / **`zen_ui_navigation`** — the adaptive screens and navigation shell.
+- **`zen_ui_widgets`** — the buttons, inputs and overlays every screen is built from (STANDARDS
+  "Client UI: the framework's controls first"); the app writes no raw `FilledButton` or picker.
 - **`flutter_riverpod`** — provider wiring; **`flutter_localizations`** + a generated
   `DemoLocalizations` — its own typed strings (`lib/src/l10n/demo_*.arb`, ADR-009), composed
   alongside the packages' own delegates.

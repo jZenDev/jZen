@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_desktop.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_focus.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_web.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 
 import '../support/a11y.dart';
 

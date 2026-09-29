@@ -295,7 +295,8 @@ framework:
   libraries as Maven dependencies. It owns its own domain resources, `proto/` messages,
   `META-INF/openapi.yaml`, and any app-specific Flyway migrations (band 1000+).
 - **`<app>_client`** — a Flutter package that depends on `zen_core` / `zen_transport` /
-  `zen_identity` / `zen_ui_*`. It composes the screens and owns only its own wiring and wording.
+  `zen_identity` / `zen_ui_*`. It composes the screens **from the framework's controls** (see below)
+  and owns only its own wiring and wording.
 - **`<app>_admin`** (optional) — a react-admin panel depending on `@jzen/admin-core`.
 
 **How that dependency is expressed, and where it's headed.** Today the framework packages are
@@ -315,6 +316,51 @@ resources you inherit for free (auth, admin-user management, the jobs trigger) a
 [`apps/zen_demo/README.md`](apps/zen_demo/README.md). Testing is the same story as the reference
 app: unit suites per surface, plus your own live end-to-end suite modelled on `zen_demo`'s — a
 second app gets its *own* e2e gate.
+
+### 🎛️ Build screens from the framework's controls, not raw Material
+
+An app's Flutter screens are **assembled from the framework's UI packages** — `zen_ui_widgets` for the
+generic controls, `zen_ui_identity` for sign-in/register/profile, `zen_ui_navigation` for the shell.
+The framework owns how a control looks on each platform (Cupertino on Apple, Material elsewhere), how
+it is announced, where focus shows and its contrast — to WCAG 2.2 AA — and your app supplies content
+and callbacks. Hand-rolling these per screen is how apps drift and how accessibility gaps get copied
+nine times; fixing a control once in the framework fixes it in every app.
+
+| You need | Use (`package:zen_ui_widgets/zen_ui_widgets.dart`) | Not |
+|---|---|---|
+| A dialog or sheet for a form/detail | `showAdaptivePresentation` | `showDialog`, `showModalBottomSheet` |
+| An action button | `ZenButton` (`primary` / `secondary` / `text`) | `ElevatedButton`, `FilledButton`, `OutlinedButton`, `TextButton` |
+| One choice from a list | `ZenSelect<T>` | `DropdownButton`, `DropdownButtonFormField` |
+| A few exclusive options | `ZenSegmentedControl<T>` | `SegmentedButton` |
+| A boolean setting | `ZenSwitchRow` | `SwitchListTile` |
+| A date, or a from/to period | `ZenDateField`, `ZenDateRangeField` | `showDatePicker`, two loose pickers |
+| A decimal number, or a min/max pair | `ZenAmountField` + `normalizeAmount`, `ZenAmountRangeField` | `TextField` with a numeric keyboard |
+
+Never branch on platform to pick Cupertino or Material for these — the package does it on a
+compile-time constant so a build keeps only the idiom it takes. What a number *means* (minor units,
+currency) stays in your app. If a generic control you need is missing, add it to `zen_ui_widgets`
+(with its accessibility tests) rather than hand-rolling it. The full rule is
+[`STANDARDS.md`](docs/architecture/STANDARDS.md) "Client UI: the framework's controls first"; the
+controls are in [`client/zen_ui_widgets`](client/zen_ui_widgets/README.md).
+
+**If you use a coding agent on your app**, put this in its instructions (your `CLAUDE.md`,
+`AGENTS.md` or equivalent) — jZen's own agent files are not shipped with the packages, so your agent
+will not learn it any other way:
+
+```markdown
+## UI controls
+
+Build Flutter screens from the jZen framework's controls, never raw Material equivalents:
+`ZenButton` (not ElevatedButton/FilledButton/OutlinedButton/TextButton), `ZenSelect<T>` (not
+DropdownButton), `ZenSegmentedControl<T>`, `ZenSwitchRow`, `ZenDateField` / `ZenDateRangeField` (not
+showDatePicker), `ZenAmountField` / `ZenAmountRangeField` (+ `normalizeAmount`), and
+`showAdaptivePresentation` (not showDialog/showModalBottomSheet), all from
+`package:zen_ui_widgets/zen_ui_widgets.dart`. Sign-in and the shell come from `zen_ui_identity` and
+`zen_ui_navigation`. Never branch on platform to pick Cupertino vs Material. Do not wrap these in
+`Semantics(label:, button:)`: they already announce once. Money semantics (minor units, currency)
+stay in the app; read `normalizeAmount(text)`. If a generic control is missing, add it to
+`zen_ui_widgets` upstream rather than hand-rolling it in the app.
+```
 
 ## 🚢 Deploy
 

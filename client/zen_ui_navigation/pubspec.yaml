@@ -15,6 +15,9 @@ resolution: workspace
 dependencies:
   zen_core:
     path: ../zen_core
+  # FocusRing, the focus indicator shared by every jZen control (STANDARDS "Accessibility").
+  zen_ui_widgets:
+    path: ../zen_ui_widgets
   flutter:
     sdk: flutter
   # Both are imported by the generated NavigationLocalizations. intl is pinned to the version

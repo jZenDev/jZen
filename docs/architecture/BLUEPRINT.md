@@ -25,7 +25,7 @@ jZen/
 │   └── zen-jobs/             # guaranteed scheduled work: external trigger + persisted job state
 ├── client/                   # Dart/Flutter FRAMEWORK libraries (pub workspace)
 │   ├── pubspec.yaml          # workspace root
-│   └── zen_core/  zen_transport/  zen_identity/  zen_ui_*/
+│   └── zen_core/  zen_transport/  zen_identity/  zen_ui_*/   # zen_ui_navigation, zen_ui_identity, zen_ui_widgets
 ├── apps/                     # APPLICATIONS built on the framework
 │   ├── pubspec.yaml          # pub workspace root for the app clients
 │   └── zen_demo/             # the reference app (showcase + living e2e test stand)
@@ -228,6 +228,18 @@ has no request to read `Accept-Language` from), then renders a per-locale Qute t
 subject lines from a Qute `@MessageBundle` (as built: `MailMessages` + `MailMessagesUk`, owned by
 the application — see [`DECISIONS.md`](./DECISIONS.md) ADR-007). `SUPPORTED` locales start at
 `{en, uk}` and grow with the message bundles, no code change per template.
+
+## Client UI
+
+An app's screens are assembled from three framework UI packages, each owning a concern so an app
+writes content and callbacks rather than chrome: `zen_ui_navigation` (the adaptive shell),
+`zen_ui_identity` (sign-in, register, profile) and `zen_ui_widgets` (the generic controls —
+`showAdaptivePresentation`, `ZenButton`, `ZenSelect`, `ZenSegmentedControl`, `ZenSwitchRow`, the date
+and amount fields with their range pairs — and the shared `FocusRing`). Each renders Cupertino on Apple
+platforms and Material elsewhere, chosen on compile-time constants so a build keeps only the idiom it
+takes, and each meets WCAG 2.2 AA from its first commit. **Applications use these controls rather than
+raw Material equivalents** — the rule and the widget-for-widget table are in
+[`STANDARDS.md`](./STANDARDS.md) "Client UI: the framework's controls first" (ADR-055).
 
 ## Client localization
 

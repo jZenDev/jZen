@@ -56,6 +56,14 @@
         "\\btask\\s+run:",
         "\\bquarkus:dev\\b"
       ]
+    },
+    {
+      "skill": "use-zen-ui",
+      "why": "an app screen is assembled from zen_ui_widgets (ZenButton, ZenSelect, date/amount fields...), not raw Material - STANDARDS \"Client UI: the framework's controls first\"",
+      "paths": [
+        "apps/*/*_client/lib/*.dart",
+        "client/zen_ui_widgets/lib/*.dart"
+      ]
     }
   ]
 }

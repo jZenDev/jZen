@@ -30,6 +30,17 @@ carry their own READMEs because they are shaped for eventual pub.dev publication
 ship their own `LICENSE`), which gives them an audience the monorepo view does not serve. `zen_ui_navigation`
 and `zen_ui_identity` also have an `example/` app demonstrating them in isolation.
 
+## 🎛️ Apps use these controls, not raw Material
+
+An application's screens are assembled from `zen_ui_widgets` (buttons, select, segmented control,
+switch row, date and amount fields with range pairs, `showAdaptivePresentation`), `zen_ui_identity` and
+`zen_ui_navigation` — never hand-rolled `ElevatedButton` / `DropdownButton` / `showDatePicker`, and
+never a platform branch to choose Cupertino or Material. The controls own the idiom, the focus ring and
+the announcement (WCAG 2.2 AA), so one fix reaches every app. A generic control that is missing is
+added to `zen_ui_widgets`, not written per app. The widget-for-widget table, and a block to paste into
+your coding agent's instructions, are in the root [`README`](../README.md#-build-screens-from-the-frameworks-controls-not-raw-material);
+the rule is STANDARDS "Client UI: the framework's controls first".
+
 ## ⚙️ Client config is compile-time (the load-bearing rule)
 
 The Dart/Flutter client keeps **compile-time config** (`String.fromEnvironment`) and

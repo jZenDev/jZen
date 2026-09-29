@@ -645,6 +645,64 @@ provider is only made meaningful by the backend.
   the check must understand the file — `strings | grep` finds nothing in a dart2wasm bundle and
   would pass vacuously. See [`DECISIONS.md`](./DECISIONS.md) ADR-037.
 
+## Client UI: the framework's controls first
+
+An application's Flutter screens are **assembled from the framework's UI packages**, not from stock
+Material. The framework owns the shape of every generic control — how it looks on each platform, how
+it is announced, where focus shows, that it meets the accessibility bar below — and the application
+supplies content and callbacks. That is the same contract `zen_ui_navigation` and `zen_ui_identity`
+already keep for the shell and the sign-in screens, extended to the small controls beneath them.
+
+The reason is the one the whole framework rests on: a control written per screen drifts. Prudent had
+four copies of the dialog-versus-sheet split and nine hand-rolled dropdowns, no two with the same
+focus treatment, and none with the invariant a paired date or amount range implies. Fixing the
+accessibility of a control in the framework fixes every application; fixing it in an application
+fixes one screen.
+
+**Use the framework control whenever one exists; reach for the raw widget only when none does.**
+
+| You need | Use (`zen_ui_widgets`) | Not |
+|---|---|---|
+| A dialog or sheet for a form or detail | `showAdaptivePresentation` | `showDialog`, `showModalBottomSheet` |
+| An action button | `ZenButton` (`primary` / `secondary` / `text`) | `ElevatedButton`, `FilledButton`, `OutlinedButton`, `TextButton` |
+| One choice from a list | `ZenSelect<T>` | `DropdownButton`, `DropdownButtonFormField` |
+| One of a few exclusive options | `ZenSegmentedControl<T>` | `SegmentedButton`, `CupertinoSlidingSegmentedControl` |
+| A boolean setting | `ZenSwitchRow` | `SwitchListTile`, `Switch` |
+| A date | `ZenDateField` | `showDatePicker` |
+| A from/to period | `ZenDateRangeField` | two `ZenDateField`s, `showDateRangePicker` |
+| A decimal number | `ZenAmountField` (+ `normalizeAmount`) | `TextField` with a numeric keyboard |
+| A min/max pair | `ZenAmountRangeField` | two `ZenAmountField`s |
+| A focus indicator on a custom control | `FocusRing` | a bespoke `border` on `hasFocus` |
+| Sign-in, register, profile | `zen_ui_identity` screens | hand-built forms |
+| The navigation shell | `ZenNavigation` | `NavigationBar` / `NavigationRail` per screen |
+
+Rules that follow:
+
+- **A range is one widget.** A pair of coupled inputs whose order matters is `ZenDateRangeField` /
+  `ZenAmountRangeField`, never two independent fields with the invariant checked (or not) at the call
+  site.
+- **The framework decides the idiom.** An application never branches on the platform to pick
+  Cupertino or Material for these controls; the choice is a compile-time constant inside the package
+  (`zenIsApplePlatform`), so the unused idiom is tree-shaken. Do not re-implement that branch.
+- **What the number means is the application's.** `ZenAmountField` is the field and validation
+  shape; `normalizeAmount` returns canonical text. Minor units, currency and rounding stay in the
+  app, which reads that text.
+- **A missing control is a framework gap, not a licence to hand-roll.** If a screen needs a generic
+  control `zen_ui_widgets` lacks — a chip, a stepper, a search field — add it there, built to the
+  accessibility bar with its suite (below), and use it from the app. A control that is specific to one
+  screen's domain (a chart, a transaction row) is the application's own and stays there, but it still
+  meets the accessibility bar and uses `FocusRing` for its focus.
+- **Wording comes from the package.** The controls' own strings (validation errors, "Select a date")
+  are `ZenWidgetsLocalizations`; register `zenWidgetsLocaleDelegate` beside the other packages'
+  delegates. The application supplies only its own labels.
+- **Genuinely different things are not "replacements".** `PopupMenuButton`, `ListTile`, `Card`,
+  `Text`, layout and theming widgets have no framework counterpart and are used directly.
+
+A new control's home is decided by concern, as `zen_ui_navigation` and `zen_ui_identity` already
+divide it: navigation-specific pieces in `zen_ui_navigation`, identity-specific in `zen_ui_identity`,
+everything generic in `zen_ui_widgets`. The reference app `zen_demo` follows this table, so it is
+the worked example. See ADR-055.
+
 ## Accessibility — WCAG 2.2 AA, on desktop and web
 
 Every interactive surface jZen ships — the `zen_ui_*` packages on desktop and web, and the admin

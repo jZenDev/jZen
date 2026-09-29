@@ -134,6 +134,15 @@ in the Flutter SDK; `verify:contracts` fails if any of it is ever tracked. The s
 `ZenLocales` in `zen_core` (`{en, uk}`, fallback `en`), mirroring server `zen.core.i18n.ZenLocales`.
 The chosen `Locale` is also what `ZenClient` sends as `Accept-Language` (ADR-007).
 
+**App screens are built from the framework's UI packages, not raw Material.** Buttons, selects,
+segmented controls, switch rows, date and amount fields (with their range pairs), and dialogs/sheets
+come from `zen_ui_widgets` (`ZenButton`, `ZenSelect`, `ZenDateRangeField`, `showAdaptivePresentation`,
+...); sign-in and the shell from `zen_ui_identity` and `zen_ui_navigation`. Do not hand-roll an
+`ElevatedButton`/`FilledButton`/`DropdownButton`/`showDatePicker` in an app, and do not branch on
+platform for Cupertino-vs-Material. A missing generic control is a framework gap: add it to
+`zen_ui_widgets` (with its accessibility suite), then use it. Table and rules: STANDARDS "Client UI:
+the framework's controls first"; the `use-zen-ui` skill carries the working version.
+
 **The Dart/Flutter client keeps compile-time config** (`String.fromEnvironment`) and
 `if (dart.library.io)` / `if (dart.library.html)` conditional imports — this is load-bearing, not a
 limitation. It lets the toolchain tree-shake native-only code (the Protobuf binary path) out of the
@@ -238,6 +247,7 @@ retry problem.
 | `skills/add-endpoint` | add a REST endpoint contract-first (OpenAPI merge, Jandex, no-Jackson) |
 | `skills/sync-contracts` | the proto → Java/Dart/TS regeneration loop and its drift gate |
 | `skills/run-demo` | boot the stack locally |
+| `skills/use-zen-ui` | build screens from `zen_ui_widgets` controls, not raw Material |
 | `skills/deploy` | Cloud Run deploy; who runs it, and the one-time-resource rule |
 | `skills/long-job` | how to wait on a slow command, with this repo's measured durations |
 | `agents/visual-verify` | drive a change in a real browser; returns pass/fail + screenshots |

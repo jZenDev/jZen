@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_transport/zen_transport.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 
 import '../l10n/generated/demo_localizations.dart';
 import '../providers.dart';
@@ -100,13 +101,11 @@ class _DemoDashboardScreenState extends ConsumerState<DemoDashboardScreen> {
           Wrap(
             spacing: 8,
             children: [
-              FilledButton(
-                onPressed: () => _ping(ZenTransportFormat.json),
-                child: Text(messages.pingJson),
-              ),
-              FilledButton.tonal(
+              ZenButton(label: messages.pingJson, onPressed: () => _ping(ZenTransportFormat.json)),
+              ZenButton(
+                label: messages.pingProtobuf,
+                variant: ZenButtonVariant.secondary,
                 onPressed: () => _ping(ZenTransportFormat.protobuf),
-                child: Text(messages.pingProtobuf),
               ),
             ],
           ),
@@ -117,11 +116,16 @@ class _DemoDashboardScreenState extends ConsumerState<DemoDashboardScreen> {
           Wrap(
             spacing: 8,
             children: [
-              FilledButton(onPressed: connected ? null : _connect, child: Text(messages.wsConnect)),
-              FilledButton.tonal(onPressed: connected ? _send : null, child: Text(messages.wsSend)),
-              OutlinedButton(
+              ZenButton(label: messages.wsConnect, onPressed: connected ? null : _connect),
+              ZenButton(
+                label: messages.wsSend,
+                variant: ZenButtonVariant.secondary,
+                onPressed: connected ? _send : null,
+              ),
+              ZenButton(
+                label: messages.wsDisconnect,
+                variant: ZenButtonVariant.text,
                 onPressed: connected ? _disconnect : null,
-                child: Text(messages.wsDisconnect),
               ),
             ],
           ),

@@ -2,7 +2,7 @@ name: zen_demo_client
 description: >-
   The jZen reference app: the runnable showcase of jZen driving the real Quarkus + Supabase
   backend, and the living end-to-end test stand (task test:e2e) wired into the CI release gate.
-# Assembled from the jZen framework packages (Riverpod + zen_ui_identity + zen_ui_navigation
+# Assembled from the jZen framework packages (Riverpod + zen_ui_identity + zen_ui_navigation + zen_ui_widgets
 # + zen_transport) against the Quarkus server.
 publish_to: "none"
 # Lockstep with the product version (STANDARDS.md "Versioning").
@@ -34,6 +34,8 @@ dependencies:
     path: ../../../client/zen_ui_identity
   zen_ui_navigation:
     path: ../../../client/zen_ui_navigation
+  zen_ui_widgets:
+    path: ../../../client/zen_ui_widgets
   app_links: ^7.2.1
   meta: ^1.16.0
 

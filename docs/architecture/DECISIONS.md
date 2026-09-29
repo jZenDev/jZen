@@ -44,6 +44,12 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
   precision beyond `maxFractionDigits` are the application's.
 - **Stock gaps fixed in the wrappers:** a disabled `CupertinoButton` still advertises a tap action and
   no disabled state; a web `CupertinoButton` ignores Enter. `ZenButton` states both.
+- **Applications are expected to use these controls, not raw Material.** STANDARDS "Client UI: the
+  framework's controls first" carries the rule and a widget-for-widget table; BLUEPRINT "Client UI"
+  names the three UI packages. Because `CLAUDE.md`, `AGENTS.md` and `.claude/` are not shipped with
+  the packages, the rule also lives where a consumer reads it — the root README ("Building your own
+  app on jZen", with a block to paste into an app's own agent instructions), `client/README.md` and
+  the `zen_ui_widgets` README; the `use-zen-ui` skill serves agents working inside this repo. The reference app `zen_demo` follows it.
 - **The package owns a few strings** (`ZenWidgetsLocalizations`, `en`/`uk`, degrading delegate
   `zenWidgetsLocaleDelegate`, ADR-009/044). The class is prefixed `Zen` because Flutter already
   exports `WidgetsLocalizations`. An app using only `showAdaptivePresentation` needs no delegate.

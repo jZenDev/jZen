@@ -69,6 +69,31 @@ The controls' few strings (validation errors, "Select a date") come from
 | `ZenSelect`, `ZenDateField` | wheel picker on **iOS**; macOS keeps the dropdown / calendar | dropdown / calendar dialog |
 | `ZenAmountField` | one Material field on every platform | |
 
+## 🤖 For applications and their coding agents
+
+**Build screens from these controls, not raw Material.** A product on jZen should not hand-roll an
+`ElevatedButton`, `DropdownButton`, `showDatePicker` or a `showDialog` for a form — use the control
+above. The framework owns the platform idiom, the focus ring, the announcement and the contrast; fixing
+one of them here fixes every app. The full rule and the widget-for-widget table are in the jZen repo:
+`docs/architecture/STANDARDS.md`, "Client UI: the framework's controls first".
+
+Copy this into your application's `CLAUDE.md` (or equivalent agent instructions):
+
+```markdown
+## UI controls
+
+Build Flutter screens from the jZen framework's controls, never raw Material equivalents:
+`ZenButton` (not ElevatedButton/FilledButton/OutlinedButton/TextButton), `ZenSelect<T>` (not
+DropdownButton), `ZenSegmentedControl<T>`, `ZenSwitchRow`, `ZenDateField` / `ZenDateRangeField` (not
+showDatePicker), `ZenAmountField` / `ZenAmountRangeField` (+ `normalizeAmount`), and
+`showAdaptivePresentation` (not showDialog/showModalBottomSheet), all from
+`package:zen_ui_widgets/zen_ui_widgets.dart`. Sign-in and the shell come from `zen_ui_identity` and
+`zen_ui_navigation`. Never branch on platform to pick Cupertino vs Material. Do not wrap these in
+`Semantics(label:, button:)`: they already announce once. Money semantics (minor units, currency)
+stay in the app; read `normalizeAmount(text)`. If a generic control is missing, add it to
+`zen_ui_widgets` upstream rather than hand-rolling it in the app.
+```
+
 ## 📦 Installation
 
 Inside the jZen client workspace, depend on it by path:

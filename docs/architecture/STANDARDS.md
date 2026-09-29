@@ -667,7 +667,10 @@ review item: each rule below has a test that fails when it is broken (ADR-054).
   `onClick` on a `<tr>` with no tab stop, so a list pairs it with `ShowButton` / `EditButton`.
 - **Focus is always visible, at 3:1** (2.4.7, 1.4.11). Material 3's focus overlay is ~10% opacity,
   about 1.2:1 on a light surface, so framework navigation draws `FocusRing` (a 2 px ring in
-  `colorScheme.primary`, keyboard highlight mode only).
+  `colorScheme.primary`). It follows the CSS `:focus-visible` rule: shown after a key press and
+  whenever assistive technology is attached (which moves focus through the semantics tree without
+  key events), hidden after any pointer press — mouse, touch or pen. Flutter's own highlight mode
+  cannot be used for this: it counts a mouse as keyboard-style input and hides only for touch.
 - **Focus follows navigation.** In the admin, a route change moves focus to `#main-content`
   (the scaffold's `Layout`); otherwise the control that navigated unmounts and focus falls to
   `<body>`.

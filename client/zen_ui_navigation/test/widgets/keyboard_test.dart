@@ -1,4 +1,6 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_desktop.dart';
@@ -76,7 +78,49 @@ void main() {
       expect(ringed(tester), <int>[0]);
     });
 
-    testWidgets('a pointer tap draws no focus ring', (tester) async {
+    // The browser-verified defect: Flutter's highlight mode counts a mouse as keyboard-style
+    // input, so a ring keyed off it stayed lit after a click. Every pointer kind must clear it.
+    // Semantics off: testWidgets enables them by default, which is the "assistive technology
+    // attached" case below, where the ring deliberately stays.
+    for (final kind in <PointerDeviceKind>[
+      PointerDeviceKind.mouse,
+      PointerDeviceKind.touch,
+      PointerDeviceKind.stylus,
+    ]) {
+      testWidgets('a ${kind.name} press clears the ring, and a key press restores it', (
+        tester,
+      ) async {
+        await pumpNavigation(
+          tester,
+          (ctx) => buildDesktopNavigation(
+            context: ctx,
+            selectedIndex: 0,
+            onItemSelected: (_) {},
+            items: auditItems(),
+          ),
+        );
+        await press(tester, LogicalKeyboardKey.tab);
+        expect(ringed(tester), <int>[0]);
+
+        await tester.tap(find.text('Item 1'), kind: kind);
+        await tester.pumpAndSettle();
+        expect(ringed(tester), isEmpty, reason: 'no ring after a ${kind.name} press');
+
+        // A bare modifier is how Cmd/Shift+click begins; it is not keyboard navigation.
+        await press(tester, LogicalKeyboardKey.shiftLeft);
+        expect(ringed(tester), isEmpty);
+
+        await press(tester, LogicalKeyboardKey.arrowDown);
+        expect(ringed(tester), hasLength(1), reason: 'keyboard input shows focus again');
+      }, semanticsEnabled: false);
+    }
+
+    // A screen reader or switch device moves focus through the semantics tree and sends no key
+    // events, so "the last input was a key" cannot be the only way the ring appears.
+    testWidgets('with assistive technology attached the ring shows despite a mouse click', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
       await pumpNavigation(
         tester,
         (ctx) => buildDesktopNavigation(
@@ -86,12 +130,18 @@ void main() {
           items: auditItems(),
         ),
       );
-      await press(tester, LogicalKeyboardKey.tab);
-      expect(ringed(tester), <int>[0]);
-
-      await tester.tap(find.text('Item 1'));
+      await tester.tap(find.text('Item 1'), kind: PointerDeviceKind.mouse);
       await tester.pumpAndSettle();
-      expect(ringed(tester), isEmpty);
+
+      // Focus moved the way assistive technology moves it: a semantics action, no key event.
+      final node = tester.getSemantics(find.text('Item 2'));
+      tester.binding.renderViews.first.owner!.semanticsOwner!.performAction(
+        node.id,
+        SemanticsAction.focus,
+      );
+      await tester.pumpAndSettle();
+      expect(ringed(tester), <int>[2]);
+      handle.dispose();
     });
   });
 
@@ -147,6 +197,20 @@ void main() {
       final Rect last = tester.getRect(find.text('Item ${count - 1}'));
       expect(last.right, lessThanOrEqualTo(800));
     });
+  });
+
+  testWidgets('the web top menu bar spans the window', (tester) async {
+    await pumpNavigation(
+      tester,
+      (ctx) => buildPlatformNavigation(
+        context: ctx,
+        selectedIndex: 0,
+        onItemSelected: (_) {},
+        items: auditItems(),
+      ),
+    );
+    expect(tester.getSize(find.byType(NavigationRegion)).width, 1200);
+    expect(tester.getTopLeft(find.text('Item 0')).dx, lessThan(100), reason: 'starts at the left');
   });
 
   group('Web drawer', () {

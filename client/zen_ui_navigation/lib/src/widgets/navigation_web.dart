@@ -54,25 +54,30 @@ Widget _widget({
   // TOP MENU
   return Column(
     children: <Widget>[
-      Material(
-        elevation: 3,
-        child: NavigationRegion(
-          // Scrolls rather than overflows: at 200% text size (WCAG SC 1.4.4) the labels no longer
-          // fit a row that was sized for 100%, and a clipped destination cannot be reached.
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: <Widget>[
-                for (int i = 0; i < items.length; i++)
-                  _TopMenuDestination(
-                    item: items[i],
-                    selected: i == selectedIndex,
-                    onPressed: () {
-                      onItemSelected(i);
-                      onItemSelectedId?.call(items[i].id);
-                    },
-                  ),
-              ],
+      // Full width by hand: the scroll view below sizes its row to the labels, and in a centring
+      // column the bar would shrink to match instead of spanning the window.
+      SizedBox(
+        width: double.infinity,
+        child: Material(
+          elevation: 3,
+          child: NavigationRegion(
+            // Scrolls rather than overflows: at 200% text size (WCAG SC 1.4.4) the labels no longer
+            // fit a row that was sized for 100%, and a clipped destination cannot be reached.
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: <Widget>[
+                  for (int i = 0; i < items.length; i++)
+                    _TopMenuDestination(
+                      item: items[i],
+                      selected: i == selectedIndex,
+                      onPressed: () {
+                        onItemSelected(i);
+                        onItemSelectedId?.call(items[i].id);
+                      },
+                    ),
+                ],
+              ),
             ),
           ),
         ),

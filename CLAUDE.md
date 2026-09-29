@@ -47,7 +47,8 @@ Common commands (`task --list` for all):
   `flutter test --dart-define=ZEN_ENV=dev --dart-define=ZEN_PLATFORM=<host>`, pure-Dart get `dart test`).
   Single package: `cd client/<pkg> && dart test test/<file>_test.dart`.
 - **Transport codec matrix**: `task test:client:matrix` recompiles per `ZEN_ENV`/platform.
-- **Admin**: `task test:admin` (`tsc -b` typecheck of the panel + the `@jzen/admin-core` scaffold).
+- **Admin**: `task test:admin` (`tsc -b` typecheck of the panel + the `@jzen/admin-core` scaffold,
+  then its vitest suite, including the axe-core WCAG gate). Single file: `cd apps/zen_demo/zen_demo_admin && pnpm exec vitest run src/<file>.test.tsx`.
 - **E2E**: `task test:e2e` — boots real Supabase + Quarkus, runs zen_demo's pure-Dart integration
   suite (no mocks) on `ZEN_APP_PORT` (default 8085), propagates exit code.
 

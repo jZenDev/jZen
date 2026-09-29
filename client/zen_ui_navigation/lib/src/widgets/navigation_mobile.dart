@@ -38,31 +38,16 @@ Widget _widget({
 
   // Build bottom navigation bar items
   final List<BottomNavigationBarItem> itemsElements = [];
-  for (int i = 0; i < visible.length; i++) {
-    final item = visible[i];
-    itemsElements.add(
-      BottomNavigationBarItem(
-        icon: Semantics(
-          label: item.label,
-          button: true,
-          selected: i == selectedIndex,
-          child: navigationBadge(item, i == selectedIndex),
-        ),
-        label: item.label,
-      ),
-    );
+  for (final item in visible) {
+    // The bar announces the label, selected state and position itself; see navigationBadge.
+    itemsElements.add(BottomNavigationBarItem(icon: navigationBadge(item), label: item.label));
   }
 
   // Create the "more" item if there are overflow items
   final List<BottomNavigationBarItem> itemsMoreLabel = overflow.isNotEmpty
       ? <BottomNavigationBarItem>[
           BottomNavigationBarItem(
-            icon: Semantics(
-              label: moreLabel,
-              button: true,
-              selected: selectedIndex >= zenMaxItemsMobile,
-              child: const Icon(zenIsIOS ? CupertinoIcons.ellipsis : Icons.more_horiz),
-            ),
+            icon: const Icon(zenIsIOS ? CupertinoIcons.ellipsis : Icons.more_horiz),
             label: moreLabel,
             tooltip: moreLabel,
           ),

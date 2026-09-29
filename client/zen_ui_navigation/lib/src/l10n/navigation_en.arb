@@ -3,5 +3,14 @@
   "more": "More",
   "@more": {
     "description": "Label and tooltip of the mobile overflow button, shown when the item count exceeds zenMaxItemsMobile."
+  },
+  "badgeCount": "{count, plural, =1{1 new} other{{count} new}}",
+  "@badgeCount": {
+    "description": "What a screen reader announces for a destination's badge, after the destination's label: 'Inbox, 3 new'. The badge itself shows only the number, which read alone gives no context.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }

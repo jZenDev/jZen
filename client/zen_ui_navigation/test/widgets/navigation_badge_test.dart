@@ -23,7 +23,7 @@ void main() {
       MaterialApp(
         localizationsDelegates: NavigationLocalizations.localizationsDelegates,
         supportedLocales: NavigationLocalizations.supportedLocales,
-        home: Scaffold(body: navigationBadge(item, false)),
+        home: Scaffold(body: navigationBadge(item)),
       ),
     );
 
@@ -50,7 +50,7 @@ void main() {
       CupertinoApp(
         localizationsDelegates: NavigationLocalizations.localizationsDelegates,
         supportedLocales: NavigationLocalizations.supportedLocales,
-        home: Builder(builder: (c) => navigationBadge(item, false)),
+        home: Builder(builder: (c) => navigationBadge(item)),
       ),
     );
 
@@ -68,7 +68,7 @@ void main() {
       builder: (c) => const SizedBox.shrink(),
     );
 
-    await tester.pumpWidget(MaterialApp(home: Scaffold(body: navigationBadge(item, false))));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: navigationBadge(item))));
     await tester.pumpAndSettle();
 
     expect(find.text('1'), findsNothing);
@@ -88,7 +88,7 @@ void main() {
       MaterialApp(
         localizationsDelegates: NavigationLocalizations.localizationsDelegates,
         supportedLocales: NavigationLocalizations.supportedLocales,
-        home: Scaffold(body: Center(child: navigationBadge(item, false))),
+        home: Scaffold(body: Center(child: navigationBadge(item))),
       ),
     );
 
@@ -110,7 +110,7 @@ void main() {
       MaterialApp(
         localizationsDelegates: NavigationLocalizations.localizationsDelegates,
         supportedLocales: NavigationLocalizations.supportedLocales,
-        home: Scaffold(body: Center(child: navigationBadge(item, false))),
+        home: Scaffold(body: Center(child: navigationBadge(item))),
       ),
     );
 
@@ -133,7 +133,7 @@ void main() {
       CupertinoApp(
         localizationsDelegates: NavigationLocalizations.localizationsDelegates,
         supportedLocales: NavigationLocalizations.supportedLocales,
-        home: CupertinoPageScaffold(child: navigationBadge(item, false)),
+        home: CupertinoPageScaffold(child: navigationBadge(item)),
       ),
     );
 

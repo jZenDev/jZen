@@ -3,9 +3,15 @@ import 'package:flutter/material.dart';
 import '../zen_navigation.dart';
 import '../zen_navigation_item.dart';
 import 'navigation_badge.dart';
+import 'navigation_focus.dart';
 
 /// Platform-specific navigation builder for desktop platforms.
 /// Shows all navigation items in a NavigationRail.
+///
+/// NavigationRail announces each destination's label, its selected state and its position
+/// ("Tab 1 of 3") itself, so the destinations add no semantics of their own. [FocusRing] sits
+/// in the icon because the rail exposes no hook for its focus styling, and the icon is inside
+/// the destination's focus node.
 const PlatformNavigationBuilder buildDesktopNavigation = _widget;
 
 Widget _widget({
@@ -17,27 +23,24 @@ Widget _widget({
   String? labelMore,
 }) => Row(
   children: [
-    NavigationRail(
-      selectedIndex: selectedIndex,
-      onDestinationSelected: (int index) {
-        onItemSelected(index);
-        onItemSelectedId?.call(items[index].id);
-      },
-      labelType: NavigationRailLabelType.all,
-      destinations: [
-        for (int i = 0; i < items.length; i++)
-          NavigationRailDestination(
-            icon: Semantics(
-              label: items[i].label,
-              button: true,
-              selected: i == selectedIndex,
-              child: navigationBadge(items[i], i == selectedIndex),
+    NavigationRegion(
+      child: NavigationRail(
+        selectedIndex: selectedIndex,
+        onDestinationSelected: (int index) {
+          onItemSelected(index);
+          onItemSelectedId?.call(items[index].id);
+        },
+        labelType: NavigationRailLabelType.all,
+        destinations: [
+          for (final item in items)
+            NavigationRailDestination(
+              icon: FocusRing(child: navigationBadge(item)),
+              label: Text(item.label),
             ),
-            label: Text(items[i].label),
-          ),
-      ],
+        ],
+      ),
     ),
     const VerticalDivider(thickness: 1, width: 1),
-    Expanded(child: items[selectedIndex].builder(context)),
+    Expanded(child: NavigationContent(child: items[selectedIndex].builder(context))),
   ],
 );

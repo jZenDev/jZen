@@ -44,15 +44,21 @@ class IdentityThemeExtension extends ThemeExtension<IdentityThemeExtension> {
     this.spacing = 16.0,
   });
 
-  /// fallback factory
+  /// The palette used when an application registers no extension of its own.
+  ///
+  /// Every colour here is drawn as text on [surfaceColor] somewhere — the brand colour as a
+  /// button label and title, the subtitle colour as body copy — so each clears the 4.5:1 WCAG AA
+  /// text contrast against white. The Material 500 shades this used to use do not: they measured
+  /// between 2.2:1 (orange) and 3.7:1 (red). The shades below all clear 5:1, so the 10% tint a
+  /// status chip lays under them does not pull any of them back under the line.
   factory IdentityThemeExtension.fallback() => const IdentityThemeExtension(
-    successColor: Colors.green,
-    errorColor: Colors.red,
-    warningColor: Colors.orange,
-    brandColor: Colors.blue,
+    successColor: Color(0xFF2E7D32), // Colors.green.shade800, 5.1:1 on white
+    errorColor: Color(0xFFC62828), // Colors.red.shade800, 5.6:1
+    warningColor: Color(0xFFB45309), // amber; no Material orange reaches 4.5:1 on white, 5.0:1
+    brandColor: Color(0xFF1565C0), // Colors.blue.shade800, 5.8:1
     surfaceColor: Colors.white,
     titleStyle: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-    subtitleStyle: TextStyle(fontSize: 14, color: Colors.grey),
+    subtitleStyle: TextStyle(fontSize: 14, color: Color(0xFF616161)), // grey.shade700, 6.2:1
   );
 
   @override

@@ -34,8 +34,11 @@ class IdentityStatusChip extends StatelessWidget {
         Theme.of(context).extension<IdentityThemeExtension>() ?? IdentityThemeExtension.fallback();
     final effectiveColor = color ?? theme.brandColor;
 
+    // One node, read once. Semantics(label) around a Text announced the label twice.
     return Semantics(
+      container: true,
       label: label,
+      excludeSemantics: true,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
@@ -43,9 +46,18 @@ class IdentityStatusChip extends StatelessWidget {
           border: Border.all(color: effectiveColor),
           borderRadius: BorderRadius.circular(16),
         ),
+        // The status colour marks the border and tint; the label is drawn in onSurface. The
+        // colour is the application's, and a status colour that reads well as a border (a
+        // mid-tone green or orange) is routinely under the 4.5:1 WCAG AA asks of 12px text — so
+        // colouring the text made its legibility depend on a palette this widget cannot check.
+        // The label, not the colour, is what says which status it is (SC 1.4.1).
         child: Text(
           label,
-          style: TextStyle(color: effectiveColor, fontWeight: FontWeight.w600, fontSize: 12),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurface,
+            fontWeight: FontWeight.w600,
+            fontSize: 12,
+          ),
         ),
       ),
     );

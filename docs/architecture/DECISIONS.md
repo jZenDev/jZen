@@ -15,6 +15,59 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-054 — WCAG 2.2 AA is the accessibility bar for desktop and web, enforced by tests
+
+**Date:** 2026-09-28. **Status:** accepted.
+
+### Decision
+
+- **Every interactive surface jZen ships meets WCAG 2.2 AA on desktop and web**, and the rules
+  are written down in STANDARDS "Accessibility" so they are not re-argued per change.
+- **Enforced in `task test`.** Flutter: merged-semantics, keyboard, focus-ring and rendered-contrast
+  suites in `zen_ui_navigation` and `zen_ui_identity`. Admin: `task test:admin` now runs a vitest
+  suite as well as `tsc -b` — axe-core (WCAG A/AA tags) over the real panel, a keyboard walkthrough,
+  focus on navigation, and a palette contrast audit.
+- **Framework fixes the audit found**, each guarded by a test that fails when it is reverted:
+  - Navigation destinations were announced two or three times, and the web top menu nested three
+    `button` nodes of which only one responded. `navigationBadge` now carries no label or role —
+    only the badge count, as a localized `value` ("3 new").
+  - `IdentityTextField`'s focusable node was named by its hint; its label is now merged into it.
+  - Focus was invisible (Material 3's ~1.2:1 overlay). New `FocusRing`, `NavigationRegion`
+    (`navigation` landmark, arrow keys on web) and `NavigationContent` (`main` landmark).
+  - The web top menu overflowed at 200% text; it scrolls.
+  - The admin scaffold exports `Layout` (focus to `#main-content` on navigation) and `lightTheme` /
+    `darkTheme` (react-admin's defaults with the skip link at ~1:1 and the light app bar at 3.1:1
+    corrected).
+  - zen_demo's user list gained Show/Edit buttons (row click is mouse-only) and lost the delete
+    affordances the API cannot honour.
+
+### What this supersedes, and why
+
+- **`IdentityStatusChip` drew its label in the status colour** (`zen_ui_identity`, no prior ADR) →
+  **changed:** the label is `onSurface`; the colour marks border and tint. *Why:* the status colour
+  is the application's, and the mid-tone greens and oranges an application plausibly picks are
+  under 3:1 as 12px text. A widget cannot guarantee legibility of text drawn in a colour it does not
+  choose; the label already carries the meaning, so the colour does not have to.
+- **`IdentityThemeExtension.fallback()` used Material 500 shades** (blue/green/orange/red, grey
+  subtitle) → **changed** to the 800/900 shades (and an amber for warning). *Why:* every one of
+  the old colours was between 2.2:1 and 3.7:1 on white, and each is drawn as text somewhere.
+- **"`task test:admin` — `tsc -b` typecheck of the panel + the scaffold"** (CLAUDE.md; the task's
+  own description) → **extended** with the vitest suite. *Why:* a typecheck cannot see an unnamed
+  checkbox or an unreachable record; CI already runs `task test:admin`, so extending it wires the
+  gate without a new CI step.
+
+### Consequence
+
+- A change that adds a view or widget adds it to these suites in the same change (STANDARDS).
+- Not covered: `eslint-plugin-jsx-a11y`. The panel's own JSX is a thin layer over react-admin, and
+  every defect found here lived in the rendered DOM of library components, which a lint of our
+  source cannot see; axe over the rendered panel can. Revisit if the panel grows hand-written UI.
+- Verified green: `zen_ui_navigation` (VM on macos/windows/linux defines, and `--platform chrome`),
+  `zen_ui_identity`, `zen_demo_client`, `task test:admin`. Each fix was reverted in turn and its
+  suite went red.
+
+---
+
 ## ADR-053 — Adding an edge in front of Cloud Run must also re-decide `zen.ratelimit.forwarded-hops`
 
 **Date:** 2026-09-28. **Status:** accepted. **Amends:** ADR-027 ("The trigger"). **Follows:**

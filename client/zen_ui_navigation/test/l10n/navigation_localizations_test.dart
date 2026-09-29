@@ -20,6 +20,20 @@ void main() {
     expect(uk.more, 'Ще');
   });
 
+  // Read by a screen reader after the destination's label, so each locale's plural forms matter:
+  // Ukrainian has four, and a wrong form is a grammatical error heard on every announcement.
+  test('resolves the badge announcement with each locale\'s plural forms', () async {
+    final en = await NavigationLocalizations.delegate.load(const Locale(ZenLocales.en));
+    final uk = await NavigationLocalizations.delegate.load(const Locale(ZenLocales.uk));
+
+    expect(en.badgeCount(1), '1 new');
+    expect(en.badgeCount(4), '4 new');
+    expect(uk.badgeCount(1), '1 нове');
+    expect(uk.badgeCount(3), '3 нові');
+    expect(uk.badgeCount(5), '5 нових');
+    expect(uk.badgeCount(21), '21 нове');
+  });
+
   // ADR-044: an application's locale set may be wider than what this package ships. The
   // generated delegate declines an unshipped locale, which leaves nothing to resolve
   // NavigationLocalizations from and throws on first read; the degrading delegate falls back.

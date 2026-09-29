@@ -23,11 +23,12 @@ Every package shares one product version (`0.1.0` today) — jZen is versioned i
 | `zen_identity` | The `IdentityRepository` contract and its Supabase-backed implementation, called over `zen_transport`. |
 | [`zen_ui_identity`](zen_ui_identity/README.md) | Adaptive Flutter UI for the identity flows (login, register, profile, roles). Speaks the `zen_identity` contract only. |
 | [`zen_ui_navigation`](zen_ui_navigation/README.md) | Adaptive, responsive navigation layer (`ZenNavigation`). |
+| [`zen_ui_widgets`](zen_ui_widgets/README.md) | Shared adaptive widgets — `showAdaptivePresentation` (sheet on native mobile, dialog elsewhere), Cupertino on iOS and macOS, Material elsewhere. |
 
-`zen_core`, `zen_transport`, and `zen_identity` are documented here; the two `zen_ui_*` packages
+`zen_core`, `zen_transport`, and `zen_identity` are documented here; the three `zen_ui_*` packages
 carry their own READMEs because they are shaped for eventual pub.dev publication (they already
-ship their own `LICENSE`), which gives them an audience the monorepo view does not serve. Each
-`zen_ui_*` package also has an `example/` app demonstrating it in isolation.
+ship their own `LICENSE`), which gives them an audience the monorepo view does not serve. `zen_ui_navigation`
+and `zen_ui_identity` also have an `example/` app demonstrating them in isolation.
 
 ## ⚙️ Client config is compile-time (the load-bearing rule)
 

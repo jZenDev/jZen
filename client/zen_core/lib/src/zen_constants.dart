@@ -61,6 +61,13 @@ const bool zenIsMobile = zenIsAndroid || zenIsIOS;
 /// Whether the current platform is desktop (macOS, Linux, or Windows).
 const bool zenIsDesktop = zenIsMacOS || zenIsLinux || zenIsWindows;
 
+/// Whether the current platform is an Apple platform (iOS or macOS).
+///
+/// The grouping the UI packages branch on to render Cupertino instead of Material. Nothing
+/// else spans exactly {iOS, macOS}: [zenIsMobile] puts iOS with Android and [zenIsDesktop]
+/// puts macOS with Linux and Windows.
+const bool zenIsApplePlatform = zenIsIOS || zenIsMacOS;
+
 /// Maximum number of items to display in the mobile navigation bar.
 const int zenMaxItemsMobile = 4;
 

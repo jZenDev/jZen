@@ -70,6 +70,11 @@ vars:
   # application with two pub workspaces passes both. Defaults to the client tier alone.
   DART_ROOTS: '{{.DART_ROOTS | default .CLIENT_DIR}}'
 
+  # The exemption list for `verify:widget-files`, relative to ITS OWN root. Empty means none, which
+  # is the right default: an exemption is argued in the file, one line each with its reason, and an
+  # application that has none should not need to create an empty file to say so.
+  WIDGET_FILES_SUPPRESSIONS: '{{.WIDGET_FILES_SUPPRESSIONS | default ""}}'
+
   # The application's own react-admin panel, relative to ITS OWN root. Assembles @jzen/admin-core
   # (ADR-005) and owns the generated schema. `deps:admin` and `generate:api:ts` run pnpm here; both
   # skip with a note if the directory is absent, so an application with no admin panel is fine.
@@ -654,6 +659,51 @@ tasks:
         fi
         echo "Generated localizations correctly untracked."
 
+  verify:widget-files:
+    desc: Fail if a Dart file in the application's packages defines more than one widget
+    silent: true
+    summary: |
+      Enforces STANDARDS "One widget per file", the way Java holds a class to a file: every Flutter
+      widget class lives in its own file, named for the class in snake_case, and a helper widget is
+      a public class in its own file rather than a private `_Foo` tucked into its screen's. The one
+      exception is by construction: a `StatefulWidget` and its own private `State` stay together,
+      because Flutter needs `State` private to and beside its widget, so the pair counts as one.
+      Non-widget classes (notifiers, painters, param objects) are outside the rule.
+
+      WHY A GATE. The rule was held only in one maintainer's habit, so it bound no other
+      contributor, no other model and no other consumer, and an application broke it with nothing
+      failing. A rule that is not checked is a preference.
+
+      It scans `lib/` of every Dart package under DART_ROOTS (default: CLIENT_DIR), skipping
+      `generated/` (which covers `l10n/generated`), and exits non-zero when a file defines more than
+      one widget — or when the scan could not be made: a root that does not exist, one with no
+      package under it, a file that cannot be read, an exemption that matches nothing. "We did not
+      look" never shares an exit code with "clean". It prints file, line and the widgets found.
+
+      WIDGETS ARE RECOGNISED BY BASE CLASS: anything extending a class whose name ends in `Widget`
+      (`StatelessWidget`, `ConsumerWidget`, `HookWidget`, ...) plus `FormField` and the
+      `Inherited*` family, followed transitively through the scanned packages. A widget extending a
+      base declared outside them whose name does not end in `Widget` is not seen.
+
+      EXEMPTIONS: set WIDGET_FILES_SUPPRESSIONS on the include to a file of `<path>  <reason>` lines
+      (paths relative to the application's root; the reason is required and an entry matching
+      nothing fails). An exemption must say what the file carries that splitting would lose;
+      "inconvenient to fix" is not an answer. The reference list is
+      `scripts/widget-files-suppressions.txt`, and it is empty.
+
+      Part of `test:client`, so an application that already runs that gate inherits this one with
+      no change of its own. Implementation: `scripts/verify-widget-files.py`, covered by
+      `task test:scripts` in the jZen checkout.
+    cmds:
+      - |
+        set -eu
+        cd "{{.ROOT_DIR}}"
+        set --
+        if [ -n "{{.WIDGET_FILES_SUPPRESSIONS}}" ]; then
+          set -- --suppressions "{{.WIDGET_FILES_SUPPRESSIONS}}"
+        fi
+        python3 "{{.JZEN_DIR}}/scripts/verify-widget-files.py" "$@" {{.DART_ROOTS}}
+
   test:client:
     desc: Run every Dart/Flutter suite in the application's packages
     silent: true
@@ -668,6 +718,9 @@ tasks:
       Linux would compile the wrong branch of every zenIsDesktop constant on the one machine able
       to check them (ADR-045).
     cmds:
+      # First, and cheap: a structural rule no test catches, because a file with two widgets passes
+      # every suite. See verify:widget-files.
+      - task: verify:widget-files
       - task: generate:l10n
       - |
         set -e

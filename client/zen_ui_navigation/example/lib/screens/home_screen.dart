@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/generated/example_localizations.dart';
+import 'feature_item.dart';
 
 /// Home screen showing an overview
 class HomeScreen extends StatelessWidget {
@@ -54,25 +55,14 @@ class HomeScreen extends StatelessWidget {
           children: [
             Text(messages.homeFeaturesTitle, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
-            _FeatureItem(text: messages.homeFeaturesAdaptive),
-            _FeatureItem(text: messages.homeFeaturesHighlights),
-            _FeatureItem(text: messages.homeFeaturesOverflow),
-            _FeatureItem(text: messages.homeFeaturesBadges),
-            _FeatureItem(text: messages.homeFeaturesRiverpod),
+            FeatureItem(text: messages.homeFeaturesAdaptive),
+            FeatureItem(text: messages.homeFeaturesHighlights),
+            FeatureItem(text: messages.homeFeaturesOverflow),
+            FeatureItem(text: messages.homeFeaturesBadges),
+            FeatureItem(text: messages.homeFeaturesRiverpod),
           ],
         ),
       ),
     );
-  }
-}
-
-class _FeatureItem extends StatelessWidget {
-  const _FeatureItem({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Text(text));
   }
 }

@@ -703,6 +703,40 @@ divide it: navigation-specific pieces in `zen_ui_navigation`, identity-specific 
 everything generic in `zen_ui_widgets`. The reference app `zen_demo` follows this table, so it is
 the worked example. See ADR-055.
 
+## One widget per file
+
+Every Flutter widget class lives in **its own file, named for the class in snake_case** —
+`ZenAmountField` in `zen_amount_field.dart`, `DemoSplash` in `demo_splash.dart` — the way Java holds a
+class to a file. A widget is a class that extends a widget base: `StatelessWidget`, `StatefulWidget`,
+`ConsumerWidget`, `ConsumerStatefulWidget`, `HookWidget`, and the rest of that family.
+
+- **A helper widget is a public class in its own file**, not a file-private `_Foo` left in another
+  widget's file. A widget tucked into its screen's file cannot be found by name, cannot be tested or
+  reused on its own, and grows unreviewed there; the privacy that made it cheap to add is the thing
+  that hides it.
+- **Exception, by construction: a `StatefulWidget` and its own private `State` stay together.**
+  Flutter needs `State` private to, and beside, its widget, so the pair is one unit and counts as one
+  widget. A `State`, `ConsumerState` or other `State<...>` subclass is never counted. Two stateful
+  widgets in one file are still two widgets, each with its `State`.
+- **Non-widget classes are outside the rule as stated** — notifiers, painters, formatters, param
+  objects. Extending it to them is a separate decision, not an implication of this one.
+- **It is checked, not remembered.** `task verify:widget-files` (`scripts/verify-widget-files.py`)
+  scans `lib/` of every Dart package, skipping `generated/`, and fails when a file defines more than
+  one widget or when a scan could not be made — a missing path, a package-less root, an unreadable
+  file — because "we did not look" must never share an exit code with "clean" (see "Failures
+  surface"). It runs in `task test`, in CI, and as the first step of `zen:test:client`, so an
+  application that includes `Taskfile.app.yml` inherits it with no copy of its own.
+- **An exemption is argued, never taken for convenience.** The only mechanism is one file of
+  `<path>  <reason>` lines (`WIDGET_FILES_SUPPRESSIONS`; jZen's is
+  `scripts/widget-files-suppressions.txt`, and it is empty). The reason must say what the excluded
+  file *carries* that splitting would lose; an entry whose file no longer holds two widgets fails the
+  gate. "It is awkward to split" carries nothing, so the answer is to split it.
+
+What the check recognises: a base class whose name ends in `Widget`, plus `FormField` and the
+`Inherited*` family, followed through every scanned package. A widget extending a base declared
+*outside* the scanned packages whose name does not end in `Widget` is not seen; give such a base a
+`...Widget` name, or scan the package that declares it.
+
 ## Accessibility — WCAG 2.2 AA, on desktop and web
 
 Every interactive surface jZen ships — the `zen_ui_*` packages on desktop and web, and the admin

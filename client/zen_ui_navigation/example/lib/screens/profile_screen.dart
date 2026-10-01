@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/generated/example_localizations.dart';
+import 'profile_tile.dart';
+import 'profile_action_tile.dart';
 
 /// Profile screen showing user information
 class ProfileScreen extends StatelessWidget {
@@ -56,19 +58,19 @@ class ProfileScreen extends StatelessWidget {
           Card(
             child: Column(
               children: [
-                _ProfileTile(
+                ProfileTile(
                   icon: Icons.badge,
                   title: messages.profileBadgeCount,
                   subtitle: messages.profileBadgeSubtitle,
                 ),
                 const Divider(height: 1),
-                _ProfileTile(
+                ProfileTile(
                   icon: Icons.location_on,
                   title: messages.profileLocation,
                   subtitle: messages.profileLocationValue,
                 ),
                 const Divider(height: 1),
-                _ProfileTile(
+                ProfileTile(
                   icon: Icons.calendar_today,
                   title: messages.profileMemberSince,
                   subtitle: messages.profileMemberSinceValue,
@@ -80,19 +82,19 @@ class ProfileScreen extends StatelessWidget {
           Card(
             child: Column(
               children: [
-                _ProfileActionTile(
+                ProfileActionTile(
                   icon: Icons.notifications,
                   title: messages.profileNotifications,
                   onTap: () {},
                 ),
                 const Divider(height: 1),
-                _ProfileActionTile(
+                ProfileActionTile(
                   icon: Icons.security,
                   title: messages.profilePrivacy,
                   onTap: () {},
                 ),
                 const Divider(height: 1),
-                _ProfileActionTile(
+                ProfileActionTile(
                   icon: Icons.help,
                   title: messages.profileHelpSupport,
                   onTap: () {},
@@ -102,37 +104,6 @@ class ProfileScreen extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ProfileTile extends StatelessWidget {
-  const _ProfileTile({required this.icon, required this.title, required this.subtitle});
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(leading: Icon(icon), title: Text(title), subtitle: Text(subtitle));
-  }
-}
-
-class _ProfileActionTile extends StatelessWidget {
-  const _ProfileActionTile({required this.icon, required this.title, required this.onTap});
-
-  final IconData icon;
-  final String title;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon),
-      title: Text(title),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: onTap,
     );
   }
 }

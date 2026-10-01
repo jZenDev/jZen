@@ -1,0 +1,17 @@
+# Files exempt from `task verify:widget-files` (STANDARDS "One widget per file").
+#
+# One per line: <path>  <why splitting this file would lose something>
+#
+# Paths are relative to where the gate runs (the repository root, under `task`). The reason is not
+# optional: verify-widget-files.py refuses to parse a line without one, and refuses a line whose
+# file no longer holds two widgets, so an entry cannot outlive the condition it excuses. Same
+# shape and same reasoning as `audit-suppressions.txt` and `audit-client-suppressions.txt`.
+#
+# AN EXEMPTION IS ARGUED, NEVER TAKEN FOR CONVENIENCE. Before adding a line, say what the
+# excluded file *carries*. "Nothing that fixing it would lose" means fix the file: the rule exists
+# because a helper tucked into its screen's file is invisible to a search for it and drifts
+# unreviewed. Inconvenience is not a category. A StatefulWidget and its own State never need an
+# entry — the pair is already one unit.
+#
+# Empty is the correct state. It is empty now: every violation the gate found in jZen when it was
+# introduced was fixed by extraction.

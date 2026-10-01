@@ -5,7 +5,8 @@ import 'package:zen_ui_widgets/zen_ui_widgets.dart' show FocusRing;
 import '../zen_navigation.dart';
 import '../zen_navigation_item.dart';
 import 'navigation_badge.dart';
-import 'navigation_focus.dart';
+import 'navigation_content.dart';
+import 'navigation_region.dart';
 
 /// Platform-specific navigation builder for web
 /// It renders an AppBar w/ Drawer on narrow screens and

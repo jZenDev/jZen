@@ -34,6 +34,8 @@ includes:
       ADMIN_DIR: apps/zen_demo/zen_demo_admin
       # zen_demo's local dev URL scheme for auth deep-links (ADR-018/019).
       ZEN_AUTH_REDIRECT_URI: zendemo://auth-callback
+      # jZen's own exemption list for verify:widget-files, which is empty by design.
+      WIDGET_FILES_SUPPRESSIONS: scripts/widget-files-suppressions.txt
 
 vars:
   # server/ + client/ are the Java + Dart FRAMEWORK libraries; apps/ holds the full-stack
@@ -869,6 +871,7 @@ tasks:
       # the front and the thing that vouches for them follows straight behind.
       - task: verify:boundaries
       - task: verify:modules
+      - task: verify:widget-files
       - task: test:scripts
       - task: test:server
       - task: test:client
@@ -1021,11 +1024,11 @@ tasks:
       - pnpm exec vitest run
 
   test:scripts:
-    desc: Run the fixture tests for the Python dev scripts (the boundary, modules, docs and CVE gates)
+    desc: Run the fixture tests for the Python dev scripts (the boundary, modules, docs, widget-files and CVE gates)
     silent: true
     summary: |
       Covers the scripts on the Python side of STANDARDS "Scripting" — `verify:boundaries`,
-      `verify:modules`, `verify:docs`, `seed-admin`, and `audit-maven`.
+      `verify:modules`, `verify:docs`, `verify:widget-files`, `seed-admin`, and `audit-maven`.
 
       `audit-maven`'s tests are about one property above all: that the gate cannot report a clean
       result when it checked nothing. That is not a hypothetical — it is what disqualified both
@@ -2898,6 +2901,18 @@ tasks:
       Covered by `task test:scripts`, alongside the boundary gate's fixtures.
     cmds:
       - scripts/verify-modules.py
+
+  verify:widget-files:
+    desc: Fail if a Dart file defines more than one widget (one widget per file)
+    silent: true
+    summary: |
+      The framework's own run of the gate it ships to applications: `zen:verify:widget-files` in
+      Taskfile.app.yml, pointed at both pub workspaces (`client` and `apps`) and at
+      `scripts/widget-files-suppressions.txt`. The rule, its `State` exception and the reasoning are
+      STANDARDS "One widget per file"; `task zen:verify:widget-files --summary` has the operator
+      contract. Covered by `task test:scripts`.
+    cmds:
+      - task: zen:verify:widget-files
 
   verify:docs:
     desc: Fail if a README names a non-existent task, or a module LICENSE drifted from root

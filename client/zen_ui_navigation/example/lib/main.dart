@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'l10n/generated/example_localizations.dart';
 import 'providers/localization_providers.dart';
-import 'providers/navigation_providers.dart';
+import 'adaptive_navigation_shell.dart';
 
 void main() {
   runApp(const ProviderScope(child: NavigationExampleApp()));
@@ -43,24 +43,6 @@ class NavigationExampleApp extends ConsumerWidget {
         useMaterial3: true,
       ),
       home: const AdaptiveNavigationShell(),
-    );
-  }
-}
-
-/// Adaptive navigation shell that changes layout based on screen size
-class AdaptiveNavigationShell extends ConsumerWidget {
-  const AdaptiveNavigationShell({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final selectedIndex = ref.watch(selectedNavigationIndexProvider);
-
-    return ZenNavigation(
-      items: navigationItems(ExampleLocalizations.of(context)),
-      selectedIndex: selectedIndex,
-      onItemSelected: (index) {
-        ref.read(selectedNavigationIndexProvider.notifier).setIndex(index);
-      },
     );
   }
 }

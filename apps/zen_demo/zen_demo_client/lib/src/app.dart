@@ -5,8 +5,7 @@ import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 
 import 'l10n/generated/demo_localizations.dart';
 import 'providers.dart';
-import 'screens/auth_flow.dart';
-import 'screens/home_shell.dart';
+import 'demo_root.dart';
 
 /// The root of zen_demo. Routes on the identity session: anonymous -> the auth flow,
 /// authenticated -> the home shell. Routing is state-based on Riverpod, so the reused
@@ -45,7 +44,7 @@ class DemoApp extends ConsumerWidget {
       // at different heights on purpose: the receiver must outlive every screen, while the thing
       // that reports the outcome needs the ScaffoldMessenger and Localizations that only exist
       // below here.
-      home: const ZenAuthLinkListener(child: _Root()),
+      home: const ZenAuthLinkListener(child: DemoRoot()),
     );
   }
 
@@ -67,34 +66,4 @@ class DemoApp extends ConsumerWidget {
       ],
     );
   }
-}
-
-class _Root extends ConsumerWidget {
-  const _Root();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final session = ref.watch(identitySessionStoreProvider);
-
-    return session.when(
-      loading: () => const _Splash(),
-      error: (_, _) => const AuthFlow(),
-      data: (identity) {
-        if (identity == null) return const AuthFlow();
-        // Signed in, but a password-recovery link is only finished once a new password exists —
-        // so that gate comes before the app. It is a framework-supplied condition and screen; the
-        // app decides only where in its routing they belong, which is here, ahead of everything.
-        if (ref.watch(passwordResetRequiredProvider)) return const SetPasswordScreen();
-        return const HomeShell();
-      },
-    );
-  }
-}
-
-class _Splash extends StatelessWidget {
-  const _Splash();
-
-  @override
-  Widget build(BuildContext context) =>
-      const Scaffold(body: Center(child: CircularProgressIndicator()));
 }

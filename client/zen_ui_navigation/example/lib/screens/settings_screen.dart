@@ -4,6 +4,7 @@ import 'package:zen_core/zen_core.dart';
 
 import '../l10n/generated/example_localizations.dart';
 import '../providers/localization_providers.dart';
+import 'section_header.dart';
 
 /// Settings screen with app preferences
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -29,7 +30,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
       body: ListView(
         children: [
-          _SectionHeader(title: messages.settingsAppearanceTitle),
+          SectionHeader(title: messages.settingsAppearanceTitle),
           SwitchListTile(
             secondary: const Icon(Icons.dark_mode),
             title: Text(messages.settingsAppearanceDarkMode),
@@ -71,7 +72,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const Divider(),
-          _SectionHeader(title: messages.settingsNotificationsTitle),
+          SectionHeader(title: messages.settingsNotificationsTitle),
           SwitchListTile(
             secondary: const Icon(Icons.notifications),
             title: Text(messages.settingsNotificationsPush),
@@ -84,7 +85,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             },
           ),
           const Divider(),
-          _SectionHeader(title: messages.settingsNavigationTitle),
+          SectionHeader(title: messages.settingsNavigationTitle),
           ListTile(
             leading: const Icon(Icons.navigation),
             title: Text(messages.settingsNavigationType),
@@ -92,7 +93,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             trailing: const Icon(Icons.check),
           ),
           const Divider(),
-          _SectionHeader(title: messages.settingsAboutTitle),
+          SectionHeader(title: messages.settingsAboutTitle),
           ListTile(
             leading: const Icon(Icons.info),
             title: Text(messages.settingsAboutVersion),
@@ -104,25 +105,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             subtitle: Text(messages.settingsAboutPackageValue),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      child: Text(
-        title,
-        style: Theme.of(
-          context,
-        ).textTheme.titleMedium?.copyWith(color: Theme.of(context).colorScheme.primary),
       ),
     );
   }

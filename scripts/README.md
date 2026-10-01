@@ -153,6 +153,31 @@ nothing, and then printed its success line — "All README task references resol
 statement about zero READMEs, and "All 0 module LICENSE copies are byte-identical" is a gate that
 has stopped looking.
 
+## 🧩 verify-widget-files.py — the one-widget-per-file gate
+
+Run by `task verify:widget-files` (also part of `task test`, CI, and the first step of the
+application-facing `zen:test:client`, so an application including `Taskfile.app.yml` inherits it).
+It scans `lib/` of every Dart package under the paths it is given — skipping `generated/` — and
+exits non-zero when a file defines more than one Flutter widget. The rule, and why a `StatefulWidget`
+and its private `State` count as one, is STANDARDS "One widget per file".
+
+```
+scripts/verify-widget-files.py [--suppressions FILE] PATH...
+```
+
+Each `PATH` is a Dart package or a directory holding packages. It prints the file, the line and the
+widgets found, with a widget's `State` beside it.
+
+**It fails when it cannot look.** A path that does not exist, a path with no package under it, a file
+that cannot be read, a scan that found no Dart file at all, and a suppression that matches nothing
+each exit 1 with the reason — "we did not look" and "we looked and it was clean" must not share an
+exit code.
+
+**Suppressions** are one file of `<path>  <reason>` lines, and a line with no reason is a parse
+error. `scripts/widget-files-suppressions.txt` is jZen's own and is empty. An application sets
+`WIDGET_FILES_SUPPRESSIONS` on its `includes:` entry to name its own. An exemption must say what the
+file carries that splitting would lose; an entry whose file stops holding two widgets fails the gate.
+
 ## 🔍 audit-maven.py — the Java dependency CVE gate
 
 Run by `task audit:server` (and `task audit`, which adds `pnpm audit` for both TypeScript

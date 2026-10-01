@@ -96,6 +96,11 @@ jobs:
       - name: Client/server boundary gate
         run: task verify:boundaries
 
+      # Cheap and structural: a file with two widgets passes every suite. STANDARDS "One widget
+      # per file". Needs the same Python as the gate above.
+      - name: One widget per file
+        run: task verify:widget-files
+
       - run: task deps
       - name: Contract drift gate
         run: task verify:contracts

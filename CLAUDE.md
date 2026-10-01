@@ -32,6 +32,7 @@ Common commands (`task --list` for all):
 | `task test` | Every suite, **including `test:e2e` (the live release gate)** |
 | `task generate` | Regenerate every cross-language artifact — no gate, always green if the generators succeed |
 | `task verify:contracts` | Regenerate, then **fail if any committed generated file drifted** — the contract-drift gate; wire into CI |
+| `task verify:widget-files` | Fail if a Dart file defines more than one widget (`State` pairs with its widget) — also the first step of `zen:test:client`, so apps inherit it |
 | `task run:server` | Quarkus dev mode (live reload) on `:8080` |
 | `task run:demo` | Boot Supabase + backend + zen_demo for a manual walkthrough |
 | `task run:admin` | Admin panel dev server on `:5173` (proxies `/api`) |
@@ -142,6 +143,15 @@ come from `zen_ui_widgets` (`ZenButton`, `ZenSelect`, `ZenDateRangeField`, `show
 platform for Cupertino-vs-Material. A missing generic control is a framework gap: add it to
 `zen_ui_widgets` (with its accessibility suite), then use it. Table and rules: STANDARDS "Client UI:
 the framework's controls first"; the `use-zen-ui` skill carries the working version.
+
+**One widget per file.** Every Flutter widget class lives in its own file, named for the class in
+snake_case, as with Java's one class per file. A helper widget is a *public* class in its own file,
+never a file-private `_Foo` tucked into another widget's file. The one exception is by construction:
+a `StatefulWidget` and its own private `State` stay together (Flutter needs `State` private to and
+beside its widget), and the pair counts as one. Non-widget classes (notifiers, painters, param
+objects) are outside the rule. `task verify:widget-files` enforces it and runs in `task test` and as
+the first step of `zen:test:client`; an exemption is a `<path>  <reason>` line that must say what the
+file carries that splitting would lose, never a convenience. STANDARDS "One widget per file".
 
 **The Dart/Flutter client keeps compile-time config** (`String.fromEnvironment`) and
 `if (dart.library.io)` / `if (dart.library.html)` conditional imports — this is load-bearing, not a

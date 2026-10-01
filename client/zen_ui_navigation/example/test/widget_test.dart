@@ -1,3 +1,4 @@
+import 'package:zen_ui_navigation_example/adaptive_navigation_shell.dart';
 import 'package:zen_ui_navigation_example/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

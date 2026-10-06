@@ -22,10 +22,15 @@
       "esbuild"
     ],
     "//overrides": {
-      "react-router": "GHSA-qwww-vcr4-c8h2. ra-core's peer range is ^6.28.1 || ^7.1.1 and the fix only exists in 8.3.0, so this pin is deliberately outside what react-admin declares. Kept because the panel typechecks, builds and runs on it, and verified in a browser rather than inferred from a green tsc."
+      "react-router": "GHSA-qwww-vcr4-c8h2. ra-core's peer range is ^6.28.1 || ^7.1.1 and the fix only exists in 8.3.0, so this pin is deliberately outside what react-admin declares. Kept because the panel typechecks, builds and runs on it, and verified in a browser rather than inferred from a green tsc.",
+      "decode-uri-component": "GHSA-vcc3-ghjq-m6fr (denial of service in <=0.4.2), via ra-data-simple-rest and ra-core > query-string. It ships in the bundle. The fix, 0.5.0, is ESM-only with a default export, while query-string 7 (all of react-admin's declared range, and every query-string 8+ drops the named parse/stringify exports ra-core imports) loads it with require() -- so the pin alone makes every parse throw 'decodeComponent is not a function'. patches/query-string@7.1.3.patch makes that one require() accept the module namespace. The pin is deliberately outside query-string's declared ^0.2.2; drop both this pin and the patch when ra-core moves off query-string 7."
     },
     "overrides": {
-      "react-router": "^8.3.0"
+      "react-router": "^8.3.0",
+      "decode-uri-component": "^0.5.0"
+    },
+    "patchedDependencies": {
+      "query-string@7.1.3": "patches/query-string@7.1.3.patch"
     }
   },
   "devDependencies": {

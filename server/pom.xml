@@ -118,11 +118,13 @@
   <dependencyManagement>
     <dependencies>
       <!--
-        Jackson, pinned one patch ahead of what the Quarkus platform manages, and FIRST on purpose:
+        Jackson, pinned ahead of what the Quarkus platform manages, and FIRST on purpose:
         for imported BOMs Maven takes the earliest import, so this has to precede quarkus-bom to
-        have any effect at all. Quarkus 3.38.0 brings jackson 2.22.0, which `task audit` reports
-        against GHSA-5gvw-p9qm-jgwh and GHSA-5jmj-h7xm-6q6v (both @JsonView / @JsonIgnoreProperties
-        deserialization bypasses); 2.22.1 fixes both.
+        have any effect at all. The platform's jackson is reported by `task audit` (OSV) against
+        high-severity advisories on jackson-core and jackson-databind, most recently
+        GHSA-7hhh-6rmp-j9qf, GHSA-p6pp-m3f8-5c89, GHSA-cxp5-3px4-pw24, GHSA-q4xh-88c3-wmh7 and
+        GHSA-wv8q-qhhj-9h54; 2.22.3 fixes them. Every application inherits zen-parent, so this pin
+        is also what keeps a consumer's own audit gate green.
 
         The whole BOM rather than jackson-databind alone, because the databind, core and
         annotations artifacts are released together and are not designed to be mixed. Pinning one
@@ -140,7 +142,7 @@
       <dependency>
         <groupId>com.fasterxml.jackson</groupId>
         <artifactId>jackson-bom</artifactId>
-        <version>2.22.1</version>
+        <version>2.22.3</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>

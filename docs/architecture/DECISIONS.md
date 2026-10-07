@@ -15,6 +15,55 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-057 — The macOS navigation shell is a sidebar, built in `zen_ui_navigation`
+
+**Date:** 2026-10-07. **Status:** accepted.
+
+### Decision
+
+- **On macOS the `ZenNavigation` desktop layout is a sidebar**, not Material's `NavigationRail`.
+  Linux and Windows keep the rail. The choice is a compile-time constant (`zenIsApplePlatform`)
+  inside `zen_ui_navigation`, so the other layout is tree-shaken; an application changes nothing.
+  - *Why a sidebar:* it is what a macOS app shows for top-level destinations. A tab bar is the iOS
+    idiom (and is what iOS already gets), and a Cupertino-styled rail would be the Material layout
+    in different colours.
+  - *Why built here, from Flutter primitives, and not taken from a package:* a navigation shell is
+    the thing a user must be able to operate by keyboard and screen reader, and the framework holds
+    the whole accessibility bar for it (STANDARDS "Accessibility"). A third-party control would put
+    that bar in a dependency this repository cannot test or change. It lives in `zen_ui_navigation`,
+    not `zen_ui_widgets`, because it is navigation-specific (ADR-055's rule for a control's home).
+- **One row, one announcement.** Each destination is a single merged node: its label, "button",
+  its selected state, the badge as a value ("Inbox, 3 new") and its position as a hint ("2 of 5").
+  `NavigationLocalizations` gains `position(index, count)` (en, uk) for that hint; the rail gets
+  its "Tab 1 of 3" from Material, the sidebar has no such source and says it in the package's own
+  words.
+- **Keyboard and focus match the rail:** each row is a tab stop, arrow keys move between rows
+  (`NavigationRegion`), Enter, numpad Enter and Space activate. Those three keys are bound on the
+  row itself because a web build maps Space but not Enter to activation by default. `FocusRing`
+  shows keyboard focus and clears on a pointer press, as everywhere else.
+- **Colours come from the theme's `ColorScheme`** (`surfaceContainerLow` for the column,
+  `secondaryContainer` / `onSecondaryContainer` for the selected row), so the sidebar follows the
+  app's palette and dark mode, and the focus ring's 3:1 against both is asserted per audit theme.
+- **The width follows the text size** (210 dp at 100%, never more than two fifths of the window) and
+  labels wrap, so 200% text neither clips a label nor squeezes the page.
+
+### What this supersedes, and why
+
+- **ADR-056's recorded gap: "the desktop navigation shell (`NavigationRail` ...)"** → **closed for
+  macOS.** *Why:* ADR-056 left it because a hand-built sidebar is a control with its own keyboard
+  and screen-reader surface. This change takes that on with its suite rather than leaving macOS on
+  Material. The icon button and the top bar / page scaffold remain gaps.
+
+### Consequence
+
+`zen_ui_navigation` tests build the rail and the sidebar directly (`buildRailNavigation`,
+`buildSidebarNavigation`), because a run reaches only its host's layout through
+`buildDesktopNavigation`. The sidebar has semantics, keyboard, focus-ring, 200%-text and
+four-theme contrast suites, run under `ZEN_PLATFORM=macos` and `linux`. The existing rail suites now
+call the rail directly, so they still run on a macOS host.
+
+---
+
 ## ADR-056 — Text input and spinners are framework controls, Cupertino on Apple; the identity screens are built on them
 
 **Date:** 2026-10-07. **Status:** accepted.

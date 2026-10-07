@@ -1,5 +1,6 @@
 {
   "@@locale": "uk",
   "more": "Ще",
-  "badgeCount": "{count, plural, one{{count} нове} few{{count} нові} many{{count} нових} other{{count} нових}}"
+  "badgeCount": "{count, plural, one{{count} нове} few{{count} нові} many{{count} нових} other{{count} нових}}",
+  "position": "{index} з {count}"
 }

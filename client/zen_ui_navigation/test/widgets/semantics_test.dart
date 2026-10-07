@@ -1,7 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:zen_ui_navigation/src/widgets/navigation_badge.dart';
-import 'package:zen_ui_navigation/src/widgets/navigation_desktop.dart';
+import 'package:zen_ui_navigation/src/widgets/navigation_rail.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_mobile.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_web.dart';
 import 'package:flutter/material.dart';
@@ -60,7 +60,7 @@ void main() {
       final handle = tester.ensureSemantics();
       await pumpNavigation(
         tester,
-        (ctx) => buildDesktopNavigation(
+        (ctx) => buildRailNavigation(
           context: ctx,
           selectedIndex: 1,
           onItemSelected: (_) {},
@@ -158,7 +158,7 @@ void main() {
     ) async {
       final handle = tester.ensureSemantics();
       for (final build in <Widget Function(BuildContext)>[
-        (ctx) => buildDesktopNavigation(
+        (ctx) => buildRailNavigation(
           context: ctx,
           selectedIndex: 0,
           onItemSelected: (_) {},
@@ -207,7 +207,7 @@ void main() {
           localizationsDelegates: NavigationLocalizations.localizationsDelegates,
           supportedLocales: NavigationLocalizations.supportedLocales,
           home: Builder(
-            builder: (ctx) => buildDesktopNavigation(
+            builder: (ctx) => buildRailNavigation(
               context: ctx,
               selectedIndex: 0,
               onItemSelected: (i) => selectedIndex = i,

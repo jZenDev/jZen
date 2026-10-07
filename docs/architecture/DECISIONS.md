@@ -15,6 +15,65 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-059 — The page is a framework control, `ZenPageScaffold`, and a transient message is `showZenMessage`
+
+**Date:** 2026-10-07. **Status:** accepted.
+
+### Decision
+
+- **`zen_ui_widgets` gains `ZenPageScaffold`**: a page is one widget with a `title`, an optional
+  `leading` / `onBack` back control, `actions` and a `body`. On Apple platforms it is a
+  `CupertinoPageScaffold` with a `CupertinoNavigationBar`; elsewhere a `Scaffold` with an `AppBar`;
+  chosen on `zenIsApplePlatform`.
+  - *One widget, not a pair:* the bar's contents are parameters of the page. A bar widget separate
+    from a scaffold widget would let a screen mix idioms, which is the defect being closed.
+  - *Composition with `ZenNavigation`:* none needed. The shell (tabs, rail, sidebar) owns the
+    frame; a page sits in its body and brings its own bar, as a pushed Cupertino page does inside a
+    tab bar.
+  - *The title is a heading* and names the page. Both stock bars already mark their title as a
+    header, so the widget does not wrap it again (a second wrapper was read twice, found by the suite).
+  - *Back is a `ZenIconButton`* with the platform's arrow and Material's own localised "Back" as its
+    name, so it has the framework's ring and 48 px target. It is shown for `onBack` (an app that routes
+    on state, as the identity screens do) or implied on a route that can pop. The stock bars' own
+    implied back button is turned off because it has no focus ring.
+  - *The Cupertino bar is opaque* (the page's colour at full alpha), so the body is laid out below
+    it: a translucent bar hands the body a top padding that a plain `Center` ignores. The bar and
+    body sit in a transparent `Material`, so stock widgets that need one (`ListTile`, a
+    `PopupMenuButton` among the actions) still work.
+  - *Colour* is the theme's `ColorScheme` (surface, on-surface; primary for the bar's buttons on
+    Apple); `backgroundColor` / `foregroundColor` carry an app's brand, as the identity theme's does.
+- **`showZenMessage(context, text, {backgroundColor})`** is a snack bar on Material and a toast on
+  Apple platforms, which have no snack bar. A `ScaffoldMessenger` needs a `Scaffold` to show on, and a
+  Cupertino page has none, so the message would have been queued and never seen — silently. The toast
+  is an `OverlayEntry` in the root overlay, so it works under any page.
+  - It is a live region (read when it appears, without moving focus: WCAG 4.1.3), dismissed by a tap
+    or after 4 s, and 12 s when `accessibleNavigation` is on (WCAG 2.2.1). One shows at a time; a new
+    message replaces it. The timer lives in the toast's state, so it ends with its overlay.
+  - A caller's `backgroundColor` (an error's colour) gets black or white text, whichever contrasts;
+    without one the toast is the theme's `inverseSurface`.
+- **`zen_ui_identity`'s screens and `zen_demo`'s are built on both.** Every identity screen is a
+  `ZenPageScaffold` and every message, including `ZenAuthLinkListener`'s, is `showZenMessage`. The
+  identity `backButtonTooltip` string, now unused, is removed.
+
+### What this supersedes, and why
+
+- **ADR-056's recorded gap: "a top bar / page scaffold"** → **closed**, and with it the last of
+  ADR-056's three. *Why:* the gap was recorded because no control existed, not because Material was
+  right on Apple.
+- **`ZenAuthLinkListener` must sit "inside `MaterialApp` ... to reach the current scaffold"** → it
+  must sit below the `Navigator` (wrapping `home`), to reach its `Overlay`. It already did in
+  `zen_demo`; only the stated reason changed.
+
+### Consequence
+
+`ZenPageScaffold` and `showZenMessage` are tested in both idioms directly: heading and actions named
+once, a back button that pops, Tab and Enter with the ring, no bar when nothing is given, the body
+below the bar, 200% text, and AA contrast across the four audit themes. The identity suites check
+that the profile and reset screens show a `CupertinoNavigationBar` on Apple and an `AppBar`
+elsewhere, and run under `ZEN_PLATFORM=macos` and `linux`.
+
+---
+
 ## ADR-058 — The icon button is a framework control, `ZenIconButton`, Cupertino on Apple
 
 **Date:** 2026-10-07. **Status:** accepted.

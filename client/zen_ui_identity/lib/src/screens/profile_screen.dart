@@ -2,7 +2,7 @@ import 'package:zen_core/zen_core.dart';
 import 'package:zen_identity/zen_identity.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenProgressIndicator;
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenIconButton, ZenProgressIndicator;
 
 import '../l10n/generated/identity_localizations.dart';
 import '../l10n/identity_error_text.dart';
@@ -39,9 +39,9 @@ class ProfileScreen extends ConsumerWidget {
         elevation: 0,
         foregroundColor: theme.brandColor,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: messages.logoutButton,
+          ZenIconButton(
+            icon: Icons.logout,
+            label: messages.logoutButton,
             onPressed: () async {
               final identity = ref.read(identitySessionStoreProvider).value;
               await ref.read(identitySessionStoreProvider.notifier).logout();

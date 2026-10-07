@@ -10,6 +10,7 @@
 /// * [showAdaptivePresentation] — a form/detail overlay: a sheet on native mobile, a dialog on
 ///   desktop and web.
 /// * [ZenButton] — primary, secondary and text buttons.
+/// * [ZenIconButton] — an icon-only button, always named by a required label.
 /// * [ZenSelect], [ZenSegmentedControl], [ZenSwitchRow] — a choice from a list, a small set of
 ///   exclusive choices, and an on/off setting.
 /// * [ZenDateField], [ZenDateRangeField] — a date and a from/to pair whose order is enforced.
@@ -38,6 +39,7 @@ export 'src/zen_amount_range_field.dart' show ZenAmountRangeField;
 export 'src/zen_button.dart' show ZenButton, ZenButtonVariant, zenButtonMinHeight;
 export 'src/zen_date_field.dart' show ZenDateField, zenDefaultFirstDate, zenDefaultLastDate;
 export 'src/zen_date_range_field.dart' show ZenDateRangeField;
+export 'src/zen_icon_button.dart' show ZenIconButton, zenIconButtonSize;
 export 'src/zen_progress_indicator.dart' show ZenProgressIndicator;
 export 'src/zen_segmented_control.dart' show ZenSegment, ZenSegmentedControl;
 export 'src/zen_select.dart' show ZenSelect;

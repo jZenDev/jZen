@@ -18,6 +18,7 @@ Import `package:zen_ui_widgets/zen_ui_widgets.dart` and use:
 |---|---|---|
 | Dialog or sheet for a form/detail | `showAdaptivePresentation<T>(context, builder: ...)` | `showDialog`, `showModalBottomSheet` |
 | Action button | `ZenButton(label:, onPressed:, variant:)` - `primary`, `secondary`, `text`; `isLoading`, `icon` | `ElevatedButton`, `FilledButton`, `OutlinedButton`, `TextButton` |
+| Icon-only button | `ZenIconButton(icon:, label:, onPressed:)` - `label` is the accessible name and the Material tooltip | `IconButton` |
 | One choice from a list | `ZenSelect<T>(label:, items:, itemLabel:, value:, onChanged:)` | `DropdownButton(FormField)` |
 | Few exclusive options | `ZenSegmentedControl<T>(segments: [ZenSegment(value:, label:)], selected:, onChanged:)` | `SegmentedButton` |
 | Boolean setting | `ZenSwitchRow(label:, value:, onChanged:)` | `SwitchListTile`, `Switch` |

@@ -8,7 +8,13 @@ import 'package:zen_ui_widgets/zen_ui_widgets.dart' show FocusRing;
 import '../support/a11y.dart';
 
 typedef Build =
-    Widget Function(BuildContext context, IconData icon, String label, VoidCallback? onPressed);
+    Widget Function(
+      BuildContext context,
+      IconData icon,
+      String label,
+      VoidCallback? onPressed, {
+      int? badge,
+    });
 
 /// Both idioms are built directly: the public widget chooses one on a compile-time constant, so
 /// one run only reaches the branch of the host it was compiled for.
@@ -17,9 +23,9 @@ final Map<String, Build> builds = <String, Build>{
   'cupertino': buildCupertinoIconButton,
 };
 
-Widget wrap(Build build, {VoidCallback? onPressed}) => Builder(
+Widget wrap(Build build, {VoidCallback? onPressed, int? badge}) => Builder(
   builder: (BuildContext context) =>
-      FocusRing.wrapping(child: build(context, Icons.logout, 'Log out', onPressed)),
+      FocusRing.wrapping(child: build(context, Icons.logout, 'Log out', onPressed, badge: badge)),
 );
 
 void main() {
@@ -38,6 +44,39 @@ void main() {
 
         await tester.tap(find.byIcon(Icons.logout));
         expect(taps, 1);
+        handle.dispose();
+      });
+
+      testWidgets('a badge is read with the name, once, and the button still taps', (tester) async {
+        final SemanticsHandle handle = tester.ensureSemantics();
+        int taps = 0;
+        await pumpApp(tester, wrap(entry.value, onPressed: () => taps++, badge: 3));
+
+        expect(find.text('3'), findsOneWidget);
+        final List<SemanticsData> nodes = nodesWith(tester, SemanticsAction.tap);
+        expect(nodes, hasLength(1), reason: nodes.map((n) => n.label).join(' | '));
+        expect(nodes.single.label, 'Log out, 3');
+        expect(occurrences(nodes.single.label, '3'), 1);
+
+        await tester.tap(find.byIcon(Icons.logout));
+        expect(taps, 1);
+        handle.dispose();
+      });
+
+      testWidgets('a large count reads 99+, and none or zero draws no badge', (tester) async {
+        await pumpApp(tester, wrap(entry.value, onPressed: () {}, badge: 250));
+        expect(find.text('99+'), findsOneWidget);
+
+        await pumpApp(tester, wrap(entry.value, onPressed: () {}, badge: 0));
+        expect(find.byType(Badge), findsNothing);
+        await pumpApp(tester, wrap(entry.value, onPressed: () {}));
+        expect(find.byType(Badge), findsNothing);
+      });
+
+      testWidgets('a disabled button keeps its count in its name', (tester) async {
+        final SemanticsHandle handle = tester.ensureSemantics();
+        await pumpApp(tester, wrap(entry.value, badge: 2));
+        expect(rootLabels(tester), contains('Log out, 2'));
         handle.dispose();
       });
 
@@ -116,6 +155,11 @@ void main() {
           final Color color = icon.color ?? IconTheme.of(tester.element(find.byType(Icon))).color!;
           // WCAG 1.4.11: a graphical object that identifies a control needs 3:1.
           expect(contrastRatio(color, surface), greaterThanOrEqualTo(3));
+        });
+
+        testWidgets('a badge keeps AA text contrast (${theme.key})', (tester) async {
+          await pumpApp(tester, wrap(entry.value, onPressed: () {}, badge: 7), theme: theme.value);
+          await expectLater(tester, meetsGuideline(textContrastGuideline));
         });
       }
     });

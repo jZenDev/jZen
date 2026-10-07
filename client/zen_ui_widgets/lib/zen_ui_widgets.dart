@@ -10,14 +10,15 @@
 /// * [showAdaptivePresentation] — a form/detail overlay: a sheet on native mobile, a dialog on
 ///   desktop and web.
 /// * [ZenButton] — primary, secondary and text buttons.
-/// * [ZenIconButton] — an icon-only button, always named by a required label.
+/// * [ZenIconButton] — an icon-only button, always named by a required label; it can carry a
+///   count badge.
 /// * [ZenSelect], [ZenSegmentedControl], [ZenSwitchRow] — a choice from a list, a small set of
 ///   exclusive choices, and an on/off setting.
 /// * [ZenDateField], [ZenDateRangeField] — a date and a from/to pair whose order is enforced.
 /// * [ZenAmountField], [ZenAmountRangeField] — a decimal number and a min/max pair whose order
 ///   is reported; the number's meaning stays with the app.
 /// * [ZenTextField] — a labelled text input, the base of [ZenAmountField].
-/// * [ZenProgressIndicator] — an indeterminate spinner.
+/// * [ZenProgressIndicator], [ZenProgressBar] — an indeterminate spinner and a determinate bar.
 /// * [ZenPageScaffold] — a page: a top bar (title, back, actions) over a body.
 /// * [showZenMessage] — a transient message: a snack bar on Material, a toast on Apple.
 /// * [FocusRing] — the focus indicator the above use, for an app's own controls.
@@ -44,6 +45,7 @@ export 'src/zen_date_range_field.dart' show ZenDateRangeField;
 export 'src/zen_icon_button.dart' show ZenIconButton, zenIconButtonSize;
 export 'src/zen_message.dart' show showZenMessage, zenMessageDuration;
 export 'src/zen_page_scaffold.dart' show ZenPageScaffold;
+export 'src/zen_progress_bar.dart' show ZenProgressBar;
 export 'src/zen_progress_indicator.dart' show ZenProgressIndicator;
 export 'src/zen_segmented_control.dart' show ZenSegment, ZenSegmentedControl;
 export 'src/zen_select.dart' show ZenSelect;

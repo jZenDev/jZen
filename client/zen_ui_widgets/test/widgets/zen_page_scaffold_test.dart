@@ -104,6 +104,25 @@ void main() {
         expect(tester.getTopLeft(find.text('Row')).dy, greaterThan(barBottom));
       });
 
+      testWidgets('a tappable ListTile renders and takes its tap', (tester) async {
+        int taps = 0;
+        await pumpPage(
+          tester,
+          page(
+            entry.value,
+            body: ListTile(title: const Text('Row'), onTap: () => taps++),
+          ),
+        );
+        // ListTile asserts its ink is visible: a coloured box between it and its Material
+        // fails that check, which a tile with no onTap never reaches.
+        expect(tester.takeException(), isNull);
+
+        await tester.tap(find.text('Row'));
+        await tester.pump();
+        expect(taps, 1);
+        expect(tester.takeException(), isNull);
+      });
+
       testWidgets('actions are named once each and tap', (tester) async {
         final SemanticsHandle handle = tester.ensureSemantics();
         int taps = 0;

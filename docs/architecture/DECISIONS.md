@@ -15,6 +15,49 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-060 — A tappable `ListTile` works in `ZenPageScaffold` on Apple; the controls gain what Prudent's screens lacked
+
+**Date:** 2026-10-07. **Status:** accepted.
+
+### Decision
+
+- **`ZenPageScaffold`'s Cupertino body sits in its own transparent `Material`**, below the page's
+  coloured box. ADR-059 hosted the bar and body in one `Material` *above* `CupertinoPageScaffold`,
+  which puts a coloured `DecoratedBox` between that `Material` and the body. A `ListTile` with an
+  `onTap` asserts against exactly that (its ink and colour would paint beneath the box), so every
+  tappable row threw in a debug build and was unstyled in release. The outer `Material` stays for the
+  bar, so a `PopupMenuButton` among the actions still works. The old test pumped a `ListTile` with no
+  `onTap`, which never reaches the check; the new one taps a row on both idioms.
+- **Each capability a consuming application named is decided, row by row:**
+
+| Control | Capability | Decision |
+|---|---|---|
+| `ZenTextField` | multiline (`maxLines`, `minLines`) | **added**; the label starts at the top of a tall box on Material |
+| `ZenTextField` | `maxLength` with a counter | **added**; the Cupertino field draws the counter Material draws, counted in characters (graphemes), read "n / max" |
+| `ZenTextField` | `textCapitalization` | **added**; a keyboard hint, so forcing upper case stays an `inputFormatters` entry |
+| `ZenTextField` | `initialValue`, `onSaved` | **left to the application.** `controller:` already seeds and reads the field; a second way to do each would give the field two sources of truth for its text |
+| `showZenMessage` | an action (Undo) | **added**, `actionLabel` + `onAction` given together. On Apple it is a `ZenButton` in the toast, in the toast's own contrast-chosen colour; the message stays the live region and the button is its own stop. A message with an action **does not time out** on either idiom (WCAG 2.2.1) and has a way to be closed (Material's close icon, a tap on the toast) |
+| `ZenIconButton` | a badge | **added** as `badge:` (a count; none at 0, "99+" above 99). It is part of the button's name ("Reminders, 3"), not a node beside it |
+| determinate progress | a progress bar | **added** as `ZenProgressBar(value, label)`; the value is read as a percentage in the app's locale. A separate control from `ZenProgressIndicator`, whose point is that it says nothing |
+| pull-to-refresh | n/a | **left to the application.** On Apple it is a sliver inside the scroll view, so a wrapper cannot add it to a list it did not build; there is no honest one-widget form |
+
+### What this supersedes, and why
+
+- **ADR-059: "The bar and body sit in a transparent `Material`, so stock widgets that need one
+  (`ListTile` ...) still work."** → **corrected.** *Why:* true for a `ListTile` with no `onTap`; false
+  for the tappable one that is the common case. The bar keeps one `Material`, the body gets its own.
+- **ADR-059: `showZenMessage(context, text, {backgroundColor})`** → gains `actionLabel` / `onAction`.
+  A caller's `backgroundColor` now also colours a Material snack bar's action, which the default
+  action colour did not keep readable against an app's red.
+
+### Consequence
+
+`ZenPageScaffold` is tested with a tappable `ListTile` in both idioms. The new capabilities are tested
+in both idioms directly, with the existing bar: one named node, keyboard, 200% text and AA contrast
+across the four audit themes. The package suite is green under `ZEN_PLATFORM=macos` and `linux`.
+
+---
+
 ## ADR-059 — The page is a framework control, `ZenPageScaffold`, and a transient message is `showZenMessage`
 
 **Date:** 2026-10-07. **Status:** accepted.

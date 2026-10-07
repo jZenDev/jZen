@@ -61,6 +61,7 @@ void main() {
   });
 
   testWidgets('a page and a message build and operate on this platform', (tester) async {
+    int undone = 0;
     await tester.pumpWidget(
       MaterialApp(
         home: Builder(
@@ -70,10 +71,22 @@ void main() {
               ZenIconButton(
                 icon: Icons.logout,
                 label: 'Log out',
-                onPressed: () => showZenMessage(context, 'Signed out'),
+                badge: 2,
+                onPressed: () => showZenMessage(
+                  context,
+                  'Signed out',
+                  actionLabel: 'Undo',
+                  onAction: () => undone++,
+                ),
               ),
             ],
-            body: const Center(child: Text('Body')),
+            body: const Column(
+              children: <Widget>[
+                ZenProgressBar(value: 0.4, label: 'Goal'),
+                ZenTextField(label: 'Note', minLines: 2, maxLines: 4, maxLength: 80),
+                ListTile(title: Text('Body')),
+              ],
+            ),
           ),
         ),
       ),
@@ -84,9 +97,11 @@ void main() {
     await tester.tap(find.byIcon(Icons.logout));
     await tester.pumpAndSettle(const Duration(milliseconds: 100));
     expect(find.text('Signed out'), findsOneWidget);
+    expect(find.text('0/80'), findsOneWidget);
 
-    await tester.pump(zenMessageDuration * 2);
+    await tester.tap(find.text('Undo'));
     await tester.pumpAndSettle();
+    expect(undone, 1);
     expect(find.text('Signed out'), findsNothing);
     expect(tester.takeException(), isNull);
   });

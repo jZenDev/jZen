@@ -18,16 +18,17 @@ Import `package:zen_ui_widgets/zen_ui_widgets.dart` and use:
 |---|---|---|
 | Dialog or sheet for a form/detail | `showAdaptivePresentation<T>(context, builder: ...)` | `showDialog`, `showModalBottomSheet` |
 | Action button | `ZenButton(label:, onPressed:, variant:)` - `primary`, `secondary`, `text`; `isLoading`, `icon` | `ElevatedButton`, `FilledButton`, `OutlinedButton`, `TextButton` |
-| Icon-only button | `ZenIconButton(icon:, label:, onPressed:)` - `label` is the accessible name and the Material tooltip | `IconButton` |
+| Icon-only button | `ZenIconButton(icon:, label:, onPressed:, badge:)` - `label` is the accessible name and the Material tooltip; `badge` is a count read with it | `IconButton` |
 | A page with a top bar | `ZenPageScaffold(title:, onBack:, actions: [ZenIconButton...], body:)` - the title is the heading; back is implied on a pushed route | `Scaffold` + `AppBar` |
-| A transient message | `showZenMessage(context, text, backgroundColor:)` - a snack bar on Material, a toast on Apple | `ScaffoldMessenger...showSnackBar` |
+| A transient message | `showZenMessage(context, text, backgroundColor:, actionLabel:, onAction:)` - a snack bar on Material, a toast on Apple; an action (Undo) keeps it up until dealt with | `ScaffoldMessenger...showSnackBar` |
 | One choice from a list | `ZenSelect<T>(label:, items:, itemLabel:, value:, onChanged:)` | `DropdownButton(FormField)` |
 | Few exclusive options | `ZenSegmentedControl<T>(segments: [ZenSegment(value:, label:)], selected:, onChanged:)` | `SegmentedButton` |
 | Boolean setting | `ZenSwitchRow(label:, value:, onChanged:)` | `SwitchListTile`, `Switch` |
 | A date | `ZenDateField(label:, value:, onChanged:, clearable:)` | `showDatePicker` |
 | A from/to period | `ZenDateRangeField(fromLabel:, toLabel:, from:, to:, onChanged:)` | two date fields |
-| A text input (name, email, password) | `ZenTextField(label:, controller:, validator:, obscureText:)` | `TextField`, `TextFormField` |
+| A text input (name, email, password, a note) | `ZenTextField(label:, controller:, validator:, obscureText:, maxLines:, minLines:, maxLength:, textCapitalization:)` - `maxLength` shows a counter | `TextField`, `TextFormField` |
 | A loading spinner | `ZenProgressIndicator(size:)` | `CircularProgressIndicator` |
+| A progress bar | `ZenProgressBar(value:, label:)` - value 0..1, read as a percentage | `LinearProgressIndicator` |
 | A decimal number | `ZenAmountField(label:, controller:, maxFractionDigits:)`; read with `normalizeAmount(text)` | `TextField` + numeric keyboard |
 | A min/max pair | `ZenAmountRangeField(minLabel:, maxLabel:, minController:, maxController:)` | two amount fields |
 | Focus ring on your own control | `FocusRing` / `FocusRing.wrapping` | a hand-drawn focus border |

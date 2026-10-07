@@ -666,6 +666,8 @@ fixes one screen.
 | A dialog or sheet for a form or detail | `showAdaptivePresentation` | `showDialog`, `showModalBottomSheet` |
 | An action button | `ZenButton` (`primary` / `secondary` / `text`) | `ElevatedButton`, `FilledButton`, `OutlinedButton`, `TextButton` |
 | An icon-only button (back, close, log out) | `ZenIconButton` (a required `label` is its name) | `IconButton`, `CupertinoButton` around an `Icon` |
+| A page: a top bar (title, back, actions) over a body | `ZenPageScaffold` | `Scaffold` + `AppBar`, `CupertinoPageScaffold` + `CupertinoNavigationBar` |
+| A transient message (a confirmation, a failure) | `showZenMessage` | `ScaffoldMessenger…showSnackBar` |
 | One choice from a list | `ZenSelect<T>` | `DropdownButton`, `DropdownButtonFormField` |
 | One of a few exclusive options | `ZenSegmentedControl<T>` | `SegmentedButton`, `CupertinoSlidingSegmentedControl` |
 | A boolean setting | `ZenSwitchRow` | `SwitchListTile`, `Switch` |
@@ -698,11 +700,13 @@ Rules that follow:
 - **Wording comes from the package.** The controls' own strings (validation errors, "Select a date")
   are `ZenWidgetsLocalizations`; register `zenWidgetsLocaleDelegate` beside the other packages'
   delegates. The application supplies only its own labels.
-- **Not yet framework controls (ADR-056, narrowed by ADR-057 and ADR-058).** A top bar / page
-  scaffold is Material on every platform, Apple included. (The desktop navigation shell was on this
-  list; macOS has had its sidebar since ADR-057. The icon button was too; it is `ZenIconButton` since
-  ADR-058.) `zen_ui_identity`'s profile and reset screens still sit in a Material `Scaffold` with an
-  `AppBar`. They are listed as gaps, not as decisions that Material is right on macOS.
+- **A page is one widget, and so is a message (ADR-059).** `ZenPageScaffold` is the page — a
+  `CupertinoNavigationBar` over a `CupertinoPageScaffold` on Apple, a `Scaffold` with an `AppBar`
+  elsewhere — and it takes the bar's title, back and actions as parameters, so a screen cannot mix
+  idioms. Its back button and its actions are `ZenIconButton`s. A transient message is
+  `showZenMessage`: a snack bar on Material and a toast on Apple, which has no snack bar, and it
+  needs no `Scaffold` to show on. Nothing in the framework's UI packages is a recorded Material gap
+  on Apple any more (ADR-056's list: the navigation shell, ADR-057; the icon button, ADR-058; this).
 - **Genuinely different things are not "replacements".** `PopupMenuButton`, `ListTile`, `Card`,
   `Text`, layout and theming widgets have no framework counterpart and are used directly.
 

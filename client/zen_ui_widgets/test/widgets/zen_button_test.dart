@@ -3,7 +3,7 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_ui_widgets/src/zen_button.dart';
-import 'package:zen_ui_widgets/zen_ui_widgets.dart' show FocusRing;
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show FocusRing, ZenProgressIndicator;
 
 import '../support/a11y.dart';
 
@@ -103,7 +103,7 @@ void main() {
             settle: false,
           );
 
-          expect(find.byType(CircularProgressIndicator), findsOneWidget);
+          expect(find.byType(ZenProgressIndicator), findsOneWidget);
           final SemanticsNode node = tester.getSemantics(find.text('Save'));
           expect(node.label, 'Save');
           expect(isEnabled(node.getSemanticsData()), isFalse);

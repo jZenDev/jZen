@@ -5,6 +5,7 @@ import 'package:zen_ui_identity/src/state/identity_repository.dart';
 import 'package:zen_ui_identity/src/widgets/identity_button.dart';
 import 'package:zen_ui_identity/src/widgets/identity_text_field.dart';
 import 'package:flutter/material.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenButton;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -70,7 +71,7 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, 'Log In'));
+    await tester.tap(find.widgetWithText(ZenButton, 'Log In'));
     await tester.pumpAndSettle();
 
     expect(find.text('Required'), findsNWidgets(2));
@@ -87,10 +88,10 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    final fields = find.byType(TextFormField);
+    final fields = find.byType(EditableText);
     await tester.enterText(fields.at(0), 'a@');
     await tester.enterText(fields.at(1), 'password');
-    await tester.tap(find.widgetWithText(FilledButton, 'Log In'));
+    await tester.tap(find.widgetWithText(ZenButton, 'Log In'));
     await tester.pumpAndSettle();
 
     expect(find.text('Invalid email'), findsOneWidget);
@@ -150,12 +151,12 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    final fields = find.byType(TextFormField);
+    final fields = find.byType(EditableText);
     expect(fields, findsNWidgets(2));
 
     await tester.enterText(fields.at(0), 'a@b.com');
     await tester.enterText(fields.at(1), 'password');
-    await tester.tap(find.widgetWithText(FilledButton, 'Log In'));
+    await tester.tap(find.widgetWithText(ZenButton, 'Log In'));
     await tester.pumpAndSettle();
 
     expect(called, isTrue);
@@ -175,10 +176,10 @@ void main() {
     );
 
     await tester.pumpAndSettle();
-    final fields = find.byType(TextFormField);
+    final fields = find.byType(EditableText);
     await tester.enterText(fields.at(0), 'a@b.com');
     await tester.enterText(fields.at(1), 'password');
-    await tester.tap(find.widgetWithText(FilledButton, 'Log In'));
+    await tester.tap(find.widgetWithText(ZenButton, 'Log In'));
     await tester.pumpAndSettle();
 
     expect(find.text('bad credentials'), findsOneWidget);
@@ -265,10 +266,10 @@ void main() {
       await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
 
       // The failure SnackBar is painted in the theme's error colour; its text must still read.
-      final fields = find.byType(TextFormField);
+      final fields = find.byType(EditableText);
       await tester.enterText(fields.at(0), 'a@b.com');
       await tester.enterText(fields.at(1), 'password');
-      await tester.tap(find.widgetWithText(FilledButton, 'Log In'));
+      await tester.tap(find.widgetWithText(ZenButton, 'Log In'));
       await tester.pumpAndSettle();
       expect(find.text('bad credentials'), findsOneWidget);
       await expectLater(tester, meetsGuideline(textContrastGuideline));

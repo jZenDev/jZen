@@ -10,6 +10,11 @@ import 'navigation_region.dart';
 /// Platform-specific navigation builder for desktop platforms.
 /// Shows all navigation items in a NavigationRail.
 ///
+/// The rail is Material on macOS as well as Linux and Windows: Flutter has no Cupertino sidebar to
+/// swap in, and a hand-built one would be a new control carrying its own keyboard and
+/// screen-reader work. That is a recorded gap rather than a judgement that Material suits macOS
+/// (ADR-056).
+///
 /// NavigationRail announces each destination's label, its selected state and its position
 /// ("Tab 1 of 3") itself, so the destinations add no semantics of their own. [FocusRing] sits
 /// in the icon because the rail exposes no hook for its focus styling, and the icon is inside

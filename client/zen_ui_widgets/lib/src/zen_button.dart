@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:zen_core/zen_core.dart';
 
 import 'focus_ring.dart';
+import 'zen_progress_indicator.dart';
 
 /// How prominent a [ZenButton] is.
 enum ZenButtonVariant {
@@ -91,13 +92,8 @@ Widget _content(String label, IconData? icon, bool isLoading) {
         mainAxisAlignment: MainAxisAlignment.center,
         children: <Widget>[
           if (isLoading) ...<Widget>[
-            // The button's name is the label beside it; the spinner adds no words.
-            ExcludeSemantics(
-              child: SizedBox.square(
-                dimension: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: color),
-              ),
-            ),
+            // The button's name is the label beside it; the spinner is decorative.
+            ZenProgressIndicator(size: 20, color: color),
             const SizedBox(width: 8),
           ] else if (icon != null) ...<Widget>[
             ExcludeSemantics(child: Icon(icon, size: 20)),

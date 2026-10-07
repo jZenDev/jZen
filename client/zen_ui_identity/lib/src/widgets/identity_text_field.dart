@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:zen_core/zen_core.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 
 import '../theme/identity_theme_extension.dart';
 
 /// A reusable text field for Identity forms.
 ///
-/// Adapts to [IdentityThemeExtension].
+/// On Apple platforms this is a [ZenTextField], drawn Cupertino. Elsewhere it adapts to
+/// [IdentityThemeExtension]: a filled field with the brand-colour border.
 class IdentityTextField extends StatelessWidget {
   final TextEditingController? controller;
   final String label;
@@ -16,7 +19,6 @@ class IdentityTextField extends StatelessWidget {
   final TextInputAction? textInputAction;
   final ValueChanged<String>? onFieldSubmitted;
   final FormFieldValidator<String>? validator;
-  final Widget? suffixIcon;
   final bool enabled;
 
   const IdentityTextField({
@@ -31,12 +33,27 @@ class IdentityTextField extends StatelessWidget {
     this.textInputAction,
     this.onFieldSubmitted,
     this.validator,
-    this.suffixIcon,
     this.enabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (zenIsApplePlatform) {
+      return ZenTextField(
+        label: label,
+        controller: controller,
+        hint: hint,
+        errorText: errorText,
+        obscureText: obscureText,
+        keyboardType: keyboardType,
+        autofillHints: autofillHints,
+        textInputAction: textInputAction,
+        onSubmitted: onFieldSubmitted,
+        validator: validator,
+        enabled: enabled,
+      );
+    }
+
     // Access custom theme
     final theme =
         Theme.of(context).extension<IdentityThemeExtension>() ?? IdentityThemeExtension.fallback();
@@ -78,7 +95,6 @@ class IdentityTextField extends StatelessWidget {
                 errorText: errorText,
                 filled: true,
                 fillColor: theme.surfaceColor,
-                suffixIcon: suffixIcon,
                 contentPadding: EdgeInsets.symmetric(
                   horizontal: theme.spacing,
                   vertical: theme.spacing,

@@ -2,6 +2,7 @@ import 'package:zen_core/zen_core.dart';
 import 'package:zen_identity/zen_identity.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenProgressIndicator;
 
 import '../l10n/generated/identity_localizations.dart';
 import '../l10n/identity_error_text.dart';
@@ -100,7 +101,7 @@ class ProfileScreen extends ConsumerWidget {
             ],
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
+        loading: () => const Center(child: ZenProgressIndicator()),
         error: (err, st) => Center(
           child: Text(messages.errorText(err is ZenError ? err : ZenUnknownError(err.toString()))),
         ),

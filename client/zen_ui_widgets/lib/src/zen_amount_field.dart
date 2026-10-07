@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import 'l10n/generated/zen_widgets_localizations.dart';
+import 'zen_text_field.dart';
 
 final RegExp _grouping = RegExp(r"[\s   ']");
 final RegExp _decimal = RegExp(r'^(-?)(\d*)(?:[.,](\d*))?$');
@@ -109,8 +110,8 @@ class ZenAmountInputFormatter extends TextInputFormatter {
 /// through [controller] or [onChanged] and [normalizeAmount]. Empty text is valid; whether an
 /// empty amount is allowed is the form's rule, not the field's.
 ///
-/// It is a form field, so `Form.validate()` sees it, and its label is the accessible name of
-/// the input itself.
+/// It is a [ZenTextField] underneath, so it is Cupertino on Apple platforms, `Form.validate()`
+/// sees it, and its label is the accessible name of the input itself.
 class ZenAmountField extends StatelessWidget {
   /// Creates an amount field labelled [label].
   const ZenAmountField({
@@ -161,53 +162,46 @@ class ZenAmountField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ZenWidgetsLocalizations strings = ZenWidgetsLocalizations.of(context);
-    // Merged so the error text is read with the field: left beside it, the error sat on a node a
-    // screen reader never lands on, and the focused input was named by its label alone.
-    return MergeSemantics(
-      child: TextFormField(
-        controller: controller,
-        enabled: enabled,
-        autovalidateMode: AutovalidateMode.onUserInteraction,
-        forceErrorText: errorText,
-        keyboardType: TextInputType.numberWithOptions(
-          decimal: maxFractionDigits != 0,
-          signed: allowNegative,
+    return ZenTextField(
+      label: label,
+      controller: controller,
+      enabled: enabled,
+      hint: hint,
+      autovalidateMode: AutovalidateMode.onUserInteraction,
+      errorText: errorText,
+      keyboardType: TextInputType.numberWithOptions(
+        decimal: maxFractionDigits != 0,
+        signed: allowNegative,
+      ),
+      inputFormatters: <TextInputFormatter>[
+        ZenAmountInputFormatter(
+          decimalSeparator: zenDecimalSeparator(Localizations.localeOf(context)),
+          maxFractionDigits: maxFractionDigits,
+          allowNegative: allowNegative,
         ),
-        inputFormatters: <TextInputFormatter>[
-          ZenAmountInputFormatter(
-            decimalSeparator: zenDecimalSeparator(Localizations.localeOf(context)),
-            maxFractionDigits: maxFractionDigits,
-            allowNegative: allowNegative,
-          ),
-        ],
-        textInputAction: textInputAction,
-        onFieldSubmitted: onSubmitted,
-        onChanged: onChanged == null
-            ? null
-            : (String text) => onChanged!(
-                normalizeAmount(
-                  text,
-                  maxFractionDigits: maxFractionDigits,
-                  allowNegative: allowNegative,
-                ),
-              ),
-        validator: (String? text) {
-          if (text == null || text.isEmpty) return null;
-          final bool valid =
+      ],
+      textInputAction: textInputAction,
+      onSubmitted: onSubmitted,
+      onChanged: onChanged == null
+          ? null
+          : (String text) => onChanged!(
               normalizeAmount(
                 text,
                 maxFractionDigits: maxFractionDigits,
                 allowNegative: allowNegative,
-              ) !=
-              null;
-          return valid ? null : strings.invalidAmount;
-        },
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: hint,
-          border: const OutlineInputBorder(),
-        ),
-      ),
+              ),
+            ),
+      validator: (String? text) {
+        if (text == null || text.isEmpty) return null;
+        final bool valid =
+            normalizeAmount(
+              text,
+              maxFractionDigits: maxFractionDigits,
+              allowNegative: allowNegative,
+            ) !=
+            null;
+        return valid ? null : strings.invalidAmount;
+      },
     );
   }
 }

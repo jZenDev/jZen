@@ -15,6 +15,8 @@
 /// * [ZenDateField], [ZenDateRangeField] — a date and a from/to pair whose order is enforced.
 /// * [ZenAmountField], [ZenAmountRangeField] — a decimal number and a min/max pair whose order
 ///   is reported; the number's meaning stays with the app.
+/// * [ZenTextField] — a labelled text input, the base of [ZenAmountField].
+/// * [ZenProgressIndicator] — an indeterminate spinner.
 /// * [FocusRing] — the focus indicator the above use, for an app's own controls.
 ///
 /// The few strings these controls speak are owned by [ZenWidgetsLocalizations]; register
@@ -36,6 +38,8 @@ export 'src/zen_amount_range_field.dart' show ZenAmountRangeField;
 export 'src/zen_button.dart' show ZenButton, ZenButtonVariant, zenButtonMinHeight;
 export 'src/zen_date_field.dart' show ZenDateField, zenDefaultFirstDate, zenDefaultLastDate;
 export 'src/zen_date_range_field.dart' show ZenDateRangeField;
+export 'src/zen_progress_indicator.dart' show ZenProgressIndicator;
 export 'src/zen_segmented_control.dart' show ZenSegment, ZenSegmentedControl;
 export 'src/zen_select.dart' show ZenSelect;
 export 'src/zen_switch_row.dart' show ZenSwitchRow;
+export 'src/zen_text_field.dart' show ZenTextField;

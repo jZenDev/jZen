@@ -334,6 +334,8 @@ nine times; fixing a control once in the framework fixes it in every app.
 | A few exclusive options | `ZenSegmentedControl<T>` | `SegmentedButton` |
 | A boolean setting | `ZenSwitchRow` | `SwitchListTile` |
 | A date, or a from/to period | `ZenDateField`, `ZenDateRangeField` | `showDatePicker`, two loose pickers |
+| A text input | `ZenTextField` | `TextField`, `TextFormField` |
+| A loading spinner | `ZenProgressIndicator` | `CircularProgressIndicator` |
 | A decimal number, or a min/max pair | `ZenAmountField` + `normalizeAmount`, `ZenAmountRangeField` | `TextField` with a numeric keyboard |
 
 Never branch on platform to pick Cupertino or Material for these — the package does it on a
@@ -353,7 +355,8 @@ will not learn it any other way:
 Build Flutter screens from the jZen framework's controls, never raw Material equivalents:
 `ZenButton` (not ElevatedButton/FilledButton/OutlinedButton/TextButton), `ZenSelect<T>` (not
 DropdownButton), `ZenSegmentedControl<T>`, `ZenSwitchRow`, `ZenDateField` / `ZenDateRangeField` (not
-showDatePicker), `ZenAmountField` / `ZenAmountRangeField` (+ `normalizeAmount`), and
+showDatePicker), `ZenTextField` (not TextField/TextFormField), `ZenAmountField` / `ZenAmountRangeField`
+(+ `normalizeAmount`), `ZenProgressIndicator` (not CircularProgressIndicator), and
 `showAdaptivePresentation` (not showDialog/showModalBottomSheet), all from
 `package:zen_ui_widgets/zen_ui_widgets.dart`. Sign-in and the shell come from `zen_ui_identity` and
 `zen_ui_navigation`. Never branch on platform to pick Cupertino vs Material. Do not wrap these in

@@ -3,10 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zen_ui_navigation/src/widgets/navigation_desktop.dart';
+import 'package:zen_ui_navigation/src/widgets/navigation_rail.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_region.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_web.dart';
-import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 
 import '../support/a11y.dart';
 
@@ -14,34 +13,6 @@ import '../support/a11y.dart';
 /// 2.4.7 Focus Visible, 1.4.11 Non-text Contrast). Every destination must be reachable with Tab
 /// and the arrow keys, activate with Enter and Space, and show a ring a sighted keyboard user can
 /// see — and the ring must not appear for a pointer user.
-
-/// Indices of the destinations currently drawing a focus ring.
-List<int> ringed(WidgetTester tester) {
-  final rings = find.byType(FocusRing).evaluate().toList();
-  return <int>[
-    for (int i = 0; i < rings.length; i++)
-      if (find
-          .descendant(
-            of: find.byElementPredicate((e) => identical(e, rings[i])),
-            matching: find.byWidgetPredicate(
-              (w) =>
-                  w is DecoratedBox &&
-                  w.decoration is BoxDecoration &&
-                  (w.decoration as BoxDecoration).border != null,
-            ),
-          )
-          .evaluate()
-          .isNotEmpty)
-        i,
-  ];
-}
-
-Future<void> press(WidgetTester tester, LogicalKeyboardKey key, {bool shift = false}) async {
-  if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-  await tester.sendKeyEvent(key);
-  if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
-  await tester.pumpAndSettle();
-}
 
 void main() {
   group('Desktop NavigationRail', () {
@@ -51,7 +22,7 @@ void main() {
       final selections = <int>[];
       await pumpNavigation(
         tester,
-        (ctx) => buildDesktopNavigation(
+        (ctx) => buildRailNavigation(
           context: ctx,
           selectedIndex: 0,
           onItemSelected: selections.add,
@@ -93,7 +64,7 @@ void main() {
       ) async {
         await pumpNavigation(
           tester,
-          (ctx) => buildDesktopNavigation(
+          (ctx) => buildRailNavigation(
             context: ctx,
             selectedIndex: 0,
             onItemSelected: (_) {},
@@ -124,7 +95,7 @@ void main() {
       final handle = tester.ensureSemantics();
       await pumpNavigation(
         tester,
-        (ctx) => buildDesktopNavigation(
+        (ctx) => buildRailNavigation(
           context: ctx,
           selectedIndex: 0,
           onItemSelected: (_) {},
@@ -268,7 +239,7 @@ void main() {
         for (final wide in <bool>[true, false]) {
           await pumpNavigation(
             tester,
-            (ctx) => (wide ? buildPlatformNavigation : buildDesktopNavigation)(
+            (ctx) => (wide ? buildPlatformNavigation : buildRailNavigation)(
               context: ctx,
               selectedIndex: 1,
               onItemSelected: (_) {},

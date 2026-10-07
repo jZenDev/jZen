@@ -12,5 +12,17 @@
         "type": "int"
       }
     }
+  },
+  "position": "{index} of {count}",
+  "@position": {
+    "description": "A sidebar destination's place among the others, read after its name: 'Inbox, 2 of 5'. A sighted user sees the whole list; a screen-reader user only hears it row by row, so this is how they know how many there are.",
+    "placeholders": {
+      "index": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
   }
 }

@@ -2,8 +2,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_ui_navigation/zen_ui_navigation.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show FocusRing;
 
 /// Helpers for the accessibility suites. They read what assistive technology reads — the final,
 /// merged semantics tree — rather than the widget tree, because a widget test that finds a
@@ -90,3 +92,31 @@ List<ZenNavigationItem> auditItems({int count = 3}) => <ZenNavigationItem>[
       builder: (_) => Text('page_$i'),
     ),
 ];
+
+/// Indices of the destinations currently drawing a focus ring.
+List<int> ringed(WidgetTester tester) {
+  final rings = find.byType(FocusRing).evaluate().toList();
+  return <int>[
+    for (int i = 0; i < rings.length; i++)
+      if (find
+          .descendant(
+            of: find.byElementPredicate((e) => identical(e, rings[i])),
+            matching: find.byWidgetPredicate(
+              (w) =>
+                  w is DecoratedBox &&
+                  w.decoration is BoxDecoration &&
+                  (w.decoration as BoxDecoration).border != null,
+            ),
+          )
+          .evaluate()
+          .isNotEmpty)
+        i,
+  ];
+}
+
+Future<void> press(WidgetTester tester, LogicalKeyboardKey key, {bool shift = false}) async {
+  if (shift) await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+  await tester.sendKeyEvent(key);
+  if (shift) await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+  await tester.pumpAndSettle();
+}

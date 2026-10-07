@@ -2,7 +2,8 @@ import 'package:zen_core/zen_core.dart';
 import 'package:zen_identity/zen_identity.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenIconButton, ZenProgressIndicator;
+import 'package:zen_ui_widgets/zen_ui_widgets.dart'
+    show ZenIconButton, ZenPageScaffold, ZenProgressIndicator;
 
 import '../l10n/generated/identity_localizations.dart';
 import '../l10n/identity_error_text.dart';
@@ -31,28 +32,24 @@ class ProfileScreen extends ConsumerWidget {
     final theme =
         Theme.of(context).extension<IdentityThemeExtension>() ?? IdentityThemeExtension.fallback();
 
-    return Scaffold(
+    return ZenPageScaffold(
+      title: messages.profileTitle,
       backgroundColor: theme.surfaceColor,
-      appBar: AppBar(
-        title: Text(messages.profileTitle),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: theme.brandColor,
-        actions: [
-          ZenIconButton(
-            icon: Icons.logout,
-            label: messages.logoutButton,
-            onPressed: () async {
-              final identity = ref.read(identitySessionStoreProvider).value;
-              await ref.read(identitySessionStoreProvider.notifier).logout();
-              onLogoutSuccess?.call();
-              if (identity != null) {
-                onLogoutSuccessWithIdentity?.call(identity);
-              }
-            },
-          ),
-        ],
-      ),
+      foregroundColor: theme.brandColor,
+      actions: [
+        ZenIconButton(
+          icon: Icons.logout,
+          label: messages.logoutButton,
+          onPressed: () async {
+            final identity = ref.read(identitySessionStoreProvider).value;
+            await ref.read(identitySessionStoreProvider.notifier).logout();
+            onLogoutSuccess?.call();
+            if (identity != null) {
+              onLogoutSuccessWithIdentity?.call(identity);
+            }
+          },
+        ),
+      ],
       body: state.when(
         data: (identity) {
           if (identity == null) {

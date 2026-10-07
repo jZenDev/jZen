@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zen_identity/zen_identity.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show showZenMessage;
 
 import '../l10n/generated/identity_localizations.dart';
 import '../state/auth_link_outcome.dart';
 
 /// Tells the user what happened to an auth link that arrived while the app was already running.
 ///
-/// Place it **inside** `MaterialApp` (wrapping `home`, or via `builder`), because it needs the
-/// `ScaffoldMessenger` and the `Localizations` that `MaterialApp` provides. That is the opposite
+/// Place it **inside** `MaterialApp`, wrapping `home`, because it needs the `Localizations` that
+/// `MaterialApp` provides and, on Apple platforms, the `Overlay` of its `Navigator` that
+/// `showZenMessage` shows the message in (a `builder` sits above the `Navigator`, so has none). That is the opposite
 /// of the app's deep-link *receiver*, which sits above `MaterialApp` so it outlives every screen —
 /// the two are deliberately at different heights: one must survive navigation, the other must be
-/// able to reach the current scaffold.
+/// able to reach the current screen.
 ///
 /// Without this, a refused link while the app is open does nothing whatsoever: the session store
 /// declines to sign anyone out (a stale link must not evict whoever is using the app now), so
@@ -40,9 +42,7 @@ class ZenAuthLinkListener extends ConsumerWidget {
         _ => messages.linkExpiredBanner,
       };
 
-      ScaffoldMessenger.of(context)
-        ..removeCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text(text)));
+      showZenMessage(context, text);
 
       // Cleared immediately: the message is on screen, and leaving the outcome set would show it
       // again on the next rebuild. Done after the listener runs, so it does not modify a provider

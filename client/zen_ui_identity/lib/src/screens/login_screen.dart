@@ -2,6 +2,7 @@ import 'package:zen_core/zen_core.dart';
 import 'package:zen_identity/zen_identity.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenPageScaffold, showZenMessage;
 
 import '../l10n/generated/identity_localizations.dart';
 import '../l10n/identity_error_text.dart';
@@ -69,14 +70,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         final messages = IdentityLocalizations.of(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(switch (landing) {
-              _Landing.expired => messages.linkExpiredBanner,
-              _Landing.confirmed => messages.emailConfirmedBanner,
-            }),
-          ),
-        );
+        showZenMessage(context, switch (landing) {
+          _Landing.expired => messages.linkExpiredBanner,
+          _Landing.confirmed => messages.emailConfirmedBanner,
+        });
       });
     }
   }
@@ -107,11 +104,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       },
       (failure) {
         // Error handling
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(messages.errorText(failure)),
-            backgroundColor: Theme.of(context).extension<IdentityThemeExtension>()?.errorColor,
-          ),
+        showZenMessage(
+          context,
+          messages.errorText(failure),
+          backgroundColor: Theme.of(context).extension<IdentityThemeExtension>()?.errorColor,
         );
       },
     );
@@ -124,7 +120,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final theme =
         Theme.of(context).extension<IdentityThemeExtension>() ?? IdentityThemeExtension.fallback();
 
-    return Scaffold(
+    return ZenPageScaffold(
       backgroundColor: theme.surfaceColor,
       body: Center(
         child: SingleChildScrollView(

@@ -3,6 +3,7 @@ import 'package:zen_identity/zen_identity.dart';
 import 'package:zen_ui_identity/src/screens/restore_password_screen.dart';
 import 'package:zen_ui_identity/src/state/identity_repository.dart';
 import 'package:zen_ui_identity/src/theme/identity_theme_extension.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -53,7 +54,7 @@ class _FakeRepo implements IdentityRepository {
 }
 
 void main() {
-  testWidgets('success shows success snackbar and calls callback', (tester) async {
+  testWidgets('success shows the success message and calls callback', (tester) async {
     final repo = _FakeRepo(restoreResult: const ZenResult.ok(null));
     var called = false;
 
@@ -96,7 +97,7 @@ void main() {
     expect(find.text('Invalid email'), findsOneWidget);
   });
 
-  testWidgets('error shows error snackbar with error color', (tester) async {
+  testWidgets('error shows the message in the error colour', (tester) async {
     final repo = _FakeRepo(restoreResult: const ZenResult.err(ZenNotFoundError('no')));
 
     await tester.pumpWidget(
@@ -115,7 +116,53 @@ void main() {
 
     expect(find.text('Requested resource not found.'), findsOneWidget);
 
-    final snack = tester.widget<SnackBar>(find.byType(SnackBar));
-    expect(snack.backgroundColor, IdentityThemeExtension.fallback().errorColor);
+    // The message is a snack bar on Material and a toast on Apple; both paint it on a Material.
+    final surface = tester.widget<Material>(
+      find
+          .ancestor(of: find.text('Requested resource not found.'), matching: find.byType(Material))
+          .first,
+    );
+    expect(surface.color, IdentityThemeExtension.fallback().errorColor);
+  });
+
+  testWidgets('the top bar is the platform idiom: Cupertino on Apple, Material elsewhere', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          identityRepositoryProvider.overrideWithValue(
+            _FakeRepo(restoreResult: const ZenResult.ok(null)),
+          ),
+        ],
+        child: localizedApp(home: RestorePasswordScreen(onBackClick: () {})),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CupertinoNavigationBar), zenIsApplePlatform ? findsOneWidget : findsNothing);
+    expect(find.byType(AppBar), zenIsApplePlatform ? findsNothing : findsOneWidget);
+    expect(find.text('Reset Password'), findsOneWidget);
+  });
+
+  testWidgets('the back control is a labelled button that calls onBackClick', (tester) async {
+    final semantics = tester.ensureSemantics();
+    var backs = 0;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          identityRepositoryProvider.overrideWithValue(
+            _FakeRepo(restoreResult: const ZenResult.ok(null)),
+          ),
+        ],
+        child: localizedApp(home: RestorePasswordScreen(onBackClick: () => backs++)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.bySemanticsLabel('Back'), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Back'));
+    expect(backs, 1);
+    semantics.dispose();
   });
 }

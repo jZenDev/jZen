@@ -59,6 +59,37 @@ void main() {
     expect(amount.text.replaceAll(',', '.'), '1.23', reason: 'a third fractional digit is refused');
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('a page and a message build and operate on this platform', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) => ZenPageScaffold(
+            title: 'Profile',
+            actions: <Widget>[
+              ZenIconButton(
+                icon: Icons.logout,
+                label: 'Log out',
+                onPressed: () => showZenMessage(context, 'Signed out'),
+              ),
+            ],
+            body: const Center(child: Text('Body')),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Profile'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.logout));
+    await tester.pumpAndSettle(const Duration(milliseconds: 100));
+    expect(find.text('Signed out'), findsOneWidget);
+
+    await tester.pump(zenMessageDuration * 2);
+    await tester.pumpAndSettle();
+    expect(find.text('Signed out'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 enum Kind { a, b }

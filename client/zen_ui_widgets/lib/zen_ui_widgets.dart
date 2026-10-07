@@ -18,6 +18,8 @@
 ///   is reported; the number's meaning stays with the app.
 /// * [ZenTextField] — a labelled text input, the base of [ZenAmountField].
 /// * [ZenProgressIndicator] — an indeterminate spinner.
+/// * [ZenPageScaffold] — a page: a top bar (title, back, actions) over a body.
+/// * [showZenMessage] — a transient message: a snack bar on Material, a toast on Apple.
 /// * [FocusRing] — the focus indicator the above use, for an app's own controls.
 ///
 /// The few strings these controls speak are owned by [ZenWidgetsLocalizations]; register
@@ -40,6 +42,8 @@ export 'src/zen_button.dart' show ZenButton, ZenButtonVariant, zenButtonMinHeigh
 export 'src/zen_date_field.dart' show ZenDateField, zenDefaultFirstDate, zenDefaultLastDate;
 export 'src/zen_date_range_field.dart' show ZenDateRangeField;
 export 'src/zen_icon_button.dart' show ZenIconButton, zenIconButtonSize;
+export 'src/zen_message.dart' show showZenMessage, zenMessageDuration;
+export 'src/zen_page_scaffold.dart' show ZenPageScaffold;
 export 'src/zen_progress_indicator.dart' show ZenProgressIndicator;
 export 'src/zen_segmented_control.dart' show ZenSegment, ZenSegmentedControl;
 export 'src/zen_select.dart' show ZenSelect;

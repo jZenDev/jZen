@@ -15,6 +15,55 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-056 — Text input and spinners are framework controls, Cupertino on Apple; the identity screens are built on them
+
+**Date:** 2026-10-07. **Status:** accepted.
+
+### Decision
+
+- **`zen_ui_widgets` gains `ZenTextField` and `ZenProgressIndicator`**, each Cupertino on Apple
+  platforms (iOS **and** macOS) and Material elsewhere, on `zenIsApplePlatform`.
+  - `ZenTextField` is a form field with a label, an optional validator or app-decided `errorText`,
+    `obscureText`, input formatters and autofill hints. The label, the text and the error are one
+    merged accessible node, so the error is read with the field. The Cupertino branch is a
+    `FormField<String>` around `CupertinoTextField` (the stock `CupertinoTextFormFieldRow` is a
+    list-row idiom with no forced error and a separate error node); it sets its own border,
+    text and placeholder colours from the theme's `ColorScheme` rather than the iOS system greys, so
+    the field follows the app's palette and its dark mode, and rings keyboard focus with `FocusRing`.
+  - It has **no trailing-widget slot**: a control inside the merged node would be announced as part of
+    the field. `IdentityTextField.suffixIcon`, which nothing used, is removed with it.
+  - `ZenAmountField` is rebuilt on `ZenTextField`; `ZenButton`'s loading spinner is a
+    `ZenProgressIndicator`.
+- **`zen_ui_identity` depends on `zen_ui_widgets`.** `IdentityButton` is a `ZenButton` (the identity
+  theme's brand colour is passed as the scheme's `primary`, so an app's brand is kept; loading now
+  keeps the label beside the spinner, which the old button replaced it with). `IdentityTextField`
+  renders a `ZenTextField` on Apple platforms and keeps its themed Material field elsewhere. The
+  screens' spinners are `ZenProgressIndicator`.
+- **Left as recorded gaps, not decided in Material's favour:** the desktop navigation shell
+  (`NavigationRail`: Flutter has no Cupertino sidebar, and a hand-built one is a new control with its
+  own keyboard and screen-reader surface), an icon button, and a top bar / page scaffold. The
+  identity profile and reset screens therefore still sit in a Material `Scaffold` and `AppBar` on
+  Apple platforms. Each is its own piece of work; none is blocked by this change.
+
+### What this supersedes, and why
+
+- **"Text input (`ZenAmountField`) is one Material field on every platform."** (ADR-055, Idioms) →
+  **reversed.** *Why:* the stated reason for ADR-055's two exceptions was that the Cupertino form is
+  not keyboard-operable on desktop. A `CupertinoTextField` is an ordinary editable text with the
+  platform's own focus and selection, and it is operable by keyboard; the wheel pickers were the
+  inoperable ones. An application's forms are mostly text, so leaving it Material left macOS and iOS
+  showing Material on every form.
+
+### Consequence
+
+`zen_ui_widgets` and `zen_ui_identity` suites pass under `ZEN_PLATFORM=macos` and `linux`; the new
+controls are tested in both idioms directly, as `ZenButton` is. The identity suite's finders now
+name `ZenButton` and `EditableText` rather than `FilledButton` and `TextFormField`, so they hold in
+either idiom. Applications gain Cupertino text input and a Cupertino sign-in flow with no change of
+their own.
+
+---
+
 ## ADR-055 — `zen_ui_widgets` owns the generic controls, and the focus ring lives there
 
 **Date:** 2026-09-29. **Status:** accepted.

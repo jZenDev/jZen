@@ -24,6 +24,9 @@ dependencies:
     path: ../zen_transport
   zen_ui_navigation:
     path: ../zen_ui_navigation
+  # The controls the identity screens are built from: ZenButton, ZenTextField, ZenProgressIndicator.
+  zen_ui_widgets:
+    path: ../zen_ui_widgets
   flutter:
     sdk: flutter
   # Both are imported by the generated IdentityLocalizations. intl is pinned to the version

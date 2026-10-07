@@ -670,11 +670,13 @@ fixes one screen.
 | A boolean setting | `ZenSwitchRow` | `SwitchListTile`, `Switch` |
 | A date | `ZenDateField` | `showDatePicker` |
 | A from/to period | `ZenDateRangeField` | two `ZenDateField`s, `showDateRangePicker` |
+| A text input (name, email, password) | `ZenTextField` | `TextField`, `TextFormField`, `CupertinoTextField` |
+| A loading spinner | `ZenProgressIndicator` | `CircularProgressIndicator`, `CupertinoActivityIndicator` |
 | A decimal number | `ZenAmountField` (+ `normalizeAmount`) | `TextField` with a numeric keyboard |
 | A min/max pair | `ZenAmountRangeField` | two `ZenAmountField`s |
 | A focus indicator on a custom control | `FocusRing` | a bespoke `border` on `hasFocus` |
 | Sign-in, register, profile | `zen_ui_identity` screens | hand-built forms |
-| The navigation shell | `ZenNavigation` | `NavigationBar` / `NavigationRail` per screen |
+| The navigation shell | `ZenNavigation` (a Material `NavigationRail` on desktop, ADR-056) | `NavigationBar` / `NavigationRail` per screen |
 
 Rules that follow:
 
@@ -695,6 +697,10 @@ Rules that follow:
 - **Wording comes from the package.** The controls' own strings (validation errors, "Select a date")
   are `ZenWidgetsLocalizations`; register `zenWidgetsLocaleDelegate` beside the other packages'
   delegates. The application supplies only its own labels.
+- **Not yet framework controls (ADR-056).** An icon button, a top bar / page scaffold and the desktop
+  navigation shell are Material on every platform, Apple included. `zen_ui_identity`'s profile and
+  reset screens still sit in a Material `Scaffold` with an `AppBar`. They are listed as gaps, not as
+  decisions that Material is right on macOS.
 - **Genuinely different things are not "replacements".** `PopupMenuButton`, `ListTile`, `Card`,
   `Text`, layout and theming widgets have no framework counterpart and are used directly.
 

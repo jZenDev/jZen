@@ -23,6 +23,8 @@ Import `package:zen_ui_widgets/zen_ui_widgets.dart` and use:
 | Boolean setting | `ZenSwitchRow(label:, value:, onChanged:)` | `SwitchListTile`, `Switch` |
 | A date | `ZenDateField(label:, value:, onChanged:, clearable:)` | `showDatePicker` |
 | A from/to period | `ZenDateRangeField(fromLabel:, toLabel:, from:, to:, onChanged:)` | two date fields |
+| A text input (name, email, password) | `ZenTextField(label:, controller:, validator:, obscureText:)` | `TextField`, `TextFormField` |
+| A loading spinner | `ZenProgressIndicator(size:)` | `CircularProgressIndicator` |
 | A decimal number | `ZenAmountField(label:, controller:, maxFractionDigits:)`; read with `normalizeAmount(text)` | `TextField` + numeric keyboard |
 | A min/max pair | `ZenAmountRangeField(minLabel:, maxLabel:, minController:, maxController:)` | two amount fields |
 | Focus ring on your own control | `FocusRing` / `FocusRing.wrapping` | a hand-drawn focus border |

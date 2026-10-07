@@ -53,8 +53,8 @@ void main() {
     expect(on, isTrue);
     expect(kind, Kind.b);
 
-    await tester.enterText(find.byType(TextField).last, '1.23');
-    await tester.enterText(find.byType(TextField).last, '1.234');
+    await tester.enterText(find.byType(EditableText).last, '1.23');
+    await tester.enterText(find.byType(EditableText).last, '1.234');
     expect(amount.text.replaceAll(',', '.'), '1.23', reason: 'a third fractional digit is refused');
     expect(tester.takeException(), isNull);
   });

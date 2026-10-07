@@ -17,6 +17,12 @@ TextEditingValue edit(ZenAmountInputFormatter f, String from, String to) => f.fo
   ),
 );
 
+/// The editable input of the field labelled [label], whichever idiom drew it.
+Finder input(String label) => find.descendant(
+  of: find.ancestor(of: find.text(label), matching: find.byType(ZenTextField)),
+  matching: find.byType(EditableText),
+);
+
 void main() {
   group('normalizeAmount', () {
     test('canonicalises either decimal mark, grouping and a missing whole part', () {
@@ -166,9 +172,9 @@ void main() {
     ) async {
       final List<String?> seen = <String?>[];
       await pumpApp(tester, field(onChanged: seen.add));
-      await tester.enterText(find.byType(TextField), '12,5');
-      await tester.enterText(find.byType(TextField), '');
-      await tester.enterText(find.byType(TextField), '-');
+      await tester.enterText(find.byType(EditableText), '12,5');
+      await tester.enterText(find.byType(EditableText), '');
+      await tester.enterText(find.byType(EditableText), '-');
       expect(seen, <String?>['12.5', null, null]);
     });
 
@@ -176,7 +182,7 @@ void main() {
       final TextEditingController controller = TextEditingController();
       addTearDown(controller.dispose);
       await pumpApp(tester, field(controller: controller), locale: const Locale('uk'));
-      await tester.enterText(find.byType(TextField), '12.5');
+      await tester.enterText(find.byType(EditableText), '12.5');
       expect(controller.text, '12,5');
     });
 
@@ -256,12 +262,17 @@ void main() {
       await pumpApp(tester, field());
       await press(tester, LogicalKeyboardKey.tab);
       expect(
-        FocusManager.instance.primaryFocus?.context?.findAncestorWidgetOfExactType<TextField>(),
+        FocusManager.instance.primaryFocus?.context?.findAncestorWidgetOfExactType<EditableText>(),
         isNotNull,
       );
-      // The text field's own focused border: 2 px, in the theme's primary colour.
-      final InputDecorator decorator = tester.widget<InputDecorator>(find.byType(InputDecorator));
-      expect(decorator.isFocused, isTrue);
+      if (find.byType(InputDecorator).evaluate().isNotEmpty) {
+        // Material: the text field's own focused border, 2 px in the theme's primary colour.
+        final InputDecorator decorator = tester.widget<InputDecorator>(find.byType(InputDecorator));
+        expect(decorator.isFocused, isTrue);
+      } else {
+        // Cupertino: the shared focus ring.
+        expect(isRinged(tester, find.byType(ZenTextField)), isTrue);
+      }
     }, semanticsEnabled: false);
   });
 
@@ -289,8 +300,8 @@ void main() {
     testWidgets('a minimum above the maximum is called out under the maximum', (tester) async {
       final SemanticsHandle handle = tester.ensureSemantics();
       await pumpApp(tester, range());
-      await tester.enterText(find.widgetWithText(TextField, 'Min'), '50');
-      await tester.enterText(find.widgetWithText(TextField, 'Max'), '10');
+      await tester.enterText(input('Min'), '50');
+      await tester.enterText(input('Max'), '10');
       await tester.pumpAndSettle();
 
       expect(find.text('The minimum must not be greater than the maximum'), findsOneWidget);
@@ -306,20 +317,20 @@ void main() {
 
     testWidgets('fixing either end clears the error', (tester) async {
       await pumpApp(tester, range());
-      await tester.enterText(find.widgetWithText(TextField, 'Min'), '50');
-      await tester.enterText(find.widgetWithText(TextField, 'Max'), '10');
+      await tester.enterText(input('Min'), '50');
+      await tester.enterText(input('Max'), '10');
       await tester.pumpAndSettle();
-      await tester.enterText(find.widgetWithText(TextField, 'Min'), '5');
+      await tester.enterText(input('Min'), '5');
       await tester.pumpAndSettle();
       expect(find.textContaining('must not be greater'), findsNothing);
     });
 
     testWidgets('equal ends, one end, and none are all valid', (tester) async {
       await pumpApp(tester, range());
-      await tester.enterText(find.widgetWithText(TextField, 'Min'), '10');
+      await tester.enterText(input('Min'), '10');
       await tester.pumpAndSettle();
       expect(find.textContaining('must not be greater'), findsNothing);
-      await tester.enterText(find.widgetWithText(TextField, 'Max'), '10,0');
+      await tester.enterText(input('Max'), '10,0');
       await tester.pumpAndSettle();
       expect(find.textContaining('must not be greater'), findsNothing);
     });
@@ -327,11 +338,11 @@ void main() {
     testWidgets('an inverted range fails an enclosing Form', (tester) async {
       final GlobalKey<FormState> form = GlobalKey<FormState>();
       await pumpApp(tester, Form(key: form, child: range()));
-      await tester.enterText(find.widgetWithText(TextField, 'Min'), '50');
-      await tester.enterText(find.widgetWithText(TextField, 'Max'), '10');
+      await tester.enterText(input('Min'), '50');
+      await tester.enterText(input('Max'), '10');
       await tester.pumpAndSettle();
       expect(form.currentState!.validate(), isFalse);
-      await tester.enterText(find.widgetWithText(TextField, 'Max'), '60');
+      await tester.enterText(input('Max'), '60');
       await tester.pumpAndSettle();
       expect(form.currentState!.validate(), isTrue);
     });
@@ -339,8 +350,8 @@ void main() {
     testWidgets('reports both ends, canonical, on every change', (tester) async {
       final List<(String?, String?)> seen = <(String?, String?)>[];
       await pumpApp(tester, range(onChanged: (String? a, String? b) => seen.add((a, b))));
-      await tester.enterText(find.widgetWithText(TextField, 'Min'), '1,5');
-      await tester.enterText(find.widgetWithText(TextField, 'Max'), '9');
+      await tester.enterText(input('Min'), '1,5');
+      await tester.enterText(input('Max'), '9');
       expect(seen, <(String?, String?)>[('1.5', null), ('1.5', '9')]);
     });
 
@@ -348,8 +359,8 @@ void main() {
       await pumpApp(tester, range(), size: const Size(320, 800), textScale: 2);
       expect(tester.takeException(), isNull);
       expect(
-        tester.getTopLeft(find.widgetWithText(TextField, 'Max')).dy,
-        greaterThan(tester.getBottomLeft(find.widgetWithText(TextField, 'Min')).dy - 1),
+        tester.getTopLeft(input('Max')).dy,
+        greaterThan(tester.getBottomLeft(input('Min')).dy - 1),
       );
     });
 
@@ -357,8 +368,8 @@ void main() {
       testWidgets('meets AA text contrast with the error showing (${theme.key})', (tester) async {
         final SemanticsHandle handle = tester.ensureSemantics();
         await pumpApp(tester, range(), theme: theme.value);
-        await tester.enterText(find.widgetWithText(TextField, 'Min'), '50');
-        await tester.enterText(find.widgetWithText(TextField, 'Max'), '10');
+        await tester.enterText(input('Min'), '50');
+        await tester.enterText(input('Max'), '10');
         await tester.pumpAndSettle();
         await expectLater(tester, meetsGuideline(textContrastGuideline));
         handle.dispose();

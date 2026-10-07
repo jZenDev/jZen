@@ -85,7 +85,7 @@ void main() {
   testWidgets('shows validation error for invalid email', (tester) async {
     await tester.pumpWidget(buildTestable());
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField).at(0), 'invalid');
+    await tester.enterText(find.byType(EditableText).at(0), 'invalid');
     await tester.tap(find.text(messages.registerButton));
     await tester.pumpAndSettle();
     expect(find.text(messages.validationEmail), findsOneWidget);
@@ -94,7 +94,7 @@ void main() {
   testWidgets('shows validation error for an email that only contains an @ sign', (tester) async {
     await tester.pumpWidget(buildTestable());
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField).at(0), 'a@');
+    await tester.enterText(find.byType(EditableText).at(0), 'a@');
     await tester.tap(find.text(messages.registerButton));
     await tester.pumpAndSettle();
     expect(find.text(messages.validationEmail), findsOneWidget);
@@ -103,9 +103,9 @@ void main() {
   testWidgets('shows validation error for password mismatch', (tester) async {
     await tester.pumpWidget(buildTestable());
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField).at(0), 'user@example.com');
-    await tester.enterText(find.byType(TextFormField).at(1), 'password1');
-    await tester.enterText(find.byType(TextFormField).at(2), 'password2');
+    await tester.enterText(find.byType(EditableText).at(0), 'user@example.com');
+    await tester.enterText(find.byType(EditableText).at(1), 'password1');
+    await tester.enterText(find.byType(EditableText).at(2), 'password2');
     await tester.tap(find.text(messages.registerButton));
     await tester.pumpAndSettle();
     expect(find.text(messages.validationPasswordMismatch), findsOneWidget);
@@ -124,9 +124,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField).at(0), 'user@example.com');
-    await tester.enterText(find.byType(TextFormField).at(1), 'password');
-    await tester.enterText(find.byType(TextFormField).at(2), 'password');
+    await tester.enterText(find.byType(EditableText).at(0), 'user@example.com');
+    await tester.enterText(find.byType(EditableText).at(1), 'password');
+    await tester.enterText(find.byType(EditableText).at(2), 'password');
     await tester.tap(find.text(messages.registerButton));
     await tester.pumpAndSettle();
     expect(called, isTrue);
@@ -148,9 +148,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField).at(0), 'user@example.com');
-    await tester.enterText(find.byType(TextFormField).at(1), 'password');
-    await tester.enterText(find.byType(TextFormField).at(2), 'password');
+    await tester.enterText(find.byType(EditableText).at(0), 'user@example.com');
+    await tester.enterText(find.byType(EditableText).at(1), 'password');
+    await tester.enterText(find.byType(EditableText).at(2), 'password');
     await tester.tap(find.text(messages.registerButton));
     await tester.pumpAndSettle();
 
@@ -164,9 +164,9 @@ void main() {
     };
     await tester.pumpWidget(buildTestable());
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField).at(0), 'user@example.com');
-    await tester.enterText(find.byType(TextFormField).at(1), 'password');
-    await tester.enterText(find.byType(TextFormField).at(2), 'password');
+    await tester.enterText(find.byType(EditableText).at(0), 'user@example.com');
+    await tester.enterText(find.byType(EditableText).at(1), 'password');
+    await tester.enterText(find.byType(EditableText).at(2), 'password');
     await tester.tap(find.text(messages.registerButton));
     await tester.pumpAndSettle();
     expect(find.byType(SnackBar), findsOneWidget);
@@ -181,6 +181,9 @@ void main() {
         },
       ),
     );
+    await tester.pumpAndSettle();
+    // Below the fold now that the fields are Cupertino-tall; a user would scroll to it.
+    await tester.ensureVisible(find.text(messages.loginButton));
     await tester.pumpAndSettle();
     await tester.tap(find.text(messages.loginButton));
     await tester.pumpAndSettle();

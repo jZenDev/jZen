@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_core/zen_core.dart';
@@ -122,7 +123,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Degraded, not crashed - which is the whole point.
-    expect(find.widgetWithText(FilledButton, 'Log In'), findsOneWidget);
+    expect(find.widgetWithText(ZenButton, 'Log In'), findsOneWidget);
   });
 
   testWidgets('an app-supplied delegate composed first wins over the framework wording', (
@@ -141,8 +142,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(FilledButton, 'Zaloguj się'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, 'Log In'), findsNothing);
+    expect(find.widgetWithText(ZenButton, 'Zaloguj się'), findsOneWidget);
+    expect(find.widgetWithText(ZenButton, 'Log In'), findsNothing);
   });
 
   test('every locale carries its own wording', () async {
@@ -180,7 +181,7 @@ void main() {
     await tester.pumpWidget(app(ZenLocales.en));
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(FilledButton, 'Log In'), findsOneWidget);
+    expect(find.widgetWithText(ZenButton, 'Log In'), findsOneWidget);
     expect(find.text('Reset Password'), findsOneWidget);
     expect(find.text('Sign Up'), findsOneWidget);
 
@@ -188,7 +189,7 @@ void main() {
     await tester.pumpWidget(app(ZenLocales.uk));
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(FilledButton, 'Увійти'), findsOneWidget);
+    expect(find.widgetWithText(ZenButton, 'Увійти'), findsOneWidget);
     expect(find.text('Скинути пароль'), findsOneWidget);
     expect(find.text('Зареєструватися'), findsOneWidget);
     expect(find.text('Reset Password'), findsNothing);

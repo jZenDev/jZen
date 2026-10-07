@@ -67,7 +67,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // enter a valid email
-    await tester.enterText(find.byType(TextFormField), 'user@example.com');
+    await tester.enterText(find.byType(EditableText), 'user@example.com');
     await tester.tap(find.text('Send Link'));
     await tester.pump();
     await tester.pumpAndSettle();
@@ -88,7 +88,7 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextFormField), 'a@');
+    await tester.enterText(find.byType(EditableText), 'a@');
     await tester.tap(find.text('Send Link'));
     await tester.pump();
     await tester.pumpAndSettle();
@@ -108,7 +108,7 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextFormField), 'user@example.com');
+    await tester.enterText(find.byType(EditableText), 'user@example.com');
     await tester.tap(find.text('Send Link'));
     await tester.pump();
     await tester.pumpAndSettle();

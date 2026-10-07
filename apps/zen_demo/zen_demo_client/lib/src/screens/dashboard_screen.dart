@@ -88,11 +88,9 @@ class _DemoDashboardScreenState extends ConsumerState<DemoDashboardScreen> {
     final messages = DemoLocalizations.of(context);
     final connected = _socket != null;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(messages.appTitle),
-        actions: [DemoLanguageMenu(label: messages.languageLabel)],
-      ),
+    return ZenPageScaffold(
+      title: messages.appTitle,
+      actions: [DemoLanguageMenu(label: messages.languageLabel)],
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

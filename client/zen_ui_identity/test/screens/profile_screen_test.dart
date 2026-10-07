@@ -2,6 +2,7 @@ import 'package:zen_core/zen_core.dart';
 import 'package:zen_identity/zen_identity.dart';
 import 'package:zen_ui_identity/src/screens/profile_screen.dart';
 import 'package:zen_ui_identity/src/state/identity_repository.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -111,5 +112,25 @@ void main() {
     expect(logoutIdentity?.id.value, 'user-1');
 
     semantics.dispose();
+  });
+
+  testWidgets('the top bar is the platform idiom: Cupertino on Apple, Material elsewhere', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          identityRepositoryProvider.overrideWithValue(
+            _FakeRepo(current: const ZenResult.ok(null)),
+          ),
+        ],
+        child: localizedApp(home: ProfileScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(CupertinoNavigationBar), zenIsApplePlatform ? findsOneWidget : findsNothing);
+    expect(find.byType(AppBar), zenIsApplePlatform ? findsNothing : findsOneWidget);
+    expect(find.text('Profile'), findsOneWidget);
   });
 }

@@ -158,7 +158,7 @@ void main() {
     expect(called, isFalse, reason: 'not signed in until the email is confirmed');
   });
 
-  testWidgets('shows error SnackBar on registration failure', (tester) async {
+  testWidgets('shows the error message on registration failure', (tester) async {
     testStore.onRegister = (email, password) async {
       return const ZenResult.err(ZenValidationError('fail'));
     };
@@ -169,7 +169,8 @@ void main() {
     await tester.enterText(find.byType(EditableText).at(2), 'password');
     await tester.tap(find.text(messages.registerButton));
     await tester.pumpAndSettle();
-    expect(find.byType(SnackBar), findsOneWidget);
+    // A snack bar on Material, a toast on Apple: either way the failure is on screen.
+    expect(find.text(messages.errorText(const ZenValidationError('fail'))), findsOneWidget);
   });
 
   testWidgets('login button calls onLoginClick', (tester) async {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenPageScaffold;
 
 import '../l10n/generated/identity_localizations.dart';
 import '../theme/identity_theme_extension.dart';
@@ -24,13 +25,9 @@ class ConfirmEmailView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    return Scaffold(
+    return ZenPageScaffold(
       backgroundColor: theme.surfaceColor,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: theme.brandColor,
-      ),
+      foregroundColor: theme.brandColor,
       body: Center(
         child: SingleChildScrollView(
           padding: theme.containerPadding,

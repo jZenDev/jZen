@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zen_transport/zen_transport.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenPageScaffold;
 
 import '../l10n/generated/demo_localizations.dart';
 import '../providers.dart';
@@ -48,8 +49,8 @@ class _DemoTermsScreenState extends ConsumerState<DemoTermsScreen> {
       });
     }
 
-    return Scaffold(
-      appBar: AppBar(title: Text(messages.termsTitle)),
+    return ZenPageScaffold(
+      title: messages.termsTitle,
       body: Padding(padding: const EdgeInsets.all(16), child: _buildBody(messages)),
     );
   }

@@ -2,6 +2,7 @@ import 'package:zen_core/zen_core.dart';
 import 'package:zen_identity/zen_identity.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenPageScaffold, showZenMessage;
 
 import '../l10n/generated/identity_localizations.dart';
 import '../l10n/identity_error_text.dart';
@@ -77,11 +78,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
         widget.onRegisterSuccessWithIdentity?.call(identity);
       },
       (failure) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(messages.errorText(failure)),
-            backgroundColor: Theme.of(context).extension<IdentityThemeExtension>()?.errorColor,
-          ),
+        showZenMessage(
+          context,
+          messages.errorText(failure),
+          backgroundColor: Theme.of(context).extension<IdentityThemeExtension>()?.errorColor,
         );
       },
     );
@@ -103,14 +103,10 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
       );
     }
 
-    return Scaffold(
+    return ZenPageScaffold(
+      title: messages.registerTitle, // "Sign Up"
       backgroundColor: theme.surfaceColor,
-      appBar: AppBar(
-        title: Text(messages.registerTitle), // "Sign Up"
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: theme.brandColor,
-      ),
+      foregroundColor: theme.brandColor,
       body: Center(
         child: SingleChildScrollView(
           padding: theme.containerPadding,

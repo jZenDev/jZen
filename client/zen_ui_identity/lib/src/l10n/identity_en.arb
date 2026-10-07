@@ -20,7 +20,6 @@
   "rolesTitle": "Your Roles",
   "rolesLabel": "Roles:",
   "profileAvatarLabel": "Profile avatar",
-  "backButtonTooltip": "Go back",
 
   "restorePasswordInfo": "Enter your email address and we'll send you a link to reset your password.",
   "resetLinkSentSuccess": "Reset link sent to your email",

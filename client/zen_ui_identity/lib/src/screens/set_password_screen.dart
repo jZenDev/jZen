@@ -1,6 +1,7 @@
 import 'package:zen_core/zen_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenPageScaffold, showZenMessage;
 
 import '../l10n/generated/identity_localizations.dart';
 import '../l10n/identity_error_text.dart';
@@ -58,20 +59,17 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
 
     result.fold(
       (_) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(messages.passwordChangedSuccess)));
+        showZenMessage(context, messages.passwordChangedSuccess);
         widget.onPasswordSet?.call();
       },
       (ZenError error) {
         // Password rules are the identity provider's, so a rejection ("too weak") arrives as a
         // coded error and is rendered like any other. The screen states no rule of its own, which
         // is what keeps it from contradicting the server.
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(messages.errorText(error)),
-            backgroundColor: Theme.of(context).extension<IdentityThemeExtension>()?.errorColor,
-          ),
+        showZenMessage(
+          context,
+          messages.errorText(error),
+          backgroundColor: Theme.of(context).extension<IdentityThemeExtension>()?.errorColor,
         );
       },
     );
@@ -83,7 +81,7 @@ class _SetPasswordScreenState extends ConsumerState<SetPasswordScreen> {
     final theme =
         Theme.of(context).extension<IdentityThemeExtension>() ?? IdentityThemeExtension.fallback();
 
-    return Scaffold(
+    return ZenPageScaffold(
       backgroundColor: theme.surfaceColor,
       body: Center(
         child: SingleChildScrollView(

@@ -20,7 +20,6 @@
   "rolesTitle": "Ваші ролі",
   "rolesLabel": "Ролі:",
   "profileAvatarLabel": "Аватар профілю",
-  "backButtonTooltip": "Назад",
 
   "restorePasswordInfo": "Введіть свою електронну пошту, і ми надішлемо посилання для скидання пароля.",
   "resetLinkSentSuccess": "Посилання для скидання надіслано на вашу пошту",

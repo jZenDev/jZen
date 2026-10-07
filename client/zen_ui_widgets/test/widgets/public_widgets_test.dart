@@ -23,6 +23,7 @@ void main() {
             ZenButton(label: 'Save', onPressed: () {}),
             ZenButton(label: 'Back', onPressed: () {}, variant: ZenButtonVariant.secondary),
             ZenButton(label: 'Skip', onPressed: () {}, variant: ZenButtonVariant.text),
+            ZenIconButton(icon: Icons.logout, label: 'Log out', onPressed: () {}),
             ZenSwitchRow(label: 'Archived', value: on, onChanged: (bool v) => set(() => on = v)),
             ZenSegmentedControl<Kind>(
               segments: const <ZenSegment<Kind>>[

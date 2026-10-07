@@ -101,7 +101,7 @@ void main() {
     expect(find.text('ADMIN'), findsOneWidget);
 
     // Check Semantics
-    expect(tester.getSemantics(find.byTooltip('Log Out').first).tooltip, contains('Log Out'));
+    expect(tester.getSemantics(find.byIcon(Icons.logout).first).label, contains('Log Out'));
     expect(tester.getSemantics(find.byType(CircleAvatar)).label, contains('Profile avatar'));
 
     await tester.tap(find.byIcon(Icons.logout).first);

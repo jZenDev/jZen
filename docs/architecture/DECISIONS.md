@@ -15,6 +15,34 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-058 — The icon button is a framework control, `ZenIconButton`, Cupertino on Apple
+
+**Date:** 2026-10-07. **Status:** accepted.
+
+### Decision
+
+- **`zen_ui_widgets` gains `ZenIconButton`** (`icon`, a required `label`, `onPressed`), Cupertino on
+  Apple platforms and Material elsewhere, on `zenIsApplePlatform`. `zen_ui_identity`'s logout and
+  back buttons use it.
+  - **The label is required** and is the accessible name on both idioms; on Material it is also the
+    tooltip. Material's `IconButton(tooltip:)` was not enough on its own: the tooltip reaches
+    assistive technology as a tooltip, with the node's *label* empty, so the name is set as the
+    icon's semantic label and the tooltip is excluded from semantics to avoid a double reading.
+  - **Same treatment as `ZenButton`:** a `FocusRing`, a 48 px target, a disabled state stated on a
+    node that offers no tap (a disabled `CupertinoButton` still advertises one), and Enter mapped to
+    activation (a web `CupertinoButton` answers only Space).
+  - **Colour is the ambient `IconTheme`'s**, so a button in an `AppBar` follows the bar's foreground
+    (the identity theme's brand colour); outside one it is the theme's `onSurface`.
+
+### What this supersedes, and why
+
+- **ADR-056's recorded gap: "an icon button"** → **closed.** *Why:* the gap was recorded because no
+  control existed to fall back on, not because Material was right on Apple. The top bar / page
+  scaffold remains a gap, so on Apple the identity screens' icon sits in a Material `AppBar` until
+  that lands.
+
+---
+
 ## ADR-057 — The macOS navigation shell is a sidebar, built in `zen_ui_navigation`
 
 **Date:** 2026-10-07. **Status:** accepted.

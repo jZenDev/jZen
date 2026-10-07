@@ -1,6 +1,7 @@
 import 'package:zen_core/zen_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenIconButton;
 
 import '../l10n/generated/identity_localizations.dart';
 import '../l10n/identity_error_text.dart';
@@ -70,9 +71,9 @@ class _RestorePasswordScreenState extends ConsumerState<RestorePasswordScreen> {
       appBar: AppBar(
         title: Text(messages.restorePasswordTitle),
         leading: widget.onBackClick != null
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back),
-                tooltip: messages.backButtonTooltip,
+            ? ZenIconButton(
+                icon: Icons.arrow_back,
+                label: messages.backButtonTooltip,
                 onPressed: widget.onBackClick,
               )
             : null,

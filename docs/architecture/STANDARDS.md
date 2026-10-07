@@ -665,6 +665,7 @@ fixes one screen.
 |---|---|---|
 | A dialog or sheet for a form or detail | `showAdaptivePresentation` | `showDialog`, `showModalBottomSheet` |
 | An action button | `ZenButton` (`primary` / `secondary` / `text`) | `ElevatedButton`, `FilledButton`, `OutlinedButton`, `TextButton` |
+| An icon-only button (back, close, log out) | `ZenIconButton` (a required `label` is its name) | `IconButton`, `CupertinoButton` around an `Icon` |
 | One choice from a list | `ZenSelect<T>` | `DropdownButton`, `DropdownButtonFormField` |
 | One of a few exclusive options | `ZenSegmentedControl<T>` | `SegmentedButton`, `CupertinoSlidingSegmentedControl` |
 | A boolean setting | `ZenSwitchRow` | `SwitchListTile`, `Switch` |
@@ -697,11 +698,11 @@ Rules that follow:
 - **Wording comes from the package.** The controls' own strings (validation errors, "Select a date")
   are `ZenWidgetsLocalizations`; register `zenWidgetsLocaleDelegate` beside the other packages'
   delegates. The application supplies only its own labels.
-- **Not yet framework controls (ADR-056).** An icon button and a top bar / page scaffold are Material
-  on every platform, Apple included. (The desktop navigation shell was on this list; macOS has had
-  its sidebar since ADR-057.) `zen_ui_identity`'s profile and
-  reset screens still sit in a Material `Scaffold` with an `AppBar`. They are listed as gaps, not as
-  decisions that Material is right on macOS.
+- **Not yet framework controls (ADR-056, narrowed by ADR-057 and ADR-058).** A top bar / page
+  scaffold is Material on every platform, Apple included. (The desktop navigation shell was on this
+  list; macOS has had its sidebar since ADR-057. The icon button was too; it is `ZenIconButton` since
+  ADR-058.) `zen_ui_identity`'s profile and reset screens still sit in a Material `Scaffold` with an
+  `AppBar`. They are listed as gaps, not as decisions that Material is right on macOS.
 - **Genuinely different things are not "replacements".** `PopupMenuButton`, `ListTile`, `Card`,
   `Text`, layout and theming widgets have no framework counterpart and are used directly.
 

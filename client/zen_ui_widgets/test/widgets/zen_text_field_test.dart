@@ -27,6 +27,10 @@ Widget field(
   String? hint,
   bool obscureText = false,
   bool enabled = true,
+  TextCapitalization capitalization = TextCapitalization.none,
+  int? maxLines = 1,
+  int? minLines,
+  int? maxLength,
 }) => Builder(
   builder: (BuildContext context) => build(
     context,
@@ -41,6 +45,10 @@ Widget field(
       hint: hint,
       obscureText: obscureText,
       enabled: enabled,
+      textCapitalization: capitalization,
+      maxLines: maxLines,
+      minLines: minLines,
+      maxLength: maxLength,
     ),
   ),
 );
@@ -69,6 +77,52 @@ void main() {
         await tester.enterText(find.byType(EditableText), 'a@b.c');
         expect(seen, <String>['a@b.c']);
         expect(controller.text, 'a@b.c');
+      });
+
+      testWidgets('capitalization is passed to the keyboard', (tester) async {
+        await pumpApp(tester, field(entry.value, capitalization: TextCapitalization.sentences));
+        expect(
+          tester.widget<EditableText>(find.byType(EditableText)).textCapitalization,
+          TextCapitalization.sentences,
+        );
+      });
+
+      testWidgets('minLines and maxLines make a note that grows, then scrolls', (tester) async {
+        await pumpApp(tester, field(entry.value, minLines: 3, maxLines: 6));
+        final EditableText text = tester.widget<EditableText>(find.byType(EditableText));
+        expect(text.minLines, 3);
+        expect(text.maxLines, 6);
+
+        final double empty = tester.getSize(find.byType(EditableText)).height;
+        await tester.enterText(find.byType(EditableText), List.filled(12, 'line').join('\n'));
+        await tester.pump();
+        expect(tester.getSize(find.byType(EditableText)).height, greaterThan(empty));
+      });
+
+      testWidgets('a single line stays one line', (tester) async {
+        await pumpApp(tester, field(entry.value));
+        expect(tester.widget<EditableText>(find.byType(EditableText)).maxLines, 1);
+      });
+
+      testWidgets('maxLength refuses the extra characters and shows a counter', (tester) async {
+        final SemanticsHandle handle = tester.ensureSemantics();
+        final TextEditingController controller = TextEditingController();
+        addTearDown(controller.dispose);
+        await pumpApp(tester, field(entry.value, controller: controller, maxLength: 5));
+        expect(find.text('0/5'), findsOneWidget);
+
+        await tester.enterText(find.byType(EditableText), 'abcdefgh');
+        await tester.pump();
+        expect(controller.text, 'abcde');
+        expect(find.text('5/5'), findsOneWidget);
+        // The counter is not a second focusable node beside the input.
+        expect(nodesWith(tester, SemanticsAction.focus), hasLength(1));
+        handle.dispose();
+      });
+
+      testWidgets('without maxLength there is no counter', (tester) async {
+        await pumpApp(tester, field(entry.value));
+        expect(find.textContaining(RegExp(r'^\d+/\d+$')), findsNothing);
       });
 
       testWidgets('the keyboard action key submits the text', (tester) async {

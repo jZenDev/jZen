@@ -11,6 +11,9 @@ const double zenIconButtonSize = 48;
 
 const double _iconSize = 24;
 
+/// The largest count a badge spells out; above it the badge says "99+", which fits its pill.
+const int _badgeMax = 99;
+
 const Map<ShortcutActivator, Intent> _enterActivates = <ShortcutActivator, Intent>{
   SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
   SingleActivator(LogicalKeyboardKey.numpadEnter): ActivateIntent(),
@@ -27,6 +30,10 @@ const Map<ShortcutActivator, Intent> _enterActivates = <ShortcutActivator, Inten
 /// * **Colour** is the ambient `IconTheme`'s, so a button in an `AppBar` takes the bar's
 ///   foreground; outside one it falls back to the theme's `onSurface`.
 ///
+/// * **Badge** is an optional count ([badge]), such as unread notifications, drawn over the icon's
+///   corner. It is read with the name ("Reminders, 3"), once: the drawn digits are not a second
+///   node. A null or zero [badge] draws nothing.
+///
 /// A null [onPressed] disables the button.
 class ZenIconButton extends StatelessWidget {
   /// Creates an icon button showing [icon], named [label].
@@ -34,8 +41,9 @@ class ZenIconButton extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onPressed,
+    this.badge,
     super.key,
-  });
+  }) : assert(badge == null || badge >= 0, 'a badge counts things, so it is not negative');
 
   /// The glyph shown; decorative, never the button's name.
   final IconData icon;
@@ -46,14 +54,38 @@ class ZenIconButton extends StatelessWidget {
   /// Called on activation; null disables the button.
   final VoidCallback? onPressed;
 
+  /// A count shown on the icon, such as unread items; null or 0 shows none, and above 99 it reads
+  /// "99+".
+  final int? badge;
+
   @override
   Widget build(BuildContext context) {
     return FocusRing.wrapping(
       child: zenIsApplePlatform
-          ? buildCupertinoIconButton(context, icon, label, onPressed)
-          : buildMaterialIconButton(context, icon, label, onPressed),
+          ? buildCupertinoIconButton(context, icon, label, onPressed, badge: badge)
+          : buildMaterialIconButton(context, icon, label, onPressed, badge: badge),
     );
   }
+}
+
+/// The badge's text for [count], or null when nothing is to be drawn.
+String? _badgeText(int? count) {
+  if (count == null || count <= 0) return null;
+  return count > _badgeMax ? '$_badgeMax+' : '$count';
+}
+
+/// The button's accessible name: [label], then the badge's count when one shows.
+String _nameWith(String label, String? badgeText) =>
+    badgeText == null ? label : '$label, $badgeText';
+
+/// [glyph] with a badge over its corner when [badgeText] is set. The digits are excluded from
+/// semantics: the count is part of the button's name instead of a node beside it.
+Widget _badged(Widget glyph, String? badgeText) {
+  if (badgeText == null) return glyph;
+  return Badge(
+    label: ExcludeSemantics(child: Text(badgeText)),
+    child: glyph,
+  );
 }
 
 /// The Material icon button. Exposed to the package's tests, which cannot reach the branch the
@@ -62,8 +94,10 @@ Widget buildMaterialIconButton(
   BuildContext context,
   IconData icon,
   String label,
-  VoidCallback? onPressed,
-) {
+  VoidCallback? onPressed, {
+  int? badge,
+}) {
+  final String? badgeText = _badgeText(badge);
   // The name is the icon's semantic label, merged into the button, and the tooltip is excluded
   // from semantics: IconButton's own `tooltip` is announced as a tooltip, not as the button's
   // name, and naming it twice would be read twice.
@@ -71,7 +105,10 @@ Widget buildMaterialIconButton(
     message: label,
     excludeFromSemantics: true,
     child: IconButton(
-      icon: Icon(icon, size: _iconSize, semanticLabel: label),
+      icon: _badged(
+        Icon(icon, size: _iconSize, semanticLabel: _nameWith(label, badgeText)),
+        badgeText,
+      ),
       onPressed: onPressed,
       constraints: const BoxConstraints.tightFor(
         width: zenIconButtonSize,
@@ -86,8 +123,11 @@ Widget buildCupertinoIconButton(
   BuildContext context,
   IconData icon,
   String label,
-  VoidCallback? onPressed,
-) {
+  VoidCallback? onPressed, {
+  int? badge,
+}) {
+  final String? badgeText = _badgeText(badge);
+  final String name = _nameWith(label, badgeText);
   final bool enabled = onPressed != null;
   final Color color = enabled
       ? (IconTheme.of(context).color ?? Theme.of(context).colorScheme.onSurface)
@@ -98,7 +138,7 @@ Widget buildCupertinoIconButton(
     foregroundColor: color,
     minimumSize: const Size.square(zenIconButtonSize),
     padding: EdgeInsets.zero,
-    child: Icon(icon, size: _iconSize, color: color),
+    child: _badged(Icon(icon, size: _iconSize, color: color), badgeText),
   );
 
   // CupertinoButton says nothing about being enabled, and a disabled one still offers a tap
@@ -111,13 +151,7 @@ Widget buildCupertinoIconButton(
   return enabled
       ? Shortcuts(
           shortcuts: _enterActivates,
-          child: Semantics(label: label, enabled: true, child: button),
+          child: Semantics(label: name, enabled: true, child: button),
         )
-      : Semantics(
-          button: true,
-          enabled: false,
-          label: label,
-          excludeSemantics: true,
-          child: button,
-        );
+      : Semantics(button: true, enabled: false, label: name, excludeSemantics: true, child: button);
 }

@@ -28,8 +28,9 @@ import 'zen_icon_button.dart';
 ///   other.
 ///
 /// A [ZenPageScaffold] needs the `MaterialApp` an app already has: the Cupertino branch hosts the
-/// bar and body in a transparent `Material`, so stock widgets that need one (`ListTile`, `Chip`,
-/// a `PopupMenuButton` among the [actions]) work as they do under a Material `Scaffold`.
+/// bar in a transparent `Material`, and the body in another below the page's colour, so stock
+/// widgets that need one (`ListTile`, `Chip`, a `PopupMenuButton` among the [actions]) work as they
+/// do under a Material `Scaffold`: a tappable `ListTile` shows its ink.
 class ZenPageScaffold extends StatelessWidget {
   /// Creates a page showing [body], under a bar when [title], [leading] or [actions] is given.
   const ZenPageScaffold({
@@ -158,7 +159,10 @@ Widget buildCupertinoPageScaffold(BuildContext context, ZenPageScaffold page) {
                   : tinted(Row(mainAxisSize: MainAxisSize.min, children: page.actions)),
             )
           : null,
-      child: page.body,
+      // A second Material, under the scaffold's coloured box. Ink paints on the nearest Material
+      // above it, and `ListTile` refuses (in debug) to sit under a coloured box between it and
+      // that Material: the outer one alone left the tile's ink and colour painted beneath the box.
+      child: Material(type: MaterialType.transparency, child: page.body),
     ),
   );
 }

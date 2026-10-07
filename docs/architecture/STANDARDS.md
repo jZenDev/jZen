@@ -665,16 +665,17 @@ fixes one screen.
 |---|---|---|
 | A dialog or sheet for a form or detail | `showAdaptivePresentation` | `showDialog`, `showModalBottomSheet` |
 | An action button | `ZenButton` (`primary` / `secondary` / `text`) | `ElevatedButton`, `FilledButton`, `OutlinedButton`, `TextButton` |
-| An icon-only button (back, close, log out) | `ZenIconButton` (a required `label` is its name) | `IconButton`, `CupertinoButton` around an `Icon` |
+| An icon-only button (back, close, log out), with an optional count badge | `ZenIconButton` (a required `label` is its name; `badge:` is read with it) | `IconButton`, `CupertinoButton` around an `Icon` |
 | A page: a top bar (title, back, actions) over a body | `ZenPageScaffold` | `Scaffold` + `AppBar`, `CupertinoPageScaffold` + `CupertinoNavigationBar` |
-| A transient message (a confirmation, a failure) | `showZenMessage` | `ScaffoldMessenger…showSnackBar` |
+| A transient message (a confirmation, a failure), with an optional action such as Undo | `showZenMessage` (`actionLabel` + `onAction`) | `ScaffoldMessenger…showSnackBar` |
 | One choice from a list | `ZenSelect<T>` | `DropdownButton`, `DropdownButtonFormField` |
 | One of a few exclusive options | `ZenSegmentedControl<T>` | `SegmentedButton`, `CupertinoSlidingSegmentedControl` |
 | A boolean setting | `ZenSwitchRow` | `SwitchListTile`, `Switch` |
 | A date | `ZenDateField` | `showDatePicker` |
 | A from/to period | `ZenDateRangeField` | two `ZenDateField`s, `showDateRangePicker` |
-| A text input (name, email, password) | `ZenTextField` | `TextField`, `TextFormField`, `CupertinoTextField` |
+| A text input (name, email, password, a multiline note, a length-limited field) | `ZenTextField` (`maxLines`/`minLines`, `maxLength` with a counter, `textCapitalization`) | `TextField`, `TextFormField`, `CupertinoTextField` |
 | A loading spinner | `ZenProgressIndicator` | `CircularProgressIndicator`, `CupertinoActivityIndicator` |
+| A progress bar (a goal reached, a budget spent) | `ZenProgressBar` (a required `label` is its name; the value is read as a percentage) | `LinearProgressIndicator` |
 | A decimal number | `ZenAmountField` (+ `normalizeAmount`) | `TextField` with a numeric keyboard |
 | A min/max pair | `ZenAmountRangeField` | two `ZenAmountField`s |
 | A focus indicator on a custom control | `FocusRing` | a bespoke `border` on `hasFocus` |
@@ -709,6 +710,12 @@ Rules that follow:
   on Apple any more (ADR-056's list: the navigation shell, ADR-057; the icon button, ADR-058; this).
 - **Genuinely different things are not "replacements".** `PopupMenuButton`, `ListTile`, `Card`,
   `Text`, layout and theming widgets have no framework counterpart and are used directly.
+  A `ListTile` with an `onTap` works in a `ZenPageScaffold` on every platform, with its ink (ADR-060).
+- **Left to the application, on purpose (ADR-060).** Pull-to-refresh (`RefreshIndicator` /
+  `CupertinoSliverRefreshControl`) is a property of the scroll view, not a control: the Apple form
+  is a sliver inside the list, so a wrapper cannot add it to a list it did not build. A text
+  field's `initialValue` and `onSaved` are not offered: `controller:` is the one way to seed and
+  read a `ZenTextField`.
 
 A new control's home is decided by concern, as `zen_ui_navigation` and `zen_ui_identity` already
 divide it: navigation-specific pieces in `zen_ui_navigation`, identity-specific in `zen_ui_identity`,

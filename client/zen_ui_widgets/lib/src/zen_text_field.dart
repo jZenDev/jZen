@@ -31,9 +31,20 @@ class ZenTextField extends StatelessWidget {
     this.inputFormatters,
     this.autofillHints,
     this.textInputAction,
+    this.textCapitalization = TextCapitalization.none,
+    this.maxLines = 1,
+    this.minLines,
+    this.maxLength,
     this.enabled = true,
     super.key,
-  });
+  }) : assert(maxLines == null || maxLines > 0, 'maxLines must be positive'),
+       assert(minLines == null || minLines > 0, 'minLines must be positive'),
+       assert(
+         minLines == null || maxLines == null || minLines <= maxLines,
+         'minLines cannot exceed maxLines',
+       ),
+       assert(maxLength == null || maxLength > 0, 'maxLength must be positive'),
+       assert(!obscureText || maxLines == 1, 'a hidden text is a single line');
 
   /// The field's name.
   final String label;
@@ -75,6 +86,22 @@ class ZenTextField extends StatelessWidget {
   /// The keyboard's action key.
   final TextInputAction? textInputAction;
 
+  /// How the keyboard capitalizes what is typed; a hint to the keyboard, not a rule on the text.
+  /// To force upper case, use an [inputFormatters] entry.
+  final TextCapitalization textCapitalization;
+
+  /// The most lines the field grows to before it scrolls; 1 (the default) is a single line, null
+  /// is no limit. More than one makes it a multiline note.
+  final int? maxLines;
+
+  /// The fewest lines the field shows, so an empty note is already a box to write in; null is
+  /// [maxLines]'s own start.
+  final int? minLines;
+
+  /// The most characters the field accepts. When set, the field shows a counter of how many are
+  /// used, and typing past the limit is refused.
+  final int? maxLength;
+
   /// Whether the field takes input.
   final bool enabled;
 
@@ -102,12 +129,18 @@ Widget buildMaterialTextField(BuildContext context, ZenTextField field) {
       inputFormatters: field.inputFormatters,
       autofillHints: field.autofillHints,
       textInputAction: field.textInputAction,
+      textCapitalization: field.textCapitalization,
+      maxLines: field.maxLines,
+      minLines: field.minLines,
+      maxLength: field.maxLength,
       onChanged: field.onChanged,
       onFieldSubmitted: field.onSubmitted,
       validator: field.validator,
       decoration: InputDecoration(
         labelText: field.label,
         hintText: field.hint,
+        // A tall box's label starts at the top with the text, not at its middle.
+        alignLabelWithHint: field.maxLines != 1,
         border: const OutlineInputBorder(),
       ),
     ),
@@ -130,6 +163,10 @@ Widget buildCupertinoTextField(BuildContext context, ZenTextField field) {
     inputFormatters: field.inputFormatters,
     autofillHints: field.autofillHints,
     textInputAction: field.textInputAction,
+    textCapitalization: field.textCapitalization,
+    maxLines: field.maxLines,
+    minLines: field.minLines,
+    maxLength: field.maxLength,
     enabled: field.enabled,
   );
 }

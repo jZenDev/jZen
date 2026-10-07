@@ -18,7 +18,7 @@ and **Material everywhere else**, so an app never hand-rolls a platform check.
 - **Adaptive presentation** — `showAdaptivePresentation` shows a form or detail overlay as a
   sheet on native mobile and a dialog on desktop and web.
 - **Controls** — `ZenButton` (primary, secondary, text), `ZenSwitchRow`, `ZenSegmentedControl`,
-  `ZenSelect`, `ZenDateField`, `ZenTextField`, `ZenAmountField`, `ZenProgressIndicator`, and the paired `ZenDateRangeField` /
+  `ZenSelect`, `ZenDateField`, `ZenTextField`, `ZenAmountField`, `ZenProgressIndicator`, `ZenProgressBar`, and the paired `ZenDateRangeField` /
   `ZenAmountRangeField`, which enforce `from <= to` / `min <= max` in one place.
 - **Accessible by construction** — WCAG 2.2 AA: one announcement per control, a `FocusRing` that
   shows for keyboard and assistive technology and hides for a pointer, AA contrast in light and
@@ -69,6 +69,7 @@ The controls' few strings (validation errors, "Select a date") come from
 | `ZenSelect`, `ZenDateField` | wheel picker on **iOS**; macOS keeps the dropdown / calendar | dropdown / calendar dialog |
 | `ZenTextField`, `ZenAmountField` | `CupertinoTextField` (label above, outlined, shared focus ring) — on iOS and macOS | outlined `TextFormField` |
 | `ZenProgressIndicator` | `CupertinoActivityIndicator` | `CircularProgressIndicator` |
+| `ZenProgressBar` | rounded bar in the theme's primary | `LinearProgressIndicator` |
 
 ## 🤖 For applications and their coding agents
 
@@ -87,7 +88,7 @@ Build Flutter screens from the jZen framework's controls, never raw Material equ
 `ZenButton` (not ElevatedButton/FilledButton/OutlinedButton/TextButton), `ZenSelect<T>` (not
 DropdownButton), `ZenSegmentedControl<T>`, `ZenSwitchRow`, `ZenDateField` / `ZenDateRangeField` (not
 showDatePicker), `ZenTextField` (not TextField/TextFormField), `ZenAmountField` / `ZenAmountRangeField`
-(+ `normalizeAmount`), `ZenProgressIndicator` (not CircularProgressIndicator), and
+(+ `normalizeAmount`), `ZenProgressIndicator` (not CircularProgressIndicator), `ZenProgressBar` (not LinearProgressIndicator), and
 `showAdaptivePresentation` (not showDialog/showModalBottomSheet), all from
 `package:zen_ui_widgets/zen_ui_widgets.dart`. Sign-in and the shell come from `zen_ui_identity` and
 `zen_ui_navigation`. Never branch on platform to pick Cupertino vs Material. Do not wrap these in

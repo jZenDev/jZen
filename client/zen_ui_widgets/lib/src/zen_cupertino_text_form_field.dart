@@ -23,6 +23,10 @@ class ZenCupertinoTextFormField extends FormField<String> {
     this.inputFormatters,
     this.autofillHints,
     this.textInputAction,
+    this.textCapitalization = TextCapitalization.none,
+    this.maxLines = 1,
+    this.minLines,
+    this.maxLength,
     this.onSubmitted,
     super.validator,
     super.autovalidateMode,
@@ -65,6 +69,10 @@ class ZenCupertinoTextFormField extends FormField<String> {
                        inputFormatters: inputFormatters,
                        autofillHints: autofillHints,
                        textInputAction: textInputAction,
+                       textCapitalization: textCapitalization,
+                       maxLines: maxLines,
+                       minLines: minLines,
+                       maxLength: maxLength,
                        placeholder: hint,
                        // Set rather than inherited: CupertinoTextField's defaults are the iOS
                        // system greys, a hairline border and a placeholder well under 4.5:1.
@@ -84,9 +92,31 @@ class ZenCupertinoTextFormField extends FormField<String> {
                        onSubmitted: onSubmitted,
                      ),
                    ),
-                   if (invalid) ...<Widget>[
+                   if (invalid || maxLength != null) ...<Widget>[
                      const SizedBox(height: 4),
-                     Text(error, style: theme.textTheme.bodySmall?.copyWith(color: scheme.error)),
+                     Row(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: <Widget>[
+                         Expanded(
+                           child: invalid
+                               ? Text(
+                                   error,
+                                   style: theme.textTheme.bodySmall?.copyWith(color: scheme.error),
+                                 )
+                               : const SizedBox.shrink(),
+                         ),
+                         if (maxLength != null)
+                           // Material's counter reads "n / max"; the slash alone is not a word.
+                           Text(
+                             '${(field.value ?? '').characters.length}/$maxLength',
+                             semanticsLabel:
+                                 '${(field.value ?? '').characters.length} / $maxLength',
+                             style: theme.textTheme.bodySmall?.copyWith(
+                               color: scheme.onSurfaceVariant,
+                             ),
+                           ),
+                       ],
+                     ),
                    ],
                  ],
                ),
@@ -121,6 +151,18 @@ class ZenCupertinoTextFormField extends FormField<String> {
 
   /// The keyboard's action key.
   final TextInputAction? textInputAction;
+
+  /// How the keyboard capitalizes what is typed.
+  final TextCapitalization textCapitalization;
+
+  /// The most lines the field grows to before it scrolls; null is no limit.
+  final int? maxLines;
+
+  /// The fewest lines the field shows.
+  final int? minLines;
+
+  /// The most characters accepted; when set, a counter is shown under the field.
+  final int? maxLength;
 
   /// Called with the text when the keyboard's action key is pressed.
   final ValueChanged<String>? onSubmitted;

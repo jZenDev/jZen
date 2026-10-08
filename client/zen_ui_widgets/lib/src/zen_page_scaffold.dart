@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:zen_core/zen_core.dart';
 
+import 'zen_detail_scope.dart';
 import 'zen_icon_button.dart';
 
 /// A page: an optional top bar over a body, Cupertino on Apple platforms and Material elsewhere.
@@ -23,6 +24,9 @@ import 'zen_icon_button.dart';
 /// * **Colour** follows the theme's `ColorScheme` (surface and on-surface; primary for the
 ///   buttons on Apple). [backgroundColor] and [foregroundColor] override the page and the bar's
 ///   title and icons, as an app's brand does.
+/// * **In a detail pane, Close replaces Back.** The first page of a `showZenDetail` pane has no
+///   screen to go back to, so its implied control is a *Close* that dismisses the pane. Pages
+///   stacked in the pane after it get Back as usual.
 /// * **Navigation is not in here.** `ZenNavigation` owns the shell (tabs, rail, sidebar); a page
 ///   sits in its body and brings its own bar, so the two compose without either knowing about the
 ///   other.
@@ -80,9 +84,22 @@ class ZenPageScaffold extends StatelessWidget {
 }
 
 /// The page's [ZenPageScaffold.leading], or the implied back button, or null for none.
-Widget? _leadingOf(BuildContext context, ZenPageScaffold page, IconData backIcon) {
+Widget? _leadingOf(
+  BuildContext context,
+  ZenPageScaffold page,
+  IconData backIcon,
+  IconData closeIcon,
+) {
   if (page.leading != null) return page.leading;
   final VoidCallback? onBack = page.onBack;
+  // The first page of a detail pane has nothing to go back to: it offers Close instead.
+  if (onBack == null && page.automaticallyImplyLeading && ZenDetailScope.isRootPage(context)) {
+    return ZenIconButton(
+      icon: closeIcon,
+      label: MaterialLocalizations.of(context).closeButtonLabel,
+      onPressed: ZenDetailScope.maybeOf(context)!.close,
+    );
+  }
   if (onBack == null) {
     final bool canPop = ModalRoute.of(context)?.canPop ?? false;
     if (!page.automaticallyImplyLeading || !canPop) return null;
@@ -105,7 +122,7 @@ Widget? _titleOf(ZenPageScaffold page, [TextStyle? style]) {
 /// The Material page. Exposed to the package's tests, which cannot reach the branch the host
 /// platform did not compile.
 Widget buildMaterialPageScaffold(BuildContext context, ZenPageScaffold page) {
-  final Widget? leading = _leadingOf(context, page, Icons.arrow_back);
+  final Widget? leading = _leadingOf(context, page, Icons.arrow_back, Icons.close);
   final bool bar = page.title != null || leading != null || page.actions.isNotEmpty;
   return Scaffold(
     backgroundColor: page.backgroundColor,
@@ -127,7 +144,7 @@ Widget buildMaterialPageScaffold(BuildContext context, ZenPageScaffold page) {
 /// The Cupertino page; see [buildMaterialPageScaffold].
 Widget buildCupertinoPageScaffold(BuildContext context, ZenPageScaffold page) {
   final ColorScheme scheme = Theme.of(context).colorScheme;
-  final Widget? leading = _leadingOf(context, page, CupertinoIcons.back);
+  final Widget? leading = _leadingOf(context, page, CupertinoIcons.back, CupertinoIcons.xmark);
   final bool bar = page.title != null || leading != null || page.actions.isNotEmpty;
 
   // An opaque bar, so the body is laid out below it: a translucent one lets the body scroll

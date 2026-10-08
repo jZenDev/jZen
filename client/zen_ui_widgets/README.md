@@ -17,6 +17,10 @@ and **Material everywhere else**, so an app never hand-rolls a platform check.
 
 - **Adaptive presentation** — `showAdaptivePresentation` shows a form or detail overlay as a
   sheet on native mobile and a dialog on desktop and web.
+- **Details and pushed pages** — `showZenDetail` opens a list item's detail beside the list when the
+  window is wide (an in-layout pane on Apple, a side sheet elsewhere) and as a full-screen push when
+  it is narrow; wrap the list in a `ZenDetailHost`. `ZenPageRoute` and `ZenPageTransitions.theme`
+  give a pushed page the iOS slide on iOS and a short fade on macOS.
 - **Controls** — `ZenButton` (primary, secondary, text), `ZenSwitchRow`, `ZenSegmentedControl`,
   `ZenSelect`, `ZenDateField`, `ZenTextField`, `ZenAmountField`, `ZenProgressIndicator`, `ZenProgressBar`, and the paired `ZenDateRangeField` /
   `ZenAmountRangeField`, which enforce `from <= to` / `min <= max` in one place.

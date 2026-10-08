@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zen_ui_identity/zen_ui_identity.dart';
 import 'package:zen_ui_navigation/zen_ui_navigation.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 
 import 'l10n/generated/demo_localizations.dart';
 import 'providers.dart';
@@ -53,6 +54,8 @@ class DemoApp extends ConsumerWidget {
     return ThemeData(
       colorScheme: scheme,
       useMaterial3: true,
+      // What a pushed page does on each platform is the framework's decision (ADR-061).
+      pageTransitionsTheme: ZenPageTransitions.theme,
       extensions: [
         IdentityThemeExtension(
           successColor: Colors.green,

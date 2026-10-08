@@ -15,6 +15,83 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-061 — A pushed page on macOS fades, and a detail opens beside its list when the window is wide
+
+**Date:** 2026-10-08. **Status:** accepted. **Refines:** ADR-055 (the package owns what differs per platform).
+
+### Decision
+
+- **A pushed page has a framework-decided transition per platform** (`ZenPageTransitions.theme`):
+
+| Platform | Pushed page |
+|---|---|
+| iOS | the Cupertino slide with its edge-swipe back (the platform's own) |
+| macOS | a short fade (`ZenFadePageTransitionsBuilder`, 200 ms in, 150 ms out), no slide |
+| Android, Windows, Linux | Flutter's own default for each, unchanged |
+
+  - *Why:* Flutter gives `TargetPlatform.macOS` the iOS slide because it treats macOS as Cupertino. In
+    jZen's macOS shell (ADR-057) the sidebar switches content without a slide, so a pushed screen
+    sliding in from the right matched neither the shell nor a Mac window; nobody had decided it.
+  - *Set once, where the framework builds pages:* `ZenPageRoute` is a `MaterialPageRoute` that applies
+    that theme whatever the application's own `pageTransitionsTheme` says; the framework's pushes
+    (below) use it. An application passes `ZenPageTransitions.theme` to `ThemeData` so the
+    `MaterialPageRoute`s it still writes follow the same rule (`zen_demo` does). Neither needs a
+    platform branch in the application.
+- **A detail is `showZenDetail`, hosted by `ZenDetailHost`** (the comments on #129 widened the question
+  from the transition to the layout, because the slide is the phone idiom: the new screen replaces
+  the old one for want of room). Wrap the list in a `ZenDetailHost`; a detail opened from inside it:
+
+| Host width | iOS, macOS | Android, Windows, Linux, web |
+|---|---|---|
+| at least 720 | an **in-layout pane**: the list narrows to make room (a split view / inspector) | a **side sheet** over the list's trailing edge; the list stays operable |
+| narrower, or no host | a full-screen push (`ZenPageRoute`) | a full-screen push (`ZenPageRoute`) |
+
+  - *The idiom is a compile-time constant* (`zenIsApplePlatform`), like every control here. *The
+    width is a run-time decision*, which departs from ADR-041's "never `MediaQuery`" for
+    `showAdaptivePresentation` and is deliberate: that choice (dialog or sheet) follows the device, which
+    cannot change; this one follows the room, which a resized desktop or browser window changes. The
+    width is the **host's own** (a `LayoutBuilder`), so a list inside the navigation sidebar is
+    measured after the sidebar has taken its share. `ZenNavigation` already switches on width the
+    same way (`zenNarrowWidth`).
+  - *Pane width* is two fifths of the host, between 320 and 420. That number is ours: neither Apple's
+    split-view / inspector guidance nor Material's side-sheet page prescribes a fraction (the pages
+    are script-rendered and could not be read when this was decided, so what is said of them here
+    rests on #129's second comment and general knowledge, not on a fresh reading; check before
+    leaning on it).
+  - *The page is an ordinary page.* The pane is a small `Navigator` of its own, so
+    `Navigator.pop(result)` completes the future `showZenDetail` returned, `Navigator.push` stacks a
+    page in the pane, and a dialog still opens over the window. The first page's implied back control
+    becomes **Close** (`ZenPageScaffold` reads `ZenDetailScope`); pages stacked after it get Back.
+  - *Keyboard and focus:* focus moves into the pane when it opens and returns to the opener when it
+    closes; Escape closes it; Android's back closes it before popping the page beneath.
+  - *Lifecycle:* a second detail replaces the first (which ends with null); the list keeps its
+    scroll position and state throughout; narrowing the window under an open detail carries it over
+    to a push with the same future; widening leaves a pushed page where it is; removing the host ends
+    the future with null. Material's sheet slides in unless the user asked for reduced motion; Apple's
+    pane appears at once, as a Mac window changes its content.
+- **Left to the application, on purpose:** a *destination of its own* (Reminders, Chart, Accounts,
+  Categories, Profile in Prudent) is a navigation item or an in-place section of the shell, not a
+  detail; it is a `ZenNavigation` destination and the framework has nothing to add. Which screens are
+  details is the application's call.
+
+### What this supersedes, and why
+
+- **ADR-041's rule that the presentation choice is never a `MediaQuery` decision** → **not applied to
+  details** (it stands for `showAdaptivePresentation`). *Why:* see above; a dialog-versus-sheet choice
+  is about the device, a list-versus-detail layout is about the room.
+- **Flutter's default macOS page transition**, which the framework had inherited rather than chosen
+  → **replaced** by the fade above.
+
+### Consequence
+
+Tested directly: on macOS the pushed page has no slide mid-transition while iOS keeps it and
+Flutter's own default is shown to slide (so the test fails without the change); the detail suite covers
+both idioms' layout (built directly, because a run reaches only its host's branch), narrow and wide,
+Close, Escape, `pop(result)`, replacement, stacking, focus in and out, list state, narrowing, host
+removal and 200% text. The package suite passes under `ZEN_PLATFORM=macos` and `linux`.
+
+---
+
 ## ADR-060 — A tappable `ListTile` works in `ZenPageScaffold` on Apple; the controls gain what Prudent's screens lacked
 
 **Date:** 2026-10-07. **Status:** accepted.

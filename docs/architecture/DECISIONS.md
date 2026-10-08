@@ -15,6 +15,50 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-062 — The macOS fade follows the build, and a macOS page's navigation bar does not slide
+
+**Date:** 2026-10-08. **Status:** accepted. **Refines:** ADR-061 (it stands; two of its mechanisms were wrong).
+
+### Decision
+
+- **The fade is chosen by the build's `ZEN_PLATFORM`, not by the runtime `TargetPlatform`.**
+  `ZenPageTransitions.theme` overrides `TargetPlatform.macOS` only when `zenIsMacOS`. *Why:* Flutter web
+  reports `TargetPlatform.macOS` for a browser on a Mac, so ADR-061's map faded a Chrome tab, a
+  Material build that is not a Mac window and should show Flutter's own push. Every other idiom
+  decision in the framework already reads the compile-time constants for exactly this reason; the
+  transition was the one that did not. A web build on a Mac now keeps Flutter's default for
+  `TargetPlatform.macOS`.
+- **A macOS build's `ZenPageScaffold` bar does not take part in the iOS navigation-bar hero.**
+  `CupertinoNavigationBar.transitionBetweenRoutes` is off when `zenIsMacOS`; on iOS it stays on.
+  *Why:* the hero (the new title flying in from the right, the old one becoming the back label) is
+  driven by the route's animation but belongs to the bar, independent of `PageTransitionsTheme` and
+  `ZenPageRoute`. ADR-061 replaced the page's transition and left the bar's slide in place, so a Mac
+  still showed a page that "slid in" by its title and back button. iOS keeps the hero: ADR-061 keeps
+  "the Cupertino slide", and the bar hero is part of it.
+
+| Build | Pushed page | Navigation bar |
+|---|---|---|
+| native macOS | fade | still, fades with the page |
+| iOS | Cupertino slide | iOS hero |
+| web (any browser, including on a Mac), Android, Windows, Linux | Flutter's default | Material bar, or unchanged |
+
+### What this supersedes, and why
+
+- **ADR-061's "macOS: a short fade", read as a `TargetPlatform` rule** → **a `ZEN_PLATFORM` rule.**
+  The table and the macOS-only effect stand; the key changed.
+- **ADR-061's claim that the fade removes the slide on a Mac** → **true of the page body only**; the
+  bar's hero is switched off here.
+
+### Consequence
+
+The transition test pushes `ZenPageScaffold` pages (not a bare `Scaffold`, which has no bar to slide)
+and reads the title's x over time: constant on a macOS build, travelling on iOS and on a web build
+reporting `TargetPlatform.macOS`. With the bar hero left on, the macOS case fails with the title
+moving 725 → 668 → 477 → 374 px. `ZenPageTransitions.themeFor` and `buildCupertinoPageScaffold`'s
+`macOS` parameter exist so a single run reaches both values of a compile-time constant.
+
+---
+
 ## ADR-061 — A pushed page on macOS fades, and a detail opens beside its list when the window is wide
 
 **Date:** 2026-10-08. **Status:** accepted. **Refines:** ADR-055 (the package owns what differs per platform).

@@ -12,6 +12,7 @@ class ZenPageRoute<T> extends MaterialPageRoute<T> {
   ZenPageRoute({
     required super.builder,
     super.settings,
+    super.requestFocus,
     super.maintainState,
     super.fullscreenDialog,
     super.allowSnapshotting,

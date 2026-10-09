@@ -49,7 +49,7 @@ Widget _widget({
           ),
         ),
       ),
-      body: NavigationContent(child: items[selectedIndex].builder(context)),
+      body: NavigationContent(item: items[selectedIndex]),
     );
   }
 
@@ -84,7 +84,7 @@ Widget _widget({
           ),
         ),
       ),
-      Expanded(child: NavigationContent(child: items[selectedIndex].builder(context))),
+      Expanded(child: NavigationContent(item: items[selectedIndex])),
     ],
   );
 }

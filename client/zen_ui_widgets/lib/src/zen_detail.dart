@@ -22,6 +22,9 @@ import 'zen_page_route.dart';
 /// );
 /// ```
 ///
+/// Inside a `ZenNavigation` destination the push lands in the content area, so the navigation shell
+/// stays visible (ADR-063).
+///
 /// Opened from inside a detail, the page stacks in that pane.
 Future<T?> showZenDetail<T>(BuildContext context, {required WidgetBuilder builder}) {
   if (ZenDetailScope.maybeOf(context) != null) {

@@ -682,7 +682,7 @@ fixes one screen.
 | A min/max pair | `ZenAmountRangeField` | two `ZenAmountField`s |
 | A focus indicator on a custom control | `FocusRing` | a bespoke `border` on `hasFocus` |
 | Sign-in, register, profile | `zen_ui_identity` screens | hand-built forms |
-| The navigation shell | `ZenNavigation` (a sidebar on macOS, a Material `NavigationRail` on Linux and Windows, ADR-057) | `NavigationBar` / `NavigationRail` per screen |
+| The navigation shell | `ZenNavigation` (a sidebar on macOS, a Material `NavigationRail` on Linux and Windows, ADR-057); a page pushed from a destination stays beside the shell, and `Navigator.of(context, rootNavigator: true)` covers it (ADR-063) | `NavigationBar` / `NavigationRail` per screen |
 
 Rules that follow:
 

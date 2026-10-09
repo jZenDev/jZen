@@ -15,6 +15,57 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-063 — Each `ZenNavigation` destination has a `Navigator` of its own, so a pushed page stays in the content area
+
+**Date:** 2026-10-09. **Status:** accepted. **Refines:** ADR-057 (the shell), ADR-061 (`showZenDetail`).
+
+### Decision
+
+- **`ZenNavigation` hosts the selected destination in a `Navigator`** (`NavigationContent`), in the
+  layouts that have a persistent shell: the macOS sidebar, the Windows/Linux rail, and the web top
+  menu and drawer layout. `Navigator.of(context)` inside a destination is therefore the content
+  area's navigator, and a page pushed from it fills the content area with the shell still visible.
+  *Why:* without one, `Navigator.of` inside a destination was the application's root navigator, and
+  any push (a plain `Navigator.push`, or `showZenDetail`'s narrow fallback in a host under
+  `zenDetailMinWidth`) covered the whole window including the sidebar. #133 found it on a Mac window
+  of about 820 pt, where the host is narrower than the pane threshold.
+- **`showZenDetail` needs no change.** Its narrow fallback and its demotion of an open pane push on
+  `Navigator.of(context)`; that is now the content navigator. Option 3 of #133 is satisfied by
+  option 1, with no second API for screens to learn.
+- **A page that must cover the shell asks for the root navigator**:
+  `Navigator.of(context, rootNavigator: true)`. Dialogs, sheets and `showAdaptivePresentation`
+  already do, so a modal still covers the window.
+- **The stack is not kept across destinations.** Only the selected destination is built (as before),
+  so choosing another one discards the stack of the one left, along with the rest of its state; coming
+  back shows the destination's first page. *Why:* keeping a stack alive per destination means
+  building every destination up front (an `IndexedStack`) or holding offstage navigators, a change in
+  cost and in lifecycle for every app that this ADR was not asked to make. If an app needs it, that is
+  a separate decision.
+- **The mobile layout is unchanged.** On a phone the shell is a bottom bar and a pushed page covering
+  it is the platform's idiom.
+- **Focus.** A `Navigator` autofocuses its own node when it is built, which put the first Tab inside
+  the content and, for a page with nothing focusable, left Tab stuck there with the menu unreachable.
+  `NavigationContent` hands focus back after the first frame and the destination's first page does
+  not request it (`ZenPageRoute.requestFocus`); the menu and the page are ordered menu-first in an
+  `OrderedTraversalPolicy` group in the sidebar and rail (the web menu sits above the page, so reading
+  order already puts it first). A page pushed later takes focus like any pushed page.
+
+### What this supersedes, and why
+
+- **ADR-061's "a full-screen push" for a narrow host** → **a push in the content area where a shell
+  exists**, and a full-window push only where there is none (a phone, or no `ZenNavigation`).
+
+### Consequence
+
+`navigation_content_test.dart` builds both shells directly (the sidebar is the Apple branch, the rail
+the non-Apple one; a run reaches only its host's branch otherwise) and covers: a push stays beside the
+menu, Back, the root navigator still covers the menu, `showZenDetail` in a narrow host stays inside,
+the first Tab lands on the menu and then the page, and a destination switch discards the stack. The
+existing keyboard and semantics suites pass unchanged under `ZEN_PLATFORM=macos` and `linux`.
+
+---
+---
+
 ## ADR-062 — The macOS fade follows the build, and a macOS page's navigation bar does not slide
 
 **Date:** 2026-10-08. **Status:** accepted. **Refines:** ADR-061 (it stands; two of its mechanisms were wrong).

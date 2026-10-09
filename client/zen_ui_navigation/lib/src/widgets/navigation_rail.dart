@@ -23,26 +23,29 @@ Widget _widget({
   required List<ZenNavigationItem> items,
   ValueChanged<String>? onItemSelectedId,
   String? labelMore,
-}) => Row(
-  children: [
-    NavigationRegion(
-      child: NavigationRail(
-        selectedIndex: selectedIndex,
-        onDestinationSelected: (int index) {
-          onItemSelected(index);
-          onItemSelectedId?.call(items[index].id);
-        },
-        labelType: NavigationRailLabelType.all,
-        destinations: [
-          for (final item in items)
-            NavigationRailDestination(
-              icon: FocusRing(child: navigationBadge(item)),
-              label: Text(item.label),
-            ),
-        ],
+}) => FocusTraversalGroup(
+  policy: OrderedTraversalPolicy(),
+  child: Row(
+    children: [
+      NavigationRegion(
+        child: NavigationRail(
+          selectedIndex: selectedIndex,
+          onDestinationSelected: (int index) {
+            onItemSelected(index);
+            onItemSelectedId?.call(items[index].id);
+          },
+          labelType: NavigationRailLabelType.all,
+          destinations: [
+            for (final item in items)
+              NavigationRailDestination(
+                icon: FocusRing(child: navigationBadge(item)),
+                label: Text(item.label),
+              ),
+          ],
+        ),
       ),
-    ),
-    const VerticalDivider(thickness: 1, width: 1),
-    Expanded(child: NavigationContent(child: items[selectedIndex].builder(context))),
-  ],
+      const VerticalDivider(thickness: 1, width: 1),
+      Expanded(child: NavigationContent(item: items[selectedIndex])),
+    ],
+  ),
 );

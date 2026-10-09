@@ -33,7 +33,10 @@ class NavigationRegion extends StatelessWidget {
     explicitChildNodes: true,
     child: Shortcuts(
       shortcuts: _arrowKeyFocus,
-      child: FocusTraversalGroup(child: child),
+      child: FocusTraversalOrder(
+        order: const NumericFocusOrder(0),
+        child: FocusTraversalGroup(child: child),
+      ),
     ),
   );
 }

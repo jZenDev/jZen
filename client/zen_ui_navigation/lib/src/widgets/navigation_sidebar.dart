@@ -25,19 +25,22 @@ Widget _widget({
   required List<ZenNavigationItem> items,
   ValueChanged<String>? onItemSelectedId,
   String? labelMore,
-}) => Row(
-  children: <Widget>[
-    NavigationSidebar(
-      items: items,
-      selectedIndex: selectedIndex,
-      onSelected: (int index) {
-        onItemSelected(index);
-        onItemSelectedId?.call(items[index].id);
-      },
-    ),
-    const VerticalDivider(thickness: 1, width: 1),
-    Expanded(child: NavigationContent(child: items[selectedIndex].builder(context))),
-  ],
+}) => FocusTraversalGroup(
+  policy: OrderedTraversalPolicy(),
+  child: Row(
+    children: <Widget>[
+      NavigationSidebar(
+        items: items,
+        selectedIndex: selectedIndex,
+        onSelected: (int index) {
+          onItemSelected(index);
+          onItemSelectedId?.call(items[index].id);
+        },
+      ),
+      const VerticalDivider(thickness: 1, width: 1),
+      Expanded(child: NavigationContent(item: items[selectedIndex])),
+    ],
+  ),
 );
 
 /// The column of [NavigationSidebarRow]s, a `navigation` landmark of one focus group.

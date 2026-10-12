@@ -2999,8 +2999,17 @@ tasks:
         set -eu
         list=$(mktemp)
         trap 'rm -f "$list"' EXIT
-        {{.SERVER_DIR}}/mvnw -B -f {{.SERVER_DIR}}/pom.xml dependency:list > "$list"
-        {{.SERVER_DIR}}/mvnw -B -f {{.DEMO_SERVER_DIR}}/pom.xml dependency:list >> "$list"
+        # The app's `zen:*` dependencies resolve from the local Maven repo, which a fresh CI
+        # runner has never populated: install the libraries first, as build:apps:server does.
+        {{.SERVER_DIR}}/mvnw -B -q -f {{.SERVER_DIR}}/pom.xml install -DskipTests
+        # Maven's stdout is the list itself, so a resolution failure is written INTO the file and
+        # the job dies with no visible reason. Show the file when Maven fails.
+        for pom in {{.SERVER_DIR}}/pom.xml {{.DEMO_SERVER_DIR}}/pom.xml; do
+          if ! {{.SERVER_DIR}}/mvnw -B -f "$pom" dependency:list >> "$list"; then
+            cat "$list" >&2
+            exit 1
+          fi
+        done
         scripts/audit-maven.py "$list"
 
   audit:admin:

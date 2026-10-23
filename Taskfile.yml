@@ -1028,7 +1028,7 @@ tasks:
     silent: true
     summary: |
       Covers the scripts on the Python side of STANDARDS "Scripting" — `verify:boundaries`,
-      `verify:modules`, `verify:docs`, `verify:widget-files`, `seed-admin`, and `audit-maven`.
+      `verify:modules`, `verify:docs`, `verify:widget-files`, `seed-admin`, `audit-maven`, and `deploy-cleanup` (against stub `gcloud` and `docker`).
 
       `audit-maven`'s tests are about one property above all: that the gate cannot report a clean
       result when it checked nothing. That is not a hypothetical — it is what disqualified both
@@ -1787,6 +1787,14 @@ tasks:
           agree.
         - No `firebase deploy`: jZen serves Cloud Run directly with no Firebase Hosting
           edge, which is what lets it use normal cookie names and proactive auth.
+        - CLEANUP AFTER THE DEPLOY. Once the service is accepted it calls `zen:deploy:cleanup`,
+          which deletes superseded Cloud Run revisions, arms an Artifact Registry retention
+          policy, and prunes local Docker images and build cache. Revisions go before the
+          registry so none is left pointing at an expired image; the first run on a repository
+          only STAGES the policy in dry run and the next run arms it. A failure there leaves the
+          deploy in place and exits non-zero (CLEANUP_ON_FAILURE=warn exits 0); CLEANUP=off opts
+          out. Every number and switch, and what each protects: `task zen:deploy:cleanup
+          --summary`.
         - Scheduled work is triggered from OUTSIDE the container. min-instances=0 means
           there is no thread alive to run an in-process cron, so zen-jobs exposes
           POST /api/v1/jobs/trigger and one Cloud Scheduler entry calls it. One entry, one
@@ -1926,7 +1934,11 @@ tasks:
                --location=REGION --project=PROJECT
              gcloud auth configure-docker REGION-docker.pkg.dev
 
-        0a. Artifact Registry cleanup policy (issue #90). Every build pushes THREE registry
+        0a. Artifact Registry cleanup policy (issue #90). AUTOMATED since issue #137: the deploy
+           runs `zen:deploy:cleanup` (summary: `task zen:deploy:cleanup --summary`), which deletes
+           old revisions first, stages this policy in dry run on its first run and arms it on the
+           next. The manual procedure below is what that task does, kept for a repository you
+           want to inspect by hand. Every build pushes THREE registry
            versions — a multi-arch index (the tag lands here), the platform-specific image it
            resolves to (what Cloud Run actually runs, and what shows as "untagged" because the
            tag is on the index, not on this child), and a small config/attestation blob — so the
@@ -2651,6 +2663,16 @@ tasks:
           --set-env-vars="SMTP_PORT=$SMTP_PORT" \
           --set-env-vars="SMTP_FROM=$SMTP_FROM" \
           --set-secrets="$SECRETS"
+      # Last, and only reached once `gcloud run deploy` has exited 0: what this deploy and the ones
+      # before it left behind (registry versions, revisions, local images). The service is live by
+      # now, so a failure here is reported as the cleanup's and exits non-zero without undoing it
+      # (CLEANUP_ON_FAILURE=warn exits 0). CLEANUP=off skips it. Summary: "CLEANUP AFTER THE DEPLOY".
+      - task: zen:deploy:cleanup
+        vars:
+          GCP_PROJECT: '{{.GCP_PROJECT}}'
+          GCP_REGION: '{{.GCP_REGION}}'
+          SERVICE_NAME: '{{.SERVICE_NAME}}'
+          AR_REPO: '{{.AR_REPO}}'
 
   destroy:cloudrun:
     desc: Tear down EVERYTHING the deploy created — GCP project, Supabase, local images. No leftovers.

@@ -205,6 +205,21 @@ Test scope is excluded by default (`--include-test-scope` asks the other questio
 test library is a real finding about a developer's machine, but it is not shipped, and one verdict
 cannot honestly mean both things.
 
+## 🧹 deploy-cleanup.py — bound what a deploy leaves behind
+
+```
+task zen:deploy:cleanup            # also run last by deploy:cloudrun
+CLEANUP_DRY_RUN=1 task zen:deploy:cleanup
+```
+
+Deletes superseded Cloud Run revisions, arms an Artifact Registry retention policy (keep the newest
+N versions, expire older tagged and untagged ones), and prunes local Docker images and build cache,
+in that order. Python by Rule 3: it parses `gcloud` and `docker` JSON. The first run on a repository
+only stages the policy in dry run; the next arms it, and a policy that would expire an image a
+revision still runs is never armed. The operator contract, every knob and the failure semantics are
+in `task zen:deploy:cleanup --summary`; the decision is ADR-064. Tests run against stub `gcloud` and
+`docker` that keep state, under `task test:scripts`.
+
 ## 📱 pick-device.py — which device a native run targets
 
 Used by `task run:demo:native`. Prints `<device-id>\t<platform>` on stdout and everything a human

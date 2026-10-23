@@ -15,6 +15,61 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-064 — A deploy bounds what it leaves behind: `zen:deploy:cleanup` runs after the service is accepted
+
+**Date:** 2026-10-23. **Status:** accepted. **Refines:** ADR-028 (the framework ships defaults, the
+application chooses). **Closes:** the "documented, not automated" outcome of #90; issue #137.
+
+### Decision
+
+- **`deploy:cleanup` in `Taskfile.app.yml`** (implementation `scripts/deploy-cleanup.py`) removes
+  what a deploy leaves behind, in three parts and in this order: **Cloud Run revisions** (older than
+  `CLEANUP_REVISION_DAYS`, beyond the newest `CLEANUP_KEEP_REVISIONS`, never one that receives
+  traffic or is the latest ready); then the **Artifact Registry cleanup policy**, armed
+  idempotently; then **local Docker** (dangling layers, aged build cache, this project's tagged
+  images beyond the newest two per repository, never `latest`, never another registry path).
+  `deploy:cloudrun` calls it last, after `gcloud run deploy` has exited 0; an application's deploy
+  calls it the same way. Every number and switch is a var with a framework default.
+- **The registry policy is a Keep rule plus two Delete rules**, and the Delete of *untagged*
+  versions exists only beside the Keep: the image Cloud Run runs is untagged (the tag is on the
+  index above it), so the policy builder refuses any shape without the Keep. Tagged versions are
+  matched by tag prefix (commit-SHA hex digits and cosign's `sha256-`), so `latest` is never
+  matched. Rule names carry the numbers and a revision, so a changed number re-arms an existing
+  repository and "already current" is a comparison of names.
+- **Arming takes two runs, and the registry is the memory.** The first run stages the policy in the
+  repository's own dry-run state and stops; the next run arms it. Each run simulates the policy
+  against the registry's versions and the revisions that remain, and a policy that would expire an
+  image a revision still runs is not armed (an armed one that has become such is put back into dry
+  run). `CLEANUP_DRY_RUN=1` deletes nothing anywhere.
+- **Failure is loud by default.** Cleanup runs after the service is live, so a failure says the
+  deploy itself succeeded and exits non-zero; `CLEANUP_ON_FAILURE=warn` reports the same and exits 0.
+  A failed revision step skips the registry step rather than arming past revisions it could not
+  finish with. `CLEANUP=off` and one switch per part opt out.
+
+### What this supersedes, and why
+
+- **"Prune old revisions first … then stage the policy in dry run and verify it" as a manual
+  procedure** (`deploy:cloudrun` summary, one-time setup 0a; #90) → **automated, the procedure kept
+  as the description of what the task does.** *Why:* a step recorded only in a document is not a
+  step (ADR-037), and every application built on jZen inherits the leak, so the cleanup belongs in
+  the file applications include.
+- **"Select untagged versions by hand"** (the hand-run prune that half-failed) → **a date cutoff
+  with a Keep rule, applied by the registry itself.** *Why:* parent and child versions are ordered
+  by the registry, not by a script piping deletes to `sh`.
+
+### Consequence
+
+`task test:scripts` covers it against stub `gcloud` and `docker` that keep state: the policy
+contains the Keep rule and no untagged Delete without it; a serving revision and the newest few are
+never selected; revisions are deleted before the policy is armed; a re-run changes nothing; a
+failure surfaces. **Not verified here:** the stub's JSON shapes against a real repository. The
+first run on a real repository is a `--dry-run`, and its before/after listing of versions and
+revisions is that evidence. Deletions are not in Cloud Logging unless Data Access audit logs are
+enabled for `artifactregistry.googleapis.com`, and the repository's reported size lags deletion, so
+no saving is claimed until it is re-measured later.
+
+---
+
 ## ADR-063 — Each `ZenNavigation` destination has a `Navigator` of its own, so a pushed page stays in the content area
 
 **Date:** 2026-10-09. **Status:** accepted. **Refines:** ADR-057 (the shell), ADR-061 (`showZenDetail`).

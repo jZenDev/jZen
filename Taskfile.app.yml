@@ -122,6 +122,26 @@ vars:
   ZEN_ENV: '{{.ZEN_ENV | default "dev"}}'
   API: '{{.ZEN_API_URL | default "http://localhost:8085"}}'
 
+  # GCP_PROJECT, GCP_REGION, SERVICE_NAME and AR_REPO are deliberately NOT declared here: a var the
+  # included file declares wins over the same name passed by the calling task, so declaring them
+  # would make `deploy:cloudrun`'s own values invisible. They arrive from the calling task's `vars:`
+  # or from the environment, and `deploy:cleanup` refuses to run without them.
+  #
+  # What `deploy:cleanup` keeps, and for how long. The framework ships defaults and the application
+  # chooses (ADR-028); `task zen:deploy:cleanup --summary` says what each one protects.
+  CLEANUP: '{{.CLEANUP | default "on"}}'
+  CLEANUP_REVISIONS: '{{.CLEANUP_REVISIONS | default "on"}}'
+  CLEANUP_REGISTRY: '{{.CLEANUP_REGISTRY | default "on"}}'
+  CLEANUP_DOCKER: '{{.CLEANUP_DOCKER | default "on"}}'
+  CLEANUP_KEEP_REVISIONS: '{{.CLEANUP_KEEP_REVISIONS | default "3"}}'
+  CLEANUP_REVISION_DAYS: '{{.CLEANUP_REVISION_DAYS | default "14"}}'
+  CLEANUP_KEEP_VERSIONS: '{{.CLEANUP_KEEP_VERSIONS | default "20"}}'
+  CLEANUP_IMAGE_DAYS: '{{.CLEANUP_IMAGE_DAYS | default "30"}}'
+  CLEANUP_TAG_PREFIXES: '{{.CLEANUP_TAG_PREFIXES | default ""}}'
+  CLEANUP_DOCKER_CACHE_HOURS: '{{.CLEANUP_DOCKER_CACHE_HOURS | default "168"}}'
+  CLEANUP_ON_FAILURE: '{{.CLEANUP_ON_FAILURE | default "fail"}}'
+  CLEANUP_DRY_RUN: '{{.CLEANUP_DRY_RUN | default ""}}'
+
 tasks:
   info:
     desc: Which jZen this application is building against, and where its tiers are
@@ -1193,3 +1213,86 @@ tasks:
         export RUN_DEV_CLIENT_DIR="{{.ROOT_DIR}}/{{.APP_CLIENT_DIR}}"
         export RUN_DEV_FLUTTER_ARGS="${flutter_args}" RUN_DEV_DEFINES="${defines}"
         exec bash "{{.JZEN_DIR}}/scripts/run-dev.sh"
+
+  deploy:cleanup:
+    desc: Bound what a deploy leaves behind - Artifact Registry versions, Cloud Run revisions, local Docker
+    silent: true
+    summary: |
+      Every deploy leaves three things behind and nothing removes them: THREE Artifact Registry
+      versions (a tagged multi-arch index; the UNTAGGED image Cloud Run actually runs; a small
+      attestation, plus a signature and attestation pair when the image is signed), a Cloud Run
+      revision, and local Docker images and build cache. This task removes what is safe to remove,
+      in the order that keeps it safe. Run it after the service is accepted; jZen's own
+      `deploy:cloudrun` does, and an application's deploy calls it the same way.
+
+      WHAT IS REMOVED, AND WHEN
+        1. REVISIONS first. Those older than CLEANUP_REVISION_DAYS (14), beyond the newest
+           CLEANUP_KEEP_REVISIONS (3), that are not serving. A revision receiving traffic, or the
+           latest ready one, is never selected: a `--no-traffic` deploy leaves an OLD revision
+           serving, so age alone is never the criterion. Revisions go first because the registry
+           does not know they exist; an image it expired leaves a revision listed as a rollback
+           target that cannot start.
+        2. The REGISTRY POLICY, armed idempotently: keep the newest CLEANUP_KEEP_VERSIONS (20)
+           versions per package; delete TAGGED versions whose tag starts with a commit-SHA hex
+           digit or `sha256-` (cosign), and UNTAGGED versions, once older than CLEANUP_IMAGE_DAYS
+           (30). `latest` is never matched. The untagged rule is safe ONLY because of the keep
+           rule, since the running image is untagged, so the policy is refused without it. Rule
+           names carry the numbers and a revision, so a changed number re-arms an existing
+           repository. CLEANUP_IMAGE_DAYS must exceed CLEANUP_REVISION_DAYS (an image is older
+           than its revision), and CLEANUP_KEEP_VERSIONS should cover CLEANUP_KEEP_REVISIONS
+           deploys at up to five versions each; the check below catches the case where it does not.
+        3. LOCAL DOCKER: dangling layers, build cache older than CLEANUP_DOCKER_CACHE_HOURS (168),
+           and this project's tagged images beyond the newest two per repository. Never `latest`,
+           never anything outside `<region>-docker.pkg.dev/<project>/<repo>/`.
+
+      WHY ARMING TAKES TWO RUNS. The first run on a repository stages the policy in the registry's
+      own DRY-RUN state, prints the versions it would expire, and stops with "NOT ARMED". The run
+      after that arms it. The registry remembers, so a fresh checkout cannot skip the step. Every
+      run, before arming and after, simulates the policy against the registry's versions and the
+      revisions that remain; a policy that would expire an image a revision still runs is not
+      armed, and an armed one that has become such a policy is put back into dry run.
+      `CLEANUP_DRY_RUN=1` stages without arming and deletes nothing, anywhere. Read its output once
+      before the first real run on a repository.
+
+      WHEN IT FAILS. The service is already live by then, so the failure message says the deploy
+      itself succeeded. CLEANUP_ON_FAILURE=fail (the default) exits non-zero and does not swallow
+      it; CLEANUP_ON_FAILURE=warn prints the same report and exits 0. If the revision step fails
+      the registry step is skipped rather than armed past revisions it could not finish with.
+
+      OPT OUT. CLEANUP=off skips everything; CLEANUP_REVISIONS / CLEANUP_REGISTRY / CLEANUP_DOCKER
+      =off skip one part. CLEANUP_TAG_PREFIXES (comma-separated) replaces the tag prefixes the
+      tagged rule may expire; note any other tag starting with a hex digit (`1.0.0`) is eligible
+      with the default.
+
+      WHAT THE OUTPUT DOES AND DOES NOT PROVE. Registry deletions are not in Cloud Logging unless
+      Data Access audit logs are enabled for artifactregistry.googleapis.com, and the repository's
+      reported size lags the deletes, so the evidence is the listing, before and after, which this
+      prints. List the versions again later; do not claim a saving until the size is re-measured.
+
+      Needs GCP_PROJECT, GCP_REGION, SERVICE_NAME and AR_REPO. Implementation:
+      `scripts/deploy-cleanup.py`, covered by `task test:scripts` in the jZen checkout.
+    cmds:
+      - |
+        set -eu
+        if [ "{{.CLEANUP}}" = "off" ]; then
+          echo "deploy:cleanup skipped (CLEANUP=off)."
+          exit 0
+        fi
+        for pair in "GCP_PROJECT={{.GCP_PROJECT}}" "GCP_REGION={{.GCP_REGION}}" \
+                    "SERVICE_NAME={{.SERVICE_NAME}}" "AR_REPO={{.AR_REPO}}"; do
+          if [ -z "${pair#*=}" ]; then
+            echo "${pair%%=*} is not set; deploy:cleanup will not guess which project to delete from." >&2
+            exit 1
+          fi
+        done
+        set --
+        if [ -n "{{.CLEANUP_DRY_RUN}}" ]; then set -- --dry-run; fi
+        if [ -n "{{.CLEANUP_TAG_PREFIXES}}" ]; then set -- "$@" --tag-prefixes "{{.CLEANUP_TAG_PREFIXES}}"; fi
+        exec python3 "{{.JZEN_DIR}}/scripts/deploy-cleanup.py" "$@" \
+          --project "{{.GCP_PROJECT}}" --region "{{.GCP_REGION}}" \
+          --service "{{.SERVICE_NAME}}" --repo "{{.AR_REPO}}" \
+          --keep-revisions "{{.CLEANUP_KEEP_REVISIONS}}" --revision-days "{{.CLEANUP_REVISION_DAYS}}" \
+          --keep-versions "{{.CLEANUP_KEEP_VERSIONS}}" --image-days "{{.CLEANUP_IMAGE_DAYS}}" \
+          --docker-cache-hours "{{.CLEANUP_DOCKER_CACHE_HOURS}}" \
+          --revisions "{{.CLEANUP_REVISIONS}}" --registry "{{.CLEANUP_REGISTRY}}" \
+          --docker "{{.CLEANUP_DOCKER}}" --on-failure "{{.CLEANUP_ON_FAILURE}}"

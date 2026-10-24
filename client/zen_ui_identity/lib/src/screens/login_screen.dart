@@ -1,4 +1,3 @@
-import 'package:zen_core/zen_core.dart';
 import 'package:zen_identity/zen_identity.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +8,7 @@ import '../l10n/identity_error_text.dart';
 import '../state/identity_session_store.dart';
 import '../theme/identity_theme_extension.dart';
 import '../widgets/identity_button.dart';
+import '../widgets/identity_email_validator.dart';
 import '../widgets/identity_text_field.dart';
 
 /// What an email link left the user with by the time they reached the login screen. Only the two
@@ -149,15 +149,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     keyboardType: TextInputType.emailAddress,
                     autofillHints: const [AutofillHints.email],
                     textInputAction: TextInputAction.next,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return messages.validationRequired;
-                      }
-                      if (EmailAddress.create(value).isFailure) {
-                        return messages.validationEmail;
-                      }
-                      return null;
-                    },
+                    validator: identityEmailValidator(messages),
                   ),
                   SizedBox(height: theme.spacing),
                   IdentityTextField(

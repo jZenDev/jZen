@@ -97,6 +97,59 @@ void main() {
     expect(find.text('Invalid email'), findsOneWidget);
   });
 
+  testWidgets('accepts an email with surrounding spaces and signs in with it trimmed', (
+    tester,
+  ) async {
+    final contract = IdentityContract(
+      id: 'u1',
+      lifecycle: const IdentityLifecycleContract(state: 'active'),
+      authority: const AuthorityContract(roles: [], capabilities: []),
+      createdAt: ZenTimestamp.now().millisecondsSinceEpoch,
+    );
+    String? sent;
+    final repo = _FakeRepo(
+      login: (email, _) async {
+        sent = email;
+        return ZenResult.ok(contract);
+      },
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [identityRepositoryProvider.overrideWithValue(repo)],
+        child: localizedApp(home: LoginScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final fields = find.byType(EditableText);
+    await tester.enterText(fields.at(0), '  a@b.com ');
+    await tester.enterText(fields.at(1), 'password');
+    await tester.tap(find.widgetWithText(ZenButton, 'Log In'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invalid email'), findsNothing);
+    expect(sent, 'a@b.com');
+  });
+
+  testWidgets('still rejects whitespace inside an email', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [identityRepositoryProvider.overrideWithValue(_FakeRepo())],
+        child: localizedApp(home: LoginScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final fields = find.byType(EditableText);
+    await tester.enterText(fields.at(0), 'a b@c.com');
+    await tester.enterText(fields.at(1), 'password');
+    await tester.tap(find.widgetWithText(ZenButton, 'Log In'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invalid email'), findsOneWidget);
+  });
+
   testWidgets('forgot password and register callbacks are invoked', (tester) async {
     final repo = _FakeRepo();
     var forgot = false;

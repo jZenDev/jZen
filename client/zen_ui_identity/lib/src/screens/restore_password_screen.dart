@@ -8,6 +8,7 @@ import '../l10n/identity_error_text.dart';
 import '../state/identity_session_store.dart';
 import '../theme/identity_theme_extension.dart';
 import '../widgets/identity_button.dart';
+import '../widgets/identity_email_validator.dart';
 import '../widgets/identity_text_field.dart';
 
 /// Screen for initiating password reset via email.
@@ -92,15 +93,7 @@ class _RestorePasswordScreenState extends ConsumerState<RestorePasswordScreen> {
                     autofillHints: const [AutofillHints.email],
                     textInputAction: TextInputAction.done,
                     onFieldSubmitted: (_) => _submit(),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return messages.validationRequired;
-                      }
-                      if (EmailAddress.create(value).isFailure) {
-                        return messages.validationEmail;
-                      }
-                      return null;
-                    },
+                    validator: identityEmailValidator(messages),
                   ),
                   SizedBox(height: theme.spacing * 2),
                   IdentityButton(

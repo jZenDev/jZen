@@ -12,6 +12,7 @@ import '../support/localized_app.dart';
 
 class _FakeRepo implements IdentityRepository {
   ZenResult<void> restoreResult;
+  String? restoredEmail;
   _FakeRepo({ZenResult<void>? restoreResult})
     : restoreResult = restoreResult ?? const ZenResult.err(ZenUnknownError('not set'));
 
@@ -31,7 +32,10 @@ class _FakeRepo implements IdentityRepository {
   }) async => const ZenResult.err(ZenUnknownError('not implemented'));
 
   @override
-  Future<ZenResult<void>> restorePassword({required String email}) async => restoreResult;
+  Future<ZenResult<void>> restorePassword({required String email}) async {
+    restoredEmail = email;
+    return restoreResult;
+  }
 
   @override
   Future<ZenResult<IdentityContract>> exchangeLinkSession({
@@ -75,6 +79,26 @@ void main() {
 
     expect(find.text('Reset link sent to your email'), findsOneWidget);
     expect(called, isTrue);
+  });
+
+  testWidgets('accepts an email with surrounding spaces and sends it trimmed', (tester) async {
+    final repo = _FakeRepo(restoreResult: const ZenResult.ok(null));
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [identityRepositoryProvider.overrideWithValue(repo)],
+        child: localizedApp(home: RestorePasswordScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(EditableText), ' user@example.com ');
+    await tester.tap(find.text('Send Link'));
+    await tester.pump();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Invalid email'), findsNothing);
+    expect(repo.restoredEmail, 'user@example.com');
   });
 
   testWidgets('rejects an email that only contains an @ sign', (tester) async {

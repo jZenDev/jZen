@@ -100,6 +100,23 @@ void main() {
     expect(find.text(messages.validationEmail), findsOneWidget);
   });
 
+  testWidgets('accepts an email with surrounding spaces and registers it trimmed', (tester) async {
+    String? sent;
+    testStore.onRegister = (email, password) async {
+      sent = email;
+      return ZenResult.ok(makeTestIdentity());
+    };
+    await tester.pumpWidget(buildTestable());
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(EditableText).at(0), ' user@example.com  ');
+    await tester.enterText(find.byType(EditableText).at(1), 'password');
+    await tester.enterText(find.byType(EditableText).at(2), 'password');
+    await tester.tap(find.text(messages.registerButton));
+    await tester.pumpAndSettle();
+    expect(find.text(messages.validationEmail), findsNothing);
+    expect(sent, 'user@example.com');
+  });
+
   testWidgets('shows validation error for password mismatch', (tester) async {
     await tester.pumpWidget(buildTestable());
     await tester.pumpAndSettle();

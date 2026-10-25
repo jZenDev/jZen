@@ -8,8 +8,9 @@ justification, in [`DECISIONS.md`](./DECISIONS.md).
 ## Repository layout
 
 jZen is a **framework**: `server/` and `client/` are the Java and Dart framework
-**libraries**; `apps/` holds full-stack **applications** that assemble them (see
-[`DECISIONS.md`](./DECISIONS.md) ADR-001).
+**libraries**; `apps/` holds **applications** that assemble them (see
+[`DECISIONS.md`](./DECISIONS.md) ADR-001) — full-stack, or *light*: the client alone, its data in
+`zen_store` and synced through iCloud, with no server and no sign-in (ADR-065).
 
 ```
 jZen/
@@ -26,6 +27,7 @@ jZen/
 ├── client/                   # Dart/Flutter FRAMEWORK libraries (pub workspace)
 │   ├── pubspec.yaml          # workspace root
 │   └── zen_core/  zen_transport/  zen_identity/  zen_ui_*/   # zen_ui_navigation, zen_ui_identity, zen_ui_widgets
+│       zen_store/  zen_store_cloudkit/  zen_ui_store/  zen_ui_lock/   # light apps (ADR-065)
 ├── apps/                     # APPLICATIONS built on the framework
 │   ├── pubspec.yaml          # pub workspace root for the app clients
 │   └── zen_demo/             # the reference app (showcase + living e2e test stand)
@@ -320,6 +322,36 @@ administered through `AdminUserResource` - but a **payment flow is application w
 work** (see [`DECISIONS.md`](./DECISIONS.md) ADR-010): an application that sells something
 implements checkout in its own server, so no step of this roadmap delivers one. The column stays
 because the exemption needs it, and keeping it from the start avoided a schema migration.
+
+## Light applications
+
+A light application (ADR-065) is the client tier alone: no server, no admin panel, no
+`zen_transport` or `zen_identity`, no sign-in; iOS 17 and macOS 14. Four packages replace what the
+server tier gave it:
+
+- **`zen_store`** — persistence, with no database. Proto messages by collection and id, in a
+  directory the app chooses, as encrypted files: `device.id`, `meta.zen` (unsent records, the
+  transport's change token) and the records sharded into `records/00.zen` … `records/3f.zen`, each
+  file AES-256-GCM with its own name bound in, a write rewriting only its shard atomically. A file
+  that fails to decrypt stops the open. Fully offline; sync is a `ZenSyncTransport` plugged in
+  (`ZenFolderCloud`, in this package, emulates CloudKit in a folder for development). A record is
+  versioned per proto field (split at the wire level, so the store needs no knowledge of the
+  message type), each version tagged with a version vector. Merging two devices' logs keeps every
+  version not replaced by another: different fields and equal values combine, and two surviving
+  versions of one field — or a delete against an edit that never saw it — are a conflict. A
+  conflicted record is still readable, refuses `put`/`delete`, and is settled only by `resolve`.
+- **`zen_store_cloudkit`** — the sync and the key. `CKSyncEngine` against the user's private
+  database, one record per store record in a custom zone, its state in an `encryptedValues` field
+  (end to end, keys in iCloud Keychain); a save refused because another device saved first is
+  merged by the store and sent again. Also `ZenKeychainStoreKey` (the store's key, this device
+  only, readable while unlocked) and iOS Data Protection `complete` on the store's directory.
+  Swift, SwiftPM only.
+- **`zen_ui_store`** — the choice. A banner while conflicts wait, the list of them, and each
+  device's version side by side, plus `ZenSyncStatusBanner`, which says why sync stopped; a record is named by the app's `title`, a field by its proto name
+  and value unless the app formats it.
+- **`zen_ui_lock`** — the door. An optional PIN: a PBKDF2 hash in the Keychain, shut-out after
+  repeated misses, a gate in `MaterialApp.builder` that covers every route while locked or in the
+  app switcher, and recovery through the device owner check.
 
 ## Scheduled work
 

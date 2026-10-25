@@ -1,0 +1,92 @@
+{
+  "@@locale": "en",
+  "unlockTitle": "Enter PIN",
+  "@unlockTitle": {
+    "description": "Title of the screen that covers the app until the PIN is entered."
+  },
+  "pinLabel": "PIN",
+  "@pinLabel": {
+    "description": "Label of the field the PIN is typed into."
+  },
+  "unlockButton": "Unlock",
+  "@unlockButton": {
+    "description": "Button that checks the PIN and opens the app."
+  },
+  "forgotPinButton": "Forgot PIN?",
+  "@forgotPinButton": {
+    "description": "Button that resets a forgotten PIN through the device's own passcode or Face ID."
+  },
+  "forgotPinReason": "Confirm it's you to reset the app's PIN",
+  "@forgotPinReason": {
+    "description": "Shown by the system's passcode or Face ID prompt when resetting a forgotten PIN."
+  },
+  "ownerNotConfirmed": "Couldn't confirm it's you. The PIN was not reset.",
+  "@ownerNotConfirmed": {
+    "description": "Error when the device's own passcode or Face ID check fails or is cancelled."
+  },
+  "wrongPin": "Wrong PIN",
+  "@wrongPin": {
+    "description": "Error under the PIN field after a wrong PIN."
+  },
+  "lockedOut": "Too many wrong PINs. Try again in {seconds} s.",
+  "@lockedOut": {
+    "description": "Error while attempts are shut out after too many wrong PINs.",
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "pinFormat": "Use 4 to 8 digits",
+  "@pinFormat": {
+    "description": "Error when a new PIN is too short, too long or not all digits."
+  },
+  "setPinTitle": "Set a PIN",
+  "@setPinTitle": {
+    "description": "Title of the screen that turns the PIN lock on."
+  },
+  "changePinTitle": "Change PIN",
+  "@changePinTitle": {
+    "description": "Title of the screen that replaces the PIN."
+  },
+  "turnOffPinTitle": "Turn Off PIN",
+  "@turnOffPinTitle": {
+    "description": "Title of the screen that turns the PIN lock off."
+  },
+  "currentPinLabel": "Current PIN",
+  "@currentPinLabel": {
+    "description": "Label of the field for the PIN in use, asked before changing or removing it."
+  },
+  "newPinLabel": "New PIN",
+  "@newPinLabel": {
+    "description": "Label of the field for the PIN being set."
+  },
+  "repeatPinLabel": "Repeat PIN",
+  "@repeatPinLabel": {
+    "description": "Label of the field that asks for the new PIN a second time."
+  },
+  "pinsDoNotMatch": "The PINs don't match",
+  "@pinsDoNotMatch": {
+    "description": "Error when the repeated PIN differs from the new one."
+  },
+  "saveButton": "Save",
+  "@saveButton": {
+    "description": "Button that saves a new or changed PIN."
+  },
+  "turnOffButton": "Turn Off",
+  "@turnOffButton": {
+    "description": "Button that removes the PIN."
+  },
+  "lockWithPin": "Lock with PIN",
+  "@lockWithPin": {
+    "description": "Settings switch that turns the PIN lock on or off."
+  },
+  "lockWithPinHint": "Ask for a PIN when the app opens",
+  "@lockWithPinHint": {
+    "description": "Subtitle of the PIN lock switch in settings."
+  },
+  "lockError": "The app lock couldn't be saved. Try again.",
+  "@lockError": {
+    "description": "Error when the PIN could not be read from or written to the device's keychain."
+  }
+}

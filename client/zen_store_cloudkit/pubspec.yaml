@@ -1,0 +1,53 @@
+name: zen_store_cloudkit
+description: >-
+  CloudKit sync for a light jZen application on iOS 17 and macOS 14: CKSyncEngine against the
+  user's private database, each record end-to-end encrypted with CloudKit encryptedValues, plus
+  the Keychain key and Data Protection the store's local files need. See ADR-065.
+publish_to: 'none'
+# Lockstep with the product version, see docs/architecture/STANDARDS.md "Versioning".
+version: 0.1.0
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+
+resolution: workspace
+
+dependencies:
+  # Routes zen_store's AES-GCM through CryptoKit instead of pure Dart, many times faster on a
+  # phone. Flutter's plugin registration turns it on; depending on it is all it takes.
+  cryptography_flutter: ^2.3.4
+  # A plugin imports package:flutter/services.dart and therefore dart:ui, which the Dart VM cannot
+  # load -- the reason this is not part of zen_store, whose suite runs under `dart test`.
+  flutter:
+    sdk: flutter
+  # The store's key, in the Keychain. 10.x is a floor for the reason zen_secure_store gives
+  # (ADR-024).
+  flutter_secure_storage: ^10.3.1
+  zen_core:
+    path: ../zen_core
+  zen_store:
+    path: ../zen_store
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  # The suite's stand-in message type.
+  protobuf: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  plugin:
+    # iOS and macOS only: CloudKit is Apple's. On any other platform ZenCloudKitSync.start
+    # fails with a ZenNotFoundError rather than returning a transport that silently never syncs.
+    # No web implementation, so web_plugin_registrant.dart never imports this package.
+    #
+    # A Swift package only (darwin/zen_store_cloudkit/Package.swift), no podspec: SwiftPM is
+    # Flutter's default for iOS and macOS since 3.44, and the CocoaPods registry stops accepting
+    # releases on 2026-12-02 (ADR-065).
+    platforms:
+      ios:
+        pluginClass: ZenStoreCloudKitPlugin
+        sharedDarwinSource: true
+      macos:
+        pluginClass: ZenStoreCloudKitPlugin
+        sharedDarwinSource: true

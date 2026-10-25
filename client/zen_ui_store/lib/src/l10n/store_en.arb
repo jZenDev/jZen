@@ -1,0 +1,105 @@
+{
+  "@@locale": "en",
+  "conflictsTitle": "Changed on Two Devices",
+  "@conflictsTitle": {
+    "description": "Title of the screen listing records that need the person to choose a version."
+  },
+  "conflictsIntro": "These were changed differently on your devices. Nothing has been thrown away: choose which version to keep.",
+  "@conflictsIntro": {
+    "description": "Explanation at the top of the conflict list."
+  },
+  "noConflicts": "Everything is in sync.",
+  "@noConflicts": {
+    "description": "Shown on the conflict list when there is nothing left to decide."
+  },
+  "bannerText": "{count, plural, =1{1 item was changed on two devices and needs your choice.} other{{count} items were changed on two devices and need your choice.}}",
+  "@bannerText": {
+    "description": "Banner shown while conflicts wait for the person.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "reviewButton": "Review",
+  "@reviewButton": {
+    "description": "Banner button that opens the conflict list."
+  },
+  "resolveTitle": "Choose a Version",
+  "@resolveTitle": {
+    "description": "Title of the screen that shows each device's version of one record."
+  },
+  "resolveIntro": "{title} was changed on more than one device. Keep one version; the others are replaced on every device.",
+  "@resolveIntro": {
+    "description": "Explanation above the versions of one record.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "sideHeading": "{device}, {time}",
+  "@sideHeading": {
+    "description": "Heading of one version: the device it came from and when it was written there.",
+    "placeholders": {
+      "device": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "deletedHere": "Deleted on this device",
+  "@deletedHere": {
+    "description": "What a version shows when that device deleted the record."
+  },
+  "notSet": "(empty)",
+  "@notSet": {
+    "description": "Value shown for a field that is not set in one version."
+  },
+  "keepThisVersion": "Keep this version",
+  "@keepThisVersion": {
+    "description": "Button that resolves the conflict with this version."
+  },
+  "keepDeleted": "Keep it deleted",
+  "@keepDeleted": {
+    "description": "Button that resolves the conflict by deleting the record."
+  },
+  "resolveFailed": "Couldn't save your choice. Try again.",
+  "@resolveFailed": {
+    "description": "Error when a resolution could not be written."
+  },
+  "deletedTitle": "A deleted item",
+  "@deletedTitle": {
+    "description": "Name used for a record when every version shown of it is a delete."
+  },
+  "syncNoAccount": "Not syncing: this device isn't signed in to iCloud. Your data is safe here; sign in under Settings to sync it.",
+  "@syncNoAccount": {
+    "description": "Sync status: the device has no iCloud account."
+  },
+  "syncKeychainUnavailable": "Not syncing: iCloud Keychain is off, so your encrypted data can't be read here. Turn it on under Settings → iCloud → Passwords and Keychain.",
+  "@syncKeychainUnavailable": {
+    "description": "Sync status: iCloud Keychain is off or was reset."
+  },
+  "syncAccountChanged": "Sync stopped: this device is now signed in to a different iCloud account. Nothing was sent to it.",
+  "@syncAccountChanged": {
+    "description": "Sync status: the iCloud account changed and sync stopped."
+  },
+  "syncCloudDataDeleted": "Sync stopped: the data in iCloud was deleted. This device's copy is untouched.",
+  "@syncCloudDataDeleted": {
+    "description": "Sync status: the iCloud copy was deleted and sync stopped."
+  },
+  "syncQuotaExceeded": "Not syncing: your iCloud storage is full.",
+  "@syncQuotaExceeded": {
+    "description": "Sync status: iCloud storage is full."
+  },
+  "syncUnreadableRecords": "Some changes from another device can't be read here. Update the app on this device.",
+  "@syncUnreadableRecords": {
+    "description": "Sync status: another device sent data this app version cannot read."
+  },
+  "syncOther": "Sync isn't working right now. Your data is safe on this device.",
+  "@syncOther": {
+    "description": "Sync status: any other failure."
+  }
+}

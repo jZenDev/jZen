@@ -468,6 +468,12 @@ The gate covers **both client languages**: Dart (`client/*/lib`, `apps/*/*/lib`,
 `@supabase/supabase-js` is one `pnpm add` away and better documented than the Dart SDK, and a
 panel that used it would lose all three properties above in the same silent way.
 
+**A light application has no server of its own** (ADR-065). Its only outbound traffic is CloudKit,
+made by Apple's framework on the user's own account and carrying ciphertext — there is no session,
+role or backend for the rule to protect — and the gate still scans `zen_store`,
+`zen_store_cloudkit`, `zen_ui_store` and `zen_ui_lock` like every other package: the Dart side of
+none names a provider, an SDK or a URL.
+
 **The one thing that legitimately crosses.** Provider-minted tokens arrive at the client in an
 email link's fragment (the implicit flow, [`DECISIONS.md`](./DECISIONS.md) ADR-018). That is not a
 call *to* the provider: the client does not decode, validate or trust them, it posts them to

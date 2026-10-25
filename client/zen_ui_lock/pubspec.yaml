@@ -1,0 +1,43 @@
+name: zen_ui_lock
+description: >-
+  An optional PIN lock for a jZen application that has no sign-in: the lock state, the unlock and
+  set-up screens, and the gate that covers the app when it is locked or in the app switcher.
+  See docs/architecture/DECISIONS.md ADR-065.
+publish_to: 'none'
+# Lockstep with the product version, see docs/architecture/STANDARDS.md "Versioning".
+version: 0.1.0
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+
+resolution: workspace
+
+dependencies:
+  # PBKDF2's building block (HMAC-SHA256), from the Dart team. The PIN is never stored, only a
+  # slow salted hash of it, so a copy of the keychain item is not a copy of the PIN.
+  crypto: ^3.0.7
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  # Keychain on iOS and macOS. 10.x is a floor for the reason zen_secure_store gives: the 9.x web
+  # implementation is not Wasm-clean (ADR-024).
+  flutter_secure_storage: ^10.3.1
+  intl: ^0.20.2
+  # "Forgot PIN" is answered by the device's own owner check (passcode, Face ID, Touch ID), from
+  # the Flutter team. With no server there is no account to recover through, and whoever can
+  # unlock the device already holds everything the PIN protects.
+  local_auth: ^3.0.2
+  meta: ^1.11.0
+  zen_core:
+    path: ../zen_core
+  zen_ui_widgets:
+    path: ../zen_ui_widgets
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  generate: true

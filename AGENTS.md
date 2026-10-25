@@ -122,8 +122,18 @@ now read as `zen`.
 ## Client structure (Dart) and the compile-time config rule
 
 Two pub workspaces resolve independently: `client/` (framework libs: `zen_core`, `zen_transport`,
-`zen_identity`, `zen_ui_*`) and `apps/` (app clients, path-depending into `client/`). Both share one
-product version (lockstep).
+`zen_identity`, `zen_ui_*`, `zen_store`, `zen_store_cloudkit`) and `apps/` (app clients,
+path-depending into `client/`). Both share one product version (lockstep).
+
+**A light application is the client alone** (ADR-065): no server, no `zen_transport`/`zen_identity`,
+no sign-in; iOS 17 and macOS 14. Its data lives in `zen_store` (proto messages, AES-256-GCM on
+the device with the key in the Keychain, versioned per field with version vectors) and syncs
+through CloudKit with `zen_store_cloudkit` (`CKSyncEngine`, end-to-end encrypted fields; SwiftPM
+only), or through `ZenFolderCloud` in development, chosen at compile time. Sync merges different fields and equal edits; anything else is a
+`ZenConflict` the person settles in `zen_ui_store`'s screens (`ZenConflictBanner`) — the record
+refuses writes until `resolve`. **Never add a
+last-writer-wins shortcut**: a silently dropped edit is a swallowed failure. An optional PIN comes
+from `zen_ui_lock`. Rules the server would enforce become the client's.
 
 **Client i18n is typed and generated** (ADR-009), mirroring the server's Qute `@MessageBundle`.
 Every package that renders text owns its own `lib/src/l10n/*.arb` + `l10n.yaml` and generates typed

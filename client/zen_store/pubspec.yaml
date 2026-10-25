@@ -1,0 +1,32 @@
+name: zen_store
+description: >-
+  Encrypted, offline-first persistence for a light (serverless) jZen application: proto messages
+  stored by collection and id, merged across devices field by field, with real conflicts handed
+  to the person. See docs/architecture/DECISIONS.md ADR-065.
+# Lockstep with the product version - see docs/architecture/STANDARDS.md "Versioning".
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+
+resolution: workspace
+
+# Pure Dart, so `dart test` can load it. The sync transport (zen_store_cloudkit on Apple
+# platforms) and the key's storage (the Keychain) are supplied by the application, which keeps
+# every plugin and therefore dart:ui out of this package's import graph.
+dependencies:
+  # AES-256-GCM for every file the store writes. It runs through CryptoKit on Apple platforms once
+  # an app enables cryptography_flutter (zen_store_cloudkit does), and in pure Dart in the VM, so
+  # this package's suite exercises the real cipher.
+  cryptography: ^2.9.0
+  meta: ^1.11.0
+  # A stored value is a proto message, the same model type a jZen application with a server uses,
+  # so an application can move between the two without changing its models.
+  protobuf: ^6.0.0
+  zen_core:
+    path: ../zen_core
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.0

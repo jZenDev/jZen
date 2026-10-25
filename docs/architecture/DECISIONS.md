@@ -15,6 +15,137 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-065 — A jZen application may be *light*: client only, data encrypted in `zen_store`, synced through CloudKit, conflicts settled by a person
+
+**Date:** 2026-10-24. **Status:** accepted. **Refines:** ADR-001 (framework libraries, applications
+under `apps/`), STANDARDS "The client talks to one server".
+
+### Decision
+
+- **A light application is the client tier alone.** It has no `<app>_server`, no `<app>_admin`, no
+  `zen_transport`, no `zen_identity` and no sign-in. It assembles the client packages that never
+  needed a server (`zen_core`, `zen_ui_widgets`, `zen_ui_navigation`) and keeps its models in
+  `.proto`, as every jZen application does. Its targets are **iOS 17 and macOS 14** and later: the
+  sync below is Apple's, and `CKSyncEngine` starts there.
+- **`client/zen_store`** (pure Dart) is the persistence a light application has instead of a
+  backend. It stores proto messages by collection and id, answers every call with a `ZenResult`
+  (the shape `ZenClient` returns, so a repository written against one can be pointed at the
+  other), and works entirely offline; sync is a transport plugged into it.
+- **Protection is the framework's, on by default, for every light application** — not a choice an
+  application makes because its data happens to be financial.
+  - **On the device, AES-256-GCM.** No database: the store is a set of encrypted files in the
+    directory the app gives it (Application Support) — `device.id`, `meta.zen` and the records
+    sharded by a hash of their name into `records/00.zen` … `records/3f.zen`. Each file is
+    encrypted whole with a 256-bit key and a fresh nonce, the file's own name bound in as
+    associated data so files cannot be swapped; a write rewrites only its shard, atomically
+    (temporary file, flush, rename). A file that fails to decrypt — wrong key, damage, tampering —
+    stops the open, and nothing is written over it.
+  - **The key lives in the Keychain**, this device only, readable only while the device is
+    unlocked (`zen_store_cloudkit`'s `ZenKeychainStoreKey`). `zen_store` itself takes the key as
+    bytes, so it stays pure Dart; it never stores it.
+  - **On iOS the directory is also given Data Protection `complete`**, Apple's strictest class (the
+    default for app files is the weaker "until first unlock"): unreadable while the phone is
+    locked. macOS has no such class for app files, which is why the encryption above is the
+    package's and not the operating system's.
+  - **In iCloud, CloudKit `encryptedValues`.** Each record's state is one encrypted field,
+    encrypted on the device with keys in the user's iCloud Keychain, which is end-to-end encrypted
+    whether or not the user has turned on Advanced Data Protection. Apple holds the ciphertext, not
+    the keys. Plain iCloud Drive files would be end-to-end encrypted only with Advanced Data
+    Protection on, which is why sync is not files in iCloud Drive.
+- **Sync is a transport behind one interface, `ZenSyncTransport`.** The store tracks which records
+  this device has changed and not yet had acknowledged, hands each out as an opaque payload (the
+  record's whole state), merges each payload it receives, and keeps the transport's own state (a
+  change token) in its encrypted metadata. Two transports implement it:
+  - **`zen_store_cloudkit`** (a Flutter plugin, Swift, SwiftPM only) drives `CKSyncEngine` against
+    the app's private database, one CloudKit record per store record in a custom zone. A save
+    refused because the server's record changed is merged by the store and sent again; only the
+    records that changed travel, and other devices' changes arrive by push.
+  - **`ZenFolderCloud`** (pure Dart, in `zen_store`) emulates that server — change tags, a refused
+    save that returns the server's record, change tokens — in a folder on disk, under a file lock.
+    It is how a light application is developed and tested **without a paid Apple Developer
+    Program membership**: an iOS Simulator app runs as a process on the Mac and sees the Mac's
+    files, so the macOS build and a simulator build pointed at one folder sync as two devices.
+    Which transport an app uses is chosen at compile time (`--dart-define=ZEN_SYNC=folder`), per
+    STANDARDS "Client config is compile-time"; the folder emulator stores payloads as they are and
+    is never what a release build syncs through.
+- **Nothing is lost without a person's say.** A record is versioned **per proto field**, each
+  version carrying a version vector (per device, how many of its writes it has seen). That tells an
+  edit that *replaces* another — its author had seen it — from one made *alongside* it. Edits to
+  different fields merge on their own; the same value set on two devices merges on its own. What
+  remains is a **conflict**: one field set to different values on two devices, or a delete on one
+  device against an edit on another that never saw the delete. Every side is kept on every device;
+  the record refuses `put` and `delete` with a `ZenConflictError` until `resolve` writes the
+  person's choice. Wall-clock time is shown to the person and never used to decide.
+- **Failures are loud.** The transport publishes a `ZenSyncStatus` — syncing, up to date, or
+  unavailable with a reason (no iCloud account, iCloud Keychain off so encrypted data cannot be
+  read, the account switched, the cloud data deleted or reset) — and `zen_ui_store`'s
+  `ZenSyncStatusBanner` shows it. An account switch stops sync rather than uploading one person's
+  data into another's account; deleted cloud data stops sync rather than deleting the device's.
+- **`client/zen_ui_store`** is where the person settles a conflict and sees why sync stopped: the
+  conflict banner, the list of records in conflict, each device's version side by side with **Keep
+  this version** (or **Keep it deleted**), and the sync status banner.
+- **`client/zen_ui_lock`** is the optional PIN a light application offers in place of a sign-in:
+  off by default; a salted PBKDF2-HMAC-SHA256 hash in the Keychain; wrong-attempt shut-out that
+  survives a restart; a cover over the app while it is locked and in the app switcher; and "Forgot
+  PIN?" answered by the device's own owner check (`local_auth`). The PIN is a door, not a key: a
+  PIN of 4–8 digits is guessed in seconds offline, so the data's protection is the Keychain key
+  above, not the PIN.
+- **What a light application gives up, said plainly.** Every rule a server would enforce — a
+  balance, a budget, an invariant across records — is the client's to enforce, the same way on
+  every device; per-field merging cannot see a rule that spans records. Tombstones are kept for
+  ever. If the user loses every device and their iCloud Keychain, the data cannot be recovered —
+  the other face of nobody else being able to read it. Apple still sees metadata: how many records,
+  their sizes, when they change.
+
+### What this supersedes, and why
+
+- **"`apps/` holds full-stack applications that assemble them"** (BLUEPRINT "Repository layout";
+  ADR-001) → **refined: an application assembles the tiers it needs, and a light one needs only the
+  client.** *Why:* the framework's UI packages, models and result types are worth having in an
+  application that keeps its data on the user's own devices, and requiring a server, a database and
+  a sign-in to use them would make jZen the wrong tool for the small, private apps where a server is
+  pure cost.
+- **"Every request a jZen client makes goes to the jZen backend"** (STANDARDS "The client talks to
+  one server") → **unchanged for an application with a server; a light application talks to no
+  server of its own.** *Why:* the properties that rule protects — one place a session is minted,
+  roles resolved by the backend, one audit point — exist only where there is a session, roles and a
+  backend. A light application's only outbound traffic is CloudKit, made by Apple's framework on
+  the user's own account and carrying ciphertext; `zen_store` and the Dart side of every package
+  still name no provider, SDK or URL, and `verify:boundaries` scans them without exception.
+- **Three earlier shapes of this design, proposed in the same change and never released**, each
+  reversed: *last-writer-wins* (a merge that silently keeps one of two edits is data loss the user
+  never sees — STANDARDS "Failures surface; nothing is swallowed"); *one plaintext JSON log per
+  device, in an iCloud Drive folder* (unencrypted on the device, readable by Apple without Advanced
+  Data Protection, and measured at ~96 ms a write and an ~8 MB upload per sync at 10,000 records);
+  and *a hand-written iCloud Drive plugin* (replaced by `CKSyncEngine`, Apple's own sync loop).
+- **"Not a Firebase/Firestore stack"** (MANIFESTO "Boundaries") → **unchanged.** *Why:* CloudKit
+  here holds opaque ciphertext in the user's own private database; it is a transport, not a data
+  model the application queries, and nothing about the data's shape depends on it.
+
+### Why these dependencies, and no podspec
+
+`CKSyncEngine` is Apple's, and it owns change tracking, batching, retries and push, which a
+hand-written sync loop would own badly. `cryptography` (dint.dev, verified publisher) does AES-GCM
+through CryptoKit on Apple platforms and in pure Dart in the VM, so `zen_store`'s suite runs the
+real cipher. `local_auth` and `flutter_secure_storage` are the Flutter team's and the established
+choice respectively. Swift Package Manager is Flutter's default for iOS and macOS since 3.44, and
+the CocoaPods registry goes read-only on 2026-12-02, so `zen_store_cloudkit` ships a Swift package
+and no podspec.
+
+### Consequence
+
+A light application is `zen_store` + `zen_store_cloudkit` + `zen_ui_store` + `zen_ui_lock` + the
+UI packages, with the CloudKit capability and one container in its entitlements, and
+`NSFaceIDUsageDescription` in its iOS `Info.plist`. It places `ZenConflictBanner` and
+`ZenSyncStatusBanner` where the person sees them on every launch.
+
+**Developed without a paid membership.** Building, running on a simulator or a Mac, two-device
+sync through `ZenFolderCloud`, and every suite need no Apple account. Only syncing through real
+CloudKit does: the CloudKit capability and container need a paid Apple Developer Program
+membership, which this project's account (a free personal team, ROADMAP item 8) does not have.
+
+---
+
 ## ADR-064 — A deploy bounds what it leaves behind: `zen:deploy:cleanup` runs after the service is accepted
 
 **Date:** 2026-10-23. **Status:** accepted. **Refines:** ADR-028 (the framework ships defaults, the

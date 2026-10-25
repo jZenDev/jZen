@@ -1,0 +1,40 @@
+name: zen_ui_store
+description: >-
+  The screens a light jZen application shows when two devices changed the same data differently:
+  a banner that says so, the list of conflicts, and the choice between each device's version.
+  See docs/architecture/DECISIONS.md ADR-065.
+publish_to: 'none'
+# Lockstep with the product version, see docs/architecture/STANDARDS.md "Versioning".
+version: 0.1.0
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+
+resolution: workspace
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  # Both are imported by the generated StoreLocalizations; intl also formats when each side was
+  # written, in the person's own locale.
+  intl: ^0.20.2
+  meta: ^1.11.0
+  # A side's fields are read by proto reflection, so a conflict shows sensibly before an
+  # application has written a single formatter.
+  protobuf: ^6.0.0
+  zen_core:
+    path: ../zen_core
+  zen_store:
+    path: ../zen_store
+  zen_ui_widgets:
+    path: ../zen_ui_widgets
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  generate: true

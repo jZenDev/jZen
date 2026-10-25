@@ -21,11 +21,19 @@ Every package shares one product version (`0.1.0` today) — jZen is versioned i
 | `zen_core` | Universal result types (`ZenResult`/`ZenError`), value objects, logging, and `ZenLocales` (the supported-locale declaration). Framework-free — depends only on `meta` and small standard libraries, and that isolation is defended, not tolerated. |
 | `zen_transport` | The dual-mode `ZenClient` and `ZenWebSocket`, the compile-time codec selector, and the generated Protobuf messages (`lib/generated/`). |
 | `zen_identity` | The `IdentityRepository` contract and its Supabase-backed implementation, called over `zen_transport`. |
+| [`zen_secure_store`](zen_secure_store/README.md) | The Keychain/Keystore-backed `TokenStore` that keeps the session's refresh token in the OS credential store. |
+| [`zen_store`](zen_store/README.md) | **Light apps.** Encrypted, offline-first persistence: proto messages by collection and id, merged across devices field by field, with real conflicts handed to the person (ADR-065). Pure Dart; includes `ZenFolderCloud`, the CloudKit stand-in for development. |
+| [`zen_store_cloudkit`](zen_store_cloudkit/README.md) | **Light apps.** CloudKit sync (`CKSyncEngine`, end-to-end encrypted fields), the store's Keychain key and iOS Data Protection, on iOS 17 and macOS 14. A Swift package. |
+| [`zen_ui_store`](zen_ui_store/README.md) | **Light apps.** The banner and screens where the person chooses between devices' versions of a record in conflict. |
+| [`zen_ui_lock`](zen_ui_lock/README.md) | **Light apps.** An optional PIN in place of a sign-in: the lock, its screens, and the gate that covers the app. |
 | [`zen_ui_identity`](zen_ui_identity/README.md) | Adaptive Flutter UI for the identity flows (login, register, profile, roles). Speaks the `zen_identity` contract only. |
 | [`zen_ui_navigation`](zen_ui_navigation/README.md) | Adaptive, responsive navigation layer (`ZenNavigation`). |
 | [`zen_ui_widgets`](zen_ui_widgets/README.md) | Shared adaptive widgets — `showAdaptivePresentation`, buttons, select, segmented control, switch row, date and amount fields (with range pairs), and the shared `FocusRing`; Cupertino on Apple platforms, Material elsewhere. |
 
-`zen_core`, `zen_transport`, and `zen_identity` are documented here; the three `zen_ui_*` packages
+A **light** app (no server, no sign-in) uses `zen_core`, the `zen_ui_*` packages and the ones
+marked above, and none of `zen_transport`, `zen_identity`, `zen_secure_store` or `zen_ui_identity`.
+
+`zen_core`, `zen_transport`, and `zen_identity` are documented here; the other packages
 carry their own READMEs because they are shaped for eventual pub.dev publication (they already
 ship their own `LICENSE`), which gives them an audience the monorepo view does not serve. `zen_ui_navigation`
 and `zen_ui_identity` also have an `example/` app demonstrating them in isolation.

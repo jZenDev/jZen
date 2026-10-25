@@ -30,11 +30,15 @@ workspace:
   - zen_transport
   - zen_identity
   - zen_secure_store
+  - zen_store
+  - zen_store_cloudkit
   - zen_ui_navigation
   - zen_ui_navigation/example
   - zen_ui_identity
   - zen_ui_identity/example
   - zen_ui_widgets
+  - zen_ui_lock
+  - zen_ui_store
 
 dev_dependencies:
   flutter_lints: ^6.0.0

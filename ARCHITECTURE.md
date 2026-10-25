@@ -12,6 +12,14 @@ proto/zen/v1/*.proto  ──protoc──▶ Java DTOs + Dart messages + OpenAPI 
 Quarkus resources     ──▶ REST paths/verbs/status ──▶ openapi.json ──▶ admin TypeScript types
 ```
 
+An application is either **full-stack** — client, server and admin panel, as above — or
+**light**: the Flutter client alone, with no server and no sign-in, its data in `zen_store` on the
+user's own devices and synced through their iCloud (macOS and iOS). Light sync merges edits field
+by field and hands anything that cannot merge to the person as a conflict to decide, in
+`zen_ui_store`'s screens; an optional
+PIN (`zen_ui_lock`) closes the app in place of a login. The `.proto` models are the same in both
+shapes, so a light app can later grow a server without changing them (ADR-065).
+
 `.proto` is canonical for **models**; the Quarkus resources are canonical for the **REST
 surface**. Everything else — Java DTOs, Dart messages, `openapi.json`, TS types — is generated,
 and `task verify:contracts` fails the build if a generated file drifts from what its source

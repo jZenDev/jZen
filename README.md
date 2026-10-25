@@ -19,13 +19,19 @@ JSON or binary, over the same endpoints, with nothing to hand-sync.**
   surface come from the framework, not something every new app rebuilds.
 - 🚀 **Cheap to run, fast to wake.** Ships as a native image on Cloud Run scaled to zero — pennies a
   month idle, and a cold request answers in **~1.5s** (see "Capacity" under Deploy, below).
+- 🪶 **Or no server at all.** A *light* app is the Flutter client alone — no backend, no sign-in —
+  with its data on the user's own devices, synced through their iCloud. Edits merge field by field,
+  and anything that cannot merge is put to the person to decide, never silently dropped. An
+  optional PIN closes the app instead of a login.
 - 🧪 **No mocks at the finish line.** The reference app's end-to-end suite runs against a real
   Supabase + Quarkus stack, the same gate that has to be green before anything ships.
 
-jZen is a **framework/platform for building full-stack products**, not a single deployable
-app. `server/` (Java/Quarkus) and `client/` (Dart/Flutter) are reusable **framework libraries**;
+jZen is a **framework/platform for building products**, not a single deployable app.
+`server/` (Java/Quarkus) and `client/` (Dart/Flutter) are reusable **framework libraries**;
 `apps/<app>/{<app>_client, <app>_server, <app>_admin}` are the **applications** that assemble
-them. Today the only app is `zen_demo`, the reference app, which doubles as the product
+them. An application comes in one of two shapes: **full-stack** (client, server and admin panel,
+everything below) or **light** (the client alone, see [Light apps](#-light-apps-no-server-no-sign-in)).
+Today the only app is `zen_demo`, the full-stack reference app, which doubles as the product
 showcase and the living end-to-end test stand.
 
 The stack is Quarkus, PostgreSQL, and Supabase on the server; Flutter on the client;
@@ -73,6 +79,35 @@ human walks through here are asserted headlessly by `task test:e2e` (the release
 the same real stack, with no mocks. See
 [`apps/zen_demo/README.md`](apps/zen_demo/README.md) for what it exercises.
 
+## 🪶 Light apps: no server, no sign-in
+
+Not every product needs a backend. A **light** app is the client tier alone — for a personal app
+whose data belongs on its owner's devices, where a server, a database and an account would be pure
+cost. It runs on **macOS and iOS** and is built from the same packages as any jZen client, plus
+four of its own:
+
+| Package | What it gives a light app |
+|---|---|
+| [`zen_store`](client/zen_store/README.md) | The data: proto messages by collection and id, encrypted on the device (no database), fully offline, answering with `ZenResult` like `ZenClient` does. |
+| [`zen_store_cloudkit`](client/zen_store_cloudkit/README.md) | The sync: CloudKit in the user's private iCloud database, end-to-end encrypted, plus the store's key in the Keychain. |
+| [`zen_ui_store`](client/zen_ui_store/README.md) | The choice: a banner and screens where the person picks between devices' versions when they conflict. |
+| [`zen_ui_lock`](client/zen_ui_lock/README.md) | The door: an optional PIN in place of a login, with "Forgot PIN?" through Face ID or the device passcode. |
+
+**How sync treats your users' data.** Two devices editing *different* fields of a record merge on
+their own, and so do equal edits. Anything else — the same field changed differently on two
+devices, or a delete on one against an edit on the other — becomes a **conflict**: every version is
+kept, on every device, the record refuses further writes, and `zen_ui_store`'s banner and screens
+show the person each device's version and let them choose. Nothing is ever resolved by "the last write wins".
+
+**How it is stored.** No database: a set of files in the app's own data directory, each encrypted
+with AES-256-GCM under a key kept in the Keychain; everything works offline. In iCloud each record
+is one CloudKit field encrypted end to end, so Apple holds ciphertext, not the keys — the details
+are in [`zen_store`'s README](client/zen_store/README.md#-how-it-is-stored-on-the-device).
+
+What it gives up: rules a server would enforce (a balance, a budget, anything across records) are
+the app's to enforce on every device. ADR-065 in [`DECISIONS.md`](docs/architecture/DECISIONS.md)
+has the full design and its limits.
+
 ## 📦 Repository map
 
 The single most important structural fact: `server/` and `client/` are the **framework
@@ -83,7 +118,7 @@ language-neutral — only `Taskfile.yml` lives there; there is no root `pom.xml`
 | Directory | What it is |
 |---|---|
 | [`server/`](server/README.md) | Java/Quarkus framework libraries (multi-module Maven): the transport seam, identity, email, jobs. |
-| [`client/`](client/README.md) | Dart/Flutter framework libraries (pub workspace): core, transport, identity, and the `zen_ui_*` UI packages. |
+| [`client/`](client/README.md) | Dart/Flutter framework libraries (pub workspace): core, transport, identity, the `zen_ui_*` UI packages, and the light-app packages (`zen_store`, `zen_store_cloudkit`, `zen_ui_store`, `zen_ui_lock`). |
 | [`apps/`](apps/zen_demo/README.md) | The applications built on the framework. Today: the `zen_demo` reference app (client + server + admin panel). |
 | [`admin/`](admin/README.md) | `@jzen/admin-core`, the reusable react-admin scaffold each app assembles into its own panel. |
 | [`proto/`](proto/README.md) | The canonical protobuf contract (`zen.v1`) — the source of truth every language generates from. |

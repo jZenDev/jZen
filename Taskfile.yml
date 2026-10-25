@@ -1092,9 +1092,21 @@ tasks:
           [ -n "${port_pid}" ] && kill -9 "${port_pid}" 2>/dev/null || true
         }
 
+        # The gate starts only what it exercises: Postgres, GoTrue (auth) and Kong (the gateway
+        # that serves /auth/v1 on the API port). Every other container is one more anonymous pull
+        # from ghcr.io, and a shared CI runner address hits ghcr.io's rate limit
+        # (`toomanyrequests`) often enough to fail the gate before any jZen code runs. Nothing
+        # zen_demo or the e2e suite calls lives in the excluded services: the server reaches
+        # Supabase only through /auth/v1 and JDBC, and %dev mocks the mailer. A service the
+        # demo starts using is removed from this list in the same change, or the gate fails on
+        # it. `run:supabase` keeps the full stack on purpose: Studio and the mailbox are for
+        # hand-testing.
+        E2E_SUPABASE_EXCLUDE="realtime,storage-api,imgproxy,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor"
+
         set -e
-        # Bring up the local Supabase stack if it is not already running.
-        supabase status >/dev/null 2>&1 || supabase start
+        # Bring up the local Supabase stack if it is not already running. An already-running
+        # stack (a full `run:supabase` one included) is used as it is.
+        supabase status >/dev/null 2>&1 || supabase start -x "${E2E_SUPABASE_EXCLUDE}"
         # GoTrue requires the anon key as the apikey header; hand it and the API URL to Quarkus.
         eval "$(supabase status -o env | sed 's/^/export SB_/')"
         export SUPABASE_URL="${SB_API_URL}"

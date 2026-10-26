@@ -40,7 +40,8 @@ import zen.identity.event.UserAnonymised;
  * <p>Anonymisation fires a {@link zen.identity.event.UserAnonymised} event per row so an
  * application can cascade its own cleanup of anything it keeps keyed on {@code userId} - the
  * mirror of {@link zen.identity.event.UserRegistered} for the account's exit rather than its entry
- * (DECISIONS ADR-007). See {@link #anonymiseExpiredAccounts()}.
+ * (DECISIONS ADR-007). Both {@link #anonymise(UUID)} and {@link #anonymiseExpiredAccounts()} use
+ * the same mutation and event.
  *
  * <p><strong>Every query is bounded, and the bound does not touch the ordering above.</strong> All
  * three used to load whatever matched, in full, into a list on a 256Mi instance — a shape whose
@@ -193,15 +194,32 @@ public class UserRetentionService {
   }
 
   /**
-   * Anonymises every account that is still dormant after its final warning: the address becomes an
-   * unroutable placeholder and the personal fields are cleared. The row itself is kept so foreign
-   * references and aggregate counts stay intact.
+   * Anonymises one account on request, without requiring it to be dormant or to have received
+   * retention warnings. The row is kept so foreign references and aggregate counts stay intact.
    *
-   * <p>Fires a {@link UserAnonymised} event per row, synchronously and from inside this same
-   * transaction, so an application observer can cascade cleanup of its own tables keyed on
-   * {@code userId}. Synchronous and in-transaction, not {@code fireAsync} as {@link
-   * zen.identity.event.UserRegistered} is: an observer here is doing something that must either
-   * commit with the anonymisation or roll it back, not something that can safely lag behind it.
+   * <p>Fires {@link UserAnonymised} synchronously and inside this transaction, so an application
+   * observer can cascade cleanup of its own tables keyed on {@code userId}. The event and profile
+   * change commit or roll back together; it must not lag behind as {@code UserRegistered} can.
+   * Repeating the call is harmless: an absent or already-anonymised account is left alone and does
+   * not fire a second event.
+   *
+   * @return {@code true} if an account was anonymised, or {@code false} if it was absent or already
+   *     anonymised
+   */
+  @Transactional
+  public boolean anonymise(UUID userId) {
+    User user = User.findById(userId);
+    if (user == null || isAnonymised(user)) {
+      return false;
+    }
+
+    applyAnonymisation(user);
+    return true;
+  }
+
+  /**
+   * Anonymises one batch of accounts that stayed dormant after their final warning by calling
+   * {@link #anonymise(UUID)} for each row.
    *
    * @return how many accounts were anonymised
    */
@@ -218,22 +236,30 @@ public class UserRetentionService {
             .page(0, batchSize)
             .list();
 
+    int anonymised = 0;
     for (User user : expired) {
-      // The user id, which is the primary key, is what makes the placeholder unique. A constant
-      // here would make every anonymised row collide with every other one under the UNIQUE
-      // constraint on users.email, and the second account of a batch could never be anonymised.
-      user.email = ANONYMISED_EMAIL_PREFIX + user.id + ANONYMISED_EMAIL_DOMAIN;
-      user.nickname = ANONYMISED_NICKNAME;
-      user.displayName = null;
-      user.avatarUrl = null;
-      user.emailVerified = false;
-      anonymisations.fire(new UserAnonymised(user.id));
+      if (anonymise(user.id)) {
+        anonymised++;
+      }
     }
     if (!expired.isEmpty()) {
-      LOG.infof("Data retention: anonymised %d expired accounts", expired.size());
+      LOG.infof("Data retention: anonymised %d expired accounts", anonymised);
       logIfBatchWasFull(expired.size(), "anonymisation");
     }
-    return expired.size();
+    return anonymised;
+  }
+
+  /** Applies the shared profile mutation and publishes the synchronous cascade event. */
+  private void applyAnonymisation(User user) {
+    // The user id, which is the primary key, is what makes the placeholder unique. A constant
+    // here would make every anonymised row collide with every other one under the UNIQUE
+    // constraint on users.email, and the second account of a batch could never be anonymised.
+    user.email = ANONYMISED_EMAIL_PREFIX + user.id + ANONYMISED_EMAIL_DOMAIN;
+    user.nickname = ANONYMISED_NICKNAME;
+    user.displayName = null;
+    user.avatarUrl = null;
+    user.emailVerified = false;
+    anonymisations.fire(new UserAnonymised(user.id));
   }
 
   /**
@@ -252,7 +278,7 @@ public class UserRetentionService {
 
   /**
    * Whether {@code user}'s email is already the anonymisation placeholder this class writes in
-   * {@link #anonymiseExpiredAccounts()} - the same fact {@link #NOT_ANONYMISED} tests at the
+   * {@link #anonymise(UUID)} - the same fact {@link #NOT_ANONYMISED} tests at the
    * database, exposed for a caller (namely {@code IdentityMapper}, deriving the wire {@code
    * lifecycle_state}) that already holds the row in memory and has no reason to re-query it.
    */

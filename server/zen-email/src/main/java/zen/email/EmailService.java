@@ -108,7 +108,10 @@ public class EmailService {
       LOG.debugf("Sent '%s' mail to %s in locale '%s'", email.template(), recipient(email), locale);
       return true;
     } catch (RuntimeException e) {
-      LOG.warnf("Failed to send '%s' mail to %s: %s", templateName, recipient(email), e.toString());
+      // SMTP rejection messages can include the address; keep the exception message out of logs.
+      LOG.warnf(
+          "Failed to send '%s' mail to %s (%s)",
+          templateName, recipient(email), e.getClass().getName());
       return false;
     }
   }

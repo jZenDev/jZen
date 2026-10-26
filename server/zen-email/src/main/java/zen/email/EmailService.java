@@ -65,6 +65,25 @@ public class EmailService {
   }
 
   /**
+   * Resolves a language tag against this application's configured locale set.
+   *
+   * <p>Applications use this when choosing a subject from their own message bundle, so the subject
+   * follows the same locale policy as the body rendered by {@link #send(LocalizedEmail)}. A
+   * single-argument {@link ZenLocales#resolve(String)} only knows the locales jZen itself ships
+   * and must not be used for application-owned wording.
+   *
+   * @param language the recipient's raw language tag
+   * @return the matching application locale, or the default locale when absent or unsupported
+   */
+  public String resolveLocale(String language) {
+    // An empty value counts as unconfigured: the deploy passes the variable through blank when
+    // the operator sets nothing, and an empty set would send every message in English.
+    List<String> supported =
+        supportedLocales.filter(set -> !set.isEmpty()).orElse(ZenLocales.SHIPPED);
+    return ZenLocales.resolve(language, supported);
+  }
+
+  /**
    * Renders {@code templates/mail/<template>_<locale>.html} for the recipient's locale and sends
    * it as an HTML message.
    *
@@ -76,10 +95,7 @@ public class EmailService {
    * @return {@code true} when the message was handed to the mailer, {@code false} when it was not
    */
   public boolean send(LocalizedEmail email) {
-    // An empty value counts as unconfigured: the deploy passes the variable through blank when
-    // the operator sets nothing, and an empty set would send every message in English.
-    List<String> supported = supportedLocales.filter(set -> !set.isEmpty()).orElse(ZenLocales.SHIPPED);
-    String locale = ZenLocales.resolve(email.language(), supported);
+    String locale = resolveLocale(email.language());
     String templateName = TEMPLATE_ROOT + email.template() + LOCALE_SEPARATOR + locale;
     try {
       Template template = engine.getTemplate(templateName);

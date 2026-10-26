@@ -225,11 +225,13 @@ unreachable relay returns `false` and logs.
 **Localized templates (ROADMAP step 6).** Email is user-facing, so it is localized from
 the start — an English-only template is a limitation the framework exists to make impossible.
 `EmailService.send(...)` resolves the recipient's locale from the `users.language` column (email
-has no request to read `Accept-Language` from), then renders a per-locale Qute template —
-`@Localized` template variants (e.g. `templates/mail/welcome_en.html`, `welcome_uk.html`) with
-subject lines from a Qute `@MessageBundle` (as built: `MailMessages` + `MailMessagesUk`, owned by
-the application — see [`DECISIONS.md`](./DECISIONS.md) ADR-007). `SUPPORTED` locales start at
-`{en, uk}` and grow with the message bundles, no code change per template.
+has no request to read `Accept-Language` from) against the application's runtime
+`zen.i18n.supported` set, defaulting to the locales jZen ships. It then renders a per-locale Qute
+template — `@Localized` template variants (e.g. `templates/mail/welcome_en.html`,
+`welcome_uk.html`) with subject lines from a Qute `@MessageBundle` (as built: `MailMessages` +
+`MailMessagesUk`, owned by the application — see [`DECISIONS.md`](./DECISIONS.md) ADR-007). An
+application uses `EmailService.resolveLocale(...)` to select its subject bundle with the same
+configured locale policy as the body.
 
 ## Client UI
 

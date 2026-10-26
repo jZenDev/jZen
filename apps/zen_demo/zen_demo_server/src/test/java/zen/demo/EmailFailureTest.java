@@ -18,10 +18,15 @@ import io.restassured.response.Response;
 import jakarta.enterprise.inject.Alternative;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Handler;
+import java.util.logging.LogManager;
+import java.util.logging.LogRecord;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.junit.jupiter.api.Test;
 import zen.email.EmailService;
@@ -46,6 +51,7 @@ class EmailFailureTest {
   private static final String HEADER = "X-Zen-Transport";
   private static final long SEND_TIMEOUT_MS = 10_000;
   private static final long POLL_INTERVAL_MS = 50;
+  private static final String REJECTED_RECIPIENT = "smtp-rejected@example.com";
 
   @InjectMock @RestClient SupabaseAuthClient authClient;
   @Inject EmailService emailService;
@@ -73,7 +79,8 @@ class EmailFailureTest {
     @Override
     public void send(Mail... mails) {
       ATTEMPTS.incrementAndGet();
-      throw new IllegalStateException("SMTP unavailable");
+      throw new IllegalStateException(
+          "SMTP 550 recipient address rejected: " + REJECTED_RECIPIENT);
     }
   }
 
@@ -112,17 +119,49 @@ class EmailFailureTest {
 
   @Test
   void send_whenTheMailerThrows_reportsFailureWithoutThrowing() {
-    boolean sent =
-        emailService.send(
-            new LocalizedEmail(
-                "nobody@example.com",
-                "uk",
-                "welcome",
-                "Subject",
-                Map.of("email", "nobody@example.com", "siteUrl", "http://localhost:8080"),
-                UUID.randomUUID().toString()));
+    List<String> logMessages = captureEmailServiceLogs(
+        () -> assertFalse(
+            emailService.send(
+                new LocalizedEmail(
+                    REJECTED_RECIPIENT,
+                    "uk",
+                    "welcome",
+                    "Subject",
+                    Map.of("email", REJECTED_RECIPIENT, "siteUrl", "http://localhost:8080"),
+                    UUID.randomUUID().toString())),
+            "an SMTP failure is reported, never thrown"));
 
-    assertFalse(sent, "an SMTP failure is reported, never thrown");
+    String log = String.join("\n", logMessages);
+    assertTrue(log.contains(IllegalStateException.class.getName()), "the failure type is retained");
+    assertFalse(log.contains(REJECTED_RECIPIENT), "an SMTP error must not leak the email address");
+  }
+
+  private List<String> captureEmailServiceLogs(Runnable action) {
+    java.util.logging.Logger logger =
+        LogManager.getLogManager().getLogger(EmailService.class.getName());
+    List<String> messages = new ArrayList<>();
+    Handler handler =
+        new Handler() {
+          @Override
+          public void publish(LogRecord record) {
+            if (isLoggable(record)) {
+              messages.add(record.getMessage());
+            }
+          }
+
+          @Override
+          public void flush() {}
+
+          @Override
+          public void close() {}
+        };
+    logger.addHandler(handler);
+    try {
+      action.run();
+    } finally {
+      logger.removeHandler(handler);
+    }
+    return messages;
   }
 
   /** The welcome message is sent from an async observer, so the attempt is awaited, not assumed. */

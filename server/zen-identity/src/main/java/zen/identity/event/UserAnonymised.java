@@ -4,8 +4,9 @@ import java.util.UUID;
 
 /**
  * Fired once per row, synchronously, from inside the same transaction that anonymises it (see
- * {@link zen.identity.user.UserRetentionService#anonymiseExpiredAccounts()}). Applications observe
- * it with {@code @Observes} and cascade their own cleanup of anything keyed on {@code userId} - the
+ * {@link zen.identity.user.UserRetentionService#anonymise(java.util.UUID)} and {@link
+ * zen.identity.user.UserRetentionService#anonymiseExpiredAccounts()}). Applications observe it
+ * with {@code @Observes} and cascade their own cleanup of anything keyed on {@code userId} - the
  * framework knows only that the identity was anonymised; only the application knows what else in
  * its own tables should go with it (DECISIONS ADR-007).
  *

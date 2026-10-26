@@ -11,8 +11,9 @@ import java.util.Objects;
  * caller's typed Qute {@code @MessageBundle} (DECISIONS ADR-002) - the framework has no business
  * owning an application's wording. The <em>body</em> is named by a locale-free {@code template}
  * base (e.g. {@code "welcome"}); {@link EmailService} appends the resolved locale and looks up
- * {@code templates/mail/welcome_<locale>.html}. Both sides therefore resolve the same
- * {@code language} through {@code ZenLocales}, so subject and body can never disagree.
+ * {@code templates/mail/welcome_<locale>.html}. The caller selects its subject bundle using
+ * {@link EmailService#resolveLocale(String)}, the same application-aware policy used for the body;
+ * the single-argument {@code ZenLocales.resolve} only covers locales jZen itself ships.
  *
  * <p>{@code recipientRef} exists so that {@link EmailService} can say <em>who</em> a failed send was
  * for without writing an email address into the log. An address is personal data the moment it

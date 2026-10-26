@@ -95,11 +95,10 @@ public class DemoMailer {
   }
 
   /**
-   * Selects the subject bundle for a stored language tag. It resolves through the same
-   * {@link ZenLocales} the {@link EmailService} uses for the template, so a subject can never end
-   * up in a different language from the body it heads.
+   * Selects the subject bundle for a stored language tag through the same application locale set
+   * the {@link EmailService} uses for the template.
    */
   private MailMessages bundle(String language) {
-    return ZenLocales.UK.equals(ZenLocales.resolve(language)) ? messagesUk : messages;
+    return ZenLocales.UK.equals(emailService.resolveLocale(language)) ? messagesUk : messages;
   }
 }

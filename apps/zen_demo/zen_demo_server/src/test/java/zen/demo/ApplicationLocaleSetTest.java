@@ -10,6 +10,7 @@ import jakarta.inject.Inject;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import zen.email.EmailService;
 import zen.identity.auth.SupabaseSessionResponse.UserPayload;
 import zen.identity.user.User;
 import zen.identity.user.UserStore;
@@ -39,6 +40,7 @@ class ApplicationLocaleSetTest {
   }
 
   @Inject UserStore userStore;
+  @Inject EmailService emailService;
 
   private static UserPayload payload(UUID id) {
     return new UserPayload(id.toString(), "locale-" + id + "@example.test", null, null, null);
@@ -60,5 +62,11 @@ class ApplicationLocaleSetTest {
 
     User stored = QuarkusTransaction.requiringNew().call(() -> User.findById(id));
     assertEquals("en", stored.language, "the set is wider, not open");
+  }
+
+  @Test
+  void emailServiceResolvesAgainstTheApplicationLocaleSet() {
+    assertEquals("pl", emailService.resolveLocale("pl-PL"));
+    assertEquals("en", emailService.resolveLocale("de"));
   }
 }

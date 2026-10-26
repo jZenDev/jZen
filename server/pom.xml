@@ -102,7 +102,7 @@
 
     <compiler-plugin.version>3.15.0</compiler-plugin.version>
     <surefire-plugin.version>3.5.4</surefire-plugin.version>
-    <protobuf-maven-plugin.version>2.11.0</protobuf-maven-plugin.version>
+    <protobuf-maven-plugin.version>5.1.11</protobuf-maven-plugin.version>
     <!--
       maven-pmd-plugin's own default resolves PMD 6.55.0, whose bundled ASM cannot parse a Java 25
       class file at all ("Unsupported class file major version 69") - every file in the module

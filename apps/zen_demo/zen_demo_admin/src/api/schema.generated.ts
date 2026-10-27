@@ -658,7 +658,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Exchange the tokens from a Supabase email link for a cookie session */
+        /** Exchange legacy email-link tokens for a cookie session */
         post: {
             parameters: {
                 query?: never;

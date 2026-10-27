@@ -165,8 +165,11 @@ public class SecurityHeaders {
     // that, and it is how a stored value gets served back as script.
     response.putHeader("X-Content-Type-Options", "nosniff");
     // Full URL to this origin, bare origin to any other. Recovery and confirmation links carry
-    // tokens in the URL (ADR-018), and the default policy would leak the path to third parties.
-    response.putHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    // credentials in the URL; those pages set the stricter no-referrer policy themselves. Keep
+    // their explicit value while applying the shared default everywhere else.
+    if (!response.headers().contains("Referrer-Policy")) {
+      response.putHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    }
     // jZen uses none of these capabilities anywhere in the product, so denying them to the page
     // and every frame it could embed is free.
     response.putHeader(

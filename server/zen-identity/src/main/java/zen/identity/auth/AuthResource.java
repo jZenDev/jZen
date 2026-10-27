@@ -5,6 +5,7 @@ import zen.identity.IdentityMapper;
 import zen.identity.IdentityService;
 import zen.identity.user.User;
 import zen.proto.v1.Identity;
+import zen.proto.v1.AuthConfirmRequest;
 import zen.proto.v1.LoginRequest;
 import zen.proto.v1.RegisterRequest;
 import zen.proto.v1.RestorePasswordRequest;
@@ -168,7 +169,7 @@ public class AuthResource {
   @PermitAll
   @Consumes({MediaType.APPLICATION_JSON, PROTOBUF})
   @Produces({MediaType.APPLICATION_JSON, PROTOBUF})
-  @Operation(summary = "Exchange the tokens from a Supabase email link for a cookie session")
+  @Operation(summary = "Exchange legacy email-link tokens for a cookie session")
   @RequestBody(content = @Content(schema = @Schema(ref = "SessionExchangeRequest")))
   @APIResponse(
       responseCode = ZenStatus.OK,
@@ -189,6 +190,30 @@ public class AuthResource {
      */
     IdentityService.Session session =
         identityService.exchangeLinkTokens(request.getAccessToken(), request.getRefreshToken());
+    return sessionResponse(session);
+  }
+
+  @POST
+  @Path("/confirm")
+  @PermitAll
+  @Consumes({MediaType.APPLICATION_JSON, PROTOBUF})
+  @Produces({MediaType.APPLICATION_JSON, PROTOBUF})
+  @Operation(summary = "Verify a confirmation or recovery email link")
+  @RequestBody(content = @Content(schema = @Schema(ref = "AuthConfirmRequest")))
+  @APIResponse(
+      responseCode = ZenStatus.OK,
+      description = "Link accepted; session cookies set",
+      content = {
+        @Content(mediaType = MediaType.APPLICATION_JSON, schema = @Schema(ref = "Identity")),
+        @Content(mediaType = PROTOBUF, schema = @Schema(ref = "Identity"))
+      })
+  @APIResponse(responseCode = ZenStatus.UNAUTHORIZED, description = "The link is invalid or expired")
+  public Response confirmEmailLink(AuthConfirmRequest request) {
+    // PermitAll because the link creates the first session. CsrfRules deliberately includes this
+    // POST: the filter checks same-origin browser requests even before authentication, then uses
+    // the session's double-submit token too when a caller already has a session.
+    IdentityService.Session session =
+        identityService.confirmEmailLink(request.getTokenHash(), request.getType());
     return sessionResponse(session);
   }
 

@@ -20,9 +20,17 @@ class CsrfRulesTest {
   void aMutatingApiCallIsInScope() {
     assertTrue(CsrfRules.applies("POST", "/api/v1/auth/logout"));
     assertTrue(CsrfRules.applies("POST", "/api/v1/auth/password"));
+    assertTrue(CsrfRules.applies("POST", "/api/v1/auth/confirm"));
     assertTrue(CsrfRules.applies("PUT", "/api/v1/admin/users/abc"));
     assertTrue(CsrfRules.applies("DELETE", "/api/v1/admin/users/abc"));
     assertTrue(CsrfRules.applies("PATCH", "/api/v1/anything"));
+  }
+
+  @Test
+  void emailLinkConfirmationRequiresSameOriginEvenBeforeLogin() {
+    assertTrue(CsrfRules.requiresSameOrigin("POST", "/api/v1/auth/confirm"));
+    assertFalse(CsrfRules.requiresSameOrigin("POST", "/api/v1/auth/session"));
+    assertFalse(CsrfRules.requiresSameOrigin("GET", "/api/v1/auth/confirm"));
   }
 
   @Test

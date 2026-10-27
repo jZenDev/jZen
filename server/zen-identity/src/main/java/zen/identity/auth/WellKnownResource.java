@@ -20,13 +20,12 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  * <p><strong>Why this exists: a custom scheme cannot be owned.</strong> {@code zendemo://} is a
  * private-use URI scheme, and RFC 8252 §8.6 is explicit that no application can claim one
  * exclusively — any app on the device may register the same one. That would be a small matter if
- * the link carried a one-time code, but it does not: jZen uses the implicit fragment flow
- * (ADR-018), so the URL contains a live access <em>and</em> refresh token. An application that wins
- * the scheme race receives them and has the account, while every signal the victim can see says
- * they are safe — they asked for the email, it came from the right sender, they followed their own
- * link. The server-side allowlist (ADR-019) does not help here and it is worth being clear why: it
- * checks which return address may be <em>requested</em>, and the attacker requests nothing. They
- * listen for the address the real app already asked for.
+ * newly issued email links carry a one-time verification hash (ADR-066), not a session. A hostile
+ * application that wins the custom-scheme race can still submit that hash first and claim the
+ * resulting session. Already-sent legacy messages may carry a live access <em>and</em> refresh
+ * token. The server-side allowlist (ADR-019) does not stop either race: it checks which return
+ * address may be <em>requested</em>, while the hostile application listens for the address the
+ * real app already asked for.
  *
  * <p>App Links (Android) and Universal Links (iOS) fix it at the root, by making the association
  * verifiable rather than declared: the link is an ordinary {@code https://} URL, and the OS opens

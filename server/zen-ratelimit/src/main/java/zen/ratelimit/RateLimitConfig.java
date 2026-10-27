@@ -61,6 +61,9 @@ public interface RateLimitConfig {
   /** Limits for {@link RateLimitRule#AUTH} — {@code zen.ratelimit.auth.*}. */
   Limits auth();
 
+  /** Limits for {@link RateLimitRule#AUTH_CONFIRM} — {@code zen.ratelimit.auth-confirm.*}. */
+  Limits authConfirm();
+
   /** Limits for {@link RateLimitRule#JOB_TRIGGER} — {@code zen.ratelimit.job-trigger.*}. */
   Limits jobTrigger();
 

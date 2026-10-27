@@ -83,6 +83,17 @@ public final class CsrfRules {
     return normalized.startsWith(API_PREFIX) && !EXEMPT_PATHS.contains(normalized);
   }
 
+  /**
+   * The email-link confirmation creates a session from a credential supplied by the caller.
+   * Cross-site POSTs must be refused even when the browser has no existing session cookie to
+   * trigger the ordinary double-submit check.
+   */
+  public static boolean requiresSameOrigin(String method, String path) {
+    return method != null
+        && "POST".equalsIgnoreCase(method)
+        && "api/v1/auth/confirm".equals(normalize(path));
+  }
+
   /** Strips a leading slash and any trailing slash, so {@code /api/x/} and {@code api/x} agree. */
   static String normalize(String path) {
     if (path == null) {

@@ -31,6 +31,12 @@ class RateLimitRuleTest {
   }
 
   @Test
+  void emailLinkConfirmationHasItsOwnPerAddressBucket() {
+    assertSame(RateLimitRule.AUTH_CONFIRM, RateLimitRule.resolve("/api/v1/auth/confirm"));
+    assertEquals("auth_confirm", RateLimitRule.AUTH_CONFIRM.key());
+  }
+
+  @Test
   void identityAndLogoutAreOrdinaryTrafficRatherThanGuessingSurfaces() {
     // Neither accepts a guess, and a client calls identity on every launch. Bucketing them with
     // login would charge ordinary use to an abuse budget.

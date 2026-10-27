@@ -77,6 +77,15 @@ message SessionExchangeRequest {
   string refresh_token = 2;
 }
 
+// POST /api/v1/auth/confirm request body. Verifies the one-time hash from a confirmation or
+// recovery email only after the person presses Continue on /auth/confirm. GET never spends it.
+message AuthConfirmRequest {
+  string token_hash = 1;
+  // Only "signup" and "recovery" are supported. The server rejects every other value before
+  // making an upstream request.
+  string type = 2;
+}
+
 // POST /api/v1/auth/password request body. Sets a new password for the identity in the
 // session cookie.
 message SetPasswordRequest {

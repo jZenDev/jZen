@@ -7,6 +7,7 @@ import zen.identity.auth.SupabaseSessionResponse;
 import zen.identity.auth.SupabaseSignupRequest;
 import zen.identity.auth.SupabaseTokenRequest;
 import zen.identity.auth.SupabaseUnavailableException;
+import zen.identity.auth.SupabaseVerifyRequest;
 import zen.identity.auth.UserUpdateRequest;
 import zen.identity.event.UserRegistered;
 import zen.identity.security.RoleAugmentor;
@@ -168,10 +169,10 @@ public class IdentityService {
   }
 
   /**
-   * Turns the tokens a Supabase email link delivered — confirmation, recovery, or invite — into a
-   * jZen session, so that following the link lands the user signed in instead of back at a login
-   * form. Supabase puts those tokens in the URL <em>fragment</em>, which never reaches a server, so
-   * they can only arrive here by the client reading them and posting them back.
+   * Turns the session tokens from a legacy Supabase email link into a jZen session. New links use
+   * {@link #confirmEmailLink(String, String)} and a one-time token hash. Supabase puts the legacy
+   * tokens in the URL <em>fragment</em>, which never reaches a server, so they can only arrive here
+   * by the client reading them and posting them back.
    *
    * <p>The access token is therefore an <b>untrusted input</b>, and is validated by presenting it
    * to Supabase ({@code GET /user}) before a single cookie is issued. Supabase is the only party
@@ -192,6 +193,60 @@ public class IdentityService {
       throw AuthException.unauthorized("This link has expired. Please request a new one.");
     }
     return new Session(accessToken, refreshToken, userStore.upsertOnLogin(supabaseUser, null).user());
+  }
+
+  /**
+   * Verifies the one-time token hash from a confirmation or recovery email and returns its session.
+   *
+   * <p>The landing page only displays a Continue action. This is the first operation that sends
+   * the hash to GoTrue, so a mail scanner that fetches the GET page cannot spend it. Verification
+   * is deliberately a single attempt: GoTrue consumes the hash on success, and retrying after an
+   * ambiguous timeout would turn a successful exchange into a false expired-link response.
+   */
+  public Session confirmEmailLink(String tokenHash, String type) {
+    if (!"signup".equals(type) && !"recovery".equals(type)) {
+      throw new AuthException(400, "invalid_auth_type", "This email link type is not supported.");
+    }
+    if (tokenHash == null || tokenHash.isBlank()) {
+      throw new AuthException(400, "invalid_auth_link", "This email link is incomplete.");
+    }
+
+    SupabaseSessionResponse response;
+    try {
+      response = authClient.verify(new SupabaseVerifyRequest(tokenHash, type));
+    } catch (WebApplicationException e) {
+      int status = e.getResponse() == null ? -1 : e.getResponse().getStatus();
+      if (status == 429) {
+        throw new AuthException(429, "rate_limited", "Too many attempts. Please wait a moment and try again.");
+      }
+      if (isRejectedEmailToken(e)) {
+        throw invalidOrExpiredEmailLink();
+      }
+      throw serviceUnavailable();
+    } catch (RuntimeException e) {
+      // Includes the fault-tolerance circuit-open and timeout/transport failures. None says the
+      // token was refused; the verification may have succeeded, so never label it expired.
+      throw serviceUnavailable();
+    }
+
+    if (response == null
+        || response.accessToken() == null
+        || response.accessToken().isBlank()
+        || response.user() == null
+        || response.user().id() == null) {
+      throw serviceUnavailable();
+    }
+    return toSession(response);
+  }
+
+  private static AuthException invalidOrExpiredEmailLink() {
+    return new AuthException(401, "invalid_or_expired", "This email link is invalid or has expired.");
+  }
+
+  /** GoTrue's one-time-token rejection is identified by its machine code, never by HTTP alone. */
+  private static boolean isRejectedEmailToken(WebApplicationException e) {
+    String errorCode = structuredErrorCode(readBody(e));
+    return "otp_expired".equals(errorCode) || "invalid_token".equals(errorCode);
   }
 
   /**

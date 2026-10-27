@@ -474,12 +474,12 @@ role or backend for the rule to protect — and the gate still scans `zen_store`
 `zen_store_cloudkit`, `zen_ui_store` and `zen_ui_lock` like every other package: the Dart side of
 none names a provider, an SDK or a URL.
 
-**The one thing that legitimately crosses.** Provider-minted tokens arrive at the client in an
-email link's fragment (the implicit flow, [`DECISIONS.md`](./DECISIONS.md) ADR-018). That is not a
-call *to* the provider: the client does not decode, validate or trust them, it posts them to
-`POST /api/v1/auth/session` and the **server** checks them with the provider before any session
-exists. This is the exception that shows the shape of the rule — even material that comes from the
-provider is only made meaningful by the backend.
+**The one thing that legitimately crosses.** New signup and recovery links carry a one-time
+verification hash through the app-owned confirmation page (ADR-066); the client posts it to
+`POST /api/v1/auth/confirm`, and the **server** verifies it with GoTrue before issuing a session.
+Already-sent legacy links can still return live tokens in the URL fragment (ADR-018); the client
+posts those to `POST /api/v1/auth/session`, where the server validates them before a session exists.
+In both cases, the client does not decode, validate or trust provider credentials itself.
 
 ## Client config is compile-time (non-negotiable)
 

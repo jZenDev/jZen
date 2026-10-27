@@ -58,6 +58,18 @@ public class RateLimitProperties implements RateLimitConfig {
   @ConfigProperty(name = "zen.ratelimit.auth.durable-window")
   Duration authDurableWindow;
 
+  @ConfigProperty(name = "zen.ratelimit.auth-confirm.burst-limit")
+  int authConfirmBurstLimit;
+
+  @ConfigProperty(name = "zen.ratelimit.auth-confirm.burst-window")
+  Duration authConfirmBurstWindow;
+
+  @ConfigProperty(name = "zen.ratelimit.auth-confirm.durable-limit")
+  int authConfirmDurableLimit;
+
+  @ConfigProperty(name = "zen.ratelimit.auth-confirm.durable-window")
+  Duration authConfirmDurableWindow;
+
   @ConfigProperty(name = "zen.ratelimit.job-trigger.burst-limit")
   int jobTriggerBurstLimit;
 
@@ -100,6 +112,15 @@ public class RateLimitProperties implements RateLimitConfig {
   public Limits auth() {
     return new ConfiguredLimits(
         authBurstLimit, authBurstWindow, authDurableLimit, authDurableWindow);
+  }
+
+  @Override
+  public Limits authConfirm() {
+    return new ConfiguredLimits(
+        authConfirmBurstLimit,
+        authConfirmBurstWindow,
+        authConfirmDurableLimit,
+        authConfirmDurableWindow);
   }
 
   @Override

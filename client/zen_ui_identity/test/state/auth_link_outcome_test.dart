@@ -29,11 +29,18 @@ class _FakeRepo implements IdentityRepository {
   }) async => exchangeResult ?? const ZenResult.err(ZenUnknownError('not set'));
 
   @override
+  Future<ZenResult<IdentityContract>> confirmEmailLink({
+    required String tokenHash,
+    required String type,
+  }) async => exchangeResult ?? const ZenResult.err(ZenUnknownError('not set'));
+
+  @override
   Future<ZenResult<IdentityContract>> refreshSession() async =>
       const ZenResult.err(ZenUnknownError('not stubbed'));
 
   @override
-  Future<ZenResult<void>> setPassword({required String password, String? currentPassword}) async => const ZenResult.ok(null);
+  Future<ZenResult<void>> setPassword({required String password, String? currentPassword}) async =>
+      const ZenResult.ok(null);
 
   @override
   Future<ZenResult<IdentityContract>> loginWithEmail({

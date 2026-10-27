@@ -29,6 +29,7 @@ class SupabaseIdentityRepository implements IdentityRepository {
   static const String _register = '/api/v1/auth/register';
   static const String _restorePassword = '/api/v1/auth/restore-password';
   static const String _session = '/api/v1/auth/session';
+  static const String _confirm = '/api/v1/auth/confirm';
   static const String _password = '/api/v1/auth/password';
   static const String _refresh = '/api/v1/auth/refresh';
   static const String _logout = '/api/v1/auth/logout';
@@ -97,6 +98,25 @@ class SupabaseIdentityRepository implements IdentityRepository {
       pb.Identity.new,
       _session,
       body: pb.SessionExchangeRequest(accessToken: accessToken, refreshToken: refreshToken ?? ''),
+    );
+    return result.fold(
+      (identity) => ZenResult.ok(_toContract(identity)),
+      (error) => ZenResult.err(error),
+    );
+  }
+
+  @override
+  Future<ZenResult<IdentityContract>> confirmEmailLink({
+    required String tokenHash,
+    required String type,
+  }) async {
+    final result = await _client.post(
+      pb.Identity.new,
+      _confirm,
+      body: pb.AuthConfirmRequest(tokenHash: tokenHash, type: type),
+      // A 401 is the provider's definitive answer that this one-time hash was rejected. The
+      // ordinary session refresh/replay path could spend it again after that response.
+      recoverSessionOn401: false,
     );
     return result.fold(
       (identity) => ZenResult.ok(_toContract(identity)),

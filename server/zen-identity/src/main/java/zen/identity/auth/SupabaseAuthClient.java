@@ -27,14 +27,16 @@ import org.eclipse.microprofile.rest.client.inject.RegisterRestClient;
  *   <li>The base {@code /auth/v1} path segment is dropped from the interface because
  *       {@code quarkus.rest-client.supabase-auth.url} already ends in {@code /auth/v1}
  *       (application.properties). Method paths are therefore relative: {@code /token},
- *       {@code /signup}, {@code /recover}, {@code /user}.
+ *       {@code /signup}, {@code /recover}, {@code /verify}, {@code /user}.
  *   <li>GoTrue requires the project {@code apikey} header on every call; it is supplied
  *       once here from {@code supabase.key} config rather than per call site.
  * </ul>
  *
- * <p>Each call carries {@code @CircuitBreaker}/{@code @Retry}/{@code @Timeout}: a Supabase
+ * <p>Calls carry {@code @CircuitBreaker}/{@code @Retry}/{@code @Timeout}: a Supabase
  * 4xx ({@link WebApplicationException}) skips the breaker and aborts retries (it is a real
- * client error, not a transient fault), while timeouts and 5xx trip the breaker. The 5xx/4xx
+ * client error, not a transient fault), while timeouts and 5xx trip the breaker. The one-time
+ * {@link #verify(SupabaseVerifyRequest)} operation deliberately omits {@code @Retry} because a
+ * successful attempt consumes its token. The 5xx/4xx
  * split is enforced by {@link #toException}, which remaps a 5xx response to {@link
  * SupabaseUnavailableException} before it can ever reach {@code skipOn}/{@code abortOn} as a
  * {@code WebApplicationException} — without it, the default REST client behavior of throwing
@@ -78,10 +80,26 @@ public interface SupabaseAuthClient {
   void recover(PasswordRecoverRequest request, @QueryParam("redirect_to") String redirectTo);
 
   /**
+   * Verifies a one-time email token hash and returns the session it creates.
+   *
+   * <p>Deliberately has no {@code @Retry}: GoTrue consumes the hash on success, so replaying the
+   * request after a timeout could turn a successful verification into an apparent expired-link
+   * failure. The caller reports an ambiguous transport result and asks the person to sign in
+   * again rather than spending the credential a second time.
+   */
+  @POST
+  @Path("/verify")
+  @Consumes(MediaType.APPLICATION_JSON)
+  @Produces(MediaType.APPLICATION_JSON)
+  @CircuitBreaker(requestVolumeThreshold = 10, failureRatio = 0.5, delay = 5000, skipOn = WebApplicationException.class)
+  @Timeout(2000)
+  SupabaseSessionResponse verify(SupabaseVerifyRequest request);
+
+  /**
    * Returns the user a bearer token belongs to, and 401s if the token is not genuine, has
-   * expired, or has been revoked. This is the *validation* step for a token jZen did not issue
-   * itself — the one an email link handed to the browser. Only Supabase can answer it: a local
-   * signature check would happily accept a token Supabase had already invalidated.
+   * expired, or has been revoked. This is the *validation* step for a legacy access token jZen
+   * did not issue itself — one an older email link handed to the browser. Only Supabase can answer
+   * it: a local signature check would happily accept a token Supabase had already invalidated.
    */
   @GET
   @Path("/user")

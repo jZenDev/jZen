@@ -152,6 +152,48 @@ void main() {
     });
   });
 
+  group('confirmEmailLink', () {
+    test('posts token hash and type once to the verification endpoint', () async {
+      Map<String, dynamic>? sent;
+      final repo = repoReturning((req) {
+        expect(req.url.path, '/api/v1/auth/confirm');
+        expect(req.method, 'POST');
+        sent = jsonDecode(req.body) as Map<String, dynamic>;
+        return jsonResponse(identityJson(id: 'verified-user'));
+      });
+
+      final result = await repo.confirmEmailLink(tokenHash: 'one-time-hash', type: 'recovery');
+
+      expect(result.isSuccess, isTrue);
+      expect(result.dataOrNull?.id, 'verified-user');
+      expect(sent, {'tokenHash': 'one-time-hash', 'type': 'recovery'});
+    });
+
+    test('does not run the session refresh callback after a rejected one-time hash', () async {
+      var requests = 0;
+      var refreshes = 0;
+      final client = pb.ZenClient(
+        baseUrl: 'http://test.local',
+        format: pb.ZenTransportFormat.json,
+        httpClient: MockClient((request) async {
+          requests++;
+          return jsonResponse(pb.ZenError(code: 'invalid_or_expired').toProto3Json(), status: 401);
+        }),
+        recoverSession: () async {
+          refreshes++;
+          return true;
+        },
+      );
+      final repo = SupabaseIdentityRepository(client: client);
+
+      final result = await repo.confirmEmailLink(tokenHash: 'spent-hash', type: 'signup');
+
+      expect(result.isFailure, isTrue);
+      expect(requests, 1);
+      expect(refreshes, 0);
+    });
+  });
+
   group('return address', () {
     // Both email-sending calls tell the server where this build wants its link to come back to.
     // The value is compile-time (empty for a web build, a scheme for a native one), so what is

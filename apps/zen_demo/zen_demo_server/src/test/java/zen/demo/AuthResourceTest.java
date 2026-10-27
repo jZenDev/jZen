@@ -16,7 +16,9 @@ import zen.identity.auth.SessionService;
 import zen.identity.auth.SupabaseAuthClient;
 import zen.identity.auth.RedirectTargets;
 import zen.identity.auth.SupabaseSessionResponse;
+import zen.identity.auth.SupabaseVerifyRequest;
 import zen.proto.v1.Identity;
+import zen.proto.v1.AuthConfirmRequest;
 import zen.proto.v1.LoginRequest;
 import zen.proto.v1.RegisterRequest;
 import zen.proto.v1.RestorePasswordRequest;
@@ -351,6 +353,166 @@ class AuthResourceTest {
   }
 
   @Test
+  void authCallback_forwardsNewTokenHashToTheApp() {
+    Response resp =
+        given()
+            .redirects()
+            .follow(false)
+            .queryParam("token_hash", "single-use-hash")
+            .queryParam("type", "recovery")
+            .when()
+            .get("/auth/callback")
+            .andReturn();
+
+    assertEquals(303, resp.statusCode());
+    assertEquals("/?token_hash=single-use-hash&type=recovery", resp.getHeader("Location"));
+    assertEquals("no-referrer", resp.getHeader("Referrer-Policy"));
+    assertEquals("no-store", resp.getHeader("Cache-Control"));
+  }
+
+  @Test
+  void confirmLandingCanBeFetchedTwiceBeforeTheExplicitVerification() throws Exception {
+    Response first =
+        given()
+            .redirects()
+            .follow(false)
+            .queryParam("token_hash", "single-use-hash")
+            .queryParam("type", "signup")
+            .queryParam("next", redirectTargets.resolve(null))
+            .when()
+            .get("/auth/confirm")
+            .andReturn();
+    Response second =
+        given()
+            .redirects()
+            .follow(false)
+            .queryParam("token_hash", "single-use-hash")
+            .queryParam("type", "signup")
+            .queryParam("next", redirectTargets.resolve(null))
+            .when()
+            .get("/auth/confirm")
+            .andReturn();
+
+    for (Response page : List.of(first, second)) {
+      assertEquals(200, page.statusCode());
+      assertEquals("no-referrer", page.getHeader("Referrer-Policy"));
+      assertEquals("no-store", page.getHeader("Cache-Control"));
+      assertTrue(page.asString().contains("Continue"));
+      assertTrue(page.asString().contains("token_hash=single-use-hash"));
+      assertFalse(page.asString().contains("supabase.co"));
+    }
+    verify(authClient, never()).verify(any());
+
+    when(authClient.verify(any())).thenReturn(session("confirmed-by-hash@example.com"));
+    Response confirmed = confirm("single-use-hash", "signup");
+
+    assertEquals(200, confirmed.statusCode());
+    Identity.Builder identity = Identity.newBuilder();
+    JsonFormat.parser().merge(confirmed.getBody().asString(), identity);
+    assertFalse(identity.getId().isEmpty());
+    assertTrue(
+        confirmed.getHeaders().getValues("Set-Cookie").stream()
+            .anyMatch(c -> c.startsWith(SessionService.ACCESS_COOKIE + "=access-jwt")));
+    verify(authClient).verify(eq(new SupabaseVerifyRequest("single-use-hash", "signup")));
+  }
+
+  @Test
+  void confirmLandingRefusesAnUnlistedReturnAddressWithoutReflectingIt() {
+    Response page =
+        given()
+            .queryParam("token_hash", "single-use-hash")
+            .queryParam("type", "signup")
+            .queryParam("next", "https://evil.example/steal")
+            .when()
+            .get("/auth/confirm")
+            .andReturn();
+
+    assertEquals(400, page.statusCode());
+    assertFalse(page.asString().contains("evil.example"));
+    assertEquals("no-referrer", page.getHeader("Referrer-Policy"));
+    assertEquals("no-store", page.getHeader("Cache-Control"));
+    verify(authClient, never()).verify(any());
+  }
+
+  @Test
+  void confirm_refusesTypesOutsideTheAllowListBeforeCallingSupabase() throws Exception {
+    Response resp = confirm("one-time-hash", "magiclink");
+
+    assertEquals(400, resp.statusCode());
+    ZenError.Builder error = ZenError.newBuilder();
+    JsonFormat.parser().merge(resp.getBody().asString(), error);
+    assertEquals("invalid_auth_type", error.getCode());
+    verify(authClient, never()).verify(any());
+  }
+
+  @Test
+  void confirm_mapsTheProviderVerificationLimitTo429() throws Exception {
+    when(authClient.verify(any()))
+        .thenThrow(
+            new WebApplicationException(
+                jakarta.ws.rs.core.Response.status(429)
+                    .entity("{\"error_code\":\"over_request_rate_limit\"}")
+                    .build()));
+
+    Response resp = confirm("one-time-hash", "recovery");
+
+    assertEquals(429, resp.statusCode());
+    ZenError.Builder error = ZenError.newBuilder();
+    JsonFormat.parser().merge(resp.getBody().asString(), error);
+    assertEquals("rate_limited", error.getCode());
+    verify(authClient).verify(any());
+  }
+
+  @Test
+  void confirm_mapsOnlyARejectedOneTimeTokenToInvalidOrExpired() throws Exception {
+    when(authClient.verify(any()))
+        .thenThrow(
+            new WebApplicationException(
+                jakarta.ws.rs.core.Response.status(403)
+                    .entity("{\"error_code\":\"otp_expired\",\"msg\":\"Token has expired\"}")
+                    .build()));
+
+    Response resp = confirm("spent-hash", "signup");
+
+    assertEquals(401, resp.statusCode());
+    ZenError.Builder error = ZenError.newBuilder();
+    JsonFormat.parser().merge(resp.getBody().asString(), error);
+    assertEquals("invalid_or_expired", error.getCode());
+    verify(authClient).verify(any());
+  }
+
+  @Test
+  void confirm_doesNotCallOtherProviderErrorsAnExpiredLink() throws Exception {
+    when(authClient.verify(any()))
+        .thenThrow(
+            new WebApplicationException(
+                jakarta.ws.rs.core.Response.status(400)
+                    .entity("{\"error_code\":\"validation_failed\"}")
+                    .build()));
+
+    Response resp = confirm("one-time-hash", "signup");
+
+    assertEquals(503, resp.statusCode());
+    ZenError.Builder error = ZenError.newBuilder();
+    JsonFormat.parser().merge(resp.getBody().asString(), error);
+    assertEquals("service_unavailable", error.getCode());
+    verify(authClient).verify(any());
+  }
+
+  @Test
+  void confirm_reportsATransportFailureAs503AndDoesNotRetry() throws Exception {
+    when(authClient.verify(any())).thenThrow(new RuntimeException("connection timed out"));
+
+    Response resp = confirm("maybe-spent-hash", "recovery");
+
+    assertEquals(503, resp.statusCode());
+    ZenError.Builder error = ZenError.newBuilder();
+    JsonFormat.parser().merge(resp.getBody().asString(), error);
+    assertEquals("service_unavailable", error.getCode());
+    verify(authClient).verify(any());
+  }
+
+  @Test
   void sessionExchange_validLinkToken_signsInAndSetsCookies() throws Exception {
     // The tokens an email link left in the URL fragment, handed back by the client. Supabase
     // vouches for the access token; only then does a session exist.
@@ -551,5 +713,17 @@ class AuthResourceTest {
     } catch (Exception e) {
       throw new AssertionError("response body was not parseable protobuf", e);
     }
+  }
+
+  private Response confirm(String tokenHash, String type) throws Exception {
+    AuthConfirmRequest body =
+        AuthConfirmRequest.newBuilder().setTokenHash(tokenHash).setType(type).build();
+    return given()
+        .header(HEADER, "json")
+        .contentType("application/json")
+        .body(JsonFormat.printer().print(body))
+        .when()
+        .post("/api/v1/auth/confirm")
+        .andReturn();
   }
 }

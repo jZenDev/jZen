@@ -2,6 +2,9 @@ package zen.demo;
 
 import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 import io.quarkus.test.InjectMock;
 import io.quarkus.test.junit.QuarkusTest;
@@ -132,5 +135,21 @@ class CsrfWiringTest {
         .post("/api/v1/auth/logout")
         .then()
         .statusCode(204);
+  }
+
+  @Test
+  void aCrossSiteConfirmationPostCannotSignTheVisitorIntoTheCallersAccount() {
+    given()
+        .header(HEADER, "json")
+        .contentType("application/json")
+        .header("Origin", "https://attacker.example")
+        .header("Sec-Fetch-Site", "cross-site")
+        .body("{\"tokenHash\":\"attacker-hash\",\"type\":\"recovery\"}")
+        .when()
+        .post("/api/v1/auth/confirm")
+        .then()
+        .statusCode(403);
+
+    verify(authClient, never()).verify(any());
   }
 }

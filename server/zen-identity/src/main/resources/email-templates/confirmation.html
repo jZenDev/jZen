@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+  <body>
+    <h1>Confirm your email</h1>
+    <p>Continue to the application to finish creating your account:</p>
+    <p>
+      <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&amp;type=signup&amp;next={{ .RedirectTo | urlquery }}">
+        {{ .SiteURL }}/auth/confirm
+      </a>
+    </p>
+    <p>If you did not create this account, you can ignore this message.</p>
+  </body>
+</html>

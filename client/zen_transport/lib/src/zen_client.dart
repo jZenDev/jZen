@@ -100,8 +100,9 @@ class ZenClient {
   /// before: a 401 is returned to the caller.
   ///
   /// **Replaying is safe.** A 401 is decided before the resource runs, so the original request had
-  /// no effect to repeat — which is why even a POST can be re-sent without asking whether it is
-  /// idempotent.
+  /// no effect to repeat for the ordinary cookie-authenticated routes this callback serves.
+  /// Endpoints that consume a caller-supplied one-time credential can return 401 after doing work;
+  /// pass `recoverSessionOn401: false` to keep those requests single-attempt.
   final Future<bool> Function()? recoverSession;
 
   final http.Client _httpClient;
@@ -133,12 +134,16 @@ class ZenClient {
     required String path,
     GeneratedMessage? body,
     Map<String, String>? headers,
+    bool recoverSessionOn401 = true,
   }) async {
     final uri = Uri.parse('$baseUrl$path');
     final Uint8List? encodedBody = body == null ? null : ZenProtoCodec.encode(body, format);
 
     var response = await _sendOnce(method, uri, headers, encodedBody);
-    if (response != null && response.statusCode == 401 && await _tryRecoverSession()) {
+    if (recoverSessionOn401 &&
+        response != null &&
+        response.statusCode == 401 &&
+        await _tryRecoverSession()) {
       // Renewed: replay exactly once. A second 401 is the real answer - the session is over, and
       // retrying again would only spend the caller's rate-limit budget on a lost cause.
       response = await _sendOnce(method, uri, headers, encodedBody);
@@ -230,12 +235,23 @@ class ZenClient {
   }) => send(createEmpty, method: ZenHttpMethod.get, path: path, headers: headers);
 
   /// Sends a POST request with an optional typed [body] and decodes the response into [T].
+  ///
+  /// Set [recoverSessionOn401] to false when a 401 may follow consumption of a one-time
+  /// credential; otherwise the configured session-recovery callback may replay the POST.
   Future<ZenResult<T>> post<T extends GeneratedMessage>(
     T Function() createEmpty,
     String path, {
     GeneratedMessage? body,
     Map<String, String>? headers,
-  }) => send(createEmpty, method: ZenHttpMethod.post, path: path, body: body, headers: headers);
+    bool recoverSessionOn401 = true,
+  }) => send(
+    createEmpty,
+    method: ZenHttpMethod.post,
+    path: path,
+    body: body,
+    headers: headers,
+    recoverSessionOn401: recoverSessionOn401,
+  );
 
   /// Sends a PUT request with an optional typed [body] and decodes the response into [T].
   Future<ZenResult<T>> put<T extends GeneratedMessage>(

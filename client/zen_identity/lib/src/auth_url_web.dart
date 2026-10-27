@@ -7,11 +7,16 @@ import 'dart:js_interop';
 /// through to the stub, leaving the token in the URL on exactly the build jZen deploys.
 ///
 /// `replaceState` rather than an assignment to `location`: it rewrites the current history entry
-/// in place, so nothing reloads and no extra Back-button step appears. Both the fragment (the
-/// tokens) and the `?auth` flag go, because both describe a landing that has already happened.
+/// in place, so nothing reloads and no extra Back-button step appears. The auth query fields,
+/// legacy fragment tokens and `?auth` marker go because they describe a landing already handled.
 void clearAuthLinkFromUrl() {
   final base = Uri.base.removeFragment();
-  final params = Map<String, String>.of(base.queryParameters)..remove('auth');
+  final params = Map<String, String>.of(base.queryParameters)
+    ..remove('auth')
+    ..remove('token_hash')
+    ..remove('type')
+    ..remove('error')
+    ..remove('error_code');
   final path = base.path.isEmpty ? '/' : base.path;
   final url = params.isEmpty ? path : '$path?${Uri(queryParameters: params).query}';
   _replaceState(null, ''.toJS, url.toJS);

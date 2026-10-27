@@ -17,6 +17,8 @@ class _FakeRepo implements IdentityRepository {
   /// Set when the ordinary session probe runs, so a test can assert it did not.
   bool probed = false;
   String? exchangedAccessToken;
+  String? confirmedTokenHash;
+  String? confirmedType;
   void Function()? onExchange;
 
   _FakeRepo({
@@ -52,7 +54,19 @@ class _FakeRepo implements IdentityRepository {
   }
 
   @override
-  Future<ZenResult<void>> setPassword({required String password, String? currentPassword}) async => setPasswordResult;
+  Future<ZenResult<IdentityContract>> confirmEmailLink({
+    required String tokenHash,
+    required String type,
+  }) async {
+    confirmedTokenHash = tokenHash;
+    confirmedType = type;
+    onExchange?.call();
+    return exchangeResult;
+  }
+
+  @override
+  Future<ZenResult<void>> setPassword({required String password, String? currentPassword}) async =>
+      setPasswordResult;
 
   @override
   Future<ZenResult<IdentityContract>> loginWithEmail({
@@ -182,22 +196,42 @@ void main() {
     expect(current.asData?.value, isNull);
   });
 
-  test('a confirmation link signs the user in instead of probing for a session', () async {
-    // The point of the feature: arriving from an email link must not first answer "anonymous".
+  test('a token-hash confirmation signs the user in instead of probing for a session', () async {
+    // A confirmation reached through the application-owned landing still must not first answer
+    // "anonymous" before its one-time hash establishes the session.
     final fake = _FakeRepo(exchangeResult: ZenResult.ok(_makeContract('confirmed')));
     final container = ProviderContainer(
       overrides: [
         identityRepositoryProvider.overrideWithValue(fake),
         authLinkProvider.overrideWithValue(
-          ZenAuthLink.parse(Uri.parse('https://app/#access_token=at&refresh_token=rt&type=signup')),
+          ZenAuthLink.parse(Uri.parse('https://app/?token_hash=signup-hash&type=signup')),
         ),
       ],
     );
 
     final value = await container.read(identitySessionStoreProvider.future);
     expect(value?.id.value, 'confirmed');
-    expect(fake.exchangedAccessToken, 'at');
+    expect(fake.confirmedTokenHash, 'signup-hash');
+    expect(fake.confirmedType, 'signup');
     expect(fake.probed, false, reason: 'the exchange already established the session');
+  });
+
+  test('an already-sent fragment link still uses the legacy exchange', () async {
+    final fake = _FakeRepo(exchangeResult: ZenResult.ok(_makeContract('legacy')));
+    final container = ProviderContainer(
+      overrides: [
+        identityRepositoryProvider.overrideWithValue(fake),
+        authLinkProvider.overrideWithValue(
+          ZenAuthLink.parse(Uri.parse('https://app/#access_token=old-at&type=signup')),
+        ),
+      ],
+    );
+
+    final value = await container.read(identitySessionStoreProvider.future);
+
+    expect(value?.id.value, 'legacy');
+    expect(fake.exchangedAccessToken, 'old-at');
+    expect(fake.confirmedTokenHash, isNull);
   });
 
   test('a spent link falls back to the login screen and is recorded', () async {
@@ -209,7 +243,7 @@ void main() {
       overrides: [
         identityRepositoryProvider.overrideWithValue(fake),
         authLinkProvider.overrideWithValue(
-          ZenAuthLink.parse(Uri.parse('https://app/#access_token=stale&type=signup')),
+          ZenAuthLink.parse(Uri.parse('https://app/?token_hash=stale&type=signup')),
         ),
       ],
     );
@@ -229,7 +263,7 @@ void main() {
       overrides: [
         identityRepositoryProvider.overrideWithValue(fake),
         authLinkProvider.overrideWithValue(
-          ZenAuthLink.parse(Uri.parse('https://app/#access_token=at&type=recovery')),
+          ZenAuthLink.parse(Uri.parse('https://app/?token_hash=recovery-hash&type=recovery')),
         ),
       ],
     );
@@ -254,7 +288,7 @@ void main() {
     await container.read(identitySessionStoreProvider.future);
 
     final link = await notifier.consumeAuthLink(
-      Uri.parse('zendemo://auth-callback#access_token=at&type=recovery'),
+      Uri.parse('zendemo://auth-callback?token_hash=native-recovery&type=recovery'),
     );
 
     expect(link.kind, ZenAuthLinkKind.recovery);
@@ -278,7 +312,7 @@ void main() {
     final notifier = container.read(identitySessionStoreProvider.notifier);
     await container.read(identitySessionStoreProvider.future);
 
-    final uri = Uri.parse('zendemo://auth-callback#access_token=same&type=signup');
+    final uri = Uri.parse('zendemo://auth-callback?token_hash=same&type=signup');
     await notifier.consumeAuthLink(uri);
     await notifier.consumeAuthLink(uri);
     await notifier.consumeAuthLink(uri);

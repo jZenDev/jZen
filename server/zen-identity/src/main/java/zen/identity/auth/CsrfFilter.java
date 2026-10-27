@@ -9,6 +9,7 @@ import jakarta.ws.rs.container.ContainerRequestFilter;
 import jakarta.ws.rs.core.Cookie;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.ext.Provider;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Map;
@@ -26,11 +27,13 @@ import zen.proto.v1.ZenError;
  * another origin can cause the browser to <em>send</em> the cookie but the same-origin policy
  * stops it <em>reading</em> the cookie, so it cannot produce the header.
  *
- * <p><strong>The check runs only when the caller is actually authenticated</strong> — not merely
- * when a session cookie is present. That distinction is the whole of it:
+ * <p><strong>The cookie-token check runs only when the caller is actually authenticated</strong> —
+ * not merely when a session cookie is present. The email-link confirmation route also checks
+ * request origin before authentication, because it creates a session from a caller-supplied
+ * one-time credential:
  *
  * <ul>
- *   <li>It is exactly the set of requests CSRF is about. Forgery rides on an <em>ambient</em>
+ *   <li>For ordinary routes, it is exactly the set of requests CSRF is about. Forgery rides on an <em>ambient</em>
  *       credential the server <em>accepts</em>. A request the server does not accept has nothing to
  *       forge with, and one that authenticates by something the caller had to supply deliberately —
  *       the job trigger's shared secret — cannot be forged this way at all.
@@ -95,6 +98,11 @@ public class CsrfFilter implements ContainerRequestFilter {
     if (!CsrfRules.applies(ctx.getMethod(), ctx.getUriInfo().getPath())) {
       return;
     }
+    if (CsrfRules.requiresSameOrigin(ctx.getMethod(), ctx.getUriInfo().getPath())
+        && !sameOrigin(ctx)) {
+      refuse(ctx, "a cross-origin email-link confirmation was refused");
+      return;
+    }
     if (identity == null || identity.isAnonymous()) {
       // No accepted credential, nothing to forge. The request continues and is judged on its own
       // merits - which for a route that needs a user means a 401 the client can act on.
@@ -107,15 +115,58 @@ public class CsrfFilter implements ContainerRequestFilter {
     if (token == null || !matches(token.getValue(), header)) {
       /* No address, no token, no header value in the log line: the first is personal data, and the
        * other two are the credential itself. The method and path are what an operator acts on. */
-      LOG.infof(
-          "CSRF check refused %s %s: an authenticated request arrived without a matching %s header",
-          ctx.getMethod(), ctx.getUriInfo().getPath(), SessionService.CSRF_HEADER);
-
-      ctx.abortWith(
-          Response.status(Response.Status.FORBIDDEN)
-              .entity(ZenError.newBuilder().setCode(ERROR_CSRF).setMessage(MESSAGE).build())
-              .build());
+      refuse(ctx, "an authenticated request arrived without a matching CSRF token");
     }
+  }
+
+  /**
+   * Browser confirmation requests must originate at this service. Native clients have neither
+   * Origin nor Fetch Metadata headers and remain supported; browsers provide Origin on POST, and
+   * a supplied Fetch Metadata value must also say same-origin.
+   */
+  private static boolean sameOrigin(ContainerRequestContext ctx) {
+    String fetchSite = ctx.getHeaderString("Sec-Fetch-Site");
+    if (fetchSite != null && !"same-origin".equalsIgnoreCase(fetchSite)) {
+      return false;
+    }
+
+    String origin = ctx.getHeaderString("Origin");
+    if (origin == null) {
+      return fetchSite == null || "same-origin".equalsIgnoreCase(fetchSite);
+    }
+    if ("null".equalsIgnoreCase(origin)) {
+      return false;
+    }
+    try {
+      URI supplied = URI.create(origin);
+      URI request = ctx.getUriInfo().getRequestUri();
+      return supplied.getScheme() != null
+          && supplied.getHost() != null
+          && supplied.getRawUserInfo() == null
+          && supplied.getRawQuery() == null
+          && supplied.getRawFragment() == null
+          && supplied.getRawPath().isEmpty()
+          && supplied.getScheme().equalsIgnoreCase(request.getScheme())
+          && supplied.getHost().equalsIgnoreCase(request.getHost())
+          && effectivePort(supplied) == effectivePort(request);
+    } catch (IllegalArgumentException e) {
+      return false;
+    }
+  }
+
+  private static int effectivePort(URI uri) {
+    if (uri.getPort() >= 0) {
+      return uri.getPort();
+    }
+    return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
+  }
+
+  private static void refuse(ContainerRequestContext ctx, String reason) {
+    LOG.infof("CSRF check refused %s %s: %s", ctx.getMethod(), ctx.getUriInfo().getPath(), reason);
+    ctx.abortWith(
+        Response.status(Response.Status.FORBIDDEN)
+            .entity(ZenError.newBuilder().setCode(ERROR_CSRF).setMessage(MESSAGE).build())
+            .build());
   }
 
   /**

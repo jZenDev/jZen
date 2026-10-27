@@ -35,8 +35,9 @@ public enum RateLimitRule {
 
   /**
    * The credential-bearing auth endpoints: password login, registration, recovery, password set,
-   * link-token exchange and refresh. These are the credential-guessing and account-enumeration
-   * surfaces, and the ones an attacker returns to.
+   * legacy link-token exchange and refresh. These are the credential-guessing and
+   * account-enumeration surfaces, and the ones an attacker returns to. New one-time hash
+   * verification has its own bucket below.
    *
    * <p>{@code GET /api/v1/auth/identity} and {@code POST /api/v1/auth/logout} are deliberately
    * <em>not</em> here. Neither accepts a guess: identity reads the session the caller already
@@ -52,6 +53,13 @@ public enum RateLimitRule {
    * no further than the cookie clearing.
    */
   AUTH,
+
+  /**
+   * {@code POST /api/v1/auth/confirm}. Confirmation hashes are one-time credentials and every
+   * successful verification leaves the service from one source address, so this dedicated bucket
+   * keeps its per-client budget independent of password and registration traffic.
+   */
+  AUTH_CONFIRM,
 
   /**
    * Everything else under {@code /api/}. This is the denial-of-service bucket rather than the
@@ -73,6 +81,7 @@ public enum RateLimitRule {
   GLOBAL;
 
   private static final String JOB_TRIGGER_PATH = "api/v1/jobs/trigger";
+  private static final String AUTH_CONFIRM_PATH = "api/v1/auth/confirm";
 
   private static final Set<String> AUTH_PATHS =
       Set.of(
@@ -95,6 +104,9 @@ public enum RateLimitRule {
     String normalized = normalize(path);
     if (JOB_TRIGGER_PATH.equals(normalized)) {
       return JOB_TRIGGER;
+    }
+    if (AUTH_CONFIRM_PATH.equals(normalized)) {
+      return AUTH_CONFIRM;
     }
     if (AUTH_PATHS.contains(normalized)) {
       return AUTH;
@@ -125,6 +137,7 @@ public enum RateLimitRule {
     return switch (this) {
       case JOB_TRIGGER -> config.jobTrigger();
       case AUTH -> config.auth();
+      case AUTH_CONFIRM -> config.authConfirm();
       case GLOBAL -> config.global();
     };
   }

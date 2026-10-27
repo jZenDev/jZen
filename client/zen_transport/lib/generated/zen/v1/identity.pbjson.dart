@@ -96,6 +96,20 @@ final $typed_data.Uint8List sessionExchangeRequestDescriptor =
         'ChZTZXNzaW9uRXhjaGFuZ2VSZXF1ZXN0EiEKDGFjY2Vzc190b2tlbhgBIAEoCVILYWNjZXNzVG'
         '9rZW4SIwoNcmVmcmVzaF90b2tlbhgCIAEoCVIMcmVmcmVzaFRva2Vu');
 
+@$core.Deprecated('Use authConfirmRequestDescriptor instead')
+const AuthConfirmRequest$json = {
+  '1': 'AuthConfirmRequest',
+  '2': [
+    {'1': 'token_hash', '3': 1, '4': 1, '5': 9, '10': 'tokenHash'},
+    {'1': 'type', '3': 2, '4': 1, '5': 9, '10': 'type'},
+  ],
+};
+
+/// Descriptor for `AuthConfirmRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List authConfirmRequestDescriptor = $convert.base64Decode(
+    'ChJBdXRoQ29uZmlybVJlcXVlc3QSHQoKdG9rZW5faGFzaBgBIAEoCVIJdG9rZW5IYXNoEhIKBH'
+    'R5cGUYAiABKAlSBHR5cGU=');
+
 @$core.Deprecated('Use setPasswordRequestDescriptor instead')
 const SetPasswordRequest$json = {
   '1': 'SetPasswordRequest',

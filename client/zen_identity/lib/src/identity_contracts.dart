@@ -113,7 +113,6 @@ final class IdentityContract {
     createdAt: ZenTimestamp.fromMilliseconds(createdAt),
     emailVerified: emailVerified,
   );
-
 }
 
 /// Interface for identity operations, typically implemented by infrastructure.
@@ -136,14 +135,23 @@ abstract class IdentityRepository {
   /// Triggers a password recovery flow.
   Future<ZenResult<void>> restorePassword({required String email});
 
-  /// Exchanges the tokens a confirmation or recovery email link delivered for a real session.
+  /// Exchanges tokens from a legacy confirmation or recovery email link for a real session.
   ///
-  /// The tokens arrive in the URL fragment, which no server can see, so handing them back is the
-  /// client's job — see `ZenAuthLink`. The implementation must not trust them itself: it posts
+  /// Older links deliver tokens in the URL fragment, which no server can see, so handing them
+  /// back is the client's job — see `ZenAuthLink`. The implementation must not trust them itself: it posts
   /// them and lets the backend validate them with the identity provider before a session exists.
   Future<ZenResult<IdentityContract>> exchangeLinkSession({
     required String accessToken,
     String? refreshToken,
+  });
+
+  /// Verifies the one-time hash from a new confirmation or recovery email link.
+  ///
+  /// The server consumes it exactly once with the identity provider and returns the ordinary
+  /// cookie session. Do not retry a failed request: a timeout may follow a successful consume.
+  Future<ZenResult<IdentityContract>> confirmEmailLink({
+    required String tokenHash,
+    required String type,
   });
 
   /// Sets a new password for the current session — the last step of password recovery, and the

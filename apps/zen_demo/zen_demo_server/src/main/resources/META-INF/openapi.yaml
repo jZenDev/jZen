@@ -100,6 +100,17 @@ components:
         refreshToken:
           type: string
           description: Optional; without it the session cannot be refreshed silently.
+    AuthConfirmRequest:
+      type: object
+      description: >-
+        Body for POST /api/v1/auth/confirm. The email-link token hash is verified only after the
+        person continues from the safe landing page; type is limited to signup or recovery.
+      properties:
+        tokenHash:
+          type: string
+        type:
+          type: string
+          enum: [signup, recovery]
     SetPasswordRequest:
       type: object
       description: Body for POST /api/v1/auth/password; sets a new password for the current session.

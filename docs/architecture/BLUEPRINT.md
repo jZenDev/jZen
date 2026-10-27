@@ -148,9 +148,9 @@ one server".
 
 - `SupabaseAuthClient` — a `@RegisterRestClient` interface with `@CircuitBreaker`/
   `@Retry`/`@Timeout` per call, against Supabase Auth (GoTrue) REST: `POST /token` (login
-  and refresh, by `grant_type`), `/signup`, `/recover`, `PUT /user`. A Supabase 4xx skips the
+  and refresh, by `grant_type`), `/signup`, `/recover`, `/verify`, `PUT /user`. A Supabase 4xx skips the
   breaker and aborts retries (a real client error is not a transient fault); timeouts and 5xx
-  trip it.
+  trip it. `/verify` has no retry because GoTrue consumes its one-time hash on success.
 - JWT verified against Supabase JWKS with ES256.
 - **Role loaded from the `users` table by a `SecurityIdentityAugmentor`, not from the JWT.**
   Roles are application data, so revoking one must not wait for a token to expire. This is jZen's
@@ -168,8 +168,11 @@ MapStruct `User` → `Identity` mapper, **and** the `AuthResource`/`AuthExceptio
 discovers the JAX-RS resource from the jar via the Jandex index. The app module still runs SmallRye
 OpenAPI and supplies the referenced component schemas through its static `META-INF/openapi.yaml`
 (paths from the library, schemas from the app). The endpoints back the client's
-`IdentityRepository` contract: `POST /api/v1/auth/{login,register,restore-password,logout,refresh}` and
-`GET /api/v1/auth/identity`. Each returns a typed proto (`Response` + `@Schema(ref=...)`);
+`IdentityRepository` contract: `POST /api/v1/auth/{login,register,restore-password,confirm,logout,refresh}` and
+`GET /api/v1/auth/identity`. Confirmation and recovery templates link to `/auth/confirm`, whose GET
+only renders a Continue action; the app posts the one-time hash to `/api/v1/auth/confirm` after the
+person continues. The old fragment exchange remains for already-sent messages. Operator setup is
+documented in [`../EMAIL_AUTH.md`](../EMAIL_AUTH.md). Each API returns a typed proto (`Response` + `@Schema(ref=...)`);
 errors return the shared `ZenError` proto via an exception mapper.
 
 **Session cookies and refresh.** Login/register/refresh set `zen_access_token` (httpOnly,
@@ -232,6 +235,11 @@ template — `@Localized` template variants (e.g. `templates/mail/welcome_en.htm
 `MailMessagesUk`, owned by the application — see [`DECISIONS.md`](./DECISIONS.md) ADR-007). An
 application uses `EmailService.resolveLocale(...)` to select its subject bundle with the same
 configured locale policy as the body.
+
+**Supabase auth emails are separate.** GoTrue owns signup-confirmation and password-recovery
+delivery, so those templates are installed in the hosted Supabase project rather than rendered by
+`zen-email`. The repository ships neutral reference templates that use the app's Site URL and a
+one-time token hash; hosted-project setup is in [`EMAIL_AUTH.md`](../EMAIL_AUTH.md) (ADR-066).
 
 ## Client UI
 

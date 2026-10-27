@@ -423,6 +423,29 @@ void main() {
       expect(seen.length, 1);
     });
 
+    test('a one-time credential can opt out of 401 recovery and replay', () async {
+      var recoveries = 0;
+      final seen = <String>[];
+      final client = clientAgainstExpiringSession(
+        seen: seen,
+        renewed: () => false,
+        recover: () async {
+          recoveries++;
+          return true;
+        },
+      );
+
+      final result = await client.post(
+        HealthStatus.new,
+        '/api/v1/auth/confirm',
+        recoverSessionOn401: false,
+      );
+
+      expect(result.isFailure, isTrue);
+      expect(seen, ['/api/v1/auth/confirm']);
+      expect(recoveries, 0);
+    });
+
     test('concurrent 401s share one renewal', () async {
       // Five screens firing at once must not fire five refreshes: the refresh endpoint sits in the
       // rate limiter's credential bucket at 10/min, so a client recovering in parallel would

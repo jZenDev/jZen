@@ -165,6 +165,11 @@ class BurstLimiterTest {
     }
 
     @Override
+    public Limits authConfirm() {
+      return limits();
+    }
+
+    @Override
     public Limits jobTrigger() {
       return limits();
     }

@@ -20,7 +20,7 @@ contract).
 - **`IdentityRepository`** — the contract the app and the UI depend on, so the backing
   implementation is injected rather than baked in.
 - **`SupabaseIdentityRepository`** — the implementation that calls the jZen auth endpoints
-  (`POST /api/v1/auth/{login,register,restore-password,logout,refresh}`,
+  (`POST /api/v1/auth/{login,register,restore-password,confirm,logout,refresh}`,
   `GET /api/v1/auth/identity`) over `ZenClient`, and manages the session.
 - **Identity models** — the typed shapes the flows exchange.
 

@@ -256,6 +256,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify a confirmation or recovery email link */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AuthConfirmRequest"];
+                    "application/x-protobuf": components["schemas"]["AuthConfirmRequest"];
+                };
+            };
+            responses: {
+                /** @description Link accepted; session cookies set */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Identity"];
+                        "application/x-protobuf": components["schemas"]["Identity"];
+                    };
+                };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description The link is invalid or expired */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/identity": {
         parameters: {
             query?: never;
@@ -872,7 +928,50 @@ export interface paths {
         /** Landing */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    token_hash?: string;
+                    type?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": unknown;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Landing */
+        get: {
+            parameters: {
+                query?: {
+                    next?: string;
+                    token_hash?: string;
+                    type?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -955,6 +1054,12 @@ export interface components {
             accessToken?: string;
             /** @description Optional; without it the session cannot be refreshed silently. */
             refreshToken?: string;
+        };
+        /** @description Body for POST /api/v1/auth/confirm. The email-link token hash is verified only after the person continues from the safe landing page; type is limited to signup or recovery. */
+        AuthConfirmRequest: {
+            tokenHash?: string;
+            /** @enum {string} */
+            type?: "signup" | "recovery";
         };
         /** @description Body for POST /api/v1/auth/password; sets a new password for the current session. */
         SetPasswordRequest: {

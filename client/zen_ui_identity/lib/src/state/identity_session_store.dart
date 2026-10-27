@@ -115,15 +115,13 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
     // had never been a link.
     final link = ref.read(authLinkProvider);
     if (link.kind == ZenAuthLinkKind.failed) {
+      ZenAuthLink.clearFromUrl();
       linkRejected = true;
       return null;
     }
-    if (!link.hasSession) return null;
+    if (!link.hasCredential) return null;
 
-    final result = await _repository.exchangeLinkSession(
-      accessToken: link.accessToken!,
-      refreshToken: link.refreshToken,
-    );
+    final result = await _submitAuthLink(link);
     return result.fold(
       (model) {
         // The tokens are in httpOnly cookies now, so strip them from the address bar: they should
@@ -133,8 +131,9 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
         return model.toDomain();
       },
       (failure) {
-        // A refused link is not an app error; it means "sign in normally". The URL is left alone
-        // because nothing was consumed.
+        // A refused or ambiguous attempt must not be replayed on refresh: a timeout may have
+        // consumed the one-time hash upstream even when no session reached this client.
+        ZenAuthLink.clearFromUrl();
         linkRejected = true;
         return null;
       },
@@ -205,7 +204,7 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
   /// in with a password its owner still cannot remember.
   Future<ZenAuthLink> consumeAuthLink(Uri uri) async {
     final link = ZenAuthLink.parse(uri);
-    if (!link.hasSession) {
+    if (!link.hasCredential) {
       // A link with nothing to exchange: refused by Supabase, or confirmed without a token. It
       // changes no state, so no screen would react to it — say so, or the tap looks ignored.
       ref.read(authLinkOutcomeProvider.notifier).report(link);
@@ -217,13 +216,11 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
     // so the same token arrived three times in one cold start, while macOS delivered it once.
     // Rather than make every application discover that, the token itself is the identity of the
     // attempt — a second delivery of one already handled is dropped here.
-    if (_consumedToken == link.accessToken) return link;
-    _consumedToken = link.accessToken;
+    final credential = link.tokenHash ?? link.accessToken!;
+    if (_consumedToken == credential) return link;
+    _consumedToken = credential;
 
-    final result = await _repository.exchangeLinkSession(
-      accessToken: link.accessToken!,
-      refreshToken: link.refreshToken,
-    );
+    final result = await _submitAuthLink(link);
     return result.fold(
       (model) {
         state = AsyncValue.data(model.toDomain());
@@ -244,6 +241,16 @@ class IdentitySessionStore extends AsyncNotifier<Identity?> {
         ref.read(authLinkOutcomeProvider.notifier).report(rejected);
         return rejected;
       },
+    );
+  }
+
+  Future<ZenResult<IdentityContract>> _submitAuthLink(ZenAuthLink link) {
+    if (link.hasTokenHash) {
+      return _repository.confirmEmailLink(tokenHash: link.tokenHash!, type: link.type!);
+    }
+    return _repository.exchangeLinkSession(
+      accessToken: link.accessToken!,
+      refreshToken: link.refreshToken,
     );
   }
 

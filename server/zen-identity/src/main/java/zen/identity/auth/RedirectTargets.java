@@ -13,10 +13,10 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
  * <p>One backend serves every client an application has — the web app at its URL, and (once the
  * native builds exist) a phone app reachable only through its own scheme. They cannot share one
  * return address, so the client has to name the one it wants. That request is
- * <strong>attacker-controlled input</strong>, and it is the most dangerous kind: Supabase mails a
- * link that carries a live session token in its fragment, so a value taken on trust would let
- * anyone have a token for someone else's account delivered to a destination they control. The
- * account holder need only click their own, entirely genuine-looking, email.
+ * <strong>attacker-controlled input</strong>. A newly issued Supabase email carries a one-time
+ * verification hash; a value taken on trust would let anyone send that hash for another person's
+ * account to a destination they control. Legacy messages can carry live access and refresh tokens.
+ * In either case the account holder need only click their own, genuine-looking email.
  *
  * <p>So a requested target is accepted only by <strong>exact match</strong> against the configured
  * list. Deliberately not a prefix or host match: {@code zen://auth} as a prefix also admits

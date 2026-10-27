@@ -4,11 +4,9 @@ import 'auth_url_stub.dart' if (dart.library.js_interop) 'auth_url_web.dart';
 
 /// What a Supabase email link left behind in the URL when it landed the user back on the app.
 ///
-/// Supabase delivers the session it just minted in the URL *fragment*
-/// (`#access_token=...&refresh_token=...&type=signup`). A fragment never reaches a server, so the
-/// client is the only party that can read it: the backend's `/auth/callback` can do nothing but
-/// bounce the browser here with the fragment intact. Reading it is therefore not a convenience,
-/// it is the only place in the flow where those tokens are visible at all.
+/// New templates deliver a one-time token hash in the query after a safe Continue page; older
+/// messages may still deliver a session in the URL fragment. The client handles both shapes and
+/// submits the credential to the backend for verification before it considers a session active.
 enum ZenAuthLinkKind {
   /// No auth link in the URL — an ordinary app start, which is the overwhelmingly common case.
   none,
@@ -44,10 +42,23 @@ final class ZenAuthLink {
   /// be refreshed silently and ends when the access token expires.
   final String? refreshToken;
 
+  /// The one-time hash delivered by the new confirmation and recovery templates.
+  final String? tokenHash;
+
+  /// The email-link type, currently `signup` or `recovery`.
+  final String? type;
+
   /// Supabase's machine-readable reason, when [kind] is [ZenAuthLinkKind.failed].
   final String? errorCode;
 
-  const ZenAuthLink._({required this.kind, this.accessToken, this.refreshToken, this.errorCode});
+  const ZenAuthLink._({
+    required this.kind,
+    this.accessToken,
+    this.refreshToken,
+    this.tokenHash,
+    this.type,
+    this.errorCode,
+  });
 
   /// A landing with nothing to consume.
   static const ZenAuthLink none = ZenAuthLink._(kind: ZenAuthLinkKind.none);
@@ -58,10 +69,18 @@ final class ZenAuthLink {
   const ZenAuthLink.rejected({this.errorCode})
     : kind = ZenAuthLinkKind.failed,
       accessToken = null,
-      refreshToken = null;
+      refreshToken = null,
+      tokenHash = null,
+      type = null;
 
   /// Whether this link carries tokens worth exchanging for a session.
   bool get hasSession => accessToken != null && accessToken!.isNotEmpty;
+
+  /// Whether this link carries a token hash for the backend's verify endpoint.
+  bool get hasTokenHash => tokenHash != null && tokenHash!.isNotEmpty;
+
+  /// Whether the URL carries either the legacy session tokens or a one-time token hash.
+  bool get hasCredential => hasSession || hasTokenHash;
 
   /// Whether the user must set a new password before continuing.
   bool get requiresNewPassword => kind == ZenAuthLinkKind.recovery;
@@ -96,6 +115,19 @@ final class ZenAuthLink {
       );
     }
 
+    final tokenHash = query['token_hash'];
+    if (tokenHash != null && tokenHash.isNotEmpty) {
+      final type = query['type'];
+      if (type != 'signup' && type != 'recovery') {
+        return const ZenAuthLink.rejected(errorCode: 'unsupported_type');
+      }
+      return ZenAuthLink._(
+        kind: type == 'recovery' ? ZenAuthLinkKind.recovery : ZenAuthLinkKind.session,
+        tokenHash: tokenHash,
+        type: type,
+      );
+    }
+
     if (query['auth'] == 'email-confirmed') {
       return const ZenAuthLink._(kind: ZenAuthLinkKind.confirmedWithoutSession);
     }
@@ -105,7 +137,7 @@ final class ZenAuthLink {
   /// Parses the URL the app was opened with.
   factory ZenAuthLink.current() => ZenAuthLink.parse(Uri.base);
 
-  /// Strips the tokens and the `?auth` flag from the browser's address bar, keeping the page in
+  /// Strips the auth credential and marker from the browser's address bar, keeping the page in
   /// place. Call it once the link has been consumed: it stops the token from sitting in the URL,
   /// browser history, and anything the user might copy or share, and stops a page reload from
   /// replaying a landing the app has already handled. A no-op off the web.

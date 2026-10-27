@@ -15,6 +15,51 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-066 — Auth email links carry a one-time hash through an app-owned confirmation page
+
+**Date:** 2026-10-27. **Status:** accepted. **Refines:** ADR-018, ADR-019.
+
+### Decision
+
+- Signup-confirmation and password-recovery emails link first to the application's
+  `/auth/confirm` route using Supabase's `.SiteURL` and `.TokenHash`. The app owns the visible host;
+  a provider-hosted confirmation URL is not included in the message.
+- `GET /auth/confirm` validates the one-time hash's type and the exact-match-allowlisted `next`
+  target, then renders an explicit Continue link. It does not call GoTrue, so email scanners and
+  link previews cannot spend the hash. Responses use `no-store` and `no-referrer`.
+- The client submits the hash once to `POST /api/v1/auth/confirm`. The server permits only
+  `signup` and `recovery`, verifies with GoTrue `/verify`, and issues the ordinary jZen session.
+  Verification is never retried because the hash is single-use. A dedicated rate-limit bucket
+  protects this unauthenticated endpoint; browser requests must be same-origin and the endpoint is
+  not CSRF-exempt.
+- The allowlisted `next` target is checked before an email is sent and again before the Continue
+  link is rendered. A refused target is neither reflected nor used. Native apps use the same
+  exact-match `auth.redirect-uri` / `auth.redirect-uris` policy.
+- Supabase email templates are installed in each hosted project by its operator. The repository
+  ships neutral reference templates and a setup checklist; the hosted project does not load
+  `supabase/config.toml`. Each confirmation type has one template and signup/recovery requests do
+  not select a language, so localized variants belong inside that template.
+- The legacy fragment exchange remains available until links already sent with
+  `{{ .ConfirmationURL }}` expire. It is compatibility behavior, not the template flow for new
+  messages.
+
+### What this supersedes, and why
+
+- **ADR-018's implicit fragment flow as the primary confirmation/recovery flow** → **replaced for
+  newly issued email links, retained for existing messages.** *Why:* the fragment carried live
+  access and refresh tokens through email clients and native custom schemes. A one-time hash can be
+  consumed by the app's backend only after an explicit Continue action and produces a normal
+  server-owned cookie session.
+- **ADR-019's exact-match redirect policy** → **kept and applied at both email creation and
+  confirmation hand-off.** *Why:* the app-owned confirmation page adds a hop but does not make a
+  client-selected destination trustworthy.
+- **The deployment checklist's assumption that the email's provider redirect directly opens the
+  app** → **replaced by a dashboard-installed Supabase template and `/auth/confirm`.** *Why:*
+  hosted Supabase projects do not consume the repository's local configuration, and provider
+  defaults can otherwise send a production email to localhost.
+
+---
+
 ## ADR-065 — A jZen application may be *light*: client only, data encrypted in `zen_store`, synced through CloudKit, conflicts settled by a person
 
 **Date:** 2026-10-24. **Status:** accepted. **Refines:** ADR-001 (framework libraries, applications

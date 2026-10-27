@@ -22,7 +22,7 @@
  */
 
 CREATE TABLE IF NOT EXISTS zen_rate_limit_counters (
-    /* The RateLimitRule this row counts: 'auth', 'job_trigger', ... */
+    /* The RateLimitRule this row counts: 'auth', 'auth_confirm', 'job_trigger', ... */
     bucket TEXT NOT NULL,
     /* Hex SHA-256 of the client address, domain-separated and truncated to 128 bits. */
     subject TEXT NOT NULL,

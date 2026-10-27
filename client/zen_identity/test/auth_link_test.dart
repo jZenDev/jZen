@@ -29,6 +29,39 @@ void main() {
     expect(link.requiresNewPassword, true);
   });
 
+  test('a signup token-hash hand-off is a credential for the backend verifier', () {
+    final link = ZenAuthLink.parse(
+      Uri.parse('zendemo://auth-callback?token_hash=signup-hash&type=signup'),
+    );
+
+    expect(link.kind, ZenAuthLinkKind.session);
+    expect(link.hasTokenHash, true);
+    expect(link.hasCredential, true);
+    expect(link.tokenHash, 'signup-hash');
+    expect(link.type, 'signup');
+  });
+
+  test('a recovery token-hash hand-off raises the password gate', () {
+    final link = ZenAuthLink.parse(
+      Uri.parse('https://app.example.com/auth/callback?token_hash=recovery-hash&type=recovery'),
+    );
+
+    expect(link.kind, ZenAuthLinkKind.recovery);
+    expect(link.hasCredential, true);
+    expect(link.requiresNewPassword, true);
+    expect(link.tokenHash, 'recovery-hash');
+  });
+
+  test('a token hash with an unsupported type is refused before it reaches the server', () {
+    final link = ZenAuthLink.parse(
+      Uri.parse('https://app.example.com/auth/callback?token_hash=hash&type=magiclink'),
+    );
+
+    expect(link.kind, ZenAuthLinkKind.failed);
+    expect(link.errorCode, 'unsupported_type');
+    expect(link.hasCredential, false);
+  });
+
   test('an unknown link type with a valid session still signs in', () {
     // Supabase adding a type this version has not heard of must not strand a user holding a
     // perfectly good session.

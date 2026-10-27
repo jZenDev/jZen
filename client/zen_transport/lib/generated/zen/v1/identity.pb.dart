@@ -439,6 +439,76 @@ class SessionExchangeRequest extends $pb.GeneratedMessage {
   void clearRefreshToken() => $_clearField(2);
 }
 
+/// POST /api/v1/auth/confirm request body. Verifies the one-time hash from a confirmation or
+/// recovery email only after the person presses Continue on /auth/confirm. GET never spends it.
+class AuthConfirmRequest extends $pb.GeneratedMessage {
+  factory AuthConfirmRequest({
+    $core.String? tokenHash,
+    $core.String? type,
+  }) {
+    final result = create();
+    if (tokenHash != null) result.tokenHash = tokenHash;
+    if (type != null) result.type = type;
+    return result;
+  }
+
+  AuthConfirmRequest._();
+
+  factory AuthConfirmRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory AuthConfirmRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'AuthConfirmRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'zen.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'tokenHash')
+    ..aOS(2, _omitFieldNames ? '' : 'type')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  AuthConfirmRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  AuthConfirmRequest copyWith(void Function(AuthConfirmRequest) updates) =>
+      super.copyWith((message) => updates(message as AuthConfirmRequest))
+          as AuthConfirmRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static AuthConfirmRequest create() => AuthConfirmRequest._();
+  @$core.override
+  AuthConfirmRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static AuthConfirmRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<AuthConfirmRequest>(create);
+  static AuthConfirmRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get tokenHash => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set tokenHash($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasTokenHash() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearTokenHash() => $_clearField(1);
+
+  /// Only "signup" and "recovery" are supported. The server rejects every other value before
+  /// making an upstream request.
+  @$pb.TagNumber(2)
+  $core.String get type => $_getSZ(1);
+  @$pb.TagNumber(2)
+  set type($core.String value) => $_setString(1, value);
+  @$pb.TagNumber(2)
+  $core.bool hasType() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearType() => $_clearField(2);
+}
+
 /// POST /api/v1/auth/password request body. Sets a new password for the identity in the
 /// session cookie.
 class SetPasswordRequest extends $pb.GeneratedMessage {

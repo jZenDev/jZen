@@ -64,8 +64,18 @@ Being pure Dart keeps the suite on the Dart VM running the real cipher (`cryptog
 CryptoKit on Apple platforms once `zen_store_cloudkit` registers it). `zen_ui_lock`'s PIN is a door
 in front of the app, not the key to these files.
 
-**Scale is not measured yet** for this layout; the numbers in ADR-065 describe the one-log-per-device
-design it replaced.
+**What it costs, measured** on a Mac under the Dart VM, with the cipher in pure Dart — a phone runs
+it through CryptoKit, so treat these as a ceiling, not a promise:
+
+| Records | On disk | Open | List all | One write |
+|---|---|---|---|---|
+| 1,000 | 0.5 MB | 61 ms | 13 ms | 3 ms |
+| 10,000 | 5.2 MB | 374 ms | 27 ms | 9 ms |
+| 50,000 | 26.2 MB | 2.9 s | 147 ms | 43 ms |
+
+A write stays small because it rewrites one of 64 shards; sync sends only the changed record.
+Opening decrypts everything, so it grows with the data: invisible to a few thousand records, a
+noticeable launch past tens of thousands.
 
 ## 🔄 How sync merges
 

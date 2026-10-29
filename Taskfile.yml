@@ -1801,9 +1801,10 @@ tasks:
           edge, which is what lets it use normal cookie names and proactive auth.
         - CLEANUP AFTER THE DEPLOY. Once the service is accepted it calls `zen:deploy:cleanup`,
           which deletes superseded Cloud Run revisions, arms an Artifact Registry retention
-          policy, and prunes local Docker images and build cache. Revisions go before the
-          registry so none is left pointing at an expired image; the first run on a repository
-          only STAGES the policy in dry run and the next run arms it. A failure there leaves the
+          policy, and prunes local Docker images and build cache. Every image a revision or job
+          still needs carries a pin tag the policy keeps, whatever its age; the deploy pins its own
+          image right after the push, before anything is pointed at it (`zen:deploy:pin`). The
+          first run on a repository only STAGES the policy in dry run and the next run arms it. A failure there leaves the
           deploy in place and exits non-zero (CLEANUP_ON_FAILURE=warn exits 0); CLEANUP=off opts
           out. Every number and switch, and what each protects: `task zen:deploy:cleanup
           --summary`.
@@ -1949,8 +1950,9 @@ tasks:
         0a. Artifact Registry cleanup policy (issue #90). AUTOMATED since issue #137: the deploy
            runs `zen:deploy:cleanup` (summary: `task zen:deploy:cleanup --summary`), which deletes
            old revisions first, stages this policy in dry run on its first run and arms it on the
-           next. The manual procedure below is what that task does, kept for a repository you
-           want to inspect by hand. Every build pushes THREE registry
+           next. The manual procedure below is the historical shape of that task, kept for a repository
+           you want to inspect by hand; it PREDATES PIN TAGS (issue #177) and, as written, protects
+           an old serving or rollback image only by count and age. Prefer the task. Every build pushes THREE registry
            versions — a multi-arch index (the tag lands here), the platform-specific image it
            resolves to (what Cloud Run actually runs, and what shows as "untagged" because the
            tag is on the index, not on this child), and a small config/attestation blob — so the
@@ -2452,6 +2454,25 @@ tasks:
           -f {{.DEMO_SERVER_DIR}}/src/main/docker/Dockerfile.native-micro \
           -t "$IMAGE" {{.DEMO_SERVER_DIR}}
         docker push "$IMAGE"
+
+        # Protect the image BEFORE the migration job or the service is pointed at it: a consumer
+        # that exists ahead of its pin is the gap the registry cleanup policy could expire an image
+        # through. A failure here stops the deploy, since nothing has yet depended on the image.
+        # CLEANUP=off / CLEANUP_REGISTRY=off mean no policy is managed here, so nothing is tagged;
+        # they are read as task variables, the same way zen:deploy:cleanup reads them below.
+        # CLEANUP_ON_FAILURE=warn continues past a failed pin (the cleanup after the deploy pins
+        # what is in use); the default stops the deploy, while nothing yet depends on the image.
+        if [ "{{.CLEANUP | default "on"}}" != "off" ] && [ "{{.CLEANUP_REGISTRY | default "on"}}" != "off" ]; then
+          if ! python3 "{{.ROOT_DIR}}/scripts/deploy-cleanup.py" pin \
+              --project "{{.GCP_PROJECT}}" --region "{{.GCP_REGION}}" --repo "{{.AR_REPO}}" \
+              --image "$IMAGE"; then
+            if [ "{{.CLEANUP_ON_FAILURE | default "fail"}}" = "warn" ]; then
+              echo "CLEANUP_ON_FAILURE=warn: continuing without the pin; the cleanup after the deploy pins what runs."
+            else
+              exit 1
+            fi
+          fi
+        fi
 
         # ═══ SIGN, ATTEST, VERIFY (F6 of the 2026-08-13 architectural security review). ═══
         #

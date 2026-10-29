@@ -15,6 +15,74 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-068 — An image a revision or job needs is protected by a pin tag the registry policy keeps
+
+**Date:** 2026-10-29. **Status:** accepted, **not yet verified in a real environment** (see
+"Verification"). **Supersedes:** the count-and-age protection in ADR-064's registry policy; the rest
+of ADR-064 stands. **Issue:** #177 (blocks #173).
+
+### Decision
+
+- **Protection lives on the image, not in a count.** A Cloud Run revision is not a reference
+  Artifact Registry respects, and "the newest N versions" only moves when something is pushed, so a
+  quiet service ages out of its own window while still serving. Every digest that a consumer needs
+  is tagged `zen-pin-<digest>`; the policy gains a Keep rule on tag prefixes `zen-pin-` and
+  `zen-hold-` (rule `zen-v2-keep-pinned`, `POLICY_REVISION` v2). A Keep rule outranks every Delete
+  rule, and a tagged version is outside the untagged Delete rule, so a pin holds however old the
+  image is and whenever the registry next evaluates. Neither prefix can match a Delete prefix, and
+  a user tag prefix that would match one is refused.
+- **Consumers are every Cloud Run revision and job in the project and region** that names an image
+  in this repository, not only the service being cleaned: a job (`zen-demo-migrate`) and other
+  services pull from it too. A job names a tag or a digest; a tag is resolved to the digest in the
+  registry. A consumer that cannot be listed fails the step (fail closed); a consumer whose image is
+  already gone is named and blocks arming.
+- **Add before, release after.** Pins are added before the policy is staged, armed or left armed;
+  a failed pin fails the run, arms nothing, and puts an enforcing policy into dry run. A pin is
+  released only when no consumer needs the digest, its version is older than a day (a cleanup
+  beside a deploy cannot undo that deploy's pin), and nothing else failed to resolve. A shared
+  digest is released only when the last consumer is gone.
+- **A new consumer is pinned before it exists.** `deploy:cloudrun` runs `deploy-cleanup.py pin`
+  right after `docker push`, before the migration job or the service is pointed at the image;
+  `task zen:deploy:pin PIN_IMAGE=…` is the same step for an application's deploy and for an
+  operator pointing a consumer at an image by hand. A consumer the cleanup cannot see (another
+  project or region, GKE, a puller) is protected by `PIN_HOLD=<name>` → `zen-hold-<name>`, which
+  the cleanup never removes.
+- **Parent and child.** The image Cloud Run runs is untagged, a child of the tagged index, and the
+  registry does not delete an image a surviving parent lists. The simulation reads each tagged
+  manifest (`docker buildx imagetools inspect --raw`) and reports what would expire over the
+  registry's *successive* runs: a child is reported only when every parent it has would go too, and
+  a pinned child outlives an expired parent. If a manifest cannot be read the list is an upper
+  bound and says so. Nothing safety-critical rests on the parent rule: a needed digest is pinned
+  itself.
+- **Transition from an active policy.** A policy of an older shape that is enforcing is replaced by
+  the new one *in dry run*, after the pins exist; the next run arms it. Enforcement pauses for one
+  run and never continues without protection. A pin also protects under the old policy, since a
+  pinned version is tagged and its tag matches no old Delete rule.
+
+### Consequence
+
+`task test:scripts` covers it against stub `gcloud` and `docker` and against an independent model of
+the registry's evaluation (Keep outranks Delete, newest-N per package, parent shielding, repeated
+asynchronous runs): a retained revision's image survives 160 days and thirty newer pushes; the same
+scenario without the pin rule loses it; a manual rollback, an old serving revision, a job naming a
+tag or a digest and another service's revision are protected; a shared digest is released only after
+its last consumer; a failed pin, an unreadable job list, an image already gone and a failed release
+do not arm or advance; reruns change nothing.
+
+### Verification, and what is not claimed
+
+The stub's JSON shapes and the model's semantics are not Artifact Registry. **Not established until
+run on a real repository** (`jzen-prod` / `europe-central2` / `jzen`): that `gcloud artifacts docker
+tags add` accepts an untagged child digest; that a Keep rule with `tagPrefixes` and `tagState`
+behaves as modelled; the shape of `gcloud run jobs list` and of revision `imageDigest`; that
+`docker buildx imagetools inspect --raw` reads the registry's manifests; and the registry's actual
+dry-run result after its documented delay. `scripts/README.md` carries the procedure. Remaining
+limitations: a consumer nobody lists and nobody holds; a pin is a tag per digest until released;
+registry evaluation is Google's and asynchronous; cosign signatures and Binary Authorization
+attestations are not consumers of a running image and are not pinned.
+
+---
+
 ## ADR-067 — Pause action message expiry during interaction
 
 **Date:** 2026-10-29. **Status:** accepted.

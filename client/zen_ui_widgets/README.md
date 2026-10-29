@@ -115,14 +115,17 @@ show a confirmation: the application decides when and how to confirm a destructi
 |---|---|
 | `macos`, `windows`, `linux` | Continuously visible in the row. |
 | `web` | Hover or keyboard focus reveals them with a fade. The visible actions toggle also works with touch. |
-| `ios`, `android` | Swipe toward the start of the row; swipe toward the end to close. The visible actions toggle provides a non-swipe alternative. |
+| `ios`, `android` | A `Dismissible` invokes the first action on a swipe toward the end and the second on a swipe toward the start. Screen readers can invoke all enabled actions on the item. Applications should also provide actions in item details where appropriate. |
 
 The fade respects the system's reduced-motion setting. Hidden actions are excluded from pointer,
 keyboard, and accessibility interaction. Action buttons have the supplied accessible labels and
-focus indicators. The toggle is a separate keyboard and assistive-technology control; do not add
+focus indicators. The web toggle is a separate keyboard and assistive-technology control; do not add
 another semantics wrapper around the buttons. Give rows stable keys when items can be reordered,
-so an open row stays associated with the same item. Each action reserves 48 logical pixels even
-while hidden, so keep the action count appropriate for the available row width.
+so state stays associated with the same item. On desktop and web each action reserves 48 logical
+pixels even while hidden, so keep the action count appropriate for the available row width. On
+mobile, additional actions remain available through accessibility and item details. The component
+does not remove the row itself: callbacks own any confirmation and removal, and the row returns
+to its original position if it remains in the list.
 
 The [demo dashboard](../../apps/zen_demo/zen_demo_client/lib/src/screens/dashboard_screen.dart)
 shows an example with localized labels and callbacks. Its delete action only reports the selection;

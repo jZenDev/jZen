@@ -213,8 +213,13 @@ def digest_of(image_digest: str) -> str:
 
 
 def running_hazards(selected: Sequence[Dict[str, Any]], revisions: Sequence[Dict[str, Any]]) -> List[str]:
-    live = {digest_of(r.get("status", {}).get("imageDigest", "")) for r in revisions}
-    live.discard("")
+    live = set()
+    for revision in revisions:
+        digest = digest_of(revision.get("status", {}).get("imageDigest", ""))
+        if not digest.startswith("sha256:") or len(digest) <= len("sha256:"):
+            raise StepError("revision %s has no usable image digest; refusing to assess registry safety."
+                            % revision.get("metadata", {}).get("name", "(unknown)"))
+        live.add(digest)
     return sorted({v["version"] for v in selected if v["version"] in live})
 
 
@@ -444,8 +449,9 @@ def main(argv: Optional[Sequence[str]] = None, now: Optional[dt.datetime] = None
 
     def guarded(label: str, step) -> bool:
         try:
-            failures.extend(step())
-            return True
+            step_failures = step()
+            failures.extend(step_failures)
+            return not step_failures
         except StepError as exc:
             failures.append("%s: %s" % (label, exc))
             lib.fail(label, [str(exc)])

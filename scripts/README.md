@@ -85,12 +85,13 @@ key handler) must not touch the TTY here.
 ## 🌱 seed-admin.py — create an admin login
 
 ```
-scripts/seed-admin.py [--email E] [--password P] [--port N]
+scripts/seed-admin.py --password P [--email E] [--port N]
 ```
 
 Registers a user against the running backend, then flips its `users.role` to `admin` (roles live in
-the table, loaded by `RoleAugmentor`, never the JWT). Defaults: `admin@jzen.local` / `password123`.
-Log in with the printed credentials at `http://localhost:5173`.
+the table, loaded by `RoleAugmentor`, never the JWT). The default email is `admin@jzen.local`;
+choose a password with `--password`. Log in with those credentials at `http://localhost:5173`.
+If the account already exists, the script promotes it without changing its existing password.
 
 Both payloads are built by things that understand the format — `json.dumps` for the body, psql's
 `:'email'` interpolation for the statement — so an address with an apostrophe or a password with a
@@ -117,7 +118,7 @@ stack (CLI reports "running" but the db container has exited) with a `stop` befo
 
 ```
 scripts/admin.sh            # terminal 1: Supabase + backend + admin panel
-scripts/seed-admin.py       # terminal 2: one-time, create the admin login
+scripts/seed-admin.py --password YOUR_LOCAL_PASSWORD  # terminal 2: create the admin login
 # ... open http://localhost:5173, log in ...
 scripts/stop.sh --supabase  # tear everything down
 

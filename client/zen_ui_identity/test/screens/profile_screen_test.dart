@@ -2,6 +2,7 @@ import 'package:zen_core/zen_core.dart';
 import 'package:zen_identity/zen_identity.dart';
 import 'package:zen_ui_identity/src/screens/profile_screen.dart';
 import 'package:zen_ui_identity/src/state/identity_repository.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -108,7 +109,10 @@ void main() {
     expect(find.text('ADMIN'), findsOneWidget);
 
     // Check Semantics
-    expect(tester.getSemantics(find.byIcon(Icons.logout).first).label, contains('Log Out'));
+    expect(
+      find.descendant(of: find.byType(ZenIconButton), matching: find.bySemanticsLabel('Log Out')),
+      findsOneWidget,
+    );
     expect(tester.getSemantics(find.byType(CircleAvatar)).label, contains('Profile avatar'));
 
     await tester.tap(find.byIcon(Icons.logout).first);

@@ -145,6 +145,7 @@ class _DemoDashboardScreenState extends ConsumerState<DemoDashboardScreen> {
               ZenListItemAction(
                 icon: Icons.delete,
                 label: messages.deleteItem,
+                variant: ZenListItemActionVariant.destructive,
                 onPressed: () => setState(() => _itemAction = messages.deleteItem),
               ),
             ],

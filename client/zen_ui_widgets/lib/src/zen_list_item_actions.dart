@@ -4,13 +4,24 @@ import 'package:zen_core/zen_core.dart';
 
 import 'button/zen_icon_button.dart';
 
+/// Color treatment for a mobile swipe action.
+enum ZenListItemActionVariant { standard, destructive }
+
 /// An action supplied by the owner of a [ZenListItemActions] row.
 class ZenListItemAction {
-  const ZenListItemAction({required this.icon, required this.label, required this.onPressed});
+  const ZenListItemAction({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.variant = ZenListItemActionVariant.standard,
+  });
 
   final IconData icon;
   final String label;
   final VoidCallback? onPressed;
+
+  /// Selects the theme colors for the mobile swipe background.
+  final ZenListItemActionVariant variant;
 }
 
 /// Adapts a list row's actions to the platform. The caller owns the row, actions,
@@ -59,31 +70,41 @@ class _ZenListItemActionsState extends State<ZenListItemActions> {
         child: widget.child,
       );
       if (!startEnabled && !endEnabled) return row;
-      Widget background(ZenListItemAction? action, AlignmentGeometry alignment) => ColoredBox(
-        color: Theme.of(context).colorScheme.primaryContainer,
-        child: Align(
-          alignment: alignment,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: ExcludeSemantics(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(action?.icon, color: Theme.of(context).colorScheme.onPrimaryContainer),
-                    const SizedBox(width: 8),
-                    Text(
-                      action?.label ?? '',
-                      style: TextStyle(color: Theme.of(context).colorScheme.onPrimaryContainer),
-                    ),
-                  ],
+      Widget background(ZenListItemAction? action, bool isStart) {
+        final colors = Theme.of(context).colorScheme;
+        final destructive = action?.variant == ZenListItemActionVariant.destructive;
+        final foreground = destructive ? colors.onErrorContainer : colors.onPrimaryContainer;
+        final direction = Directionality.of(context);
+        final iconDirection = isStart
+            ? direction
+            : direction == TextDirection.ltr
+            ? TextDirection.rtl
+            : TextDirection.ltr;
+        return ColoredBox(
+          color: destructive ? colors.errorContainer : colors.primaryContainer,
+          child: Align(
+            alignment: isStart ? AlignmentDirectional.centerStart : AlignmentDirectional.centerEnd,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: ExcludeSemantics(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    textDirection: iconDirection,
+                    children: [
+                      Icon(action?.icon, color: foreground),
+                      const SizedBox(width: 8),
+                      Text(action?.label ?? '', style: TextStyle(color: foreground)),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      );
+        );
+      }
+
       return Dismissible(
         key: const ValueKey('zen-list-item-dismissible'),
         direction: startEnabled && endEnabled
@@ -91,8 +112,8 @@ class _ZenListItemActionsState extends State<ZenListItemActions> {
             : startEnabled
             ? DismissDirection.startToEnd
             : DismissDirection.endToStart,
-        background: background(startAction, AlignmentDirectional.centerStart),
-        secondaryBackground: background(endAction, AlignmentDirectional.centerEnd),
+        background: background(startAction, true),
+        secondaryBackground: background(endAction, false),
         confirmDismiss: (direction) async {
           final action = direction == DismissDirection.startToEnd ? startAction : endAction;
           action?.onPressed?.call();

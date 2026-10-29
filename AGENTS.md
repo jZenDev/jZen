@@ -153,6 +153,11 @@ platform for Cupertino-vs-Material. A missing generic control is a framework gap
 `zen_ui_widgets` (with its accessibility suite), then use it. Table and rules: STANDARDS "Client UI:
 the framework's controls first".
 
+**Group related UI files.** In `client/zen_ui_widgets/lib/src`, a family with two or more
+related files belongs in a named folder; a standalone file stays at the root. Group field and
+range variants and progress controls by family. Helpers shared across families stay at the root.
+Keep public exports stable. See STANDARDS "Group related UI files".
+
 **One widget per file.** Every Flutter widget class lives in its own file, named for the class in
 snake_case, as with Java's one class per file. A helper widget is a *public* class in its own file,
 never a file-private `_Foo` tucked into another widget's file. The one exception is by construction:

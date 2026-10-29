@@ -1,8 +1,8 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import 'l10n/generated/zen_widgets_localizations.dart';
-import 'pair_layout.dart';
+import '../l10n/generated/zen_widgets_localizations.dart';
+import '../pair_layout.dart';
 import 'zen_date_field.dart';
 
 /// Two dates that bound a period — a filter's "from" and "to" — with the invariant that the

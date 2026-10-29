@@ -4,7 +4,7 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_core/zen_core.dart';
-import 'package:zen_ui_widgets/src/zen_date_field.dart';
+import 'package:zen_ui_widgets/src/date/zen_date_field.dart';
 import 'package:zen_ui_widgets/zen_ui_widgets.dart' show FocusRing, ZenDateField, ZenDateRangeField;
 
 import '../support/a11y.dart';

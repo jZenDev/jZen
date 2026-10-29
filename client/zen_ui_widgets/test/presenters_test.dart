@@ -4,7 +4,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zen_ui_widgets/src/presenters.dart';
+import 'package:zen_ui_widgets/src/presentation/presenters.dart';
 
 typedef Presenter =
     Future<Object?> Function(BuildContext context, WidgetBuilder builder, bool barrierDismissible);

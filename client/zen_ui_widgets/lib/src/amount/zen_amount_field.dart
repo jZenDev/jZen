@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
-import 'l10n/generated/zen_widgets_localizations.dart';
-import 'zen_text_field.dart';
+import '../l10n/generated/zen_widgets_localizations.dart';
+import '../text/zen_text_field.dart';
 
 final RegExp _grouping = RegExp(r"[\s   ']");
 final RegExp _decimal = RegExp(r'^(-?)(\d*)(?:[.,](\d*))?$');

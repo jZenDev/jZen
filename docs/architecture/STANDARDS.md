@@ -731,6 +731,15 @@ divide it: navigation-specific pieces in `zen_ui_navigation`, identity-specific 
 everything generic in `zen_ui_widgets`. The reference app `zen_demo` follows this table, so it is
 the worked example. See ADR-055.
 
+## Group related UI files
+
+In `client/zen_ui_widgets/lib/src`, put a family of two or more related files in a
+named directory (for example `amount/`, `date/` or `message/`). A standalone file stays
+at the root. Group by the control family, including a field and its range variant or
+progress bar and indicator; shared helpers used by different families stay at the root.
+Keep the package's public exports stable when files move. This complements the one-widget
+per-file rule; grouping files never combines widget classes.
+
 ## One widget per file
 
 Every Flutter widget class lives in **its own file, named for the class in snake_case** —

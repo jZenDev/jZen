@@ -1,7 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zen_ui_widgets/src/zen_progress_indicator.dart';
+import 'package:zen_ui_widgets/src/progress/zen_progress_indicator.dart';
 
 import '../support/a11y.dart';
 

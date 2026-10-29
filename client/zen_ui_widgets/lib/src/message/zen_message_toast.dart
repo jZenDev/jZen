@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../zen_button.dart';
+import '../button/zen_button.dart';
 import 'zen_message_timer.dart';
 
 /// The transient message `showZenMessage` shows on Apple platforms, where there is no snack bar.

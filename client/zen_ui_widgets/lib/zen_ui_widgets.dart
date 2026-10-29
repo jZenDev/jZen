@@ -31,7 +31,7 @@
 /// [zenWidgetsLocaleDelegate] to use them.
 library;
 
-export 'src/adaptive_presentation.dart';
+export 'src/presentation/adaptive_presentation.dart';
 export 'src/focus_ring.dart' show FocusRing, zenFocusRingWidth;
 export 'src/l10n/generated/zen_widgets_localizations.dart';
 // The per-locale implementations, exported so an application can translate this package's
@@ -40,23 +40,23 @@ export 'src/l10n/generated/zen_widgets_localizations_en.dart';
 export 'src/l10n/generated/zen_widgets_localizations_uk.dart';
 export 'src/l10n/zen_widgets_locale_delegate.dart';
 export 'src/picker_field.dart' show ZenPickerField;
-export 'src/zen_amount_field.dart'
+export 'src/amount/zen_amount_field.dart'
     show ZenAmountField, ZenAmountInputFormatter, normalizeAmount, parseAmount, zenDecimalSeparator;
-export 'src/zen_amount_range_field.dart' show ZenAmountRangeField;
-export 'src/zen_button.dart' show ZenButton, ZenButtonVariant, zenButtonMinHeight;
-export 'src/zen_date_field.dart' show ZenDateField, zenDefaultFirstDate, zenDefaultLastDate;
-export 'src/zen_date_range_field.dart' show ZenDateRangeField;
+export 'src/amount/zen_amount_range_field.dart' show ZenAmountRangeField;
+export 'src/button/zen_button.dart' show ZenButton, ZenButtonVariant, zenButtonMinHeight;
+export 'src/date/zen_date_field.dart' show ZenDateField, zenDefaultFirstDate, zenDefaultLastDate;
+export 'src/date/zen_date_range_field.dart' show ZenDateRangeField;
 export 'src/detail/zen_detail.dart' show showZenDetail;
 export 'src/detail/zen_detail_host.dart' show ZenDetailHost, ZenDetailHostState, zenDetailMinWidth;
-export 'src/zen_icon_button.dart' show ZenIconButton, zenIconButtonSize;
+export 'src/button/zen_icon_button.dart' show ZenIconButton, zenIconButtonSize;
 export 'src/zen_list_item_actions.dart' show ZenListItemAction, ZenListItemActions;
 export 'src/message/zen_message.dart' show showZenMessage, zenMessageDuration;
 export 'src/page/zen_page_route.dart' show ZenPageRoute;
 export 'src/page/zen_page_scaffold.dart' show ZenPageScaffold;
 export 'src/page/zen_page_transitions.dart' show ZenFadePageTransitionsBuilder, ZenPageTransitions;
-export 'src/zen_progress_bar.dart' show ZenProgressBar;
-export 'src/zen_progress_indicator.dart' show ZenProgressIndicator;
+export 'src/progress/zen_progress_bar.dart' show ZenProgressBar;
+export 'src/progress/zen_progress_indicator.dart' show ZenProgressIndicator;
 export 'src/zen_segmented_control.dart' show ZenSegment, ZenSegmentedControl;
 export 'src/zen_select.dart' show ZenSelect;
 export 'src/zen_switch_row.dart' show ZenSwitchRow;
-export 'src/zen_text_field.dart' show ZenTextField;
+export 'src/text/zen_text_field.dart' show ZenTextField;

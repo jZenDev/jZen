@@ -5,25 +5,39 @@ Run by `task zen:deploy:cleanup` (Taskfile.app.yml), which carries the operator-
 
 Three parts, in this order, and the order is the design:
 
-1. REVISIONS first. A Cloud Run revision is not a reference the registry respects, so a revision
-   whose image the registry has expired stays listed as a rollback target that cannot start. They
-   are therefore deleted before the policy is armed, and the policy's window is refused unless it
+1. REVISIONS first. A Cloud Run revision is not a reference the registry respects, so the revisions
+   that remain are bounded here and the registry step below is told about every one of them.
+   Revisions are deleted before the policy is armed, and the policy's window is refused unless it
    is longer than the revisions' (the image is older than its revision by the build time, so equal
    windows would expire the image first).
 2. The REGISTRY POLICY. Keep the newest N versions per package; delete tagged versions (by tag
-   prefix, never `latest`) and untagged versions older than the window. The untagged rule is safe
-   only because of the Keep rule — the image Cloud Run runs is *untagged*, since the tag sits on
-   the index above it — so `build_policy` refuses to produce a policy that has one without the
-   other. Before the policy is armed it is simulated against the registry's own version list and
-   the revisions that remain; a policy that would expire a digest a revision still runs is not
-   armed (and an armed one that has become such a policy is put back into dry run).
+   prefix, never `latest`) and untagged versions older than the window. A count and an age cannot
+   protect an arbitrarily old image that something still runs — a serving revision, a rollback
+   target, a Cloud Run job — so protection is carried by the image itself: every digest a
+   consumer needs gets a PIN TAG (`zen-pin-<digest>`) and the policy has a Keep rule on that tag
+   prefix. A Keep rule outranks every Delete rule, and a pinned version is *tagged*, so it is
+   outside the untagged Delete rule as well; the protection does not depend on how old the image
+   is, how many newer ones exist, or when the policy next runs. Pins are added BEFORE the policy
+   is staged, armed or left armed, and released only for a digest no consumer needs — for every
+   consumer this script can enumerate (all revisions and jobs in the project and region), and
+   never for an operator `zen-hold-*` tag, which is how a consumer it cannot see is protected.
+   The untagged rule remains safe only beside the Keep rules, so `build_policy` refuses a policy
+   that deletes anything without them. Before the policy is armed it is simulated against the
+   registry's own version list, with the parent/child references between a tagged index and the
+   images it lists; a digest a consumer needs that the simulation still expires means a pin
+   failed, and the policy is not armed (an armed one is put back into dry run).
 3. LOCAL DOCKER: dangling layers, aged build cache, and this project's tagged images beyond the two
    newest per repository. Never `latest`, never anything outside this project's registry path.
 
+A deploy pins its own image with `pin` (below) BEFORE any job or service is pointed at it, so a new
+consumer is never ahead of its protection.
+
 Two-phase arming. The first run on a repository stages the policy in the registry's own dry-run
 state and stops there; the run after that arms it. The registry is the memory, so "a dry run was
-required once" cannot be skipped by a fresh checkout. `--dry-run` stages without arming and
-deletes nothing anywhere.
+required once" cannot be skipped by a fresh checkout. Replacing an already ARMED policy of an older
+shape stages the new one in dry run the same way, after the pins exist, so enforcement pauses for
+one run instead of continuing without protection. `--dry-run` stages without arming, adds and
+releases no pin, and deletes nothing anywhere: it prints the pins it would add and release.
 
 Failure semantics: every step runs and reports; any failure makes the exit code non-zero
 (`--on-failure fail`, the default) with the words "the deploy itself succeeded", or is printed as a
@@ -53,8 +67,21 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 import lib
 
 # Bump when the SHAPE of the policy changes; the numbers are already in the rule names, so a changed
-# number re-arms an existing repository without touching this.
-POLICY_REVISION = "v1"
+# number re-arms an existing repository without touching this. v2 added the pin Keep rule.
+POLICY_REVISION = "v2"
+
+# A tag on a digest that a consumer (a revision, a job) needs. Owned by this script: added when a
+# consumer needs the digest, removed when none does. Neither prefix begins with a hex digit or
+# `sha256-`, so the tagged Delete rule can never match a pin even if the Keep rule were missing.
+PIN_PREFIX = "zen-pin-"
+# A tag an OPERATOR adds for a consumer this script cannot enumerate (another project, another
+# region, a non-Cloud-Run puller). Never removed by this script.
+HOLD_PREFIX = "zen-hold-"
+PROTECTING_PREFIXES = [PIN_PREFIX, HOLD_PREFIX]
+
+# A pin is not released while its version is younger than this, so a cleanup that runs while a
+# deploy has pushed and pinned an image but not yet pointed a job or service at it cannot undo it.
+PIN_RELEASE_GRACE = dt.timedelta(hours=24)
 
 # A tag begins with a hex digit when it is a (short) commit SHA — what `deploy:cloudrun` pushes,
 # with an optional `-dirty` — or with `sha256-` when it is a cosign signature/attestation, which is
@@ -94,7 +121,7 @@ def build_policy(keep_versions: int, image_days: int, tag_prefixes: Sequence[str
     prefixes = list(tag_prefixes)
     if not prefixes:
         raise StepError("tag-prefixes is empty: the tagged rule would match every tagged version.")
-    for tag in PROTECTED_TAGS:
+    for tag in sorted(PROTECTED_TAGS) + PROTECTING_PREFIXES:
         if any(tag.startswith(p) for p in prefixes):
             raise StepError("tag prefix %r would also match the protected tag %r." %
                             (next(p for p in prefixes if tag.startswith(p)), tag))
@@ -105,6 +132,11 @@ def build_policy(keep_versions: int, image_days: int, tag_prefixes: Sequence[str
             "name": "zen-%s-keep-newest-%d" % (POLICY_REVISION, keep_versions),
             "action": {"type": "Keep"},
             "mostRecentVersions": {"keepCount": keep_versions},
+        },
+        {
+            "name": "zen-%s-keep-pinned" % POLICY_REVISION,
+            "action": {"type": "Keep"},
+            "condition": {"tagState": "TAGGED", "tagPrefixes": list(PROTECTING_PREFIXES)},
         },
         {
             "name": "zen-%s-delete-tagged-%s-older-than-%dd" % (POLICY_REVISION, digest, image_days),
@@ -135,6 +167,18 @@ def assert_policy_safe(policy: Sequence[Dict[str, Any]]) -> None:
     if deletes_untagged and not has_keep:
         raise StepError("policy deletes untagged versions with no Keep rule; the image Cloud Run "
                         "runs is untagged, so this would delete the running image.")
+    # The pin rule is what protects an image that is old and no longer among the newest: without
+    # it the count and the age are the only protection, and neither covers an arbitrary old consumer.
+    has_pin_keep = any(
+        r["action"]["type"] == "Keep"
+        and r.get("condition", {}).get("tagState") == "TAGGED"
+        and set(PROTECTING_PREFIXES) <= set(r.get("condition", {}).get("tagPrefixes", []))
+        for r in policy
+    )
+    if any(r["action"]["type"] == "Delete" for r in policy) and not has_pin_keep:
+        raise StepError("policy deletes versions with no Keep rule for the pin tags (%s); an image "
+                        "a revision or job needs would be protected only by age and count." %
+                        ", ".join(PROTECTING_PREFIXES))
 
 
 def select_revisions(revisions: Sequence[Dict[str, Any]], serving: Set[str], now: dt.datetime,
@@ -181,12 +225,23 @@ def _matches(version: Dict[str, Any], condition: Dict[str, Any], now: dt.datetim
     return True
 
 
+Key = Tuple[str, str]  # (package, version digest)
+
+
 def simulate(policy: Sequence[Dict[str, Any]], versions: Sequence[Dict[str, Any]],
-             now: dt.datetime) -> List[Dict[str, Any]]:
-    """The versions the policy would delete: matched by a Delete rule and by no Keep rule.
+             now: dt.datetime, children: Optional[Dict[Key, Sequence[str]]] = None) -> List[Dict[str, Any]]:
+    """The versions the policy would delete, over successive runs of the registry's evaluation.
 
     Mirrors the registry's documented semantics (Keep wins; `mostRecentVersions` counts per
-    package). It is a safety check, not a promise about what the registry will do.
+    package; a version listed by a parent manifest is not deleted while the parent exists). It is a
+    safety check, not a promise about what the registry will do.
+
+    `children` maps a parent (an image index) to the digests it lists. A selected child whose
+    parent survives is shielded, so it is not proof of anything that it matched a Delete rule; but
+    once the parent is itself deleted the child is evaluated again by the same rules, so a child is
+    reported only when every parent it has would also go. That is the *eventual* set: the registry
+    evaluates asynchronously and repeatedly, and an answer for one pass would be false safety for
+    the next. Without `children` this is an upper bound, which is the safe direction to be wrong.
     """
     kept: Set[Tuple[str, str]] = set()
     doomed: Set[Tuple[str, str]] = set()
@@ -204,7 +259,22 @@ def simulate(policy: Sequence[Dict[str, Any]], versions: Sequence[Dict[str, Any]
             hits = {(v["package"], v["version"]) for v in versions if _matches(v, rule["condition"], now)}
             (kept if is_keep else doomed).update(hits)
     wanted = doomed - kept
-    return [v for v in versions if (v["package"], v["version"]) in wanted]
+    known = {(v["package"], v["version"]) for v in versions}
+    parents: Dict[Key, List[Key]] = {}
+    for (package, parent), kids in (children or {}).items():
+        if (package, parent) not in known:
+            continue  # a parent the listing does not show shields nothing we can verify
+        for kid in kids:
+            parents.setdefault((package, kid), []).append((package, parent))
+    memo: Dict[Key, bool] = {}
+
+    def eventually_deleted(key: Key) -> bool:
+        if key not in memo:
+            memo[key] = False  # a reference cycle shields nothing it cannot prove
+            memo[key] = key in wanted and all(eventually_deleted(p) for p in parents.get(key, []))
+        return memo[key]
+
+    return [v for v in versions if eventually_deleted((v["package"], v["version"]))]
 
 
 def digest_of(image_digest: str) -> str:
@@ -212,15 +282,145 @@ def digest_of(image_digest: str) -> str:
     return image_digest.rsplit("@", 1)[-1] if image_digest else ""
 
 
-def running_hazards(selected: Sequence[Dict[str, Any]], revisions: Sequence[Dict[str, Any]]) -> List[str]:
-    live = set()
+def usable_digest(digest: str) -> bool:
+    return digest.startswith("sha256:") and len(digest) > len("sha256:")
+
+
+def pin_tag(digest: str) -> str:
+    return PIN_PREFIX + digest.split(":", 1)[1]
+
+
+def package_of(image: str) -> str:
+    """`host/p/r/svc:tag@sha256:abc`, `host/p/r/svc@sha256:abc` or `host/p/r/svc:tag` → `host/p/r/svc`."""
+    path = image.split("@", 1)[0]
+    head, _, last = path.rpartition("/")
+    return (head + "/" if head else "") + last.split(":", 1)[0]
+
+
+def consumer(kind: str, name: str, package: str, digest: str = "", tag: str = "") -> Dict[str, str]:
+    return {"kind": kind, "name": name, "package": package, "digest": digest, "tag": tag}
+
+
+def revision_consumers(revisions: Sequence[Dict[str, Any]], registry: str,
+                       strict: bool = True) -> List[Dict[str, str]]:
+    """The digests that Cloud Run revisions run, for those in `registry`.
+
+    A revision of THIS service with no usable digest is an error, not a skip: it cannot be proven to
+    be outside the registry, and a policy assessed without it is assessed without a consumer. With
+    `strict=False` (another service's revisions) it is skipped with a warning instead, because a
+    revision that never started has no image to protect and one unrelated broken service must not
+    block this service's cleanup for good.
+    """
+    found = []
     for revision in revisions:
-        digest = digest_of(revision.get("status", {}).get("imageDigest", ""))
-        if not digest.startswith("sha256:") or len(digest) <= len("sha256:"):
+        name = revision.get("metadata", {}).get("name", "(unknown)")
+        image_digest = revision.get("status", {}).get("imageDigest", "")
+        digest = digest_of(image_digest)
+        if not usable_digest(digest):
+            if not strict:
+                lib.warn("revision %s (another service) reports no image digest; not treated as a "
+                         "consumer." % name)
+                continue
             raise StepError("revision %s has no usable image digest; refusing to assess registry safety."
-                            % revision.get("metadata", {}).get("name", "(unknown)"))
-        live.add(digest)
-    return sorted({v["version"] for v in selected if v["version"] in live})
+                            % name)
+        if package_of(image_digest).startswith(registry + "/"):
+            found.append(consumer("revision", name, package_of(image_digest), digest))
+    return found
+
+
+def job_consumers(jobs: Sequence[Dict[str, Any]], registry: str) -> List[Dict[str, str]]:
+    """The images that Cloud Run jobs name, for those in `registry`. A job names a tag or a digest."""
+    found = []
+    for job in jobs:
+        name = job.get("metadata", {}).get("name", "(unknown)")
+        containers = (job.get("spec", {}).get("template", {}).get("spec", {})
+                      .get("template", {}).get("spec", {}).get("containers", []))
+        for container in containers:
+            image = container.get("image", "")
+            if not image:
+                raise StepError("job %s has a container with no image; refusing to assess registry "
+                                "safety." % name)
+            if not package_of(image).startswith(registry + "/"):
+                continue
+            if "@" in image:
+                digest = digest_of(image)
+                if not usable_digest(digest):
+                    raise StepError("job %s names image %s with no usable digest." % (name, image))
+                found.append(consumer("job", name, package_of(image), digest))
+            else:
+                last = image.rsplit("/", 1)[-1]
+                found.append(consumer("job", name, package_of(image), tag=last.split(":", 1)[1] if ":" in last else "latest"))
+    return found
+
+
+def resolve_consumers(consumers: Sequence[Dict[str, str]], versions: Sequence[Dict[str, Any]]
+                      ) -> Tuple[List[Dict[str, str]], List[str]]:
+    """Resolve a consumer that names a tag to the digest the registry has under it.
+
+    Returns the resolved consumers whose digest is in the registry, and a sentence for each that is
+    not: an image already gone cannot be protected, and arming past it would hide that it is.
+    """
+    by_tag: Dict[Tuple[str, str], str] = {}
+    present: Set[Key] = set()
+    for v in versions:
+        present.add((v["package"], v["version"]))
+        for tag in version_tags(v):
+            by_tag[(v["package"], tag)] = v["version"]
+    resolved, missing = [], []
+    for c in consumers:
+        digest = c["digest"] or by_tag.get((c["package"], c["tag"]), "")
+        if not digest or (c["package"], digest) not in present:
+            missing.append("%s %s runs %s@%s, which is not in the registry; it cannot be protected and "
+                           "cannot start. Delete or redeploy it." %
+                           (c["kind"], c["name"], c["package"], digest or ":" + c["tag"]))
+            continue
+        resolved.append(dict(c, digest=digest))
+    return resolved, missing
+
+
+def current_pins(versions: Sequence[Dict[str, Any]]) -> Set[Key]:
+    """Versions that carry a pin tag. A pin tag names its own digest, so one that does not is corrupt."""
+    pinned: Set[Key] = set()
+    for v in versions:
+        for tag in version_tags(v):
+            if tag.startswith(PIN_PREFIX):
+                if tag != pin_tag(v["version"]):
+                    raise StepError("tag %s on %s does not name that version; remove it by hand "
+                                    "(`gcloud artifacts docker tags delete`) so protection is not "
+                                    "attributed to the wrong digest." % (tag, v["version"]))
+                pinned.add((v["package"], v["version"]))
+    return pinned
+
+
+def plan_pins(needed: Set[Key], versions: Sequence[Dict[str, Any]], now: dt.datetime
+              ) -> Tuple[List[Key], List[Key], Set[Key]]:
+    """(to add, to release, the pins that exist once both are done).
+
+    A pin is released only when no consumer needs the digest and its version is older than
+    PIN_RELEASE_GRACE. Operator `zen-hold-*` tags are not pins and are never touched here.
+    """
+    existing = current_pins(versions)
+    created = {(v["package"], v["version"]): parse_ts(v["createTime"]) for v in versions}
+    to_add = sorted(needed - existing)
+    to_release = sorted(k for k in existing - needed if now - created[k] > PIN_RELEASE_GRACE)
+    return to_add, to_release, (existing | needed) - set(to_release)
+
+
+def with_pins(versions: Sequence[Dict[str, Any]], pins: Set[Key]) -> List[Dict[str, Any]]:
+    """Copies of `versions` as they will list once exactly `pins` carry a pin tag."""
+    out = []
+    for v in versions:
+        tags = [t for t in version_tags(v) if not t.startswith(PIN_PREFIX)]
+        if (v["package"], v["version"]) in pins:
+            tags.append(pin_tag(v["version"]))
+        out.append(dict(v, tags=tags))
+    return out
+
+
+def running_hazards(selected: Sequence[Dict[str, Any]], consumers: Sequence[Dict[str, str]]) -> List[str]:
+    """Digests a consumer needs that the policy would still expire: a pin did not take effect."""
+    live = {(c["package"], c["digest"]) for c in consumers}
+    return sorted({v["version"] for v in selected if (v["package"], v["version"]) in live})
 
 
 def policy_names(repo: Dict[str, Any]) -> Set[str]:
@@ -323,6 +523,58 @@ def step_revisions(a: argparse.Namespace, now: dt.datetime, ctx: Dict[str, Any])
     return failures
 
 
+def list_other_revisions(a: argparse.Namespace) -> List[Dict[str, Any]]:
+    """Every revision in the region that belongs to another service: they pull from this registry too.
+
+    A revision with no service label cannot be shown to be this service's, so it is kept here:
+    pinning a digest twice costs nothing, and not pinning one is the failure this exists to prevent.
+    """
+    everything = run_json(["gcloud", "run", "revisions", "list", "--project=" + a.project,
+                           "--region=" + a.region])
+    return [r for r in everything
+            if r.get("metadata", {}).get("labels", {}).get("serving.knative.dev/service") != a.service]
+
+
+def list_jobs(a: argparse.Namespace) -> List[Dict[str, Any]]:
+    return run_json(["gcloud", "run", "jobs", "list", "--project=" + a.project, "--region=" + a.region])
+
+
+def fetch_children(versions: Sequence[Dict[str, Any]]) -> Tuple[Dict[Key, List[str]], List[str]]:
+    """Which digests each tagged version lists, read from the manifest itself.
+
+    The version listing does not say that an index references an image; the manifest does. `docker
+    buildx imagetools inspect --raw` prints it with the credentials `docker push` already uses. A
+    manifest that cannot be read is reported, not guessed: the simulation then has no parent for it
+    and so reports more deletions than the registry will make, which is the safe direction.
+    """
+    if shutil.which("docker") is None:
+        return {}, ["docker is not on PATH, so no parent/child reference could be read"]
+    children: Dict[Key, List[str]] = {}
+    unreadable: List[str] = []
+    for v in versions:
+        if not version_tags(v):
+            continue
+        ref = "%s@%s" % (v["package"], v["version"])
+        try:
+            manifest = json.loads(run(["docker", "buildx", "imagetools", "inspect", "--raw", ref]))
+        except (StepError, ValueError) as exc:
+            unreadable.append("%s: %s" % (ref, exc))
+            continue
+        kids = [m["digest"] for m in manifest.get("manifests", []) if m.get("digest")]
+        if kids:
+            children[(v["package"], v["version"])] = kids
+    return children, unreadable
+
+
+def _tag_add(package: str, digest: str, tag: str) -> None:
+    run(["gcloud", "artifacts", "docker", "tags", "add", "%s@%s" % (package, digest),
+         "%s:%s" % (package, tag)])
+
+
+def _tag_delete(package: str, tag: str) -> None:
+    run(["gcloud", "artifacts", "docker", "tags", "delete", "%s:%s" % (package, tag), "--quiet"])
+
+
 def step_registry(a: argparse.Namespace, now: dt.datetime, ctx: Dict[str, Any]) -> List[str]:
     policy = build_policy(a.keep_versions, a.image_days, a.tag_prefixes)
     wanted = {r["name"] for r in policy}
@@ -331,34 +583,98 @@ def step_registry(a: argparse.Namespace, now: dt.datetime, ctx: Dict[str, Any]) 
                      "--project=" + a.project, "--location=" + a.region])
     armed = policy_names(repo) == wanted and not repo.get("cleanupPolicyDryRun")
     staged = policy_names(repo) == wanted and bool(repo.get("cleanupPolicyDryRun"))
+    # Whatever policy is active right now, of this shape or an older one, is enforcing.
+    enforcing = bool(policy_names(repo)) and not repo.get("cleanupPolicyDryRun")
+    failures: List[str] = []
+
+    def stand_down(why: str) -> str:
+        """Stop an enforcing policy enforcing, so that a failure here cannot be the failure that expires an image."""
+        if not enforcing or a.dry_run:
+            return why
+        _set_policy(a, policy, "--dry-run")
+        return why + "; the active policy was put back into dry run"
 
     versions = run_json(["gcloud", "artifacts", "docker", "images", "list", registry, "--include-tags"])
-    revisions = ctx["remaining"] if "remaining" in ctx else list_revisions(a)
-    selected = simulate(policy, versions, now)
-    lib.info("registry %s: %d versions listed; the policy would expire %d" % (registry, len(versions), len(selected)))
+    # Every consumer, not only this service's: a job and another service pull from this repository
+    # too, and a digest is released only when none of them needs it.
+    try:
+        service_revisions = ctx["remaining"] if "remaining" in ctx else list_revisions(a)
+        consumers, missing = resolve_consumers(
+            revision_consumers(service_revisions, registry)
+            + revision_consumers(list_other_revisions(a), registry, strict=False)
+            + job_consumers(list_jobs(a), registry), versions)
+    except StepError as exc:
+        # Without the consumer list nothing can be pinned, so an enforcing policy is running
+        # unprotected: stop it enforcing rather than leave it to the next run.
+        raise StepError(stand_down("could not establish which images are in use (%s)" % exc))
+    needed = {(c["package"], c["digest"]) for c in consumers}
+    to_add, to_release, pins = plan_pins(needed, versions, now)
+    if missing:
+        to_release = []  # a consumer we could not resolve makes "nothing needs this" unprovable
+        pins = current_pins(versions) | needed
+    lib.info("registry %s: %d versions listed; %d consumers (%d revisions, %d jobs) need %d digests; "
+             "%d pinned already, %d to pin, %d to release" %
+             (registry, len(versions), len(consumers),
+              sum(c["kind"] == "revision" for c in consumers), sum(c["kind"] == "job" for c in consumers),
+              len(needed), len(needed & current_pins(versions)), len(to_add), len(to_release)))
+
+    # Protection first, before the policy is staged, armed or left armed.
+    for package, digest in to_add:
+        if a.dry_run:
+            lib.ok("would pin %s@%s" % (package.rsplit("/", 1)[-1], digest[:19]))
+            continue
+        try:
+            _tag_add(package, digest, pin_tag(digest))
+            lib.ok("pinned %s@%s" % (package.rsplit("/", 1)[-1], digest[:19]))
+        except StepError as exc:
+            raise StepError(stand_down("could not pin %s@%s, so nothing may expire past it (%s)" %
+                                       (package, digest, exc)))
+    for package, digest in to_release:
+        if a.dry_run:
+            lib.ok("would release the pin on %s@%s: no revision or job needs it" %
+                   (package.rsplit("/", 1)[-1], digest[:19]))
+            continue
+        try:
+            _tag_delete(package, pin_tag(digest))
+            lib.ok("released the pin on %s@%s: no revision or job needs it" %
+                   (package.rsplit("/", 1)[-1], digest[:19]))
+        except StepError as exc:
+            pins.add((package, digest))  # still pinned, which is the safe way to have failed
+            failures.append("registry: could not release a pin (%s)" % exc)
+            lib.fail("release pin %s" % digest[:19], [str(exc)])
+
+    future = with_pins(versions, pins)
+    children, unreadable = fetch_children(future)
+    if unreadable:
+        lib.warn("parent/child references not fully modelled; the list below is an upper bound: %s"
+                 % "; ".join(unreadable[:3]))
+    selected = simulate(policy, future, now, children)
+    lib.info("the policy would expire %d versions, over its successive runs" % len(selected))
     for v in selected:
         lib.ok("would expire %s %s %s" % (v["package"].rsplit("/", 1)[-1], v["version"][:19],
                                           ",".join(version_tags(v)) or "(untagged)"))
 
-    hazards = running_hazards(selected, revisions)
+    hazards = running_hazards(selected, consumers)
     if hazards:
-        if armed:
-            _set_policy(a, policy, "--dry-run")
-        raise StepError(
-            "the policy would expire an image a revision still runs (%s)%s. Raise keep-versions, or "
-            "delete the revisions that run them, then re-run." %
-            (", ".join(hazards), "; the armed policy was put back into dry run" if armed else ""))
+        raise StepError(stand_down(
+            "the policy would still expire a digest a revision or job needs (%s) although it is "
+            "pinned" % ", ".join(hazards)))
+    if missing:
+        for sentence in missing:
+            lib.fail("registry", [sentence])
+        raise StepError("not arming or advancing the policy past an image that is already gone: "
+                        + " ".join(missing))
 
     if armed:
         lib.info("registry policy already current (%s); nothing to change." % ", ".join(sorted(wanted)))
-        return []
+        return failures
     if a.dry_run or not staged:
         if staged:
             lib.info("registry policy already staged in dry run; --dry-run changes nothing.")
         else:
             _set_policy(a, policy, "--dry-run")
             lib.warn("registry policy STAGED IN DRY RUN, NOT ARMED. Read the list above; the next run arms it.")
-        return []
+        return failures
     _set_policy(a, policy, "--no-dry-run")
     after = run_json(["gcloud", "artifacts", "repositories", "describe", a.repo,
                       "--project=" + a.project, "--location=" + a.region])
@@ -367,7 +683,46 @@ def step_registry(a: argparse.Namespace, now: dt.datetime, ctx: Dict[str, Any]) 
                         "`gcloud artifacts repositories describe %s`." % a.repo)
     lib.ok("registry policy armed. The registry deletes asynchronously and meters size periodically: "
            "list versions again later, and do not claim a saving until the size is re-measured.")
-    return []
+    return failures
+
+
+def pin_image(argv: Sequence[str]) -> int:
+    """`pin`: protect an image BEFORE a job or service is pointed at it. Exits non-zero if it cannot."""
+    p = argparse.ArgumentParser(prog="deploy-cleanup.py pin",
+                                description="pin an image so the registry policy cannot expire it")
+    for name in ("project", "region", "repo", "image"):
+        p.add_argument("--" + name, required=True)
+    p.add_argument("--hold", default="",
+                   help="add an operator hold (zen-hold-NAME) instead of a pin; the cleanup never removes it")
+    a = p.parse_args(argv)
+    if a.hold and not re.fullmatch(r"[A-Za-z0-9_.-]{1,60}", a.hold):
+        p.error("--hold may contain letters, digits, '_', '.' and '-' only")
+    try:
+        registry = "%s-docker.pkg.dev/%s/%s" % (a.region, a.project, a.repo)
+        package = package_of(a.image)
+        if not package.startswith(registry + "/"):
+            raise StepError("%s is not under %s; refusing to tag an image in another repository." %
+                            (a.image, registry))
+        versions = run_json(["gcloud", "artifacts", "docker", "images", "list", registry, "--include-tags"])
+        wanted_tag = a.image.split("@", 1)[0].rsplit("/", 1)[-1].partition(":")[2]
+        digest = digest_of(a.image) if "@" in a.image else ""
+        for v in versions:
+            if v["package"] == package and (v["version"] == digest or (wanted_tag and wanted_tag in version_tags(v))):
+                digest = v["version"]
+                break
+        else:
+            raise StepError("%s is not in the registry; nothing was pinned, and nothing should point at it." % a.image)
+        tag = (HOLD_PREFIX + a.hold) if a.hold else pin_tag(digest)
+        for v in versions:
+            if v["package"] == package and tag in version_tags(v) and v["version"] != digest:
+                raise StepError("tag %s already protects %s; a tag names one digest, so use another "
+                                "--hold name rather than move it." % (tag, v["version"]))
+        _tag_add(package, digest, tag)
+        lib.ok("%s %s@%s as %s" % ("held" if a.hold else "pinned", package, digest, tag))
+        return 0
+    except StepError as exc:
+        lib.fail("pin", [str(exc)])
+        return 1
 
 
 def _write_policy(policy: Sequence[Dict[str, Any]]) -> str:
@@ -442,6 +797,9 @@ def parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
 
 
 def main(argv: Optional[Sequence[str]] = None, now: Optional[dt.datetime] = None) -> int:
+    args = list(sys.argv[1:] if argv is None else argv)
+    if args[:1] == ["pin"]:
+        return pin_image(args[1:])
     a = parse_args(argv)
     now = now or dt.datetime.now(dt.timezone.utc)
     failures: List[str] = []

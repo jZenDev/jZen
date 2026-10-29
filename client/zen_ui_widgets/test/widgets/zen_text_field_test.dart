@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zen_ui_widgets/src/zen_cupertino_text_form_field.dart';
-import 'package:zen_ui_widgets/src/zen_text_field.dart';
+import 'package:zen_ui_widgets/src/text/zen_cupertino_text_form_field.dart';
+import 'package:zen_ui_widgets/src/text/zen_text_field.dart';
 
 import '../support/a11y.dart';
 

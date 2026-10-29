@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zen_ui_widgets/src/zen_progress_bar.dart';
+import 'package:zen_ui_widgets/src/progress/zen_progress_bar.dart';
 
 import '../support/a11y.dart';
 

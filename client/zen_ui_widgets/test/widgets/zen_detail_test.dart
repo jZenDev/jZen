@@ -5,8 +5,8 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_core/zen_core.dart';
-import 'package:zen_ui_widgets/src/zen_detail_host.dart';
-import 'package:zen_ui_widgets/src/zen_detail_pane.dart';
+import 'package:zen_ui_widgets/src/detail/zen_detail_host.dart';
+import 'package:zen_ui_widgets/src/detail/zen_detail_pane.dart';
 import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 
 const Size wide = Size(1000, 800);

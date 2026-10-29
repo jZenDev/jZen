@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:zen_core/zen_core.dart';
 
-import 'zen_icon_button.dart';
+import 'button/zen_icon_button.dart';
 
 /// An action supplied by the owner of a [ZenListItemActions] row.
 class ZenListItemAction {

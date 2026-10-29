@@ -49,6 +49,12 @@ condition the control already reports (bad number, reversed range).
   once; wrapping makes a screen reader read them two or three times (STANDARDS "Accessibility").
 - **Do not check a range at the call site.** `from <= to` and `min <= max` live in the range widgets.
 
+## Group related UI files
+
+In `client/zen_ui_widgets/lib/src`, put two or more files in the same control family in a
+named folder (including field/range variants and progress controls). A standalone file and
+helpers shared by different families stay at the root. Preserve public exports.
+
 ## One widget per file
 
 A widget class gets **its own file, named for the class in snake_case** (`DemoSplash` ->

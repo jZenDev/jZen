@@ -6,7 +6,7 @@ import 'package:zen_core/zen_core.dart';
 
 import 'detail_button_activation.dart';
 import 'zen_detail_pane.dart';
-import 'zen_page_route.dart';
+import '../page/zen_page_route.dart';
 
 /// The host width, in logical pixels, from which a detail opens beside its list. Narrower, it is a
 /// full-screen push. A pane takes about two fifths of the width and at least 320, so this keeps

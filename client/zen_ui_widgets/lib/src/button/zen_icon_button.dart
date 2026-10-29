@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:zen_core/zen_core.dart';
 
-import 'detail_button_activation.dart';
-import 'focus_ring.dart';
+import '../detail/detail_button_activation.dart';
+import '../focus_ring.dart';
 
 /// The size of a [ZenIconButton]'s target: 48 logical pixels square, a comfortable pointer and
 /// touch target (WCAG 2.5.8 asks for 24).

@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:zen_core/zen_core.dart';
 
-import 'focus_ring.dart';
-import 'zen_progress_indicator.dart';
+import '../focus_ring.dart';
+import '../progress/zen_progress_indicator.dart';
 
 /// How prominent a [ZenButton] is.
 enum ZenButtonVariant {

@@ -2,7 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import 'zen_detail_host.dart';
 import 'zen_detail_scope.dart';
-import 'zen_page_route.dart';
+import '../page/zen_page_route.dart';
 
 /// Opens [builder]'s page as the detail of the list the caller sits in: beside the list when the
 /// window is wide, a full-screen push when it is narrow.

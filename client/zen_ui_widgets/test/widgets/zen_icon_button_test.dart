@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zen_ui_widgets/src/zen_icon_button.dart';
+import 'package:zen_ui_widgets/src/button/zen_icon_button.dart';
 import 'package:zen_ui_widgets/zen_ui_widgets.dart' show FocusRing;
 
 import '../support/a11y.dart';

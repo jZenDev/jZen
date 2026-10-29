@@ -2,7 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'focus_ring.dart';
+import '../focus_ring.dart';
 
 /// The Cupertino half of `ZenTextField`: a labelled [CupertinoTextField] that is also a
 /// [FormField], so `Form.validate()` sees it as it would a Material `TextFormField`.

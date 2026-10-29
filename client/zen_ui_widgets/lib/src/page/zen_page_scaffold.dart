@@ -2,8 +2,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:zen_core/zen_core.dart';
 
-import 'zen_detail_scope.dart';
-import 'zen_icon_button.dart';
+import '../detail/zen_detail_scope.dart';
+import '../button/zen_icon_button.dart';
 
 /// A page: an optional top bar over a body, Cupertino on Apple platforms and Material elsewhere.
 ///

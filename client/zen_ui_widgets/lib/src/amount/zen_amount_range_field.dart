@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'l10n/generated/zen_widgets_localizations.dart';
-import 'pair_layout.dart';
+import '../l10n/generated/zen_widgets_localizations.dart';
+import '../pair_layout.dart';
 import 'zen_amount_field.dart';
 
 /// A minimum and a maximum — a filter's "from amount" and "to amount" — with the invariant that

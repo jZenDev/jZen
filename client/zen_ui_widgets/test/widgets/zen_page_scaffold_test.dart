@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zen_ui_widgets/src/zen_page_scaffold.dart';
+import 'package:zen_ui_widgets/src/page/zen_page_scaffold.dart';
 import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenIconButton;
 
 import '../support/a11y.dart';

@@ -3,7 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zen_ui_widgets/src/zen_message.dart';
+import 'package:zen_ui_widgets/src/message/zen_message.dart';
 
 import '../support/a11y.dart';
 

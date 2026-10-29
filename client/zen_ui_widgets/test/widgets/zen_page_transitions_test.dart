@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_core/zen_core.dart';
-import 'package:zen_ui_widgets/src/zen_page_scaffold.dart' show buildCupertinoPageScaffold;
+import 'package:zen_ui_widgets/src/page/zen_page_scaffold.dart' show buildCupertinoPageScaffold;
 import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 
 /// Pumps a home page, pushes [route] and stops 60 ms into the transition, where a slide has moved

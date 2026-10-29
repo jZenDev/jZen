@@ -37,6 +37,10 @@ This brings up the local Supabase stack, starts the backend on `ZEN_APP_PORT` (d
 to dodge a leftover stack shadowing `:8080`), waits for `/health`, then runs the client in
 Chrome pointed at it. To bring up the admin panel instead, `task run:admin`.
 
+The dashboard includes a localized `ZenListItemActions` example. Its actions report the selection;
+see the [widgets guide](../../client/zen_ui_widgets/README.md#list-item-actions) for integration and
+destructive-action confirmation.
+
 **Signing in — there is no pre-seeded demo account.** The client talks to real Supabase, and the
 local stack auto-confirms sign-ups, so you **register a fresh account in the app** and it logs
 you straight in. The login screen **says this on itself** — a banner points you at Sign Up — so a

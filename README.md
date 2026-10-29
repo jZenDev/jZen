@@ -364,6 +364,7 @@ nine times; fixing a control once in the framework fixes it in every app.
 | You need | Use (`package:zen_ui_widgets/zen_ui_widgets.dart`) | Not |
 |---|---|---|
 | A dialog or sheet for a form/detail | `showAdaptivePresentation` | `showDialog`, `showModalBottomSheet` |
+| Actions on a list item | `ZenListItemActions` with labeled `ZenListItemAction`s | hand-rolled platform-specific row actions |
 | An action button | `ZenButton` (`primary` / `secondary` / `text`) | `ElevatedButton`, `FilledButton`, `OutlinedButton`, `TextButton` |
 | One choice from a list | `ZenSelect<T>` | `DropdownButton`, `DropdownButtonFormField` |
 | A few exclusive options | `ZenSegmentedControl<T>` | `SegmentedButton` |
@@ -388,7 +389,8 @@ will not learn it any other way:
 ## UI controls
 
 Build Flutter screens from the jZen framework's controls, never raw Material equivalents:
-`ZenButton` (not ElevatedButton/FilledButton/OutlinedButton/TextButton), `ZenSelect<T>` (not
+`ZenListItemActions` with `ZenListItemAction` for item actions; `ZenButton` (not
+ElevatedButton/FilledButton/OutlinedButton/TextButton), `ZenSelect<T>` (not
 DropdownButton), `ZenSegmentedControl<T>`, `ZenSwitchRow`, `ZenDateField` / `ZenDateRangeField` (not
 showDatePicker), `ZenTextField` (not TextField/TextFormField), `ZenAmountField` / `ZenAmountRangeField`
 (+ `normalizeAmount`), `ZenProgressIndicator` (not CircularProgressIndicator), and

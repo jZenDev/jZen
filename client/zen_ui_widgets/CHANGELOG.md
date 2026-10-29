@@ -4,6 +4,9 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+- `ZenListItemActions` adapts consumer-supplied row actions to desktop, web and mobile, with a
+  labeled non-swipe alternative on web and mobile.
+
 - `ZenButton`, `ZenSwitchRow`, `ZenSegmentedControl`, `ZenSelect`, `ZenDateField`,
   `ZenDateRangeField`, `ZenAmountField`, `ZenAmountRangeField` (with `normalizeAmount`,
   `parseAmount`, `ZenAmountInputFormatter`), each Cupertino on Apple platforms and Material

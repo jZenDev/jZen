@@ -49,6 +49,7 @@ export 'src/zen_date_range_field.dart' show ZenDateRangeField;
 export 'src/zen_detail.dart' show showZenDetail;
 export 'src/zen_detail_host.dart' show ZenDetailHost, ZenDetailHostState, zenDetailMinWidth;
 export 'src/zen_icon_button.dart' show ZenIconButton, zenIconButtonSize;
+export 'src/zen_list_item_actions.dart' show ZenListItemAction, ZenListItemActions;
 export 'src/zen_message.dart' show showZenMessage, zenMessageDuration;
 export 'src/zen_page_route.dart' show ZenPageRoute;
 export 'src/zen_page_scaffold.dart' show ZenPageScaffold;

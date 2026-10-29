@@ -30,5 +30,14 @@
 
   "profileLoading": "Завантаження профілю...",
   "profileError": "Не вдалося завантажити профіль: {error}",
-  "profileBio": "Біографія"
+  "profileBio": "Біографія",
+
+  "itemActionsSection": "Дії з елементом",
+  "exampleItem": "Приклад елемента",
+  "editItem": "Редагувати елемент",
+  "deleteItem": "Видалити елемент",
+  "showItemActions": "Показати дії",
+  "hideItemActions": "Сховати дії",
+  "itemActionSelected": "Обрано дію: {action}",
+  "@itemActionSelected": {"placeholders": {"action": {"type": "String"}}}
 }

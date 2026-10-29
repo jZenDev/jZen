@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:zen_core/zen_core.dart';
 
+import 'detail_button_activation.dart';
 import 'zen_detail_pane.dart';
 import 'zen_page_route.dart';
 
@@ -31,6 +32,8 @@ const double _paneFraction = 0.4;
 /// is tree-shaken. The width is a run-time decision, because a window can be resized.
 ///
 /// The list keeps its state (its scroll position, its selection) while a detail opens and closes.
+/// An icon button that synchronously opens a wide pane is highlighted until it closes or is
+/// replaced; a narrow push does not highlight it. No caller state is required.
 /// Narrowing the window under an open detail turns it into the full-screen push; widening it
 /// again leaves a pushed page where it is.
 class ZenDetailHost extends StatefulWidget {
@@ -58,7 +61,11 @@ class ZenDetailHostState extends State<ZenDetailHost> {
     _opener = FocusManager.instance.primaryFocus;
     final Completer<T?> completer = Completer<T?>();
     setState(() {
-      _open = _OpenDetail(builder, (Object? result) => completer.complete(result as T?));
+      _open = _OpenDetail(
+        builder,
+        (Object? result) => completer.complete(result as T?),
+        activateDetailButton(),
+      );
     });
     return completer.future;
   }
@@ -77,6 +84,7 @@ class ZenDetailHostState extends State<ZenDetailHost> {
     } else {
       _open = null;
     }
+    detail.deactivate?.call();
     detail.complete(result);
     if (opener != null && opener.context?.mounted == true && opener.canRequestFocus) {
       opener.requestFocus();
@@ -89,6 +97,7 @@ class ZenDetailHostState extends State<ZenDetailHost> {
     if (detail == null || !mounted) return;
     setState(() => _open = null);
     _opener = null;
+    detail.deactivate?.call();
     Navigator.of(
       context,
     ).push<Object?>(ZenPageRoute<Object?>(builder: detail.builder)).then(detail.complete);
@@ -98,6 +107,7 @@ class ZenDetailHostState extends State<ZenDetailHost> {
   void dispose() {
     final _OpenDetail? detail = _open;
     _open = null;
+    detail?.deactivate?.call();
     detail?.complete(null);
     super.dispose();
   }
@@ -131,32 +141,52 @@ class ZenDetailHostState extends State<ZenDetailHost> {
 }
 
 class _OpenDetail {
-  _OpenDetail(this.builder, this.complete);
+  _OpenDetail(this.builder, this.complete, this.deactivate);
 
   final WidgetBuilder builder;
   final void Function(Object? result) complete;
+  final VoidCallback? deactivate;
 }
 
 /// Apple: the pane is a column of the layout, and the list narrows. Exposed to the package's
 /// tests, which cannot reach the branch the host platform did not compile.
 Widget buildApplePanes(BuildContext context, Widget list, Widget? pane, double width) {
   final ColorScheme scheme = Theme.of(context).colorScheme;
+  final Duration duration = MediaQuery.disableAnimationsOf(context)
+      ? Duration.zero
+      : const Duration(milliseconds: 200);
   return Row(
     children: <Widget>[
       Expanded(child: list),
-      if (pane != null) ...<Widget>[
-        ColoredBox(
-          color: scheme.outlineVariant,
-          child: const SizedBox(width: 1, height: double.infinity),
+      AnimatedSwitcher(
+        duration: duration,
+        transitionBuilder: (Widget child, Animation<double> animation) => SizeTransition(
+          sizeFactor: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+          axis: Axis.horizontal,
+          axisAlignment: 1,
+          child: child,
         ),
-        SizedBox(
-          width: width,
-          child: ColoredBox(
-            color: scheme.surface,
-            child: Material(type: MaterialType.transparency, child: pane),
-          ),
-        ),
-      ],
+        child: pane == null
+            ? const SizedBox.shrink()
+            : SizedBox(
+                key: const ValueKey<String>('detail'),
+                width: width + 1,
+                child: Row(
+                  children: <Widget>[
+                    ColoredBox(
+                      color: scheme.outlineVariant,
+                      child: const SizedBox(width: 1, height: double.infinity),
+                    ),
+                    Expanded(
+                      child: ColoredBox(
+                        color: scheme.surface,
+                        child: Material(type: MaterialType.transparency, child: pane),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+      ),
     ],
   );
 }
@@ -168,27 +198,31 @@ Widget buildMaterialPanes(BuildContext context, Widget list, Widget? pane, doubl
   return Stack(
     children: <Widget>[
       Positioned.fill(child: list),
-      if (pane != null)
-        Positioned(
-          top: 0,
-          bottom: 0,
-          right: 0,
-          width: width,
-          child: TweenAnimationBuilder<double>(
-            key: ValueKey<Key?>(pane.key),
-            tween: Tween<double>(begin: 1, end: 0),
-            duration: still ? Duration.zero : const Duration(milliseconds: 200),
-            curve: Curves.easeOutCubic,
-            builder: (BuildContext context, double t, Widget? child) =>
-                FractionalTranslation(translation: Offset(t, 0), child: child),
-            child: Material(
-              elevation: 3,
-              color: scheme.surfaceContainerLow,
-              clipBehavior: Clip.antiAlias,
-              child: pane,
-            ),
+      Positioned(
+        top: 0,
+        bottom: 0,
+        right: 0,
+        width: width,
+        child: AnimatedSwitcher(
+          duration: still ? Duration.zero : const Duration(milliseconds: 200),
+          transitionBuilder: (Widget child, Animation<double> animation) => SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(1, 0),
+              end: Offset.zero,
+            ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
+            child: child,
           ),
+          child: pane == null
+              ? const SizedBox.shrink()
+              : Material(
+                  key: const ValueKey<String>('detail'),
+                  elevation: 3,
+                  color: scheme.surfaceContainerLow,
+                  clipBehavior: Clip.antiAlias,
+                  child: pane,
+                ),
         ),
+      ),
     ],
   );
 }

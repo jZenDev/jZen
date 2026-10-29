@@ -1,6 +1,8 @@
 {
   "@@locale": "en",
 
+  "homeAccounts": "Accounts",
+  "homeReminders": "Reminders",
   "homeTitle": "Home",
   "homeWelcome": "Welcome to the jZen Navigation Demo",
   "homeDescription": "This app demonstrates the adaptive navigation capabilities of the zen_ui_navigation package.",

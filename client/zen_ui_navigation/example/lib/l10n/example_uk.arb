@@ -1,6 +1,8 @@
 {
   "@@locale": "uk",
 
+  "homeAccounts": "Рахунки",
+  "homeReminders": "Нагадування",
   "homeTitle": "Головна",
   "homeWelcome": "Ласкаво просимо до демонстрації навігації jZen",
   "homeDescription": "Цей застосунок демонструє можливості адаптивної навігації пакета zen_ui_navigation.",

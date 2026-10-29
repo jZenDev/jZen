@@ -17,6 +17,9 @@ dependencies:
   zen_ui_navigation:
     path: ../
 
+  zen_ui_widgets:
+    path: ../../zen_ui_widgets
+
   zen_core:
     path: ../../zen_core
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 
 import '../l10n/generated/example_localizations.dart';
 import 'feature_item.dart';
@@ -11,35 +12,67 @@ class HomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final messages = ExampleLocalizations.of(context);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(messages.homeTitle),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
-      // Scrollable, because real prose does not fit a short viewport. Until this step the
-      // screen rendered bare message keys (the strings were never actually loaded), so the
-      // overflow only became visible once the generated wording arrived.
-      body: SingleChildScrollView(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const SizedBox(height: 24),
-            Icon(Icons.home, size: 120, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 24),
-            Text(
-              messages.homeWelcome,
-              style: Theme.of(context).textTheme.headlineSmall,
-              textAlign: TextAlign.center,
+    return ZenDetailHost(
+      child: Builder(
+        builder: (context) => Scaffold(
+          appBar: AppBar(
+            title: Text(messages.homeTitle),
+            actions: [
+              ZenIconButton(
+                icon: Icons.list,
+                label: messages.homeAccounts,
+                onPressed: () {
+                  showZenDetail<void>(
+                    context,
+                    builder: (_) => ZenPageScaffold(
+                      title: messages.homeAccounts,
+                      body: const SizedBox.expand(),
+                    ),
+                  );
+                },
+              ),
+              ZenIconButton(
+                icon: Icons.notifications_outlined,
+                label: messages.homeReminders,
+                onPressed: () {
+                  showZenDetail<void>(
+                    context,
+                    builder: (_) => ZenPageScaffold(
+                      title: messages.homeReminders,
+                      body: const SizedBox.expand(),
+                    ),
+                  );
+                },
+              ),
+            ],
+            backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+          ),
+          // Scrollable, because real prose does not fit a short viewport. Until this step the
+          // screen rendered bare message keys (the strings were never actually loaded), so the
+          // overflow only became visible once the generated wording arrived.
+          body: SingleChildScrollView(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                const SizedBox(height: 24),
+                Icon(Icons.home, size: 120, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(height: 24),
+                Text(
+                  messages.homeWelcome,
+                  style: Theme.of(context).textTheme.headlineSmall,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  child: Text(messages.homeDescription, textAlign: TextAlign.center),
+                ),
+                const SizedBox(height: 32),
+                _buildFeatureList(context, messages),
+              ],
             ),
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(messages.homeDescription, textAlign: TextAlign.center),
-            ),
-            const SizedBox(height: 32),
-            _buildFeatureList(context, messages),
-          ],
+          ),
         ),
       ),
     );

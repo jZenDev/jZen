@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:zen_core/zen_core.dart';
 
+import 'detail_button_activation.dart';
 import 'focus_ring.dart';
 
 /// The size of a [ZenIconButton]'s target: 48 logical pixels square, a comfortable pointer and
@@ -34,8 +35,13 @@ const Map<ShortcutActivator, Intent> _enterActivates = <ShortcutActivator, Inten
 ///   corner. It is read with the name ("Reminders, 3"), once: the drawn digits are not a second
 ///   node. A null or zero [badge] draws nothing.
 ///
+/// When [onPressed] synchronously opens a wide `showZenDetail` pane, the button is
+/// highlighted and announced as selected until that pane closes or is replaced. No application
+/// state is needed. A full-screen push does not select the button; delayed asynchronous opens
+/// cannot be associated with the original activation.
+///
 /// A null [onPressed] disables the button.
-class ZenIconButton extends StatelessWidget {
+class ZenIconButton extends StatefulWidget {
   /// Creates an icon button showing [icon], named [label].
   const ZenIconButton({
     required this.icon,
@@ -59,11 +65,61 @@ class ZenIconButton extends StatelessWidget {
   final int? badge;
 
   @override
+  State<ZenIconButton> createState() => _ZenIconButtonState();
+}
+
+class _ZenIconButtonState extends State<ZenIconButton> {
+  bool _detailSelected = false;
+  int _activation = 0;
+
+  VoidCallback _activateDetail() {
+    final int activation = ++_activation;
+    if (mounted) setState(() => _detailSelected = true);
+    return () {
+      if (mounted && activation == _activation) setState(() => _detailSelected = false);
+    };
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final bool selected = _detailSelected;
+    final VoidCallback? onPressed = widget.onPressed == null
+        ? null
+        : () => runDetailButtonCallback(widget.onPressed!, _activateDetail);
     return FocusRing.wrapping(
-      child: zenIsApplePlatform
-          ? buildCupertinoIconButton(context, icon, label, onPressed, badge: badge)
-          : buildMaterialIconButton(context, icon, label, onPressed, badge: badge),
+      child: MergeSemantics(
+        child: Semantics(
+          selected: selected,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: selected ? Theme.of(context).colorScheme.secondaryContainer : null,
+            ),
+            child: IconTheme.merge(
+              data: IconThemeData(
+                color: selected ? Theme.of(context).colorScheme.onSecondaryContainer : null,
+              ),
+              child: Builder(
+                builder: (BuildContext buttonContext) => zenIsApplePlatform
+                    ? buildCupertinoIconButton(
+                        buttonContext,
+                        widget.icon,
+                        widget.label,
+                        onPressed,
+                        badge: widget.badge,
+                      )
+                    : buildMaterialIconButton(
+                        buttonContext,
+                        widget.icon,
+                        widget.label,
+                        onPressed,
+                        badge: widget.badge,
+                      ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -1,4 +1,7 @@
+import 'dart:ui' show Tristate;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_core/zen_core.dart';
@@ -77,6 +80,93 @@ Future<void> open(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets('icon buttons track the open pane, replacement and close', (tester) async {
+    final SemanticsHandle handle = tester.ensureSemantics();
+    await pumpHost(
+      tester,
+      Builder(
+        builder: (context) => Scaffold(
+          body: Row(
+            children: [
+              ZenIconButton(
+                icon: Icons.list,
+                label: 'Accounts',
+                onPressed: () {
+                  showZenDetail<void>(context, builder: (_) => const _Goal('Accounts pane'));
+                },
+              ),
+              ZenIconButton(
+                icon: Icons.notifications,
+                label: 'Reminders',
+                onPressed: () {
+                  showZenDetail<void>(context, builder: (_) => const _Goal('Reminders pane'));
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    Tristate selected(String label) => tester
+        .getSemantics(find.bySemanticsLabel(label))
+        .getSemanticsData()
+        .flagsCollection
+        .isSelected;
+    expect(selected('Accounts'), Tristate.isFalse);
+    await tester.tap(find.bySemanticsLabel('Accounts'));
+    await tester.pumpAndSettle();
+    expect(selected('Accounts'), Tristate.isTrue);
+    expect(selected('Reminders'), Tristate.isFalse);
+    await tester.tap(find.bySemanticsLabel('Reminders'));
+    await tester.pumpAndSettle();
+    expect(selected('Accounts'), Tristate.isFalse);
+    expect(selected('Reminders'), Tristate.isTrue);
+    await tester.tap(find.bySemanticsLabel('Close'));
+    await tester.pumpAndSettle();
+    expect(selected('Reminders'), Tristate.isFalse);
+    handle.dispose();
+  });
+
+  testWidgets('keyboard activation selects and Escape clears the opener', (tester) async {
+    final SemanticsHandle handle = tester.ensureSemantics();
+    await pumpHost(
+      tester,
+      Builder(
+        builder: (context) => Scaffold(
+          body: ZenIconButton(
+            icon: Icons.list,
+            label: 'Accounts',
+            onPressed: () {
+              showZenDetail<void>(context, builder: (_) => const _Goal('Accounts pane'));
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .getSemantics(find.bySemanticsLabel('Accounts'))
+          .getSemanticsData()
+          .flagsCollection
+          .isSelected,
+      Tristate.isTrue,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .getSemantics(find.bySemanticsLabel('Accounts'))
+          .getSemanticsData()
+          .flagsCollection
+          .isSelected,
+      Tristate.isFalse,
+    );
+    handle.dispose();
+  });
+
   group('on a wide host', () {
     testWidgets('opens beside the list, which stays', (tester) async {
       final List<Future<Object?>> opened = <Future<Object?>>[];
@@ -298,6 +388,52 @@ void main() {
 
     const Key listKey = Key('list');
     const Key paneKey = Key('pane');
+
+    for (final bool apple in <bool>[true, false]) {
+      for (final bool reducedMotion in <bool>[false, true]) {
+        testWidgets(
+          '${apple ? 'Apple' : 'Material'} transitions respect reduced motion: $reducedMotion',
+          (tester) async {
+            tester.view.physicalSize = wide;
+            tester.view.devicePixelRatio = 1;
+            addTearDown(tester.view.reset);
+            Widget screen(bool open) => MaterialApp(
+              home: Builder(
+                builder: (context) => MediaQuery(
+                  data: MediaQuery.of(context).copyWith(disableAnimations: reducedMotion),
+                  child: Builder(
+                    builder: (context) => (apple ? buildApplePanes : buildMaterialPanes)(
+                      context,
+                      const SizedBox.expand(key: listKey),
+                      open ? const SizedBox.expand(key: paneKey) : null,
+                      400,
+                    ),
+                  ),
+                ),
+              ),
+            );
+            await tester.pumpWidget(screen(false));
+            await tester.pumpWidget(screen(true));
+            await tester.pump(const Duration(milliseconds: 100));
+            final double midway = apple
+                ? tester.getSize(find.byKey(listKey)).width
+                : tester.getTopLeft(find.byKey(paneKey)).dx;
+            expect(
+              midway,
+              reducedMotion
+                  ? wide.width - (apple ? 401 : 400)
+                  : greaterThan(wide.width - (apple ? 401 : 400)),
+            );
+            await tester.pumpAndSettle();
+            await tester.pumpWidget(screen(false));
+            await tester.pump(const Duration(milliseconds: 100));
+            expect(find.byKey(paneKey), reducedMotion ? findsNothing : findsOneWidget);
+            await tester.pumpAndSettle();
+            expect(find.byKey(paneKey), findsNothing);
+          },
+        );
+      }
+    }
 
     testWidgets('Apple: the list narrows to make room', (tester) async {
       await pumpPanes(

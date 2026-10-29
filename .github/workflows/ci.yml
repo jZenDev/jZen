@@ -39,7 +39,8 @@ jobs:
   # Contract drift, docs drift, the Dart/Flutter libraries, and the admin typecheck. Needs the full
   # toolchain because verify:contracts regenerates across all three languages.
   gates:
-    runs-on: ubuntu-latest
+    # Python 3.9 is available for 24.04, but not the 26.04 latest image.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -83,7 +84,7 @@ jobs:
       # even though no other job does. Floored, not pinned, exactly as `task doctor` checks it:
       # 3.9 is the floor these scripts are written to, so CI runs the oldest thing they support
       # rather than the newest, and an incompatibility surfaces here instead of on a contributor's
-      # Mac carrying only Xcode's 3.9.6. ubuntu-latest ships a newer python3 that would otherwise
+      # Mac carrying only Xcode's 3.9.6. The runner ships a newer python3 that would otherwise
       # be picked up implicitly — declaring it is what keeps CI from drifting off the floor.
       - name: Python (floor, see STANDARDS "Scripting")
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0

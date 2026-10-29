@@ -1,4 +1,5 @@
 import 'package:zen_ui_navigation/zen_ui_navigation.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -26,6 +27,7 @@ class NavigationExampleApp extends ConsumerWidget {
       localizationsDelegates: const [
         ...ExampleLocalizations.localizationsDelegates,
         NavigationLocalizations.delegate,
+        ZenWidgetsLocalizations.delegate,
       ],
       supportedLocales: ExampleLocalizations.supportedLocales,
       theme: ThemeData(

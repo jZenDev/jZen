@@ -18,7 +18,8 @@ permissions:
 
 jobs:
   audit:
-    runs-on: ubuntu-latest
+    # Keep Python 3.9 available for the scripts' supported floor.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
 

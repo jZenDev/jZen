@@ -5,7 +5,7 @@ Registers via the running backend, then flips its `users.role` to `admin` in Pos
 in the table and are loaded by `RoleAugmentor`, never read from the JWT, so registering is not
 enough on its own.
 
-    scripts/seed-admin.py [--email E] [--password P] [--port N]
+    scripts/seed-admin.py --password P [--email E] [--port N]
 
 **Why this one script is Python while the runners beside it are sh** (STANDARDS "Scripting",
 ADR-032): it supervises no process and traps no signals. What it does is *construct* structured
@@ -42,7 +42,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import lib  # noqa: E402  (sibling module; sys.path is set immediately above)
 
 DEFAULT_EMAIL = "admin@jzen.local"
-DEFAULT_PASSWORD = "password123"
 DEFAULT_PORT = 8085
 DB_CONTAINER = "supabase_db_jzen"
 ADMIN_URL = "http://localhost:5173"
@@ -119,7 +118,7 @@ def main(argv: "list[str] | None" = None) -> int:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--email", default=DEFAULT_EMAIL)
-    p.add_argument("--password", default=DEFAULT_PASSWORD)
+    p.add_argument("--password", required=True, help="Password for the local admin account")
     p.add_argument("--port", type=int, default=int(os.environ.get("ZEN_APP_PORT", DEFAULT_PORT)))
     args = p.parse_args(argv)
 
@@ -136,7 +135,7 @@ def main(argv: "list[str] | None" = None) -> int:
 
     lib.info(f"Admin ready. Log in at {ADMIN_URL}")
     lib.info(f"  email:    {args.email}")
-    lib.info(f"  password: {args.password}")
+    lib.info("Use the password supplied for a new account; an existing account keeps its password.")
     return 0
 
 

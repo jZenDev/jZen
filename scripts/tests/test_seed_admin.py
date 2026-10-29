@@ -98,8 +98,12 @@ class PromoteCommandTest(unittest.TestCase):
 class ArgumentTest(unittest.TestCase):
     def test_defaults_match_the_documented_ones(self) -> None:
         self.assertEqual("admin@jzen.local", sa.DEFAULT_EMAIL)
-        self.assertEqual("password123", sa.DEFAULT_PASSWORD)
         self.assertEqual(8085, sa.DEFAULT_PORT)
+
+    def test_password_must_be_supplied(self) -> None:
+        with self.assertRaises(SystemExit) as raised:
+            sa.main([])
+        self.assertEqual(2, raised.exception.code)
 
 
 if __name__ == "__main__":

@@ -25,6 +25,8 @@ and **Material everywhere else**, so an app never hand-rolls a platform check.
 - **Controls** — `ZenButton` (primary, secondary, text), `ZenSwitchRow`, `ZenSegmentedControl`,
   `ZenSelect`, `ZenDateField`, `ZenTextField`, `ZenAmountField`, `ZenProgressIndicator`, `ZenProgressBar`, and the paired `ZenDateRangeField` /
   `ZenAmountRangeField`, which enforce `from <= to` / `min <= max` in one place.
+- **List item actions** — `ZenListItemActions` adapts row actions to desktop, web, and native
+  mobile while leaving labels and callbacks to the application.
 - **Accessible by construction** — WCAG 2.2 AA: one announcement per control, a `FocusRing` that
   shows for keyboard and assistive technology and hides for a pointer, AA contrast in light and
   dark, text that reflows at 200%. Each control ships with semantics, keyboard and contrast tests.
@@ -76,6 +78,56 @@ The controls' few strings (validation errors, "Select a date") come from
 | `ZenProgressIndicator` | `CupertinoActivityIndicator` | `CircularProgressIndicator` |
 | `ZenProgressBar` | rounded bar in the theme's primary | `LinearProgressIndicator` |
 
+## List item actions
+
+Wrap each list item's content in `ZenListItemActions` and supply `ZenListItemAction`s.
+For example, inside a `ListView.builder`:
+
+```dart
+final item = items[index];
+return ZenListItemActions(
+  key: ValueKey(item.id),
+  showActionsLabel: messages.showActions,
+  hideActionsLabel: messages.hideActions,
+  child: Text(item.title),
+  actions: [
+    ZenListItemAction(
+      icon: Icons.edit,
+      label: messages.editItem,
+      onPressed: () => editItem(item),
+    ),
+    ZenListItemAction(
+      icon: Icons.delete,
+      label: messages.deleteItem,
+      onPressed: () => confirmAndDeleteItem(item),
+    ),
+  ],
+);
+```
+
+Import `Icons` from Flutter's Material library and the widget from
+`package:zen_ui_widgets/zen_ui_widgets.dart`. The example's `messages`, `items`, and callbacks
+belong to the application; use its localized strings for every action and both toggle labels.
+A null `onPressed` disables an action. The widget invokes callbacks but does not delete data or
+show a confirmation: the application decides when and how to confirm a destructive action.
+
+| Build target (`ZEN_PLATFORM`) | How actions are revealed |
+|---|---|
+| `macos`, `windows`, `linux` | Continuously visible in the row. |
+| `web` | Hover or keyboard focus reveals them with a fade. The visible actions toggle also works with touch. |
+| `ios`, `android` | Swipe toward the start of the row; swipe toward the end to close. The visible actions toggle provides a non-swipe alternative. |
+
+The fade respects the system's reduced-motion setting. Hidden actions are excluded from pointer,
+keyboard, and accessibility interaction. Action buttons have the supplied accessible labels and
+focus indicators. The toggle is a separate keyboard and assistive-technology control; do not add
+another semantics wrapper around the buttons. Give rows stable keys when items can be reordered,
+so an open row stays associated with the same item. Each action reserves 48 logical pixels even
+while hidden, so keep the action count appropriate for the available row width.
+
+The [demo dashboard](../../apps/zen_demo/zen_demo_client/lib/src/screens/dashboard_screen.dart)
+shows an example with localized labels and callbacks. Its delete action only reports the selection;
+a real application supplies its own confirmation and deletion behavior.
+
 ## 🤖 For applications and their coding agents
 
 **Build screens from these controls, not raw Material.** A product on jZen should not hand-roll an
@@ -90,7 +142,8 @@ Copy this into your application's `CLAUDE.md` (or equivalent agent instructions)
 ## UI controls
 
 Build Flutter screens from the jZen framework's controls, never raw Material equivalents:
-`ZenButton` (not ElevatedButton/FilledButton/OutlinedButton/TextButton), `ZenSelect<T>` (not
+`ZenListItemActions` with `ZenListItemAction` for item actions; `ZenButton` (not
+ElevatedButton/FilledButton/OutlinedButton/TextButton), `ZenSelect<T>` (not
 DropdownButton), `ZenSegmentedControl<T>`, `ZenSwitchRow`, `ZenDateField` / `ZenDateRangeField` (not
 showDatePicker), `ZenTextField` (not TextField/TextFormField), `ZenAmountField` / `ZenAmountRangeField`
 (+ `normalizeAmount`), `ZenProgressIndicator` (not CircularProgressIndicator), `ZenProgressBar` (not LinearProgressIndicator), and

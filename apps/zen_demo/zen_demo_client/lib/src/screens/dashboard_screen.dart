@@ -21,6 +21,7 @@ class DemoDashboardScreen extends ConsumerStatefulWidget {
 
 class _DemoDashboardScreenState extends ConsumerState<DemoDashboardScreen> {
   String? _pingResult;
+  String? _itemAction;
   ZenWebSocket? _socket;
   StreamSubscription<WebSocketMessage>? _subscription;
   String _wsStatus = 'disconnected';
@@ -130,6 +131,29 @@ class _DemoDashboardScreenState extends ConsumerState<DemoDashboardScreen> {
           const SizedBox(height: 8),
           Text(messages.wsStatus(_wsStatus)),
           if (_wsEcho != null) Text(messages.wsReceived(_wsEcho!)),
+          const Divider(height: 32),
+          Text(messages.itemActionsSection, style: Theme.of(context).textTheme.titleMedium),
+          ZenListItemActions(
+            showActionsLabel: messages.showItemActions,
+            hideActionsLabel: messages.hideItemActions,
+            actions: [
+              ZenListItemAction(
+                icon: Icons.edit,
+                label: messages.editItem,
+                onPressed: () => setState(() => _itemAction = messages.editItem),
+              ),
+              ZenListItemAction(
+                icon: Icons.delete,
+                label: messages.deleteItem,
+                onPressed: () => setState(() => _itemAction = messages.deleteItem),
+              ),
+            ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(messages.exampleItem),
+            ),
+          ),
+          if (_itemAction != null) Text(messages.itemActionSelected(_itemAction!)),
         ],
       ),
     );

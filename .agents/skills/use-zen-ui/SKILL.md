@@ -17,6 +17,7 @@ Import `package:zen_ui_widgets/zen_ui_widgets.dart` and use:
 | You need | Use | Not |
 |---|---|---|
 | Dialog or sheet for a form/detail | `showAdaptivePresentation<T>(context, builder: ...)` | `showDialog`, `showModalBottomSheet` |
+| List item actions | `ZenListItemActions` with labeled `ZenListItemAction`s; the app supplies callbacks and any deletion confirmation | per-platform row gestures or action buttons |
 | Action button | `ZenButton(label:, onPressed:, variant:)` - `primary`, `secondary`, `text`; `isLoading`, `icon` | `ElevatedButton`, `FilledButton`, `OutlinedButton`, `TextButton` |
 | One choice from a list | `ZenSelect<T>(label:, items:, itemLabel:, value:, onChanged:)` | `DropdownButton(FormField)` |
 | Few exclusive options | `ZenSegmentedControl<T>(segments: [ZenSegment(value:, label:)], selected:, onChanged:)` | `SegmentedButton` |

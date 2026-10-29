@@ -672,6 +672,7 @@ fixes one screen.
 | A dialog or sheet for a form or detail | `showAdaptivePresentation` | `showDialog`, `showModalBottomSheet` |
 | The detail of a list item (a goal, an occurrence) | `showZenDetail` inside a `ZenDetailHost`: beside the list when wide (a pane on Apple, a side sheet elsewhere), a push when narrow (ADR-061) | `Navigator.push(MaterialPageRoute(...))` |
 | A pushed full-screen page | `ZenPageRoute` (and `ThemeData(pageTransitionsTheme: ZenPageTransitions.theme)` for the rest): the iOS slide on iOS, a fade on macOS | a bare `MaterialPageRoute`, whose macOS default is the iOS slide |
+| Actions on a list item | `ZenListItemActions` with labeled `ZenListItemAction`s; the application owns callbacks and confirmation | per-platform row action gestures or buttons |
 | An action button | `ZenButton` (`primary` / `secondary` / `text`) | `ElevatedButton`, `FilledButton`, `OutlinedButton`, `TextButton` |
 | An icon-only button (back, close, log out), with an optional count badge | `ZenIconButton` (a required `label` is its name; `badge:` is read with it) | `IconButton`, `CupertinoButton` around an `Icon` |
 | A page: a top bar (title, back, actions) over a body | `ZenPageScaffold` | `Scaffold` + `AppBar`, `CupertinoPageScaffold` + `CupertinoNavigationBar` |

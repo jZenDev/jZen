@@ -53,6 +53,7 @@ class EmailFailureTest {
   private static final long POLL_INTERVAL_MS = 50;
   private static final String REJECTED_RECIPIENT = "smtp-rejected@example.com";
 
+  // Registration uses a synthetic password and this mock, not a real identity provider.
   @InjectMock @RestClient SupabaseAuthClient authClient;
   @Inject EmailService emailService;
 

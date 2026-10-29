@@ -48,6 +48,7 @@ class AuthResourceTest {
   private static final String PROTOBUF = "application/x-protobuf";
   private static final String HEADER = "X-Zen-Transport";
 
+  // Passwords in these requests are synthetic; this mock prevents sending them to Supabase.
   @InjectMock @RestClient SupabaseAuthClient authClient;
 
   /** The real bean: the tests assert against whatever this deployment actually permits. */

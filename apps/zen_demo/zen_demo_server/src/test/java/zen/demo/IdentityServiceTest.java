@@ -46,6 +46,7 @@ import org.junit.jupiter.api.Test;
 @QuarkusTest
 class IdentityServiceTest {
 
+  // Password and token fixtures exercise argument handling only through this mocked client.
   @InjectMock @RestClient SupabaseAuthClient authClient;
 
   @Inject IdentityService identityService;

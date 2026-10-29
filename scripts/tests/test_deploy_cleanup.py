@@ -48,6 +48,11 @@ if os.path.basename(sys.argv[0]) == "gcloud":
     if argv[:3] == ["run", "services", "describe"]:
         out = json.dumps(state["service"])
     elif argv[:3] == ["run", "revisions", "list"]:
+        if state.get("fail_list"):
+            print("PERMISSION_DENIED", file=sys.stderr)
+            with open(path, "w") as f:
+                json.dump(state, f)
+            sys.exit(1)
         out = json.dumps(state["revisions"])
     elif argv[:3] == ["run", "revisions", "delete"]:
         if argv[3] in state.get("fail_delete", []):
@@ -164,6 +169,37 @@ class Harness(unittest.TestCase):
         marks = ("revisions delete", "set-cleanup-policies", "rmi ", "prune")
         return [c for c in calls if any(m in c for m in marks)]
 
+    def test_failed_revision_delete_skips_registry_in_fail_and_warn_modes(self) -> None:
+        for mode, expected in (("fail", 1), ("warn", 0)):
+            with self.subTest(mode=mode):
+                state = scenario(staged=True)
+                state["fail_delete"] = ["r8"]
+                self.load(state)
+                code, out = self.run_cleanup("--on-failure", mode)
+                calls = self.state()["calls"]
+                self.assertEqual(expected, code)
+                self.assertIn("the deploy itself succeeded", out)
+                self.assertIn("revision step failed", out)
+                self.assertTrue(any("revisions delete r8" in c for c in calls))
+                self.assertFalse(any("artifacts repositories" in c or "artifacts docker" in c
+                                     for c in calls))
+                self.assertTrue(any("docker " in c for c in calls))
+
+    def test_failed_revision_list_skips_registry_in_fail_and_warn_modes(self) -> None:
+        for mode, expected in (("fail", 1), ("warn", 0)):
+            with self.subTest(mode=mode):
+                state = scenario(staged=True)
+                state["fail_list"] = True
+                self.load(state)
+                code, out = self.run_cleanup("--on-failure", mode)
+                calls = self.state()["calls"]
+                self.assertEqual(expected, code)
+                self.assertIn("the deploy itself succeeded", out)
+                self.assertIn("PERMISSION_DENIED", out)
+                self.assertFalse(any("artifacts repositories" in c or "artifacts docker" in c
+                                     for c in calls))
+                self.assertTrue(any("docker " in c for c in calls))
+
 
 class PolicyTest(unittest.TestCase):
     def test_policy_keeps_newest_and_never_deletes_untagged_without_it(self) -> None:
@@ -235,6 +271,15 @@ class DockerSelectionTest(unittest.TestCase):
 
 
 class EndToEndTest(Harness):
+    def test_missing_revision_digest_does_not_arm_policy(self) -> None:
+        state = scenario(staged=True)
+        state["revisions"][0]["status"] = {}
+        self.load(state)
+        code, out = self.run_cleanup(docker="off")
+        self.assertEqual(1, code, out)
+        self.assertIn("no usable image digest", out)
+        self.assertFalse(any("--no-dry-run" in c for c in self.state()["calls"]))
+
     def test_first_run_stages_the_policy_in_dry_run_and_does_not_arm_it(self) -> None:
         self.load(scenario())
         code, out = self.run_cleanup()

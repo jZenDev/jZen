@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_ui_widgets/src/zen_message.dart';
@@ -151,6 +153,74 @@ void main() {
         await tester.tap(
           entry.key == 'cupertino' ? find.text('Deleted') : find.byIcon(Icons.close),
         );
+        await tester.pumpAndSettle();
+        expect(find.text('Deleted'), findsNothing);
+      });
+
+      testWidgets('action expires after navigation', (tester) async {
+        final context = await pumpScreen(tester);
+        entry.value(context, 'Deleted', actionLabel: 'Undo', onAction: () {});
+        await tester.pumpAndSettle();
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('Next'))));
+        await tester.pumpAndSettle();
+        expect(find.text('Deleted'), findsOneWidget);
+        await tester.pump(zenMessageDuration);
+        await tester.pumpAndSettle();
+        expect(find.text('Deleted'), findsNothing);
+      });
+
+      testWidgets('keyboard can reach the action after navigation', (tester) async {
+        final context = await pumpScreen(tester);
+        var actions = 0;
+        entry.value(context, 'Deleted', actionLabel: 'Undo', onAction: () => actions++);
+        await tester.pumpAndSettle();
+        Navigator.of(
+          context,
+        ).push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('Next'))));
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        await tester.pump(zenMessageDuration * 2);
+        expect(find.text('Deleted'), findsOneWidget);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(actions, 1);
+        expect(find.text('Deleted'), findsNothing);
+      });
+
+      testWidgets('hover pauses and resumes the remaining time', (tester) async {
+        final context = await pumpScreen(tester);
+        entry.value(context, 'Deleted', actionLabel: 'Undo', onAction: () {});
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(seconds: 1));
+        final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+        await mouse.addPointer(location: tester.getCenter(find.text('Deleted')));
+        await tester.pump();
+        await tester.pump(zenMessageDuration * 2);
+        expect(find.text('Deleted'), findsOneWidget);
+        await mouse.moveTo(Offset.zero);
+        await tester.pump();
+        await tester.pump(zenMessageDuration);
+        await tester.pumpAndSettle();
+        expect(find.text('Deleted'), findsNothing);
+        await mouse.removePointer();
+      });
+
+      testWidgets('touch and keyboard focus pause the action', (tester) async {
+        final context = await pumpScreen(tester);
+        entry.value(context, 'Deleted', actionLabel: 'Undo', onAction: () {});
+        await tester.pumpAndSettle();
+        final touch = await tester.startGesture(tester.getCenter(find.text('Undo')));
+        await tester.pump(zenMessageDuration * 2);
+        expect(find.text('Deleted'), findsOneWidget);
+        await touch.cancel();
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+        await tester.pump(zenMessageDuration * 2);
+        expect(find.text('Deleted'), findsOneWidget);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
         await tester.pumpAndSettle();
         expect(find.text('Deleted'), findsNothing);
       });

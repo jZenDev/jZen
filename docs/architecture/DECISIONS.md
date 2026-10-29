@@ -15,6 +15,30 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-067 — Pause action message expiry during interaction
+
+**Date:** 2026-10-29. **Status:** accepted.
+
+### Decision
+
+Action messages expire after four seconds on both platform styles. Pointer hover, a held
+pointer and keyboard focus pause the countdown, which resumes with the remaining time.
+When accessible navigation is enabled, action messages remain until dismissed, acted on,
+or replaced, giving assistive technology users time to reach the action.
+
+### What this supersedes, and why
+
+- **"A message with an action does not time out"** (ADR-060, `showZenMessage`) →
+  **changed.** *Why:* an action message can otherwise remain visible indefinitely after
+  navigation; pausing interaction and preserving the accessible-navigation behavior keep
+  the action usable.
+
+### Consequence
+
+Messages still offer the action and manual dismissal; navigation does not reset their timer.
+
+---
+
 ## ADR-066 — Auth email links carry a one-time hash through an app-owned confirmation page
 
 **Date:** 2026-10-27. **Status:** accepted. **Refines:** ADR-018, ADR-019.

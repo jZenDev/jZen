@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:zen_core/zen_core.dart';
 
 import 'zen_message_toast.dart';
+import 'zen_message_timer.dart';
 
 /// How long a message stays up. Longer with a screen reader or switch access on
 /// (`accessibleNavigation`), where reaching and reading it takes more time (WCAG 2.2.1).
@@ -18,9 +19,8 @@ const Duration zenMessageDuration = Duration(seconds: 4);
 /// [actionLabel] and [onAction] add one action to the message, such as "Undo" after a delete: a
 /// button named [actionLabel] that calls [onAction] and dismisses the message. Give both or
 /// neither. The action is a keyboard-reachable button with the framework's focus ring. A message
-/// with an action does not time out: a choice that vanishes in four seconds is out of reach of
-/// anyone who needs longer (WCAG 2.2.1), so it stays until the action is taken, it is dismissed
-/// (the close icon on Material, a tap on Apple) or another message replaces it.
+/// with an action expires after four seconds, paused while hovered, pressed, or focused.
+/// With accessible navigation enabled, it stays until acted on, dismissed, or replaced.
 ///
 /// [context] must sit below the app's `Navigator` (any screen does) and, on Apple, have an
 /// `Overlay`; without one this throws rather than showing nothing.
@@ -71,26 +71,46 @@ void showMaterialZenMessage(
   VoidCallback? onAction,
 }) {
   final Color foreground = _foregroundFor(Theme.of(context).colorScheme, backgroundColor);
-  ScaffoldMessenger.of(context)
-    ..removeCurrentSnackBar()
-    ..showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: backgroundColor,
-        // An actioned snack bar persists (SnackBar's own default); without a way to close it,
-        // it would sit there until another message replaced it.
-        showCloseIcon: actionLabel != null,
-        action: actionLabel == null
-            ? null
-            : SnackBarAction(
-                label: actionLabel,
-                onPressed: onAction!,
-                // The default action colour is chosen against the theme's own snack bar, not an
-                // app's: on an error red it fails AA.
-                textColor: backgroundColor == null ? null : foreground,
+  final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
+  messenger.removeCurrentSnackBar();
+  if (actionLabel == null) {
+    messenger.showSnackBar(SnackBar(content: Text(message), backgroundColor: backgroundColor));
+    return;
+  }
+  final bool accessible = MediaQuery.accessibleNavigationOf(context);
+  messenger.showSnackBar(
+    SnackBar(
+      duration: const Duration(days: 365),
+      backgroundColor: backgroundColor,
+      content: ZenMessageTimer(
+        duration: accessible ? null : zenMessageDuration,
+        onExpire: messenger.hideCurrentSnackBar,
+        child: Row(
+          children: <Widget>[
+            Expanded(child: Text(message)),
+            TextButton(
+              onPressed: () {
+                messenger.hideCurrentSnackBar();
+                onAction!();
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: backgroundColor == null
+                    ? Theme.of(context).colorScheme.inversePrimary
+                    : foreground,
               ),
+              child: Text(actionLabel),
+            ),
+            IconButton(
+              onPressed: messenger.hideCurrentSnackBar,
+              icon: const Icon(Icons.close),
+              color: foreground,
+              tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+            ),
+          ],
+        ),
       ),
-    );
+    ),
+  );
 }
 
 /// The toast on screen, if any: one at a time, so a new message replaces it.
@@ -111,11 +131,11 @@ void showCupertinoZenMessage(
   VoidCallback? onAction,
 }) {
   final OverlayState overlay = Overlay.of(context, rootOverlay: true);
+  final FocusNode focusParent = FocusScope.of(context);
   final ColorScheme scheme = Theme.of(context).colorScheme;
   final Color background = backgroundColor ?? scheme.inverseSurface;
   final Color foreground = _foregroundFor(scheme, backgroundColor);
-  // A message with an action stays until it is dealt with; see [showZenMessage].
-  final Duration? duration = actionLabel != null
+  final Duration? duration = actionLabel != null && MediaQuery.accessibleNavigationOf(context)
       ? null
       : MediaQuery.accessibleNavigationOf(context)
       ? zenMessageDuration * 3
@@ -131,6 +151,7 @@ void showCupertinoZenMessage(
       background: background,
       foreground: foreground,
       duration: duration,
+      focusParent: focusParent,
       actionLabel: actionLabel,
       onAction: onAction,
       onDismiss: () => _dismiss(entry),

@@ -1,8 +1,7 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import 'zen_button.dart';
+import 'zen_message_timer.dart';
 
 /// The transient message `showZenMessage` shows on Apple platforms, where there is no snack bar.
 ///
@@ -26,6 +25,7 @@ class ZenMessageToast extends StatefulWidget {
     required this.onDismiss,
     this.actionLabel,
     this.onAction,
+    this.focusParent,
     super.key,
   });
 
@@ -50,26 +50,13 @@ class ZenMessageToast extends StatefulWidget {
   /// Called when the action button is pressed; the toast then dismisses itself.
   final VoidCallback? onAction;
 
+  final FocusNode? focusParent;
+
   @override
   State<ZenMessageToast> createState() => _ZenMessageToastState();
 }
 
 class _ZenMessageToastState extends State<ZenMessageToast> {
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    final Duration? duration = widget.duration;
-    if (duration != null) _timer = Timer(duration, widget.onDismiss);
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
   /// The action: a text [ZenButton] whose colour (and so its focus ring) is the toast's own text
   /// colour, which is already chosen for contrast against the pill. The theme's primary is not:
   /// it is picked for the page, and fails on an app's error red.
@@ -107,32 +94,37 @@ class _ZenMessageToastState extends State<ZenMessageToast> {
             padding: const EdgeInsets.all(16),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 480),
-              child: Material(
-                color: toast.background,
-                elevation: 6,
-                borderRadius: BorderRadius.circular(14),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Flexible(
-                      child: Semantics(
-                        liveRegion: true,
-                        container: true,
-                        label: message,
-                        excludeSemantics: true,
-                        onTap: toast.onDismiss,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
+              child: ZenMessageTimer(
+                duration: toast.duration,
+                parentNode: toast.focusParent,
+                onExpire: toast.onDismiss,
+                child: Material(
+                  color: toast.background,
+                  elevation: 6,
+                  borderRadius: BorderRadius.circular(14),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Flexible(
+                        child: Semantics(
+                          liveRegion: true,
+                          container: true,
+                          label: message,
+                          excludeSemantics: true,
                           onTap: toast.onDismiss,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            child: Text(message, style: style, textAlign: TextAlign.center),
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: toast.onDismiss,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              child: Text(message, style: style, textAlign: TextAlign.center),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    if (actionLabel != null) _action(context, actionLabel),
-                  ],
+                      if (actionLabel != null) _action(context, actionLabel),
+                    ],
+                  ),
                 ),
               ),
             ),

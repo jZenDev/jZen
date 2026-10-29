@@ -99,6 +99,7 @@ return ZenListItemActions(
     ZenListItemAction(
       icon: Icons.delete,
       label: messages.deleteItem,
+      variant: ZenListItemActionVariant.destructive,
       onPressed: () => confirmAndDeleteItem(item),
     ),
   ],
@@ -126,6 +127,9 @@ pixels even while hidden, so keep the action count appropriate for the available
 mobile, additional actions remain available through accessibility and item details. The component
 does not remove the row itself: callbacks own any confirmation and removal, and the row returns
 to its original position if it remains in the list.
+Use `ZenListItemActionVariant.destructive` for a mobile swipe background using the theme's error
+colors; the default `standard` uses its primary colors. Desktop and web buttons retain their usual
+appearance. Each background reveals its icon at the outside edge before its label.
 
 The [demo dashboard](../../apps/zen_demo/zen_demo_client/lib/src/screens/dashboard_screen.dart)
 shows an example with localized labels and callbacks. Its delete action only reports the selection;

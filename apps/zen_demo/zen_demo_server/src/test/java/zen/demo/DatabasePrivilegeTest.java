@@ -59,8 +59,8 @@ class DatabasePrivilegeTest {
   /** Fixed by the migration; jZen ships one runtime role the way it ships one users table. */
   private static final String APP_ROLE = "zen_runtime";
 
-  /** Throwaway, and revoked in teardown. Never leaves the Dev Services container. */
-  private static final String APP_PASSWORD = "zen_runtime_test_only";
+  /** A fresh login for each test; teardown removes it from the runtime role. */
+  private final String appPassword = UUID.randomUUID().toString();
 
   /** PostgreSQL's SQLSTATE for insufficient_privilege — what every refusal below must be. */
   private static final String INSUFFICIENT_PRIVILEGE = "42501";
@@ -87,7 +87,7 @@ class DatabasePrivilegeTest {
     try (Connection owner = dataSource.getConnection()) {
       jdbcUrl = owner.getMetaData().getURL();
       try (Statement st = owner.createStatement()) {
-        st.execute("ALTER ROLE " + APP_ROLE + " WITH LOGIN PASSWORD '" + APP_PASSWORD + "'");
+        st.execute("ALTER ROLE " + APP_ROLE + " WITH LOGIN PASSWORD '" + appPassword + "'");
 
         // The stand-in for Supabase's auth schema. Owned by the DDL role, granted to nobody —
         // which is precisely the arrangement production has, where Supabase created it.
@@ -147,7 +147,7 @@ class DatabasePrivilegeTest {
         if (!roleExists(owner, role)) {
           st.execute("CREATE ROLE " + role + " NOLOGIN");
         }
-        st.execute("ALTER ROLE " + role + " WITH LOGIN PASSWORD '" + APP_PASSWORD + "'");
+        st.execute("ALTER ROLE " + role + " WITH LOGIN PASSWORD '" + appPassword + "'");
         st.execute("GRANT USAGE ON SCHEMA public TO " + role);
         st.execute("GRANT ALL ON ALL TABLES IN SCHEMA public TO " + role);
         st.execute("GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO " + role);
@@ -181,7 +181,7 @@ class DatabasePrivilegeTest {
       st.execute("DELETE FROM zen_jobs WHERE id = '" + SEEDED_JOB + "'");
       st.execute("DELETE FROM zen_rate_limit_counters WHERE bucket = '" + SEEDED_BUCKET + "'");
       st.execute("DROP SCHEMA IF EXISTS auth CASCADE");
-      st.execute("ALTER ROLE " + APP_ROLE + " WITH NOLOGIN");
+      st.execute("ALTER ROLE " + APP_ROLE + " WITH NOLOGIN PASSWORD NULL");
 
       // The stand-ins leave the database exactly as they found it — no anon role, which is the
       // state every other test in the suite ran against before ADR-036. DROP OWNED first: it
@@ -197,7 +197,7 @@ class DatabasePrivilegeTest {
   }
 
   private Connection asApplicationRole() throws SQLException {
-    return DriverManager.getConnection(jdbcUrl, APP_ROLE, APP_PASSWORD);
+    return DriverManager.getConnection(jdbcUrl, APP_ROLE, appPassword);
   }
 
   /** Asserts the statement is refused for want of privilege, and not for some other reason. */
@@ -409,7 +409,7 @@ class DatabasePrivilegeTest {
   }
 
   private Connection asDataApiRole(String role) throws SQLException {
-    return DriverManager.getConnection(jdbcUrl, role, APP_PASSWORD);
+    return DriverManager.getConnection(jdbcUrl, role, appPassword);
   }
 
   private long countAs(Connection connection, String table) throws SQLException {

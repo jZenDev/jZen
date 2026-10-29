@@ -47,6 +47,7 @@ class WelcomeEmailTest {
   private static final long MAIL_TIMEOUT_MS = 10_000;
   private static final long POLL_INTERVAL_MS = 50;
 
+  // Registration uses a synthetic password and this mock, not a real identity provider.
   @InjectMock @RestClient SupabaseAuthClient authClient;
   @Inject MockMailbox mailbox;
 

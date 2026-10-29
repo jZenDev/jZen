@@ -141,6 +141,9 @@ vars:
   CLEANUP_DOCKER_CACHE_HOURS: '{{.CLEANUP_DOCKER_CACHE_HOURS | default "168"}}'
   CLEANUP_ON_FAILURE: '{{.CLEANUP_ON_FAILURE | default "fail"}}'
   CLEANUP_DRY_RUN: '{{.CLEANUP_DRY_RUN | default ""}}'
+  # What `deploy:pin` protects. Empty is refused: it will not guess which image to tag.
+  PIN_IMAGE: '{{.PIN_IMAGE | default ""}}'
+  PIN_HOLD: '{{.PIN_HOLD | default ""}}'
 
 tasks:
   info:
@@ -1214,6 +1217,40 @@ tasks:
         export RUN_DEV_FLUTTER_ARGS="${flutter_args}" RUN_DEV_DEFINES="${defines}"
         exec bash "{{.JZEN_DIR}}/scripts/run-dev.sh"
 
+  deploy:pin:
+    desc: Protect an image from the registry cleanup policy BEFORE a job or service is pointed at it
+    silent: true
+    summary: |
+      Tags the digest of PIN_IMAGE `zen-pin-<digest>`, which the cleanup policy keeps. Run it
+      after pushing an image and before anything runs it: `deploy:cloudrun` does, an application's
+      deploy must, and an operator who points a Cloud Run service or job at an image by hand must
+      too. A consumer that exists before its pin is the gap this closes. It fails, and so should
+      the deploy, if the image is not in the registry.
+
+        PIN_IMAGE   <region>-docker.pkg.dev/<project>/<repo>/<service>:<tag>, or `@sha256:...`
+        PIN_HOLD    a name: tag `zen-hold-<name>` instead, for a consumer the cleanup cannot see
+                    (another project or region, GKE, a machine that pulls it). The cleanup never
+                    removes a hold; remove it by hand when the consumer is gone.
+
+      Pinning the same image again does nothing. The cleanup releases a pin on its own once no
+      revision or job needs the digest. Needs GCP_PROJECT, GCP_REGION and AR_REPO. `task
+      zen:deploy:cleanup --summary` explains what the policy keeps and why.
+    cmds:
+      - |
+        set -eu
+        for pair in "GCP_PROJECT={{.GCP_PROJECT}}" "GCP_REGION={{.GCP_REGION}}" \
+                    "AR_REPO={{.AR_REPO}}" "PIN_IMAGE={{.PIN_IMAGE}}"; do
+          if [ -z "${pair#*=}" ]; then
+            echo "${pair%%=*} is not set; deploy:pin will not guess which image to protect." >&2
+            exit 1
+          fi
+        done
+        set --
+        if [ -n "{{.PIN_HOLD}}" ]; then set -- --hold "{{.PIN_HOLD}}"; fi
+        exec python3 "{{.JZEN_DIR}}/scripts/deploy-cleanup.py" pin "$@" \
+          --project "{{.GCP_PROJECT}}" --region "{{.GCP_REGION}}" --repo "{{.AR_REPO}}" \
+          --image "{{.PIN_IMAGE}}"
+
   deploy:cleanup:
     desc: Bound what a deploy leaves behind - Artifact Registry versions, Cloud Run revisions, local Docker
     silent: true
@@ -1229,40 +1266,76 @@ tasks:
         1. REVISIONS first. Those older than CLEANUP_REVISION_DAYS (14), beyond the newest
            CLEANUP_KEEP_REVISIONS (3), that are not serving. A revision receiving traffic, or the
            latest ready one, is never selected: a `--no-traffic` deploy leaves an OLD revision
-           serving, so age alone is never the criterion. Revisions go first because the registry
-           does not know they exist; an image it expired leaves a revision listed as a rollback
-           target that cannot start.
+           serving, so age alone is never the criterion.
         2. The REGISTRY POLICY, armed idempotently: keep the newest CLEANUP_KEEP_VERSIONS (20)
-           versions per package; delete TAGGED versions whose tag starts with a commit-SHA hex
-           digit or `sha256-` (cosign), and UNTAGGED versions, once older than CLEANUP_IMAGE_DAYS
-           (30). `latest` is never matched. The untagged rule is safe ONLY because of the keep
-           rule, since the running image is untagged, so the policy is refused without it. Rule
-           names carry the numbers and a revision, so a changed number re-arms an existing
-           repository. CLEANUP_IMAGE_DAYS must exceed CLEANUP_REVISION_DAYS (an image is older
-           than its revision), and CLEANUP_KEEP_VERSIONS should cover CLEANUP_KEEP_REVISIONS
-           deploys at up to five versions each; the check below catches the case where it does not.
+           versions per package; keep every PINNED version (below); delete TAGGED versions whose
+           tag starts with a commit-SHA hex digit or `sha256-` (cosign), and UNTAGGED versions,
+           once older than CLEANUP_IMAGE_DAYS (30). `latest` is never matched. Rule names carry the
+           numbers and a revision, so a changed number re-arms an existing repository.
+           CLEANUP_IMAGE_DAYS must exceed CLEANUP_REVISION_DAYS (an image is older than its
+           revision).
         3. LOCAL DOCKER: dangling layers, build cache older than CLEANUP_DOCKER_CACHE_HOURS (168),
            and this project's tagged images beyond the newest two per repository. Never `latest`,
            never anything outside `<region>-docker.pkg.dev/<project>/<repo>/`.
 
+      WHAT PROTECTS AN IMAGE THAT SOMETHING STILL RUNS. A Cloud Run revision is not a reference the
+      registry respects, and a count of newest versions or an age cannot protect an arbitrarily old
+      serving or rollback image: the version count only moves when something is pushed, so a quiet
+      service ages out of its own window. The protection is therefore on the image. Every run tags
+      each digest that a consumer needs `zen-pin-<digest>`, and the policy keeps that tag prefix.
+      A Keep rule outranks the Delete rules, and a tagged version is outside the untagged rule, so
+      a pin holds however old the image is and whenever the registry next evaluates.
+        - CONSUMERS are every Cloud Run revision in the project and region (this service's that
+          remain after step 1, and other services') and every Cloud Run job, that names an image in
+          this repository. A job names a tag or a digest; a tag is resolved in the registry.
+        - A pin is added BEFORE the policy is staged, armed or left armed, and BEFORE the revisions
+          it protects could be rolled back to. If a pin cannot be added the run fails, nothing is
+          armed, and an enforcing policy is put into dry run.
+        - A pin is released only when no consumer needs the digest, the version is at least a day
+          old (so a cleanup beside a deploy cannot undo that deploy's pin), and nothing else failed
+          to resolve. A consumer whose image is already gone blocks arming and is named.
+        - A NEW CONSUMER must be pinned before it exists. `deploy:cloudrun` runs `deploy:pin` right
+          after the push; so must an application's deploy, and so must an operator who points a
+          service or job at an image by hand: `task zen:deploy:pin PIN_IMAGE=<registry>/<svc>:<tag>`.
+        - A CONSUMER THIS TASK CANNOT SEE (another project or region, a GKE cluster, a machine that
+          pulls the image) is protected by a HOLD: `task zen:deploy:pin PIN_IMAGE=... PIN_HOLD=<name>`
+          adds `zen-hold-<name>`, which the policy keeps and the cleanup never removes. Remove it
+          with `gcloud artifacts docker tags delete <package>:zen-hold-<name>` when the consumer goes.
+        - PARENTS AND CHILDREN. The image Cloud Run runs is a child of the tagged index; the registry
+          does not delete an image a surviving index lists. That shields a child only while its
+          parent lives, so the simulation reads each tagged manifest and reports what would expire
+          over the registry's successive runs, never a child shielded by a parent that stays. A
+          pinned digest does not depend on any of it. If a manifest cannot be read the list is an
+          upper bound (it says so), which is the safe way to be wrong.
+
       WHY ARMING TAKES TWO RUNS. The first run on a repository stages the policy in the registry's
       own DRY-RUN state, prints the versions it would expire, and stops with "NOT ARMED". The run
-      after that arms it. The registry remembers, so a fresh checkout cannot skip the step. Every
-      run, before arming and after, simulates the policy against the registry's versions and the
-      revisions that remain; a policy that would expire an image a revision still runs is not
-      armed, and an armed one that has become such a policy is put back into dry run.
-      `CLEANUP_DRY_RUN=1` stages without arming and deletes nothing, anywhere. Read its output once
-      before the first real run on a repository.
+      after that arms it. The registry remembers, so a fresh checkout cannot skip the step. A policy
+      of an older shape that is already enforcing is replaced by the new one in dry run, after the
+      pins exist: enforcement pauses for one run and never continues without protection. Every run
+      simulates the policy against the registry's versions as they will list once the pins are in
+      place; a policy that would still expire a digest a consumer needs is not armed, and an armed
+      one is put back into dry run. `CLEANUP_DRY_RUN=1` stages without arming, adds and releases no
+      pin, and deletes nothing, anywhere. Read its output once before the first real run.
 
       WHEN IT FAILS. The service is already live by then, so the failure message says the deploy
       itself succeeded. CLEANUP_ON_FAILURE=fail (the default) exits non-zero and does not swallow
       it; CLEANUP_ON_FAILURE=warn prints the same report and exits 0. If the revision step fails
-      the registry step is skipped rather than armed past revisions it could not finish with.
+      the registry step is skipped: nothing is pinned, released, staged or armed past revisions it
+      could not finish with. A failed pin, an unreadable job or revision list, or a consumer whose
+      image is gone stops the registry step the same way.
 
       OPT OUT. CLEANUP=off skips everything; CLEANUP_REVISIONS / CLEANUP_REGISTRY / CLEANUP_DOCKER
       =off skip one part. CLEANUP_TAG_PREFIXES (comma-separated) replaces the tag prefixes the
       tagged rule may expire; note any other tag starting with a hex digit (`1.0.0`) is eligible
-      with the default.
+      with the default. A prefix that would also match `latest` or a pin or hold tag is refused.
+
+      LIMITATIONS. Pins make the policy safe for the consumers it can enumerate or is told about;
+      it does not make an unknown consumer safe. The registry evaluates asynchronously and its
+      semantics are Google's: this task's model of them is checked against stubs and against the
+      before/after listings of a real repository, which is where it must be verified (STANDARDS,
+      ADR-068). Pin tags cost a tag each until the digest is released. Binary Authorization
+      attestations and cosign signatures are not consumers of a running image and are not pinned.
 
       WHAT THE OUTPUT DOES AND DOES NOT PROVE. Registry deletions are not in Cloud Logging unless
       Data Access audit logs are enabled for artifactregistry.googleapis.com, and the repository's

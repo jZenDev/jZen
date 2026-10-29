@@ -211,15 +211,51 @@ cannot honestly mean both things.
 ```
 task zen:deploy:cleanup            # also run last by deploy:cloudrun
 CLEANUP_DRY_RUN=1 task zen:deploy:cleanup
+task zen:deploy:pin PIN_IMAGE=<registry>/<svc>:<tag>               # protect an image before using it
+task zen:deploy:pin PIN_IMAGE=<registry>/<svc>:<tag> PIN_HOLD=name # a consumer the cleanup cannot see
 ```
 
 Deletes superseded Cloud Run revisions, arms an Artifact Registry retention policy (keep the newest
-N versions, expire older tagged and untagged ones), and prunes local Docker images and build cache,
-in that order. Python by Rule 3: it parses `gcloud` and `docker` JSON. The first run on a repository
-only stages the policy in dry run; the next arms it, and a policy that would expire an image a
-revision still runs is never armed. The operator contract, every knob and the failure semantics are
-in `task zen:deploy:cleanup --summary`; the decision is ADR-064. Tests run against stub `gcloud` and
-`docker` that keep state, under `task test:scripts`.
+N versions and every pinned one, expire older tagged and untagged ones), and prunes local Docker
+images and build cache, in that order. Python by Rule 3: it parses `gcloud` and `docker` JSON. The
+first run on a repository only stages the policy in dry run; the next arms it. The operator
+contract, every knob and the failure semantics are in `task zen:deploy:cleanup --summary`; the
+decisions are ADR-064 and ADR-068. Tests run against stub `gcloud` and `docker` that keep state,
+under `task test:scripts`.
+
+**What keeps an image that something still runs.** A count of newest versions and an age do not:
+a quiet service ages out of its own window. So each digest a revision or Cloud Run job needs gets a
+`zen-pin-<digest>` tag and the policy keeps that tag prefix. Consumers are every revision and job in
+the project and region that names this repository; pins are added before the policy is staged or
+armed and released only when no consumer needs the digest. A deploy pins its image right after the
+push, before anything is pointed at it. A consumer the script cannot see is protected by a hold
+(`PIN_HOLD`), which it never removes.
+
+**Operator requirements.** Point a service or job at an image by hand only after
+`task zen:deploy:pin`; add a hold for any puller outside this project and region; never run the
+cleanup concurrently with a deploy; do not delete `zen-pin-*` or `zen-hold-*` tags by hand while a
+consumer exists; run the cleanup after a manual traffic change (it re-reads the consumers).
+
+**Verifying on a real repository** (what the stubs cannot show; run by the owner, since it changes
+cloud resources; `jzen-prod` / `europe-central2` / `jzen` / `zen-demo-server`):
+
+```sh
+R=europe-central2-docker.pkg.dev/jzen-prod/jzen
+gcloud run revisions list --project=jzen-prod --region=europe-central2 --format=json > /tmp/rev.before.json
+gcloud run jobs list --project=jzen-prod --region=europe-central2 --format=json > /tmp/jobs.before.json
+gcloud artifacts docker images list $R --include-tags --format=json > /tmp/images.before.json
+gcloud artifacts repositories describe jzen --project=jzen-prod --location=europe-central2 --format=json > /tmp/repo.before.json
+CLEANUP_DRY_RUN=1 task zen:deploy:cleanup      # stages in dry run; prints pins it would add; read it
+task zen:deploy:cleanup                         # pins, then (second run) arms
+# wait for the registry's documented delay, then inspect the real dry-run / enforcement result:
+gcloud artifacts docker images list $R --include-tags --format=json > /tmp/images.after.json
+gcloud run revisions list --project=jzen-prod --region=europe-central2 --format=json > /tmp/rev.after.json
+```
+
+Check: every `status.imageDigest` in `rev.after.json` and the digest each job resolves to is present
+in `images.after.json` with a `zen-pin-` tag; the migrate job's image is present; no unpinned old
+digest a consumer needs was removed; an unpinned unreferenced old version is the only thing missing.
+Paste the before/after into #177 before closing it.
 
 ## 📱 pick-device.py — which device a native run targets
 

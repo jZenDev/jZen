@@ -47,8 +47,9 @@ you straight in. The login screen **says this on itself** — a banner points yo
 first-time user is not left guessing (`zen_demo_client`'s `AuthFlow` fills the framework login
 screen's `banner` slot with a localized hint). The **admin panel** does need an account with the
 `admin` role (roles live in the `users` table, not the JWT), and that one *is* seeded for you: run
-`scripts/seed-admin.py`, which registers `admin@jzen.local` / `password123` and promotes it to
-`admin` — then sign in at `http://localhost:5173`. See
+`scripts/seed-admin.py --password YOUR_LOCAL_PASSWORD`, which registers `admin@jzen.local` with
+your chosen password and promotes it to `admin` — then sign in at `http://localhost:5173`. An
+existing account keeps its existing password. See
 [`../../scripts/README.md`](../../scripts/README.md).
 
 **Stopping it.** In the `task run:demo` terminal, press **`q` once** — Flutter's quit key. The app

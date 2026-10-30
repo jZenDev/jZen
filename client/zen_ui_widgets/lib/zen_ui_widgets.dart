@@ -73,6 +73,7 @@ export 'src/page/zen_page_scaffold.dart' show ZenPageScaffold;
 export 'src/page/zen_page_transitions.dart' show ZenFadePageTransitionsBuilder, ZenPageTransitions;
 export 'src/progress/zen_progress_bar.dart' show ZenProgressBar;
 export 'src/progress/zen_progress_indicator.dart' show ZenProgressIndicator;
+export 'src/zen_content_width.dart' show ZenContentWidth;
 export 'src/zen_segmented_control.dart' show ZenSegment, ZenSegmentedControl;
 export 'src/zen_select.dart' show ZenSelect;
 export 'src/zen_switch_row.dart' show ZenSwitchRow;

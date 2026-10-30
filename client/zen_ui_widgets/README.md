@@ -54,6 +54,22 @@ Examples below use application-owned state, callbacks and localized labels. Impo
 Controllers shown here belong to the app and must be disposed with its state. Pass null callbacks
 to disable controls where indicated. See the generated Dart API documentation for every parameter.
 
+### ZenContentWidth
+
+Center a page body with an app-chosen maximum width and a minimum horizontal gutter. Choose a
+larger `maxWidth` for charts or other wide content. Put the boundary inside the page body so the
+app bar and navigation remain full width. Place `ZenDetailHost` outside it: the host then chooses
+between a pane and a push using its available width. Wrap detail and pushed page bodies separately;
+each boundary measures its own pane or page. `MediaQuery` remains the window's size.
+
+```dart
+ZenDetailHost(
+  child: ZenContentWidth(maxWidth: 720, gutter: 16, child: accountsList),
+);
+// In the detail page's body:
+ZenContentWidth(maxWidth: 960, child: chart);
+```
+
 ### ZenButton
 
 A labelled action. Choose `primary`, `secondary` or `text`; `isLoading` prevents activation while

@@ -1118,7 +1118,8 @@ tasks:
         ( cd {{.SERVER_DIR}} && ./mvnw -B -q install -DskipTests \
           && ./mvnw -B -q -f ../{{.DEMO_SERVER_DIR}}/pom.xml package -DskipTests )
         set +e
-        java -Dquarkus.profile=dev -Dquarkus.http.port="${PORT}" \
+        # The suite drives the trigger itself; the dev cron can otherwise overlap it.
+        java -Dquarkus.profile=dev -Dzen.jobs.tick.cron=off -Dquarkus.http.port="${PORT}" \
           -jar {{.DEMO_SERVER_DIR}}/target/quarkus-app/quarkus-run.jar &
 
         # Wait for the server to answer /health before driving it.

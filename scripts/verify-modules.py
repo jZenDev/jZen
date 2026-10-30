@@ -35,7 +35,14 @@ DTD, so `_parse_pom` refuses any document that declares one, before any entity i
 supported Python. A POM that is not well-formed, or declares a DTD, is a failure of the scan, not
 a pom with nothing to report.
 
-Written to the 3.9 floor, stdlib only.
+**Python 3.11 or newer, unlike the other scripts** (ADR-069). The rest of `scripts/` is written to a
+3.9 floor so it runs on a Mac with only Xcode's Command Line Tools; this one reads files a
+contributor controls and hands them to an XML parser, and the parser that ships with 3.10 and older
+is the one with the known entity-expansion and external-entity weaknesses. `_parse_pom`'s DOCTYPE
+refusal already closes that hole on every version, so the floor is a second layer, not the only
+one. A runtime below it is a failure that says why and how to fix it, never a pass.
+
+Stdlib only.
 """
 
 from __future__ import annotations
@@ -69,6 +76,11 @@ JAVA_LINE_COMMENT = re.compile(r"^\s*//")
 JANDEX_ARTIFACT = "jandex-maven-plugin"
 FORBIDDEN_JACKSON_ARTIFACT = "quarkus-rest-jackson"
 
+# The oldest interpreter this gate runs on (ADR-069). Checked in `main`, not at import, so the
+# fixture tests can still load the module on the repository's 3.9 floor and exercise the parts that
+# matter there, the DOCTYPE refusal first among them.
+MIN_PYTHON = (3, 11)
+
 # Maven's POM namespace. ElementTree requires the namespace prefix on every tag when the
 # document declares a default xmlns, which every jZen pom.xml does.
 POM_NS = "http://maven.apache.org/POM/4.0.0"
@@ -89,6 +101,17 @@ class Hit:
 
     def __str__(self) -> str:
         return f"{self.path}: {self.detail}"
+
+
+def runtime_problem() -> "str | None":
+    """Why this interpreter may not run the gate, or None if it may."""
+    if sys.version_info[:2] >= MIN_PYTHON:
+        return None
+    want = ".".join(str(n) for n in MIN_PYTHON)
+    have = ".".join(str(n) for n in sys.version_info[:3])
+    return (f"verify-modules.py needs Python {want} or newer and this is {have}. The XML parser in "
+            f"older versions expands entities without a limit (ADR-069). Install a newer python3 "
+            f"(brew install python) and put it first on PATH.")
 
 
 def _modules(root: Path) -> "list[Path]":
@@ -224,8 +247,12 @@ CHECKS = (
 
 
 def main(root: "Path | None" = None) -> int:
-    root = root or lib.repo_root()
     print("Checking the Jandex and no-Jackson module rules...")
+    problem = runtime_problem()
+    if problem:
+        lib.fail("this interpreter is too old to vouch for the poms:", [problem])
+        return 1
+    root = root or lib.repo_root()
 
     failed = False
     for check, bad, good in CHECKS:

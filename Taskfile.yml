@@ -2956,6 +2956,10 @@ tasks:
       `verify:boundaries`: a `server/zen-*` glob matching no directory, or a repository with no
       `pom.xml` at all, must not read as "nothing to flag".
 
+      Needs Python 3.11 or newer, unlike the other scripts (ADR-069): it hands contributed
+      `pom.xml` files to an XML parser, and the one before 3.11 is the weak one. On an older
+      interpreter it fails and says so; it never passes. `brew install python` provides one.
+
       Covered by `task test:scripts`, alongside the boundary gate's fixtures.
     cmds:
       - scripts/verify-modules.py

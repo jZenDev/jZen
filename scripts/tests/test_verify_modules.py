@@ -3,7 +3,9 @@
 Mirrors `test_verify_boundaries.py`'s shape: build a minimal fixture tree, plant the violation
 the gate exists to catch, assert it fires, and assert a stale scope fails rather than passes.
 
-Written to the 3.9 floor, stdlib only (`unittest`, not pytest).
+Written to the 3.9 floor, stdlib only (`unittest`, not pytest). The gate itself needs 3.11 (ADR-069);
+the fixtures lower `MIN_PYTHON` so its logic, and the DOCTYPE refusal above all, are still
+exercised on the oldest interpreter the repository supports.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parent.parent
 
@@ -116,6 +119,9 @@ class ModuleGateTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
         build_tree(self.root)
+        patch = mock.patch.object(vm, "MIN_PYTHON", (3, 9))
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
@@ -201,6 +207,17 @@ class ModuleGateTest(unittest.TestCase):
         hits = vm.check_no_server_jackson(self.root)
         self.assertEqual([], hits)
 
+    # ── the interpreter floor (ADR-069) ─────────────────────────────────────────────────────
+    def test_an_interpreter_below_the_floor_is_refused_not_passed(self) -> None:
+        with mock.patch.object(vm, "MIN_PYTHON", (99, 0)):
+            code, out = self.run_gate(self.root)
+        self.assertEqual(1, code)
+        self.assertIn("needs Python 99.0 or newer", out)
+        self.assertNotIn("intact", out)
+
+    def test_a_current_interpreter_has_no_problem(self) -> None:
+        self.assertIsNone(vm.runtime_problem())
+
     # ── a contributed pom.xml is untrusted input ────────────────────────────────────────────
     BILLION_LAUGHS = """\
 <?xml version="1.0"?>
@@ -273,6 +290,13 @@ class ModuleGateTest(unittest.TestCase):
         with self.assertRaises(vm.StaleScope):
             vm.check_no_server_jackson(self.root)
         self.assertEqual(1, self.run_gate(self.root)[0])
+
+
+class ShippedFloorTest(unittest.TestCase):
+    """Unpatched: the number the gate actually ships with (ADR-069)."""
+
+    def test_the_shipped_floor_is_3_11(self) -> None:
+        self.assertEqual((3, 11), vm.MIN_PYTHON)
 
 
 if __name__ == "__main__":

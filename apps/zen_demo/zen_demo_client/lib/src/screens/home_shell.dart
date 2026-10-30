@@ -6,6 +6,7 @@ import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 import '../l10n/generated/demo_localizations.dart';
 import 'dashboard_screen.dart';
 import 'terms_screen.dart';
+import 'showcase_screen.dart';
 
 /// The authenticated shell: the reused ZenNavigation adaptive layout hosting the demo dashboard,
 /// the localized terms, and the reused identity profile screen (which owns logout).
@@ -45,6 +46,12 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         label: demo.navProfile,
         icon: Icons.person,
         builder: (context) => const ProfileScreen(),
+      ),
+      ZenNavigationItem(
+        id: 'showcase',
+        label: demo.navShowcase,
+        icon: Icons.widgets_outlined,
+        builder: (context) => const ShowcaseScreen(),
       ),
     ];
 

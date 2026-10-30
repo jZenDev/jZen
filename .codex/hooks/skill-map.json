@@ -56,6 +56,13 @@
         "\\btask\\s+run:",
         "\\bquarkus:dev\\b"
       ]
+    },
+    {
+      "skill": "create-zen-widget",
+      "why": "public widgets require adaptive behavior, accessibility tests and a documented consumer example",
+      "paths": [
+        "client/zen_ui_widgets/lib/*.dart"
+      ]
     }
   ]
 }

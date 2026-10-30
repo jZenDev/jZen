@@ -37,6 +37,7 @@ class DemoApp extends ConsumerWidget {
         ...DemoLocalizations.localizationsDelegates,
         identityLocaleDelegate,
         navigationLocaleDelegate,
+        zenWidgetsLocaleDelegate,
       ],
       supportedLocales: [for (final tag in demoSupportedLocales) Locale(tag)],
       theme: _theme(Brightness.light),

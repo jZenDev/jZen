@@ -872,6 +872,7 @@ tasks:
       - task: verify:boundaries
       - task: verify:modules
       - task: verify:widget-files
+      - task: verify:ui-docs
       - task: test:scripts
       - task: test:server
       - task: test:client
@@ -2971,6 +2972,11 @@ tasks:
     cmds:
       - task: zen:verify:widget-files
 
+  verify:ui-docs:
+    desc: Check public UI widgets have guide entries and examples
+    cmds:
+      - python3 scripts/verify-ui-docs.py
+
   verify:docs:
     desc: Fail if a README names a non-existent task, or a module LICENSE drifted from root
     silent: true
@@ -3003,6 +3009,7 @@ tasks:
       Implementation: `scripts/verify-docs.py`, covered by `task test:scripts`.
     cmds:
       - scripts/verify-docs.py
+      - task: verify:ui-docs
 
   audit:
     desc: Fail if any shipped dependency has a known CVE (Java + TypeScript + Dart). Needs network.

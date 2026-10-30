@@ -81,7 +81,8 @@ point* of the script, it is Python. In one sentence: **sh runs things; Python un
   `node`, `pnpm`); Python returns verdicts and seeds a dev database, so `doctor` checks it in the
   presence-only group. There is deliberately no `.python-version`: nothing but `pyenv` reads one,
   so it would make a pin-shaped claim about a tool that is not pinned. The 3.9 floor is what lets
-  the scripts run on a Mac carrying only Xcode Command Line Tools.
+  the scripts run on a Mac carrying only Xcode Command Line Tools. The one exception is
+  `verify-modules.py`, which needs 3.11 because it parses contributed `pom.xml` files (ADR-069).
 - **A `summary:` stays in the Taskfile when a body moves to `scripts/`.** It is the operator-facing
   contract and is reachable as `task <name> --summary`; the script carries a module docstring about
   implementation. Two audiences, no duplicated text.

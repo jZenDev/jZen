@@ -36,6 +36,15 @@ exit code, the property `verify-boundaries.py` was rewritten to have. A path tha
 path under which no Dart package was found, a file that cannot be read, a scan that read no Dart
 file at all, and a suppression that matches nothing are each a non-zero exit with the reason.
 
+**The scan root, and what is read under it.** The paths on the command line are chosen by whoever
+runs the gate (`task` passes the repository's own `client` and `apps`), and the process has no more
+rights than they do, so a root outside the checkout is a legitimate thing to scan, not an escape.
+What a root does not get to do is lead the scan somewhere it did not name: a `.dart` file, or a
+`lib/` directory, that is a symlink out of its own package would have the gate parse files the
+package does not contain, and report on them as if it did. Such a file is not read; it is a failure
+that names the link and where it points, never a skipped line. `os.walk` does not follow symlinked
+directories, which keeps package discovery under the root.
+
 **Suppressions** (`--suppressions FILE`) are one file, `<path>  <reason>` per line, same-line reason
 required — the shape of `audit-*-suppressions.txt`. A path is relative to where the script runs.
 An entry that suppresses nothing (the file is gone, or no longer holds two widgets) is itself a
@@ -316,6 +325,15 @@ def dart_files(package: Path) -> "list[Path]":
     )
 
 
+def _inside(path: Path, boundary: Path) -> bool:
+    """Whether `path`, with every symlink followed, still lies under `boundary` (already resolved)."""
+    try:
+        path.resolve().relative_to(boundary)
+    except ValueError:
+        return False
+    return True
+
+
 def scan(paths: "list[str]") -> Result:
     errors: "list[str]" = []
     packages: "dict[Path, None]" = {}
@@ -333,6 +351,12 @@ def scan(paths: "list[str]") -> Result:
     parsed: "dict[Path, list[DartClass]]" = {}
     for package in packages:
         for f in dart_files(package):
+            if not _inside(f, package):
+                errors.append(
+                    f"{_relative(f)}: resolves to {f.resolve()}, outside its package {package}, "
+                    "so it was not read"
+                )
+                continue
             try:
                 parsed[f] = parse_classes(f.read_text(encoding="utf-8"))
             except (OSError, UnicodeDecodeError) as e:

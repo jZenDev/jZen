@@ -47,6 +47,16 @@ Deletions are not in Cloud Logging unless Data Access audit logs are enabled for
 artifactregistry.googleapis.com, and the repository's reported size lags deletion, so the evidence
 this prints is a before/after LISTING, not a size.
 
+Every value the operator supplies reaches `subprocess` as one element of an argument list, so a
+shell never sees it and `;`, `$()` or a space in a name is just a character. What a list does not
+prevent is an element that the called tool reads as an OPTION: `gcloud run services describe
+--impersonate-service-account=...` is a service whose name starts with a dash. `--project=VALUE`
+forms are immune (the value cannot start a new option), the positional ones are not (the service,
+the repository, an image reference). So each name is checked once, where it enters
+(`parse_args`, `pin_image`), against the shape its resource allows, and in every case the first
+character is a letter or a digit. A value that does not fit is a usage error before any command
+runs; the cleanup is not partially run on a name it could not vouch for.
+
 Written to the 3.9 floor, stdlib only.
 """
 
@@ -93,6 +103,35 @@ DEFAULT_TAG_PREFIXES = list("0123456789abcdef") + ["sha256-"]
 DOCKER_KEEP_PER_REPOSITORY = 2
 PROTECTED_TAGS = {"latest"}
 
+# The shape of each name taken from the command line. Deliberately no stricter than the resource
+# allows (a short name is fine; length is the platform's to enforce); what they all share, and what
+# matters here, is that the first character is a letter or digit, so no value can be read by gcloud
+# or docker as an option, and that nothing in them is whitespace or a control character.
+NAME_SHAPES = {
+    "project": re.compile(r"[a-z][a-z0-9-]*"),
+    "region": re.compile(r"[a-z][a-z0-9-]*"),
+    "service": re.compile(r"[a-z][a-z0-9-]*"),
+    "repo": re.compile(r"[a-z0-9][a-z0-9._-]*"),
+    "image": re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@-]*"),
+}
+# A tag prefix is the start of a tag, and a tag starts with [A-Za-z0-9_].
+TAG_PREFIX_SHAPE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*")
+
+
+def name_arg(kind: str):
+    """An argparse `type=` that accepts only a value of `kind`'s shape (see NAME_SHAPES)."""
+    shape = NAME_SHAPES[kind]
+
+    def parse(value: str) -> str:
+        if not shape.fullmatch(value):
+            raise argparse.ArgumentTypeError(
+                "%r is not a valid %s name (it must start with a letter or digit and contain no "
+                "whitespace or shell characters)" % (value, kind))
+        return value
+
+    parse.__name__ = kind
+    return parse
+
 
 class StepError(Exception):
     """A step could not be completed. Carries a sentence an operator can act on."""
@@ -111,6 +150,21 @@ def parse_ts(value: str) -> dt.datetime:
     return parsed
 
 
+def policy_id(prefixes: Sequence[str]) -> str:
+    """The short identifier of a tag-prefix list, embedded in the tagged Delete rule's name.
+
+    It names a policy, it does not authenticate one: the input is the operator's own flag, nobody
+    else chooses it, and there is no secret to protect or signature to forge, so collision
+    resistance against an adversary is not a requirement (`usedforsecurity=False` says so, and keeps
+    it working where a build refuses SHA-1 for security uses). What it must be is STABLE: the value
+    is part of a rule name already stored in every repository this script has armed, and changing
+    the function would rename the rule and put each of those repositories back through a dry run.
+    The delimiter cannot appear in a prefix (`build_policy` refuses anything outside a tag's
+    characters), so two different lists never share an input.
+    """
+    return hashlib.sha1("\n".join(prefixes).encode("utf-8"), usedforsecurity=False).hexdigest()[:8]
+
+
 def build_policy(keep_versions: int, image_days: int, tag_prefixes: Sequence[str]) -> List[Dict[str, Any]]:
     """The repository cleanup policy. Refuses any shape that could expire a running image."""
     if keep_versions < 1:
@@ -121,12 +175,16 @@ def build_policy(keep_versions: int, image_days: int, tag_prefixes: Sequence[str
     prefixes = list(tag_prefixes)
     if not prefixes:
         raise StepError("tag-prefixes is empty: the tagged rule would match every tagged version.")
+    for prefix in prefixes:
+        if not TAG_PREFIX_SHAPE.fullmatch(prefix):
+            raise StepError("tag prefix %r cannot begin any tag (tags use letters, digits, '_', '.' "
+                            "and '-', and start with a letter, digit or '_')." % prefix)
     for tag in sorted(PROTECTED_TAGS) + PROTECTING_PREFIXES:
         if any(tag.startswith(p) for p in prefixes):
             raise StepError("tag prefix %r would also match the protected tag %r." %
                             (next(p for p in prefixes if tag.startswith(p)), tag))
     seconds = "%ds" % (image_days * 86400)
-    digest = hashlib.sha1("\n".join(prefixes).encode("utf-8")).hexdigest()[:8]
+    digest = policy_id(prefixes)
     policy = [
         {
             "name": "zen-%s-keep-newest-%d" % (POLICY_REVISION, keep_versions),
@@ -691,7 +749,7 @@ def pin_image(argv: Sequence[str]) -> int:
     p = argparse.ArgumentParser(prog="deploy-cleanup.py pin",
                                 description="pin an image so the registry policy cannot expire it")
     for name in ("project", "region", "repo", "image"):
-        p.add_argument("--" + name, required=True)
+        p.add_argument("--" + name, required=True, type=name_arg(name))
     p.add_argument("--hold", default="",
                    help="add an operator hold (zen-hold-NAME) instead of a pin; the cleanup never removes it")
     a = p.parse_args(argv)
@@ -776,7 +834,7 @@ def step_docker(a: argparse.Namespace) -> List[str]:
 def parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     for name in ("project", "region", "service", "repo"):
-        p.add_argument("--" + name, required=True)
+        p.add_argument("--" + name, required=True, type=name_arg(name))
     for name in ("keep-revisions", "revision-days", "keep-versions", "image-days", "docker-cache-hours"):
         p.add_argument("--" + name, type=int, required=True)
     p.add_argument("--tag-prefixes", default=",".join(DEFAULT_TAG_PREFIXES),

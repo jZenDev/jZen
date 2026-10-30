@@ -163,6 +163,28 @@ with tempfile.TemporaryDirectory() as root:
     rc, err = run(root, os.path.join(root, "templates/z.qute.html"), session="s7")
     check("missing map is a no-op", rc == 0)
 
+# Same property for the command patterns this guard runs on every Bash call: matching must stay
+# linear however long the command is, and the `mvnw ... test` pattern must keep its meaning.
+import re, time
+print("skill guard: shipped command patterns are linear and keep their meaning")
+with open(os.path.join(HERE, "skill-map.json")) as fh:
+    patterns = [rx for rule in json.load(fh)["rules"] for rx in rule.get("commands", [])]
+adversarial = ["mvnw " * 32000, "task " * 32000, "gcloud run " * 16000, "docker " * 32000,
+               ("x" * 100 + ";") * 2000 + "mvnw " * 32000]
+for rx in patterns:
+    t0 = time.perf_counter()
+    for text in adversarial:
+        re.search(rx, text)
+    took = time.perf_counter() - t0
+    check("pattern is linear on adversarial input: " + rx, took < 1.0, f"{took:.2f}s")
+mvnw = [rx for rx in patterns if "mvnw" in rx]
+check("an mvnw pattern is shipped", bool(mvnw))
+for cmd, want in [("./mvnw test", True), ("./mvnw -B package -DskipTests", True),
+                  ("./mvnw -q install", False), ("mvnw clean; echo verify", False),
+                  ("mvnw mvnw install & verify", False), ("xmvnw test", False)]:
+    got = any(re.search(rx, cmd) for rx in mvnw)
+    check(f"mvnw pattern on {cmd!r}", got == want, got)
+
 print()
 if FAILURES:
     print(f"{len(FAILURES)} FAILED: {FAILURES}"); sys.exit(1)

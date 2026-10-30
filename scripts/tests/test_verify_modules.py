@@ -3,7 +3,9 @@
 Mirrors `test_verify_boundaries.py`'s shape: build a minimal fixture tree, plant the violation
 the gate exists to catch, assert it fires, and assert a stale scope fails rather than passes.
 
-Written to the 3.9 floor, stdlib only (`unittest`, not pytest).
+Written to the 3.9 floor, stdlib only (`unittest`, not pytest). The gate itself needs 3.11 (ADR-069);
+the fixtures lower `MIN_PYTHON` so its logic, and the DOCTYPE refusal above all, are still
+exercised on the oldest interpreter the repository supports.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parent.parent
 
@@ -116,6 +119,9 @@ class ModuleGateTest(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
         build_tree(self.root)
+        patch = mock.patch.object(vm, "MIN_PYTHON", (3, 9))
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
@@ -201,6 +207,72 @@ class ModuleGateTest(unittest.TestCase):
         hits = vm.check_no_server_jackson(self.root)
         self.assertEqual([], hits)
 
+    # ── the interpreter floor (ADR-069) ─────────────────────────────────────────────────────
+    def test_an_interpreter_below_the_floor_is_refused_not_passed(self) -> None:
+        with mock.patch.object(vm, "MIN_PYTHON", (99, 0)):
+            code, out = self.run_gate(self.root)
+        self.assertEqual(1, code)
+        self.assertIn("needs Python 99.0 or newer", out)
+        self.assertNotIn("intact", out)
+
+    def test_a_current_interpreter_has_no_problem(self) -> None:
+        self.assertIsNone(vm.runtime_problem())
+
+    # ── a contributed pom.xml is untrusted input ────────────────────────────────────────────
+    BILLION_LAUGHS = """\
+<?xml version="1.0"?>
+<!DOCTYPE lolz [
+  <!ENTITY a "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">
+  <!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">
+  <!ENTITY c "&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;">
+  <!ENTITY d "&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;">
+  <!ENTITY e "&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;">
+  <!ENTITY f "&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;">
+]>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <artifactId>&f;</artifactId>
+</project>
+"""
+
+    def test_a_pom_that_declares_a_dtd_is_refused_before_anything_expands(self) -> None:
+        import time
+
+        pom = self.root / "server" / "zen-core" / "pom.xml"
+        pom.write_text(self.BILLION_LAUGHS)
+        started = time.perf_counter()
+        with self.assertRaises(vm.UnreadablePom) as caught:
+            vm.check_no_server_jackson(self.root)
+        self.assertLess(time.perf_counter() - started, 5.0, "the entities must never be expanded")
+        self.assertIn("DOCTYPE", str(caught.exception))
+        code, out = self.run_gate(self.root)
+        self.assertEqual(1, code)
+        self.assertIn("could not be read safely", out)
+        self.assertNotIn("intact", out)
+
+    def test_an_external_entity_pom_is_refused_not_read(self) -> None:
+        secret = self.root / "secret.txt"
+        secret.write_text("TOP-SECRET")
+        pom = self.root / "server" / "zen-core" / "pom.xml"
+        pom.write_text(
+            '<?xml version="1.0"?>\n'
+            f'<!DOCTYPE project [<!ENTITY x SYSTEM "{secret.as_uri()}">]>\n'
+            '<project xmlns="http://maven.apache.org/POM/4.0.0"><artifactId>&x;</artifactId></project>\n'
+        )
+        with self.assertRaises(vm.UnreadablePom):
+            vm.check_no_server_jackson(self.root)
+        self.assertEqual(1, self.run_gate(self.root)[0])
+
+    def test_a_pom_that_is_not_well_formed_is_a_failure_not_a_traceback(self) -> None:
+        (self.root / "server" / "zen-core" / "pom.xml").write_text("<project><artifactId>")
+        code, out = self.run_gate(self.root)
+        self.assertEqual(1, code)
+        self.assertIn("not well-formed", out)
+
+    def test_a_pom_in_another_encoding_is_still_read(self) -> None:
+        pom = self.root / "server" / "zen-transport" / "pom.xml"
+        pom.write_bytes(POM_WITH_JANDEX.replace("UTF-8", "UTF-16").encode("utf-16"))
+        self.assertEqual([], vm.check_jandex(self.root))
+
     # ── the defect this gate closes: passing having checked nothing ────────────────────────
     def test_stale_module_scope_is_a_failure(self) -> None:
         import shutil
@@ -218,6 +290,13 @@ class ModuleGateTest(unittest.TestCase):
         with self.assertRaises(vm.StaleScope):
             vm.check_no_server_jackson(self.root)
         self.assertEqual(1, self.run_gate(self.root)[0])
+
+
+class ShippedFloorTest(unittest.TestCase):
+    """Unpatched: the number the gate actually ships with (ADR-069)."""
+
+    def test_the_shipped_floor_is_3_11(self) -> None:
+        self.assertEqual((3, 11), vm.MIN_PYTHON)
 
 
 if __name__ == "__main__":

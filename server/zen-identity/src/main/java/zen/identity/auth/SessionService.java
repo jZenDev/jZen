@@ -1,5 +1,6 @@
 package zen.identity.auth;
 
+import zen.identity.AuthException;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.core.NewCookie;
 import java.time.Duration;
@@ -60,7 +61,7 @@ public class SessionService {
   /** CSRF cookie (JS-readable, so the SPA can echo it in {@link #CSRF_HEADER}). */
   public NewCookie csrfCookie(String token) {
     return new NewCookie.Builder(CSRF_COOKIE)
-        .value(token)
+        .value(cookieValue(CSRF_COOKIE, token))
         .path("/")
         .httpOnly(false)
         .secure(secureCookie)
@@ -87,12 +88,39 @@ public class SessionService {
 
   private NewCookie authCookie(String name, String token, Duration maxAge) {
     return new NewCookie.Builder(name)
-        .value(token)
+        .value(cookieValue(name, token))
         .path("/")
         .httpOnly(true)
         .secure(secureCookie)
         .sameSite(NewCookie.SameSite.LAX)
         .maxAge((int) maxAge.toSeconds())
         .build();
+  }
+
+  /**
+   * {@code token} if every character is a legal cookie octet (RFC 6265 section 4.1.1), else a 502.
+   *
+   * <p>The tokens come from Supabase, not from the caller, and a JWT or an opaque refresh token
+   * is made of base64url characters and dots. A value with a CR/LF, space, quote, comma, semicolon
+   * or backslash is not one, and it must never reach a {@code Set-Cookie} header. The HTTP layer
+   * does not let it split the response, but left to it the request never completes (a test that
+   * returns such a token from Supabase times out). Failing here turns that into a clean error, and
+   * keeps the check in the code that builds the header rather than in whatever sits underneath.
+   * The message names the cookie, never the value.
+   */
+  private static String cookieValue(String name, String token) {
+    for (int i = 0; i < token.length(); i++) {
+      char c = token.charAt(i);
+      boolean legal =
+          c == 0x21 || (c >= 0x23 && c <= 0x2B) || (c >= 0x2D && c <= 0x3A)
+              || (c >= 0x3C && c <= 0x5B) || (c >= 0x5D && c <= 0x7E);
+      if (!legal) {
+        throw new AuthException(
+            502,
+            "invalid_session_token",
+            "The identity provider returned a value for " + name + " that cannot be sent as a cookie.");
+      }
+    }
+    return token;
   }
 }

@@ -26,7 +26,23 @@ nothing", ADR-034 invariant 8; the `verify-boundaries.py` header explains the ge
 `MODULE_GLOB` matching no directory, or the Jackson scan matching no `pom.xml` at all, is reported
 as a failure — "examined nothing" must never look like "found nothing wrong".
 
-Written to the 3.9 floor, stdlib only.
+**Trust boundary for the XML.** The `pom.xml` files read here are whatever the checkout holds, and
+CI runs this gate on a branch before anyone has reviewed it, so a contributed POM is untrusted
+input. `ElementTree` does not fetch external entities, but before expat 2.4.1 (the one bundled with
+Python builds older than 3.11 can be older still) a document that declares nested internal entities
+expands them without a limit, so a few hundred bytes can exhaust memory. A Maven POM never needs a
+DTD, so `_parse_pom` refuses any document that declares one, before any entity is defined, on every
+supported Python. A POM that is not well-formed, or declares a DTD, is a failure of the scan, not
+a pom with nothing to report.
+
+**Python 3.11 or newer, unlike the other scripts** (ADR-069). The rest of `scripts/` is written to a
+3.9 floor so it runs on a Mac with only Xcode's Command Line Tools; this one reads files a
+contributor controls and hands them to an XML parser, and the parser that ships with 3.10 and older
+is the one with the known entity-expansion and external-entity weaknesses. `_parse_pom`'s DOCTYPE
+refusal already closes that hole on every version, so the floor is a second layer, not the only
+one. A runtime below it is a failure that says why and how to fix it, never a pass.
+
+Stdlib only.
 """
 
 from __future__ import annotations
@@ -36,6 +52,7 @@ import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
+from xml.parsers import expat
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import lib  # noqa: E402  (sibling module; sys.path is set immediately above)
@@ -59,6 +76,11 @@ JAVA_LINE_COMMENT = re.compile(r"^\s*//")
 JANDEX_ARTIFACT = "jandex-maven-plugin"
 FORBIDDEN_JACKSON_ARTIFACT = "quarkus-rest-jackson"
 
+# The oldest interpreter this gate runs on (ADR-069). Checked in `main`, not at import, so the
+# fixture tests can still load the module on the repository's 3.9 floor and exercise the parts that
+# matter there, the DOCTYPE refusal first among them.
+MIN_PYTHON = (3, 11)
+
 # Maven's POM namespace. ElementTree requires the namespace prefix on every tag when the
 # document declares a default xmlns, which every jZen pom.xml does.
 POM_NS = "http://maven.apache.org/POM/4.0.0"
@@ -68,6 +90,10 @@ class StaleScope(Exception):
     """A scan pattern matched nothing — the gate cannot vouch for a tree it never read."""
 
 
+class UnreadablePom(Exception):
+    """A pom.xml could not be read safely, so the gate cannot say what it declares."""
+
+
 @dataclass(frozen=True)
 class Hit:
     path: str
@@ -75,6 +101,17 @@ class Hit:
 
     def __str__(self) -> str:
         return f"{self.path}: {self.detail}"
+
+
+def runtime_problem() -> "str | None":
+    """Why this interpreter may not run the gate, or None if it may."""
+    if sys.version_info[:2] >= MIN_PYTHON:
+        return None
+    want = ".".join(str(n) for n in MIN_PYTHON)
+    have = ".".join(str(n) for n in sys.version_info[:3])
+    return (f"verify-modules.py needs Python {want} or newer and this is {have}. The XML parser in "
+            f"older versions expands entities without a limit (ADR-069). Install a newer python3 "
+            f"(brew install python) and put it first on PATH.")
 
 
 def _modules(root: Path) -> "list[Path]":
@@ -95,6 +132,33 @@ def _poms(root: Path) -> "list[Path]":
     return poms
 
 
+def _parse_pom(pom: Path) -> ET.Element:
+    """The root element of `pom`, refusing a document that declares a DTD (see the module docstring).
+
+    The DOCTYPE handler fires as soon as the declaration starts, before any entity in it is
+    defined, so nothing is ever expanded. The same pass rejects a document that is not well-formed,
+    which `ET.parse` would otherwise surface as a traceback instead of a reported failure.
+    """
+    try:
+        data = pom.read_bytes()
+    except OSError as e:
+        raise UnreadablePom(f"{pom}: could not be read ({e.__class__.__name__}: {e})") from e
+
+    def refuse_dtd(*_args: object) -> None:
+        raise UnreadablePom(
+            f"{pom}: declares a DOCTYPE; a Maven POM needs no DTD, and entity declarations are "
+            "how a small document is made to expand without limit"
+        )
+
+    guard = expat.ParserCreate()
+    guard.StartDoctypeDeclHandler = refuse_dtd
+    try:
+        guard.Parse(data, True)
+        return ET.fromstring(data)
+    except (expat.ExpatError, ET.ParseError) as e:
+        raise UnreadablePom(f"{pom}: is not well-formed XML ({e})") from e
+
+
 def _local(tag: str) -> str:
     """Strip the `{namespace}` prefix ElementTree puts on every tag."""
     return tag.rsplit("}", 1)[-1]
@@ -103,14 +167,13 @@ def _local(tag: str) -> str:
 def _artifact_ids(pom: Path, container_tag: str) -> "set[str]":
     """Every `<artifactId>` text found under `container_tag` elements (`dependency`/`plugin`).
 
-    Comments are never seen: `ET.parse` drops them by default, which is the whole reason this is
+    Comments are never seen: `ElementTree` drops them by default, which is the whole reason this is
     Python-with-ElementTree rather than a `grep` for the artifact name — a name mentioned only in
     an XML comment (the kind this repository already has, explaining *why* a plugin is present)
     must not count as the plugin being declared, or as the forbidden dependency being present.
     """
-    tree = ET.parse(pom)
     ids: "set[str]" = set()
-    for el in tree.getroot().iter():
+    for el in _parse_pom(pom).iter():
         if _local(el.tag) != container_tag:
             continue
         for child in el:
@@ -184,8 +247,12 @@ CHECKS = (
 
 
 def main(root: "Path | None" = None) -> int:
-    root = root or lib.repo_root()
     print("Checking the Jandex and no-Jackson module rules...")
+    problem = runtime_problem()
+    if problem:
+        lib.fail("this interpreter is too old to vouch for the poms:", [problem])
+        return 1
+    root = root or lib.repo_root()
 
     failed = False
     for check, bad, good in CHECKS:
@@ -194,6 +261,10 @@ def main(root: "Path | None" = None) -> int:
         except StaleScope as e:
             # Not "no violations found" — "nothing was examined".
             lib.fail(f"the scan is stale and checked nothing: {e}")
+            failed = True
+            continue
+        except UnreadablePom as e:
+            lib.fail(f"a pom.xml could not be read safely, so this check vouches for nothing: {e}")
             failed = True
             continue
         if hits:

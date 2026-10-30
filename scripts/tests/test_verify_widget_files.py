@@ -266,6 +266,57 @@ class TestNotLooking(Fixture):
         self.assertEqual(code, 1)
         self.assertIn("locked.dart", out)
 
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_a_file_that_links_out_of_its_package_is_not_read(self) -> None:
+        outside = write(
+            self.root / "outside" / "pair.dart",
+            "class A extends StatelessWidget {}\nclass B extends StatelessWidget {}\n",
+        )
+        self.lib("ok.dart", "class C extends StatelessWidget {}\n")
+        os.symlink(outside, self.pkg / "lib" / "linked.dart")
+        code, out = self.run_gate()
+        self.assertEqual(code, 1)
+        self.assertIn("linked.dart", out)
+        self.assertIn("outside its package", out)
+        self.assertIn("was not read", out)
+        self.assertNotIn("widgets in one file", out, "the outside file must not have been parsed")
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_a_lib_directory_that_links_out_of_its_package_is_not_read(self) -> None:
+        elsewhere = write(self.root / "elsewhere" / "a.dart", "class A extends StatelessWidget {}\n")
+        linked = package(self.root, "linked")
+        (linked / "lib").rmdir()
+        os.symlink(elsewhere.parent, linked / "lib")
+        code, out = self.run_gate("linked")
+        self.assertEqual(code, 1)
+        self.assertIn("outside its package", out)
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_a_link_that_stays_inside_the_package_is_still_scanned(self) -> None:
+        real = self.lib("real.dart", "class A extends StatelessWidget {}\n")
+        os.symlink(real, self.pkg / "lib" / "alias.dart")
+        code, out = self.run_gate()
+        self.assertEqual(code, 0, out)
+
+    @unittest.skipIf(os.name == "nt", "symlinks need privileges on Windows")
+    def test_a_symlinked_directory_does_not_bring_a_foreign_package_into_the_scan(self) -> None:
+        foreign = package(self.root / "foreign")
+        write(foreign / "lib" / "pair.dart",
+              "class A extends StatelessWidget {}\nclass B extends StatelessWidget {}\n")
+        scanned = self.root / "scanned"
+        scanned.mkdir()
+        os.symlink(foreign, scanned / "sneaky")
+        package(scanned, "real")
+        write(scanned / "real" / "lib" / "a.dart", "class C extends StatelessWidget {}\n")
+        code, out = self.run_gate("scanned")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("pair.dart", out)
+
+    def test_a_root_given_as_an_absolute_path_or_with_dotdot_is_scanned(self) -> None:
+        self.lib("ok.dart", "class A extends StatelessWidget {}\n")
+        self.assertEqual(self.run_gate(str(self.pkg))[0], 0)
+        self.assertEqual(self.run_gate("demo/lib/..")[0], 0)
+
     def test_one_clean_path_does_not_vouch_for_a_missing_one(self) -> None:
         self.lib("ok.dart", "class A extends StatelessWidget {}\n")
         code, _ = self.run_gate("demo", "missing")

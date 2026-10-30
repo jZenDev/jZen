@@ -876,5 +876,108 @@ class PinPolicyTest(unittest.TestCase):
             self.assertFalse(any(tag.startswith(p) for p in dc.DEFAULT_TAG_PREFIXES))
 
 
+class PolicyIdTest(unittest.TestCase):
+    """The identifier in the tagged Delete rule's name: stable, and unambiguous for a valid list."""
+
+    def test_the_default_identifier_never_changes(self) -> None:
+        # Stored in the name of every rule already armed; a different value renames the rule and
+        # sends each repository back through a dry run. Pinned on purpose.
+        self.assertEqual("d8d5d5c4", dc.policy_id(dc.DEFAULT_TAG_PREFIXES))
+        names = {r["name"] for r in dc.build_policy(20, 30, dc.DEFAULT_TAG_PREFIXES)}
+        self.assertIn("zen-v2-delete-tagged-d8d5d5c4-older-than-30d", names)
+
+    def test_different_lists_get_different_identifiers(self) -> None:
+        lists = [["a"], ["b"], ["a", "b"], ["b", "a"], ["ab"], ["a", "bb"], ["aa", "b"], ["sha256-"]]
+        ids = [dc.policy_id(x) for x in lists]
+        self.assertEqual(len(ids), len(set(ids)), ids)
+
+    def test_a_prefix_that_could_blur_the_list_delimiter_is_refused(self) -> None:
+        # ["a\nb"] would hash exactly like ["a", "b"]: the delimiter must not be a legal character.
+        for bad in ("a\nb", "a b", "", "-a", ".a", "a;b", "a/b", "a\u00fc"):
+            with self.assertRaises(dc.StepError, msg=repr(bad)):
+                dc.build_policy(20, 30, [bad])
+
+
+class ArgumentShapeTest(Harness):
+    """Operator-supplied names are argv elements, so a leading dash would be read as an option."""
+
+    GOOD = {"project": "proj", "region": "europe-central2", "service": "svc", "repo": "jzen"}
+    HOSTILE = ["--impersonate-service-account=x@y", "-h", "-", "a b", "a;b", "a$(id)", "a`id`",
+               "a|b", "a&b", "a\nb", "A", "1abc", ""]
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.load(scenario())
+
+    def argv(self, **override: str) -> "list[str]":
+        values = dict(self.GOOD, **override)
+        return ["--project", values["project"], "--region", values["region"],
+                "--service", values["service"], "--repo", values["repo"],
+                "--keep-revisions", "3", "--revision-days", "14", "--keep-versions", "20",
+                "--image-days", "30", "--docker-cache-hours", "168",
+                "--revisions", "on", "--registry", "on", "--docker", "on"]
+
+    def test_the_real_names_are_accepted(self) -> None:
+        a = dc.parse_args(self.argv())
+        self.assertEqual(("proj", "europe-central2", "svc", "jzen"),
+                         (a.project, a.region, a.service, a.repo))
+
+    def test_a_hostile_name_is_a_usage_error_and_nothing_runs(self) -> None:
+        for field in self.GOOD:
+            for bad in self.HOSTILE:
+                if field == "repo" and bad == "1abc":
+                    continue  # a repository id may start with a digit
+                with self.subTest(field=field, value=bad):
+                    err = io.StringIO()
+                    with self.assertRaises(SystemExit) as caught, contextlib.redirect_stderr(err):
+                        dc.parse_args(self.argv(**{field: bad}))
+                    self.assertEqual(2, caught.exception.code)
+                    # argparse itself refuses a dash-leading value given as a separate word; the
+                    # shape check is what refuses everything else, and the `--flag=value` form.
+                    self.assertRegex(err.getvalue(), "not a valid %s name|expected one argument" % field)
+
+    def test_a_dash_leading_value_in_the_equals_form_reaches_the_shape_check(self) -> None:
+        for field in self.GOOD:
+            argv = [a for a in self.argv() if a not in ("--" + field, self.GOOD[field])]
+            err = io.StringIO()
+            with self.assertRaises(SystemExit) as caught, contextlib.redirect_stderr(err):
+                dc.parse_args(argv + ["--%s=--impersonate-service-account=x" % field])
+            self.assertEqual(2, caught.exception.code)
+            self.assertIn("not a valid %s name" % field, err.getvalue())
+
+    def test_a_hostile_name_never_reaches_a_subprocess(self) -> None:
+        for field in self.GOOD:
+            before = len(self.calls())
+            code, out = self.run_main(self.argv(**{field: "--impersonate-service-account=x"}))
+            self.assertEqual(2, code, out)
+            self.assertEqual(before, len(self.calls()), "no gcloud or docker call may be made")
+
+    def test_pin_refuses_an_option_shaped_value_before_any_call(self) -> None:
+        good = ["pin", "--project", PROJECT, "--region", REGION, "--repo", REPO]
+        for argv in (
+            ["pin", "--project", "--x", "--region", REGION, "--repo", REPO, "--image", PACKAGE + ":t"],
+            good + ["--image", "--format=json"],
+            good + ["--image", "-" + PACKAGE],
+            good + ["--image", PACKAGE + ":t; rm -rf /"],
+            good + ["--image", PACKAGE + ":t\n--quiet"],
+        ):
+            before = len(self.calls())
+            code, out = self.run_main(argv)
+            self.assertEqual(2, code, (argv, out))
+            self.assertEqual(before, len(self.calls()))
+
+    def run_main(self, argv: "list[str]"):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            try:
+                code = dc.main(argv, now=NOW)
+            except SystemExit as exc:
+                code = exc.code
+        return code, out.getvalue()
+
+    def calls(self) -> list:
+        return self.state()["calls"]
+
+
 if __name__ == "__main__":
     unittest.main()

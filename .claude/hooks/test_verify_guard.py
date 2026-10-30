@@ -167,6 +167,31 @@ with tempfile.TemporaryDirectory() as root:
           capture_output=True,text=True,env=dict(os.environ,CLAUDE_PROJECT_DIR=root))
     check("cache: completed line then test clears it", p.returncode==0, p.stderr[:120])
 
+# The shipped test-command patterns are matched against every Bash command in a transcript, and a
+# command can be arbitrarily long. A pattern whose repetition overlaps its own start (the
+# `mvnw ... test` shape) is quadratic on `mvnw mvnw mvnw ...`; 160 KB took over 20 s.
+import re, time
+print("verify guard: shipped patterns are linear and keep their meaning")
+with open(os.path.join(HERE, "verify-rules.json")) as fh:
+    shipped = json.load(fh)["tests"]
+adversarial = ["mvnw " * 32000, "task " * 32000, "task verify" * 16000 + "x" * 100000,
+               ("x" * 100 + ";") * 2000 + "mvnw " * 32000]
+for rx in shipped:
+    t0 = time.perf_counter()
+    for text in adversarial:
+        re.search(rx, text)
+    took = time.perf_counter() - t0
+    check("pattern is linear on adversarial input: " + rx, took < 1.0, f"{took:.2f}s")
+runs = ["./mvnw test", "./mvnw -B -q verify", "cd x && ./mvnw -f a/pom.xml test -Dtest=A#b",
+        "task test", "task verify:contracts", "dart test", "flutter test", "pnpm test"]
+not_runs = ["./mvnw install -DskipTests", "./mvnw compile; echo test", "mvnw | grep test",
+            "echo mvnw && echo verify", "./mvnw mvnw install & test", "xmvnw test", "task testing"]
+check("shipped patterns still recognise a test run",
+      all(any(re.search(rx, c) for rx in shipped) for c in runs))
+check("shipped patterns still ignore what is not one",
+      not any(re.search(rx, c) for rx in shipped for c in not_runs),
+      [c for c in not_runs if any(re.search(rx, c) for rx in shipped)])
+
 print()
 if FAILURES:
     print(f"{len(FAILURES)} FAILED: {FAILURES}"); sys.exit(1)

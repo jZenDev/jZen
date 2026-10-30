@@ -15,6 +15,37 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-069 — `verify-modules.py` requires Python 3.11, the one script above the 3.9 floor
+
+**Date:** 2026-10-30. **Status:** accepted.
+
+### Decision
+
+- `scripts/verify-modules.py` refuses to run on Python older than 3.11 (`MIN_PYTHON`, checked in
+  `main`). On an older interpreter it prints why and how to fix it and exits non-zero.
+- Every other script keeps the 3.9 floor. `task doctor`, `scripts/README.md` and the CI Python
+  version are unchanged; the Taskfile summary of `verify:modules`, `scripts/README.md` and STANDARDS
+  "Scripting" name the exception.
+- `_parse_pom` also refuses any `pom.xml` that declares a DOCTYPE before an entity is expanded, so
+  the protection does not depend on the interpreter alone. The fixture tests lower `MIN_PYTHON` so
+  that refusal is still exercised on 3.9.
+
+### What this supersedes, and why
+
+- **"Python is floored, not pinned: `>= 3.9`"** (STANDARDS "Scripting", ADR-032) → **refined:** one
+  script is above the floor. *Why:* it parses `pom.xml` files from a branch nobody has reviewed yet,
+  and the XML parser bundled with Python 3.10 and older expands nested entities without a limit
+  (a few hundred bytes can exhaust memory) and is the version range a static scan flags. The 3.9
+  floor exists so the dev-loop scripts run on a Mac with only Xcode's tools; a gate that cannot
+  trust its input is not worth that, and it fails loudly rather than skipping.
+
+### Consequence
+
+- `task test` (which runs `verify:modules` first) fails on a machine whose `python3` is the Xcode
+  one, with a message naming the fix. CI does not run this gate today, so it is unaffected.
+- `task test:scripts` passes on 3.9 through 3.14; the gate itself ran green on 3.14 and was
+  confirmed to refuse on 3.10.
+
 ## ADR-068 — An image a revision or job needs is protected by a pin tag the registry policy keeps
 
 **Date:** 2026-10-29. **Status:** accepted, **not yet verified in a real environment** (see

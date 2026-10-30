@@ -4,6 +4,7 @@ import static io.restassured.RestAssured.given;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -369,6 +370,134 @@ class AuthResourceTest {
     assertEquals("/?token_hash=single-use-hash&type=recovery", resp.getHeader("Location"));
     assertEquals("no-referrer", resp.getHeader("Referrer-Policy"));
     assertEquals("no-store", resp.getHeader("Cache-Control"));
+  }
+
+  @Test
+  void authCallback_neverLeavesTheAppOrSplitsTheResponseForAHostileTokenHash() {
+    // The token hash is attacker-chosen (it arrives on a link). Whatever it holds, the redirect
+    // must stay a same-origin path "/?...", carry no raw CR/LF, and add no header of its own.
+    List<String> hostile =
+        List.of(
+            "x\r\nSet-Cookie: pwned=1",
+            "x\nSet-Cookie: pwned=1",
+            "x%0d%0aSet-Cookie: pwned=1",
+            "//evil.example/steal",
+            "https://evil.example/steal",
+            "\\\\evil.example",
+            "x&type=signup&next=https://evil.example",
+            "x#fragment",
+            "x?y=z",
+            "ünïcödé-%00-hash");
+    for (String tokenHash : hostile) {
+      Response resp =
+          given()
+              .redirects()
+              .follow(false)
+              .queryParam("token_hash", tokenHash)
+              .queryParam("type", "signup")
+              .when()
+              .get("/auth/callback")
+              .andReturn();
+
+      assertEquals(303, resp.statusCode(), tokenHash);
+      String location = resp.getHeader("Location");
+      assertNotNull(location, tokenHash);
+      assertTrue(location.startsWith("/?token_hash="), tokenHash + " -> " + location);
+      assertFalse(location.startsWith("//"), tokenHash + " -> " + location);
+      assertTrue(location.chars().noneMatch(c -> c < 0x21 || c > 0x7e), tokenHash + " -> " + location);
+      assertTrue(
+          location.endsWith("&type=signup") && location.indexOf("&type=") == location.lastIndexOf("&type="),
+          "an injected type or next parameter must stay inside the encoded hash: " + location);
+      assertFalse(location.contains("evil.example/") && !location.contains("%2F"), location);
+      assertNull(resp.getHeader("Set-Cookie"), tokenHash);
+      assertEquals("no-referrer", resp.getHeader("Referrer-Policy"), tokenHash);
+    }
+  }
+
+  @Test
+  void authCallback_encodesWhatItForwardsSoItRoundTripsExactly() {
+    String tokenHash = "a b/c+d&e=f%g";
+    Response resp =
+        given()
+            .redirects()
+            .follow(false)
+            .queryParam("token_hash", tokenHash)
+            .queryParam("type", "recovery")
+            .when()
+            .get("/auth/callback")
+            .andReturn();
+
+    java.net.URI location = java.net.URI.create(resp.getHeader("Location"));
+    assertEquals("/", location.getPath());
+    assertNull(location.getHost());
+    // Split on the raw query first: a '&' inside the value must have been encoded, so exactly two
+    // parameters remain, and decoding the first returns the original bytes.
+    String[] pairs = location.getRawQuery().split("&");
+    assertEquals(2, pairs.length, location.getRawQuery());
+    assertEquals(
+        tokenHash,
+        java.net.URLDecoder.decode(pairs[0].substring("token_hash=".length()), java.nio.charset.StandardCharsets.UTF_8));
+    assertEquals("type=recovery", pairs[1]);
+  }
+
+  @Test
+  void authCallback_ignoresATypeOutsideTheAllowListInsteadOfForwardingIt() {
+    for (String type : List.of("magiclink", "signup\r\nX-Evil: 1", "//evil.example", "")) {
+      Response resp =
+          given()
+              .redirects()
+              .follow(false)
+              .queryParam("token_hash", "single-use-hash")
+              .queryParam("type", type)
+              .when()
+              .get("/auth/callback")
+              .andReturn();
+
+      assertEquals(303, resp.statusCode(), type);
+      assertEquals("/?auth=email-confirmed", resp.getHeader("Location"), type);
+      assertNull(resp.getHeader("X-Evil"), type);
+    }
+  }
+
+  @Test
+  void sessionCookies_refuseATokenThatCouldSplitTheResponse() {
+    // The tokens are minted by Supabase, so this is defence in depth: a CR/LF or another character
+    // outside a cookie value must fail the request, never reach a Set-Cookie header.
+    for (String bad : List.of("jwt\r\nSet-Cookie: pwned=1", "jwt\nX-Evil: 1", "jwt;Path=/x", "jwt value")) {
+      when(authClient.token(eq("password"), any()))
+          .thenReturn(
+              new SupabaseSessionResponse(
+                  bad,
+                  "refresh-jwt",
+                  new SupabaseSessionResponse.UserPayload(
+                      UUID.randomUUID().toString(),
+                      "split@example.com",
+                      "authenticated",
+                      "2024-01-01T00:00:00Z",
+                      Map.of()),
+                  null,
+                  null,
+                  null,
+                  null,
+                  null,
+                  null));
+
+      Response resp =
+          given()
+              .header(HEADER, "json")
+              .contentType("application/json")
+              .body("{\"email\":\"split@example.com\",\"password\":\"secret1\"}")
+              .when()
+              .post("/api/v1/auth/login")
+              .andReturn();
+
+      assertTrue(resp.statusCode() >= 400, bad + " -> " + resp.statusCode());
+      assertNull(resp.getHeader("X-Evil"), bad);
+      List<String> setCookies = resp.getHeaders().getValues("Set-Cookie");
+      assertTrue(
+          setCookies == null || setCookies.stream().noneMatch(c -> c.contains("pwned") || c.contains("X-Evil")),
+          bad);
+    }
   }
 
   @Test

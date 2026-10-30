@@ -37,7 +37,9 @@ statement, which is Rule 3.
 
 Python here is **floored at 3.9, not pinned** (`task doctor` checks it), and **stdlib only** — no
 `pip`, no virtualenv, no `requirements.txt`. The floor is what keeps these scripts working on a Mac
-carrying nothing but Xcode's Command Line Tools.
+carrying nothing but Xcode's Command Line Tools. One script is the exception: `verify-modules.py`
+needs 3.11 (ADR-069) because it parses contributed `pom.xml` files, and it refuses to run, rather
+than pass, on anything older.
 
 Shared helpers follow the same split: `lib.sh` is sourced by the runners, `lib.py` is imported by
 the Python scripts, and the two mirror each other's vocabulary (`info`, `warn`, `die`, `ok`,

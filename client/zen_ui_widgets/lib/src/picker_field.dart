@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import 'adaptive_ink_well.dart';
-import 'focus_ring.dart';
 
 /// A read-only outlined field that opens a picker when activated — the shape a date field and
 /// an iOS wheel select share.
@@ -41,26 +40,24 @@ class ZenPickerField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FocusRing.wrapping(
-      child: MergeSemantics(
-        child: Semantics(
-          button: true,
-          enabled: onTap != null,
-          child: AdaptiveInkWell(
-            borderRadius: BorderRadius.circular(4),
-            onTap: onTap,
-            child: InputDecorator(
-              isEmpty: valueText == null,
-              decoration: InputDecoration(
-                labelText: label,
-                hintText: placeholder,
-                errorText: errorText,
-                enabled: onTap != null,
-                border: const OutlineInputBorder(),
-                suffixIcon: ExcludeSemantics(child: Icon(icon)),
-              ),
-              child: valueText == null ? null : Text(valueText!),
+    return MergeSemantics(
+      child: Semantics(
+        button: true,
+        enabled: onTap != null,
+        child: AdaptiveInkWell(
+          borderRadius: BorderRadius.circular(4),
+          onTap: onTap,
+          child: InputDecorator(
+            isEmpty: valueText == null,
+            decoration: InputDecoration(
+              labelText: label,
+              hintText: placeholder,
+              errorText: errorText,
+              enabled: onTap != null,
+              border: const OutlineInputBorder(),
+              suffixIcon: ExcludeSemantics(child: Icon(icon)),
             ),
+            child: valueText == null ? null : Text(valueText!),
           ),
         ),
       ),

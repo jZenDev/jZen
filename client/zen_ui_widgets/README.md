@@ -63,6 +63,20 @@ ZenButton(label: messages.save, onPressed: save);
 ZenButton(label: messages.cancel, onPressed: cancel, variant: ZenButtonVariant.text);
 ```
 
+### AdaptiveInkWell
+
+Make custom content tappable with keyboard activation and a visible focus ring. A null `onTap`
+disables it. Supply an accessible label and a suitably sized child, plus a `Material` ancestor.
+`borderRadius` shapes the Material ink; Apple builds suppress the ripple.
+
+```dart
+AdaptiveInkWell(
+  borderRadius: BorderRadius.circular(12),
+  onTap: openGoal,
+  child: Padding(padding: const EdgeInsets.all(16), child: Text(messages.goal)),
+);
+```
+
 ### ZenIconButton
 
 An icon-only action with a required accessible label and optional non-negative count badge.

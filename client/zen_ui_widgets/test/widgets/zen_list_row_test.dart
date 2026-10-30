@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_core/zen_core.dart';
-import 'package:zen_ui_widgets/src/zen_list_row.dart';
+import 'package:zen_ui_widgets/src/list/zen_list_row.dart';
 
 import '../support/a11y.dart';
 

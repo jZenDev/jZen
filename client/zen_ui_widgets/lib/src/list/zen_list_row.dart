@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:zen_core/zen_core.dart';
 
-import 'focus_ring.dart';
+import '../focus_ring.dart';
 
 /// An adaptive list row. Supply either text or a widget for each text slot.
 class ZenListRow extends StatelessWidget {

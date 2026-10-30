@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:zen_core/zen_core.dart';
 
+import 'adaptive_ink_well.dart';
 import 'focus_ring.dart';
 
 /// A labelled on/off row for a boolean setting: the label on the left, a switch on the right,
@@ -62,7 +63,7 @@ Widget buildMaterialSwitchRow(
 /// The Cupertino row; see [buildMaterialSwitchRow].
 ///
 /// A [CupertinoSwitch] alone has no label and only the switch is tappable, so the row is the
-/// control: an [InkWell] that toggles, with the switch drawn inside it but taken out of focus
+/// control: an [AdaptiveInkWell] that toggles, with the switch drawn inside it but taken out of focus
 /// and hit testing so there is one tab stop and one node, not two.
 Widget buildCupertinoSwitchRow(
   BuildContext context,
@@ -86,7 +87,8 @@ Widget buildCupertinoSwitchRow(
     hint: subtitle,
     focusable: enabled,
     onTap: enabled ? () => onChanged(!value) : null,
-    child: InkWell(
+    child: AdaptiveInkWell(
+      apple: true,
       onTap: enabled ? () => onChanged(!value) : null,
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 56),

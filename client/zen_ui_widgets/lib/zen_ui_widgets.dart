@@ -61,3 +61,5 @@ export 'src/zen_segmented_control.dart' show ZenSegment, ZenSegmentedControl;
 export 'src/zen_select.dart' show ZenSelect;
 export 'src/zen_switch_row.dart' show ZenSwitchRow;
 export 'src/text/zen_text_field.dart' show ZenTextField;
+
+export 'src/zen_list_row.dart' show ZenListRow;

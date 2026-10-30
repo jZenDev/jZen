@@ -5,9 +5,11 @@
 
 **Shared adaptive widgets for jZen apps — one call, the right chrome on every platform.**
 
-The home for adaptive UI that is neither navigation (`zen_ui_navigation`) nor identity
-(`zen_ui_identity`). Every widget here renders **Cupertino on Apple platforms (iOS and macOS)**
-and **Material everywhere else**, so an app never hand-rolls a platform check.
+The home for adaptive UI that is neither navigation ([`zen_ui_navigation`](../zen_ui_navigation/README.md)) nor identity
+([`zen_ui_identity`](../zen_ui_identity/README.md)). Store conflict screens and locking UI have their
+own guides in [`zen_ui_store`](../zen_ui_store/README.md) and [`zen_ui_lock`](../zen_ui_lock/README.md). Controls choose the appropriate platform idiom within the framework, so an app does not
+hand-roll a platform check. Apple builds generally use Cupertino; some controls intentionally use
+a desktop-friendly Material picker on macOS. Other builds use Material.
 
 > Part of the [jZen](https://github.com/jZenDev/jZen) monorepo. Inside the repo it is a path
 > dependency in the `client/` pub workspace (versioned in lockstep with the product); this
@@ -25,7 +27,8 @@ and **Material everywhere else**, so an app never hand-rolls a platform check.
 - **Controls** — `ZenButton` (primary, secondary, text), `ZenSwitchRow`, `ZenSegmentedControl`,
   `ZenSelect`, `ZenDateField`, `ZenTextField`, `ZenAmountField`, `ZenProgressIndicator`, `ZenProgressBar`, and the paired `ZenDateRangeField` /
   `ZenAmountRangeField`, which enforce `from <= to` / `min <= max` in one place.
-- **List item actions** — `ZenListItemActions` adapts row actions to desktop, web, and native
+- **List rows and actions** — `ZenListRow` opens an item with a platform-appropriate row
+  interaction; `ZenListItemActions` adapts row actions to desktop, web, and native
   mobile while leaving labels and callbacks to the application.
 - **Accessible by construction** — WCAG 2.2 AA: one announcement per control, a `FocusRing` that
   shows for keyboard and assistive technology and hides for a pointer, AA contrast in light and
@@ -35,50 +38,196 @@ and **Material everywhere else**, so an app never hand-rolls a platform check.
 - **Bring your own content** — you supply the body; the overlay owns the surface, size limits,
   barrier and dismissal.
 
-## 🧩 Controls
+## Interactive Showcase
+
+The reference app has an interactive **Showcase** page for trying these controls. Run
+`task run:demo`, sign in, and select **Showcase** in the navigation. The examples use local page
+state and are available in English and Ukrainian. See the
+[demo instructions](../../apps/zen_demo/README.md#-running-it-showcase) and
+[Showcase screen](../../apps/zen_demo/zen_demo_client/lib/src/screens/showcase_screen.dart).
+
+## Widget guide
+
+Examples below use application-owned state, callbacks and localized labels. Import
+`package:zen_ui_widgets/zen_ui_widgets.dart`; Flutter types such as `Icons` come from Flutter.
+Controllers shown here belong to the app and must be disposed with its state. Pass null callbacks
+to disable controls where indicated. See the generated Dart API documentation for every parameter.
+
+### ZenButton
+
+A labelled action. Choose `primary`, `secondary` or `text`; `isLoading` prevents activation while
+work runs. A null `onPressed` disables it.
 
 ```dart
-ZenButton(label: 'Save', onPressed: save);
-ZenButton(label: 'Cancel', onPressed: cancel, variant: ZenButtonVariant.text);
-
-ZenSelect<Currency>(
-  label: 'Currency',
-  items: Currency.values,
-  itemLabel: (c) => c.code,
-  value: currency,
-  onChanged: (c) => setState(() => currency = c),
-);
-
-ZenDateRangeField(
-  fromLabel: 'From',
-  toLabel: 'To',
-  from: from,
-  to: to,
-  onChanged: (f, t) => setState(() { from = f; to = t; }),
-);
-
-ZenAmountField(label: 'Amount', controller: amount, maxFractionDigits: 2);
-final String? canonical = normalizeAmount(amount.text, maxFractionDigits: 2); // "1234.5" or null
+ZenButton(label: messages.save, onPressed: save);
+ZenButton(label: messages.cancel, onPressed: cancel, variant: ZenButtonVariant.text);
 ```
 
-The amount field is the *field and validation shape* only. What a number means — minor units,
-currency — stays with your app, which reads the canonical text.
+### ZenIconButton
 
-The controls' few strings (validation errors, "Select a date") come from
-`ZenWidgetsLocalizations`; register `zenWidgetsLocaleDelegate` in `MaterialApp`. An app using only
-`showAdaptivePresentation` needs no delegate.
+An icon-only action with a required accessible label and optional non-negative count badge.
+A null `onPressed` disables it; a badge of zero is hidden.
 
-| Control | Apple platforms | Elsewhere |
-|---|---|---|
-| `ZenButton` | `CupertinoButton` | Filled / Outlined / Text button |
-| `ZenSwitchRow` | `CupertinoSwitch` row | `SwitchListTile` |
-| `ZenSegmentedControl` | sliding segmented control | `SegmentedButton` |
-| `ZenSelect`, `ZenDateField` | wheel picker on **iOS**; macOS keeps the dropdown / calendar | dropdown / calendar dialog |
-| `ZenTextField`, `ZenAmountField` | `CupertinoTextField` (label above, outlined, shared focus ring) — on iOS and macOS | outlined `TextFormField` |
-| `ZenProgressIndicator` | `CupertinoActivityIndicator` | `CircularProgressIndicator` |
-| `ZenProgressBar` | rounded bar in the theme's primary | `LinearProgressIndicator` |
+```dart
+ZenIconButton(icon: Icons.notifications, label: messages.notifications,
+  badge: unreadCount, onPressed: openNotifications);
+```
 
-## List item actions
+### ZenSwitchRow
+
+An on/off setting whose entire row activates. `subtitle` is optional and null `onChanged` disables
+it. The caller owns the value. Apple builds use a Cupertino switch without Material ripple.
+
+```dart
+ZenSwitchRow(label: messages.archived, subtitle: messages.archivedHelp, value: archived,
+  onChanged: (value) => setState(() => archived = value));
+```
+
+### ZenListRow
+
+A labelled navigation row with an optional subtitle and trailing chevron. Null `onTap` disables
+it. On Apple the row does not display a Material ripple.
+
+```dart
+ZenListRow(title: account.name, subtitle: account.description,
+  onTap: () => openAccount(account));
+```
+
+### ZenSelect
+
+Choose one item, or none. The app supplies item labels and owns the chosen value; `onChanged: null`
+disables selection. iOS opens a wheel, while macOS and other platforms use a dropdown.
+
+```dart
+ZenSelect<Currency>(label: messages.currency, items: Currency.values,
+  itemLabel: (currency) => currency.code, value: currency,
+  onChanged: (value) => setState(() => currency = value));
+```
+
+### ZenSegmentedControl
+
+Select one of two to four mutually exclusive options using `ZenSegment` values and labels.
+
+```dart
+ZenSegmentedControl<ViewMode>(
+  segments: [ZenSegment(value: ViewMode.list, label: messages.list),
+    ZenSegment(value: ViewMode.grid, label: messages.grid)],
+  selected: mode, onChanged: (value) => setState(() => mode = value));
+```
+
+### ZenTextField
+
+A labelled text input with optional validation, errors, autofill, obscuring and multiline input.
+Use it inside a Flutter `Form` when form validation is needed; `enabled: false` disables input.
+
+```dart
+ZenTextField(label: messages.name, controller: nameController,
+  validator: (value) => value == null || value.isEmpty ? messages.required : null);
+```
+
+### ZenDateField
+
+A nullable date with optional bounds, clearing and error text. Null `onChanged` disables it.
+
+```dart
+ZenDateField(label: messages.date, value: date, clearable: true,
+  onChanged: (value) => setState(() => date = value));
+```
+
+### ZenDateRangeField
+
+A pair of dates with an open-ended endpoint allowed. The control checks their ordering and
+reports invalid ranges; null `onChanged` disables both fields.
+
+```dart
+ZenDateRangeField(fromLabel: messages.from, toLabel: messages.to, from: from, to: to,
+  onChanged: (start, end) => setState(() { from = start; to = end; }));
+```
+
+### ZenAmountField
+
+A decimal input; `maxFractionDigits` limits precision and `allowNegative` controls the sign.
+`onChanged` supplies canonical text or null when the input is not yet a number. The app owns
+currency, minor units and rounding. `normalizeAmount` and `parseAmount` are available separately.
+
+```dart
+ZenAmountField(label: messages.amount, controller: amountController, maxFractionDigits: 2);
+final canonical = normalizeAmount(amountController.text, maxFractionDigits: 2);
+```
+
+### ZenAmountRangeField
+
+A minimum and maximum pair, with range validation and optional precision and sign constraints.
+The app owns both controllers.
+
+```dart
+ZenAmountRangeField(minLabel: messages.minimum, maxLabel: messages.maximum,
+  minController: minController, maxController: maxController, maxFractionDigits: 2);
+```
+
+### ZenPickerField
+
+A read-only outlined field for an application-defined picker. Supply its displayed `valueText`,
+optional placeholder or error, and the callback opening the picker; null `onTap` disables it.
+Prefer `ZenSelect` or `ZenDateField` for those existing picker types.
+
+```dart
+ZenPickerField(label: messages.category, valueText: categoryName,
+  placeholder: messages.chooseCategory, onTap: chooseCategory);
+```
+
+### ZenProgressIndicator
+
+An indeterminate spinner for work of unknown length. It is decorative in the semantics tree;
+provide a separate accessible status when progress needs to be announced.
+
+```dart
+ZenProgressIndicator(size: 24);
+```
+
+### ZenProgressBar
+
+A named determinate measure. Values are clamped to 0–1 and announced as a localized percentage.
+The application is responsible for contrast if it supplies a custom color.
+
+```dart
+ZenProgressBar(label: messages.budgetUsed, value: fractionSpent);
+```
+
+### ZenPageScaffold
+
+A page with an adaptive top bar and body. Give the page a title and optional leading/back action
+and trailing controls. The body can contain a scrollable list or form.
+
+```dart
+ZenPageScaffold(title: messages.accounts, actions: [
+  ZenIconButton(icon: Icons.add, label: messages.add, onPressed: addAccount),
+], body: accountsList);
+```
+
+### ZenDetailHost
+
+Wrap the list once, then call `showZenDetail` from inside it. A wide window displays the detail
+beside the list; a narrow window pushes a page. The future resolves with the value used to close it.
+
+```dart
+ZenDetailHost(child: Builder(builder: (context) => ZenListRow(
+  title: account.name,
+  onTap: () => showZenDetail<void>(context, builder: (_) => AccountPage(account: account)),
+)));
+```
+
+### FocusRing
+
+Use the default constructor inside a focusable custom control, or `FocusRing.wrapping` around
+one whose focus node is inside its subtree. The ring appears for keyboard and assistive input.
+Framework controls already include it; do not add a second ring around them.
+
+```dart
+FocusRing.wrapping(child: customFocusableControl);
+```
+
+### ZenListItemActions
 
 Wrap each list item's content in `ZenListItemActions` and supply `ZenListItemAction`s.
 For example, inside a `ListView.builder`:
@@ -134,6 +283,55 @@ appearance. Each background reveals its icon at the outside edge before its labe
 The [demo dashboard](../../apps/zen_demo/zen_demo_client/lib/src/screens/dashboard_screen.dart)
 shows an example with localized labels and callbacks. Its delete action only reports the selection;
 a real application supplies its own confirmation and deletion behavior.
+
+## Presentations, routes and messages
+
+`showAdaptivePresentation<T>` opens a sheet on native mobile and a dialog on desktop and web.
+The future returns the value passed to `Navigator.pop`, or null on dismissal. Set
+`barrierDismissible: false` when dismissal must occur through the content's actions.
+
+```dart
+final saved = await showAdaptivePresentation<bool>(context,
+  builder: (context) => EditForm(onSaved: () => Navigator.of(context).pop(true)));
+```
+
+`ZenPageRoute<T>` applies the framework's page transition to a pushed page. Set
+`ZenPageTransitions.theme` on `ThemeData.pageTransitionsTheme` for other Material routes too.
+`ZenFadePageTransitionsBuilder` is the low-level macOS fade builder; most apps use the theme.
+
+```dart
+Navigator.of(context).push(ZenPageRoute<void>(builder: (_) => const DetailsPage()));
+final theme = ThemeData(pageTransitionsTheme: ZenPageTransitions.theme);
+```
+
+`showZenMessage` displays a temporary message (a toast on Apple, a snack bar elsewhere). Supply
+both `actionLabel` and `onAction` together for an optional action.
+
+```dart
+showZenMessage(context, messages.saved, actionLabel: messages.undo, onAction: undo);
+```
+
+## Localization and platform selection
+
+Register `zenWidgetsLocaleDelegate` alongside the app's other delegates in
+`MaterialApp.localizationsDelegates` when using controls with framework-owned strings, including
+date and amount fields. `ZenWidgetsLocalizations` exposes those typed strings; its exported English
+and Ukrainian implementations can be subclassed for application overrides. Application-provided
+labels, subtitles and messages must also be localized by the application.
+
+```dart
+import 'package:flutter_localizations/flutter_localizations.dart';
+
+MaterialApp(localizationsDelegates: const [
+  zenWidgetsLocaleDelegate,
+  GlobalMaterialLocalizations.delegate,
+  GlobalWidgetsLocalizations.delegate,
+  GlobalCupertinoLocalizations.delegate,
+], supportedLocales: const [Locale('en'), Locale('uk')], home: const HomePage());
+```
+
+`ZEN_PLATFORM` selects the build-time idiom; configure it as shown below. The controls handle
+focus and semantics themselves. Avoid wrapping them in another labelled `Semantics` node.
 
 ## 🤖 For applications and their coding agents
 

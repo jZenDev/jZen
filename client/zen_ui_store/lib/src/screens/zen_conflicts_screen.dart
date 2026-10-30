@@ -80,10 +80,9 @@ class _ZenConflictsScreenState extends State<ZenConflictsScreen> {
             ),
           const SizedBox(height: 8),
           for (final conflict in conflicts)
-            ListTile(
-              title: Text(conflict.title ?? messages.deletedTitle),
-              subtitle: Text(conflict.sides.map((side) => side.deviceName).join(' · ')),
-              trailing: const Icon(Icons.chevron_right),
+            ZenListRow(
+              title: conflict.title ?? messages.deletedTitle,
+              subtitle: conflict.sides.map((side) => side.deviceName).join(' · '),
               onTap: () => showZenDetail<void>(
                 context,
                 builder: (page) => ZenConflictResolveScreen(

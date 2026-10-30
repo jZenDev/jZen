@@ -201,6 +201,61 @@ class ModuleGateTest(unittest.TestCase):
         hits = vm.check_no_server_jackson(self.root)
         self.assertEqual([], hits)
 
+    # ── a contributed pom.xml is untrusted input ────────────────────────────────────────────
+    BILLION_LAUGHS = """\
+<?xml version="1.0"?>
+<!DOCTYPE lolz [
+  <!ENTITY a "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">
+  <!ENTITY b "&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;&a;">
+  <!ENTITY c "&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;&b;">
+  <!ENTITY d "&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;&c;">
+  <!ENTITY e "&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;&d;">
+  <!ENTITY f "&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;&e;">
+]>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+  <artifactId>&f;</artifactId>
+</project>
+"""
+
+    def test_a_pom_that_declares_a_dtd_is_refused_before_anything_expands(self) -> None:
+        import time
+
+        pom = self.root / "server" / "zen-core" / "pom.xml"
+        pom.write_text(self.BILLION_LAUGHS)
+        started = time.perf_counter()
+        with self.assertRaises(vm.UnreadablePom) as caught:
+            vm.check_no_server_jackson(self.root)
+        self.assertLess(time.perf_counter() - started, 5.0, "the entities must never be expanded")
+        self.assertIn("DOCTYPE", str(caught.exception))
+        code, out = self.run_gate(self.root)
+        self.assertEqual(1, code)
+        self.assertIn("could not be read safely", out)
+        self.assertNotIn("intact", out)
+
+    def test_an_external_entity_pom_is_refused_not_read(self) -> None:
+        secret = self.root / "secret.txt"
+        secret.write_text("TOP-SECRET")
+        pom = self.root / "server" / "zen-core" / "pom.xml"
+        pom.write_text(
+            '<?xml version="1.0"?>\n'
+            f'<!DOCTYPE project [<!ENTITY x SYSTEM "{secret.as_uri()}">]>\n'
+            '<project xmlns="http://maven.apache.org/POM/4.0.0"><artifactId>&x;</artifactId></project>\n'
+        )
+        with self.assertRaises(vm.UnreadablePom):
+            vm.check_no_server_jackson(self.root)
+        self.assertEqual(1, self.run_gate(self.root)[0])
+
+    def test_a_pom_that_is_not_well_formed_is_a_failure_not_a_traceback(self) -> None:
+        (self.root / "server" / "zen-core" / "pom.xml").write_text("<project><artifactId>")
+        code, out = self.run_gate(self.root)
+        self.assertEqual(1, code)
+        self.assertIn("not well-formed", out)
+
+    def test_a_pom_in_another_encoding_is_still_read(self) -> None:
+        pom = self.root / "server" / "zen-transport" / "pom.xml"
+        pom.write_bytes(POM_WITH_JANDEX.replace("UTF-8", "UTF-16").encode("utf-16"))
+        self.assertEqual([], vm.check_jandex(self.root))
+
     # ── the defect this gate closes: passing having checked nothing ────────────────────────
     def test_stale_module_scope_is_a_failure(self) -> None:
         import shutil

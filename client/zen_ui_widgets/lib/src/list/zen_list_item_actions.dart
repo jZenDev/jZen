@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:zen_core/zen_core.dart';
 
-import 'button/zen_icon_button.dart';
+import '../button/zen_icon_button.dart';
 
 /// Color treatment for a mobile swipe action.
 enum ZenListItemActionVariant { standard, destructive }
@@ -122,8 +122,7 @@ class _ZenListItemActionsState extends State<ZenListItemActions> {
         child: row,
       );
     }
-    final bool desktop = zenIsDesktop;
-    final bool visible = desktop || _expanded || (zenIsWeb && (_hovered || _focused));
+    final bool visible = zenIsDesktop || _expanded || (zenIsWeb && (_hovered || _focused));
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : const Duration(milliseconds: 160);

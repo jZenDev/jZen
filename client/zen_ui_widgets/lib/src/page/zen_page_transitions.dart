@@ -54,14 +54,17 @@ class ZenFadePageTransitionsBuilder extends PageTransitionsBuilder {
 /// `MaterialPageRoute`s it still writes follow the same rule.
 abstract final class ZenPageTransitions {
   /// The per-platform transitions of this build, for `ThemeData.pageTransitionsTheme`.
-  static final PageTransitionsTheme theme = themeFor(macOS: zenIsMacOS);
+  static final PageTransitionsTheme theme = zenIsMacOS ? _macOSTheme : const PageTransitionsTheme();
+
+  static final PageTransitionsTheme _macOSTheme = PageTransitionsTheme(
+    builders: <TargetPlatform, PageTransitionsBuilder>{
+      ...const PageTransitionsTheme().builders,
+      TargetPlatform.macOS: const ZenFadePageTransitionsBuilder(),
+    },
+  );
 
   /// The transitions for a build that is, or is not, a native macOS one. [theme] is this with the
   /// build's own value; it is a function so a test reaches both from one run.
-  static PageTransitionsTheme themeFor({required bool macOS}) => PageTransitionsTheme(
-    builders: <TargetPlatform, PageTransitionsBuilder>{
-      ...const PageTransitionsTheme().builders,
-      if (macOS) TargetPlatform.macOS: const ZenFadePageTransitionsBuilder(),
-    },
-  );
+  static PageTransitionsTheme themeFor({required bool macOS}) =>
+      macOS ? _macOSTheme : const PageTransitionsTheme();
 }

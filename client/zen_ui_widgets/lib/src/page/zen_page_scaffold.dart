@@ -143,15 +143,25 @@ Widget buildMaterialPageScaffold(BuildContext context, ZenPageScaffold page) {
 
 /// The Cupertino page; see [buildMaterialPageScaffold].
 ///
-/// [macOS] is the build's platform, a parameter only so a test can reach both values from one run.
-/// It decides whether the bar takes part in the iOS navigation-bar hero (the new title flying in
+/// The build's platform decides whether the bar takes part in the iOS navigation-bar hero (the new title flying in
 /// from the right while the old one becomes the back label). That animation belongs to the bar,
 /// not to the route, so the page transition of ADR-061 cannot remove it; on a Mac the page fades
 /// and the bar must stay still with it (ADR-062).
-Widget buildCupertinoPageScaffold(
+Widget buildCupertinoPageScaffold(BuildContext context, ZenPageScaffold page) =>
+    _buildCupertinoPageScaffold(context, page, transitionBetweenRoutes: !zenIsMacOS);
+
+/// Exercises both navigation-bar transition settings independently of the test build's platform.
+@visibleForTesting
+Widget buildCupertinoPageScaffoldForTest(
   BuildContext context,
   ZenPageScaffold page, {
-  bool macOS = zenIsMacOS,
+  required bool macOS,
+}) => _buildCupertinoPageScaffold(context, page, transitionBetweenRoutes: !macOS);
+
+Widget _buildCupertinoPageScaffold(
+  BuildContext context,
+  ZenPageScaffold page, {
+  required bool transitionBetweenRoutes,
 }) {
   final ColorScheme scheme = Theme.of(context).colorScheme;
   final Widget? leading = _leadingOf(context, page, CupertinoIcons.back, CupertinoIcons.xmark);
@@ -174,7 +184,7 @@ Widget buildCupertinoPageScaffold(
       backgroundColor: background,
       navigationBar: bar
           ? CupertinoNavigationBar(
-              transitionBetweenRoutes: !macOS,
+              transitionBetweenRoutes: transitionBetweenRoutes,
               automaticallyImplyLeading: false,
               backgroundColor: background,
               leading: leading == null ? null : tinted(leading),

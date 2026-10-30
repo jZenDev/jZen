@@ -49,7 +49,7 @@ export 'src/date/zen_date_range_field.dart' show ZenDateRangeField;
 export 'src/detail/zen_detail.dart' show showZenDetail;
 export 'src/detail/zen_detail_host.dart' show ZenDetailHost, ZenDetailHostState, zenDetailMinWidth;
 export 'src/button/zen_icon_button.dart' show ZenIconButton, zenIconButtonSize;
-export 'src/zen_list_item_actions.dart'
+export 'src/list/zen_list_item_actions.dart'
     show ZenListItemAction, ZenListItemActionVariant, ZenListItemActions;
 export 'src/message/zen_message.dart' show showZenMessage, zenMessageDuration;
 export 'src/page/zen_page_route.dart' show ZenPageRoute;
@@ -62,4 +62,4 @@ export 'src/zen_select.dart' show ZenSelect;
 export 'src/zen_switch_row.dart' show ZenSwitchRow;
 export 'src/text/zen_text_field.dart' show ZenTextField;
 
-export 'src/zen_list_row.dart' show ZenListRow;
+export 'src/list/zen_list_row.dart' show ZenListRow;

@@ -72,7 +72,28 @@ class _ShowcaseScreenState extends State<ShowcaseScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          ZenListRow(title: m.showcaseRow, subtitle: m.showcaseRowHelp, onTap: message),
+          ZenListItemActions(
+            showActionsLabel: m.showItemActions,
+            hideActionsLabel: m.hideItemActions,
+            actions: [
+              ZenListItemAction(
+                icon: Icons.info_outline,
+                label: m.showcaseShowMessage,
+                onPressed: message,
+              ),
+            ],
+            child: ZenListRow(
+              leading: const Icon(Icons.account_balance_wallet_outlined),
+              title: m.showcaseRow,
+              subtitle: m.showcaseRowHelp,
+              trailing: ZenIconButton(
+                icon: Icons.info_outline,
+                label: m.showcaseShowMessage,
+                onPressed: message,
+              ),
+              onTap: message,
+            ),
+          ),
           const Divider(height: 32),
           Text(m.showcaseChoose, style: heading),
           const SizedBox(height: 8),

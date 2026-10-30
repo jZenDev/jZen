@@ -85,8 +85,12 @@ ZenSwitchRow(label: messages.archived, subtitle: messages.archivedHelp, value: a
 
 ### ZenListRow
 
-A labelled navigation row with an optional subtitle and trailing chevron. Null `onTap` disables
-it. On Apple the row does not display a Material ripple.
+An adaptive row with optional leading and trailing widgets. Supply `title` and `subtitle` as
+strings, or use `titleContent` and `subtitleContent` for rich widgets. An omitted `onTap` makes
+the row non-interactive; `enabled: false` disables row activation. Trailing controls remain
+independently operable. Apple platforms use a Cupertino row; other platforms use Material.
+On a narrow Apple row, trailing content moves below the subtitle so amounts and labels have room.
+Wrap the row in `ZenListItemActions` to add platform-adaptive item actions.
 
 ```dart
 ZenListRow(title: account.name, subtitle: account.description,

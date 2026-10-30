@@ -4,8 +4,9 @@ import 'dart:ui' show Tristate;
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zen_ui_widgets/src/zen_switch_row.dart';
+import 'package:zen_core/zen_core.dart';
 import 'package:zen_ui_widgets/src/adaptive_ink_well.dart';
+import 'package:zen_ui_widgets/src/zen_switch_row.dart';
 import 'package:zen_ui_widgets/zen_ui_widgets.dart' show FocusRing;
 
 import '../support/a11y.dart';
@@ -31,6 +32,11 @@ Widget row(Build build, {bool value = false, ValueChanged<bool>? onChanged, Stri
     );
 
 void main() {
+  testWidgets('adaptive ink follows the compile-time platform', (tester) async {
+    await pumpApp(tester, AdaptiveInkWell(onTap: () {}, child: const Text('Open')));
+    final ink = tester.widget<InkWell>(find.byType(InkWell));
+    expect(ink.splashFactory, zenIsApplePlatform ? NoSplash.splashFactory : null);
+  });
   for (final MapEntry<String, Build> entry in builds.entries) {
     group(entry.key, () {
       testWidgets('is one control: label, toggled state and a tap, announced once', (tester) async {
@@ -128,9 +134,7 @@ void main() {
       if (entry.key == 'cupertino') {
         testWidgets('does not paint a Material splash or highlight', (tester) async {
           await pumpApp(tester, row(entry.value, onChanged: (_) {}));
-          final ink = tester.widget<InkWell>(
-            find.descendant(of: find.byType(AdaptiveInkWell), matching: find.byType(InkWell)),
-          );
+          final ink = tester.widget<InkWell>(find.byType(InkWell));
           expect(ink.splashFactory, NoSplash.splashFactory);
           expect(ink.highlightColor, Colors.transparent);
         });

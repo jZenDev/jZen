@@ -122,8 +122,7 @@ class _ZenListItemActionsState extends State<ZenListItemActions> {
         child: row,
       );
     }
-    final bool desktop = zenIsDesktop;
-    final bool visible = desktop || _expanded || (zenIsWeb && (_hovered || _focused));
+    final bool visible = zenIsDesktop || _expanded || (zenIsWeb && (_hovered || _focused));
     final duration = MediaQuery.disableAnimationsOf(context)
         ? Duration.zero
         : const Duration(milliseconds: 160);

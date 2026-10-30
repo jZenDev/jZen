@@ -119,10 +119,17 @@ def matches(rel: str, patterns: list[str]) -> bool:
     return False
 
 
+UNSAFE_SEGMENT = re.compile(r"[^A-Za-z0-9_-]")
+SKILL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
+
+
 def marker_dir(root: str, session: str) -> str:
     git_dir = os.path.join(root, ".git")
     base = git_dir if os.path.isdir(git_dir) else tempfile.gettempdir()
-    return os.path.join(base, "claude-skill-guard", session or "nosession")
+    # The session id arrives in the hook payload and becomes a directory name;
+    # a separator or `..` in it would write the marker outside the guard's dir.
+    segment = UNSAFE_SEGMENT.sub("_", session) or "nosession"
+    return os.path.join(base, "claude-skill-guard", segment)
 
 
 def already_delivered(root: str, session: str, skill: str) -> bool:
@@ -185,6 +192,12 @@ def main() -> int:
     for rule in load_map(root):
         skill = rule.get("skill")
         if not skill:
+            continue
+        # The name becomes a path under .claude/skills/ and a marker filename,
+        # so it must be a bare name, never a path.
+        if not isinstance(skill, str) or not SKILL_NAME.fullmatch(skill):
+            print(f"skill-map.json names an invalid skill {skill!r}; ignored.",
+                  file=sys.stderr)
             continue
         if cmd is not None:
             if not command_matches(cmd, rule.get("commands") or []):

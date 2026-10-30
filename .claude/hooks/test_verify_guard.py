@@ -142,6 +142,14 @@ with tempfile.TemporaryDirectory() as root:
     rc,_ = run_persistent(root, [bash("./mvnw test")])
     check("cache: corrupt cache falls back cleanly", rc==0)
 
+    # a session id from the payload must not steer the cache outside its dir
+    rc,_ = run_persistent(root, [edit(J("src","E.java"))], session="../../../../escaped", truncate=True)
+    check("cache: traversal in session id still evaluates", rc==2)
+    check("cache: traversal in session id writes nothing outside",
+          not os.path.exists(os.path.join(root,"escaped.json"))
+          and not os.path.exists(os.path.join(root,"..","escaped.json"))
+          and any("escaped" in n for n in os.listdir(cache_dir)))
+
     # a half-written final line must not be consumed
     tp = os.path.join(root,"partial.jsonl")
     with open(tp,"w") as f:

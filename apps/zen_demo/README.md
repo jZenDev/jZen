@@ -37,8 +37,15 @@ This brings up the local Supabase stack, starts the backend on `ZEN_APP_PORT` (d
 to dodge a leftover stack shadowing `:8080`), waits for `/health`, then runs the client in
 Chrome pointed at it. To bring up the admin panel instead, `task run:admin`.
 
+After signing in, choose **Showcase** in the navigation to try the shared UI controls. The
+interactive page includes enabled and disabled switch rows, buttons, a navigation row, selection
+controls, text, amount and date fields, and progress indicators. Its state is local to the page.
+See the [widget catalog](../../client/zen_ui_widgets/README.md) for consumer APIs and examples
+and the [Showcase source](zen_demo_client/lib/src/screens/showcase_screen.dart) for the running
+examples.
+
 The dashboard includes a localized `ZenListItemActions` example. Its actions report the selection;
-see the [widgets guide](../../client/zen_ui_widgets/README.md#list-item-actions) for integration and
+see the [widgets guide](../../client/zen_ui_widgets/README.md#zenlistitemactions) for integration and
 destructive-action confirmation.
 
 **Signing in — there is no pre-seeded demo account.** The client talks to real Supabase, and the

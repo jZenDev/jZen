@@ -38,6 +38,14 @@ a desktop-friendly Material picker on macOS. Other builds use Material.
 - **Bring your own content** — you supply the body; the overlay owns the surface, size limits,
   barrier and dismissal.
 
+## Interactive Showcase
+
+The reference app has an interactive **Showcase** page for trying these controls. Run
+`task run:demo`, sign in, and select **Showcase** in the navigation. The examples use local page
+state and are available in English and Ukrainian. See the
+[demo instructions](../../apps/zen_demo/README.md#-running-it-showcase) and
+[Showcase screen](../../apps/zen_demo/zen_demo_client/lib/src/screens/showcase_screen.dart).
+
 ## Widget guide
 
 Examples below use application-owned state, callbacks and localized labels. Import

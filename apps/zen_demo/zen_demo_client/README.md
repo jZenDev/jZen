@@ -43,6 +43,16 @@ flutter run -d chrome \
   --dart-define=ZEN_API_URL=http://localhost:8085
 ```
 
+## Widget Showcase
+
+Sign in to zen_demo and select **Showcase** in the navigation. This interactive page demonstrates
+shared `zen_ui_widgets` controls, including enabled and disabled switch rows, buttons, a navigation
+row, selection controls, text, amount and date fields, and progress indicators. Changes on the
+page are local examples and are not saved to an account. The page supports English and Ukrainian.
+
+The [Showcase screen](lib/src/screens/showcase_screen.dart) shows how the controls are composed;
+the [widget catalog](../../../client/zen_ui_widgets/README.md) documents their APIs and usage.
+
 ## 🛠️ What each target needs installed
 
 The web build needs only Flutter. Every other target adds something, and each of these was found

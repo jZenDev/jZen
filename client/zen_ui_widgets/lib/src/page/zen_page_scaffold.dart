@@ -4,6 +4,8 @@ import 'package:zen_core/zen_core.dart';
 
 import '../detail/zen_detail_scope.dart';
 import '../button/zen_icon_button.dart';
+import '../zen_content_width.dart';
+import 'zen_page_width_scope.dart';
 
 /// A page: an optional top bar over a body, Cupertino on Apple platforms and Material elsewhere.
 ///
@@ -46,8 +48,13 @@ class ZenPageScaffold extends StatelessWidget {
     this.automaticallyImplyLeading = true,
     this.backgroundColor,
     this.foregroundColor,
+    this.contentMaxWidth,
+    this.contentGutter,
     super.key,
-  });
+  }) : assert(
+         contentMaxWidth == null || (contentMaxWidth > 0 && contentMaxWidth < double.infinity),
+       ),
+       assert(contentGutter == null || (contentGutter >= 0 && contentGutter < double.infinity));
 
   /// The page's content, below the bar.
   final Widget body;
@@ -74,6 +81,12 @@ class ZenPageScaffold extends StatelessWidget {
   /// The colour of the bar's title and icons; null is the theme's on-surface (primary for the
   /// buttons on Apple).
   final Color? foregroundColor;
+
+  /// Overrides the inherited maximum body width, for example for a chart.
+  final double? contentMaxWidth;
+
+  /// Overrides the inherited horizontal gutter; defaults to 16 when a width is set.
+  final double? contentGutter;
 
   @override
   Widget build(BuildContext context) {
@@ -119,6 +132,17 @@ Widget? _titleOf(ZenPageScaffold page, [TextStyle? style]) {
   return Text(title, style: style, maxLines: 1, overflow: TextOverflow.ellipsis);
 }
 
+Widget _bodyOf(BuildContext context, ZenPageScaffold page) {
+  final ZenPageWidthScope? scope = ZenPageWidthScope.maybeOf(context);
+  final double? width = page.contentMaxWidth ?? scope?.maxWidth;
+  if (width == null) return page.body;
+  return ZenContentWidth(
+    maxWidth: width,
+    gutter: page.contentGutter ?? scope?.gutter ?? 16,
+    child: page.body,
+  );
+}
+
 /// The Material page. Exposed to the package's tests, which cannot reach the branch the host
 /// platform did not compile.
 Widget buildMaterialPageScaffold(BuildContext context, ZenPageScaffold page) {
@@ -137,7 +161,7 @@ Widget buildMaterialPageScaffold(BuildContext context, ZenPageScaffold page) {
             foregroundColor: page.foregroundColor,
           )
         : null,
-    body: page.body,
+    body: _bodyOf(context, page),
   );
 }
 
@@ -200,7 +224,7 @@ Widget _buildCupertinoPageScaffold(
       // A second Material, under the scaffold's coloured box. Ink paints on the nearest Material
       // above it, and `ListTile` refuses (in debug) to sit under a coloured box between it and
       // that Material: the outer one alone left the tile's ink and colour painted beneath the box.
-      child: Material(type: MaterialType.transparency, child: page.body),
+      child: Material(type: MaterialType.transparency, child: _bodyOf(context, page)),
     ),
   );
 }

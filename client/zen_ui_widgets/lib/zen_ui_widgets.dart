@@ -70,6 +70,7 @@ export 'src/list/zen_list_item_actions.dart'
 export 'src/message/zen_message.dart' show showZenMessage, zenMessageDuration;
 export 'src/page/zen_page_route.dart' show ZenPageRoute;
 export 'src/page/zen_page_scaffold.dart' show ZenPageScaffold;
+export 'src/page/zen_page_width_scope.dart' show ZenPageWidthScope;
 export 'src/page/zen_page_transitions.dart' show ZenFadePageTransitionsBuilder, ZenPageTransitions;
 export 'src/progress/zen_progress_bar.dart' show ZenProgressBar;
 export 'src/progress/zen_progress_indicator.dart' show ZenProgressIndicator;

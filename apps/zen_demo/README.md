@@ -38,8 +38,11 @@ to dodge a leftover stack shadowing `:8080`), waits for `/health`, then runs the
 Chrome pointed at it. To bring up the admin panel instead, `task run:admin`.
 
 After signing in, choose **Showcase** in the navigation to try the shared UI controls. The
-interactive page includes enabled and disabled switch rows, buttons, a navigation row, selection
-controls, text, amount and date fields, and progress indicators. Its state is local to the page.
+interactive page includes enabled and disabled switch rows, checkboxes (with a mixed parent), a
+radio group, filter chips, sliders and a range slider, a search field filtering a small local list, an
+action menu, expandable sections, buttons, a navigation row, selection controls, text, amount and
+date fields, and progress indicators. Its state is local to the page. The language switcher in the
+dashboard's top bar is a `ZenActionMenu`.
 See the [widget catalog](../../client/zen_ui_widgets/README.md) for consumer APIs and examples
 and the [Showcase source](zen_demo_client/lib/src/screens/showcase_screen.dart) for the running
 examples.

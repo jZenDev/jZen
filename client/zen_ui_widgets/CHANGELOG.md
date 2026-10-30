@@ -4,6 +4,11 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+- `ZenCheckboxRow` (with a mixed state), `ZenRadioGroup` / `ZenRadioOption`, `ZenFilterChip`,
+  `ZenSlider`, `ZenRangeSlider` (two named thumbs, `start <= end` enforced), `ZenSearchField` (with
+  a localized clear button), `ZenActionMenu` / `ZenMenuAction` and `ZenExpandableSection`, each
+  Cupertino on Apple platforms and Material elsewhere, built to WCAG 2.2 AA. `ZenIconButton` gains an
+  optional `focusNode`, and `ZenWidgetsLocalizations` gains `clearSearch` (`en`, `uk`).
 - `ZenListItemActions` adapts consumer-supplied row actions to desktop, web and mobile, with a
   labeled non-swipe alternative on web and mobile.
 

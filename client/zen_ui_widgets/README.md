@@ -24,8 +24,9 @@ a desktop-friendly Material picker on macOS. Other builds use Material.
   it is narrow; wrap the list in a `ZenDetailHost`. `ZenPageRoute` and `ZenPageTransitions.theme`
   give a pushed page the iOS slide on iOS and a short fade, navigation bar included, in a native
   macOS build; a web build, even in a browser on a Mac, keeps Flutter's own default.
-- **Controls** — `ZenButton` (primary, secondary, text), `ZenSwitchRow`, `ZenSegmentedControl`,
-  `ZenSelect`, `ZenDateField`, `ZenTextField`, `ZenAmountField`, `ZenProgressIndicator`, `ZenProgressBar`, and the paired `ZenDateRangeField` /
+- **Controls** — `ZenButton` (primary, secondary, text), `ZenSwitchRow`, `ZenCheckboxRow`,
+  `ZenRadioGroup`, `ZenSegmentedControl`, `ZenSelect`, `ZenFilterChip`, `ZenSlider`,
+  `ZenRangeSlider`, `ZenSearchField`, `ZenActionMenu`, `ZenExpandableSection`, `ZenDateField`, `ZenTextField`, `ZenAmountField`, `ZenProgressIndicator`, `ZenProgressBar`, and the paired `ZenDateRangeField` /
   `ZenAmountRangeField`, which enforce `from <= to` / `min <= max` in one place.
 - **List rows and actions** — `ZenListRow` opens an item with a platform-appropriate row
   interaction; `ZenListItemActions` adapts row actions to desktop, web, and native
@@ -147,6 +148,178 @@ ZenSegmentedControl<ViewMode>(
   segments: [ZenSegment(value: ViewMode.list, label: messages.list),
     ZenSegment(value: ViewMode.grid, label: messages.grid)],
   selected: mode, onChanged: (value) => setState(() => mode = value));
+```
+
+### ZenCheckboxRow
+
+A labelled checkbox for an independent choice, a consent, or one item of a multiple selection —
+not an on/off setting, which is `ZenSwitchRow`. The whole row is one tap target and one tab stop.
+The caller owns `value`: `true` and `false` are a plain checkbox, and **`null` is the mixed state**
+("some of the items below"), drawn as a dash and announced as "mixed". A tap always asks for a
+definite answer — a mixed or unchecked row reports `true`, a checked one `false` — so a parent
+checkbox over a list becomes "all selected" on its first tap; the control never cycles back into
+mixed by itself, because only the app knows what its group holds. `subtitle` is read after the
+label, and a null `onChanged` disables the row. Apple builds draw a Cupertino checkbox with no
+Material ripple.
+
+```dart
+ZenCheckboxRow(label: messages.acceptTerms, subtitle: messages.acceptTermsHelp,
+  value: accepted, onChanged: (value) => setState(() => accepted = value));
+
+// A parent over a list: null while only some children are selected.
+ZenCheckboxRow(label: messages.selectAll, onChanged: selectAll,
+  value: selected.length == items.length ? true : (selected.isEmpty ? false : null));
+```
+
+### ZenRadioGroup
+
+One choice from a longer list than `ZenSegmentedControl` fits (more than four), without the
+pop-up of `ZenSelect`. Pass the group's `label` (its accessible name), `ZenRadioOption`s and the
+selected `value`. **A null `value` means nothing is chosen yet**: no option is selected and
+`onChanged` stays silent until the user picks one. The group never reports null — once chosen, an
+answer can be changed but not cleared, so offer a "None" option when that is a real answer. A
+`ZenRadioOption` with `enabled: false` is shown and announced as disabled and the keyboard skips
+it; a null `onChanged` disables the whole group. Option values must be unique.
+
+Tab enters the group on the selected option (the first when none is selected) and leaves it with
+one more Tab; the arrow keys move the choice, skipping disabled options and wrapping at the ends.
+Each option is announced as one radio button ("Yearly, radio button, selected"), and the group by
+its label. Apple builds draw Cupertino radios.
+
+```dart
+ZenRadioGroup<Plan>(
+  label: messages.billing,
+  options: [
+    ZenRadioOption(value: Plan.monthly, label: messages.monthly),
+    ZenRadioOption(value: Plan.quarterly, label: messages.quarterly, enabled: false),
+    ZenRadioOption(value: Plan.yearly, label: messages.yearly, subtitle: messages.twoMonthsFree),
+  ],
+  value: plan, // null: nothing chosen yet
+  onChanged: (value) => setState(() => plan = value));
+```
+
+### ZenFilterChip
+
+A compact labelled choice that is on or off **independently of its neighbours** — a filter or a
+tag. Several can be selected at once. It is a *filter* chip only: an action is a `ZenButton`, and
+a single choice among several is a `ZenRadioGroup` or `ZenSegmentedControl`, so each says what it
+is to a screen reader. The caller owns `selected`; `onSelected` receives the opposite value, and
+null disables the chip. Selection shows as a check mark and a filled capsule — never colour alone
+— and is announced as "selected". A long label wraps inside the chip, and chips flow onto new
+lines when laid out in a `Wrap`. Material builds use a Material filter chip; Apple builds a
+Cupertino capsule (Flutter has none), without Material ripple, at least 44 points tall.
+
+```dart
+Wrap(spacing: 8, runSpacing: 4, children: [
+  for (final tag in tags)
+    ZenFilterChip(label: tag.name, selected: chosen.contains(tag),
+      onSelected: tag.available
+          ? (on) => setState(() => on ? chosen.add(tag) : chosen.remove(tag))
+          : null),
+]);
+```
+
+### ZenSlider
+
+A labelled slider for one number between `min` and `max` (`min < max`, both finite). The caller
+owns `value` and chooses what it means: **`valueFormatter` writes it as text** — for the caption
+beside the label and for the screen reader — so units, rounding and separators stay with the app
+(the default prints plain numbers). `divisions` makes it stepped: only the `divisions + 1` evenly
+spaced values are reported. `onChanged` only ever receives a value inside `[min, max]`; a `value`
+outside it is drawn at the nearest end and a NaN at `min` (in debug builds these, and an invalid
+range, are assertions). A null `onChanged` disables it.
+
+It is announced once — "Volume, slider, 40 dB" — and a screen reader's increment and decrement
+move it a step. Arrow keys move a step (a division, or a tenth of the range), Page Up and Page
+Down a page, Home and End to the ends; a focus ring marks keyboard focus. Apple builds draw a
+Cupertino slider, whose track is Cupertino's own pale grey: the value shown in text beside it is
+what carries the reading, not the track.
+
+```dart
+ZenSlider(label: messages.volume, value: volume, min: 0, max: 100,
+  valueFormatter: (v) => messages.decibels(v.round()),
+  onChanged: (value) => setState(() => volume = value));
+
+ZenSlider(label: messages.rating, value: rating, min: 1, max: 5, divisions: 4, // 1, 2, 3, 4, 5
+  onChanged: (value) => setState(() => rating = value));
+```
+
+### ZenRangeSlider
+
+A lower and an upper bound within `min`..`max`. Pass `values` as a Flutter `RangeValues` and a
+`startLabel` and `endLabel` that name the two thumbs ("Minimum price", "Maximum price"); `label`
+names the pair, and `valueFormatter` and `divisions` work as for `ZenSlider`. **The invariant is
+`min <= start <= end <= max`, enforced.** The thumbs may meet — `start == end` is a valid, narrow
+range — but never cross: the start thumb stops at the end value and the end thumb at the start
+value, and moving one never changes the other. When both sit together, a drag moves the thumb
+that can go in the dragged direction. A null `onChanged` disables the slider.
+
+Each thumb is its own control: its own tab stop, its own announcement ("Minimum price, slider,
+€20") and its own increment/decrement, with Home and End going as far as that thumb may — the
+other thumb, not the slider's end. Neither platform's stock range slider can name its two thumbs,
+so both idioms are drawn by the framework from one set of rules; the track, the thumb and the
+colours are what differ.
+
+```dart
+ZenRangeSlider(
+  label: messages.price, startLabel: messages.minPrice, endLabel: messages.maxPrice,
+  values: price, min: 0, max: 500, divisions: 50,
+  valueFormatter: (v) => '€${v.round()}',
+  onChanged: (range) => setState(() => price = range));
+```
+
+### ZenSearchField
+
+A labelled search input with a clear button — a rounded outlined field on Material, a capsule on
+Apple platforms. It is only the input: the data, the ranking and when to search stay with the app,
+which filters from `onChanged` (or the controller) and shows its own empty-result state. Pass a
+`controller` and it is yours to dispose; pass none and the field owns one. The clear button — named
+by the localized "Clear search" (register `zenWidgetsLocaleDelegate`) — appears once there is
+text; it is a separate tab stop from the field, empties the controller, reports `''` through
+`onChanged` and returns focus to the field. Escape clears a non-empty field too. A disabled
+field (`enabled: false`) keeps its text and offers no clear button. `label` is the accessible name;
+`hint` is shown while the field is empty. For any other text use `ZenTextField`.
+
+```dart
+ZenSearchField(label: messages.searchAccounts, hint: messages.nameOrNumber,
+  onChanged: (query) => setState(() => results = accounts.where(matches(query)).toList()));
+```
+
+### ZenActionMenu
+
+An icon button named by `label` that opens a menu of `ZenMenuAction`s beneath it — "More actions",
+"Language". Each action has a `label`, an optional `icon`, an `onPressed` (null **disables** the
+action: shown, announced as disabled, skipped by the keyboard, never fired), `selected` for the
+current choice of a set, and `destructive`. Choosing an action closes the menu and runs it once;
+Escape or a tap outside closes without running anything, and focus returns to the trigger. Enter,
+Space, a click or Down Arrow opens it, and a menu opened from the keyboard puts focus on its first
+action; the arrows move through the items. The framework keeps the menu on screen in a narrow
+window and wraps long labels. Material builds use a Material menu, Apple builds a Cupertino one.
+
+```dart
+ZenActionMenu(label: messages.language, icon: Icons.translate, actions: [
+  for (final locale in supported)
+    ZenMenuAction(label: locale.name, selected: locale == current,
+      onPressed: () => setLocale(locale)),
+]);
+```
+
+### ZenExpandableSection
+
+A labelled header that shows or hides the content beneath it. The caller owns `expanded`;
+`onChanged` receives the opposite value when the header is activated, and null disables the header
+(it stays readable and the content stays as `expanded` has it). **Collapsed content is not
+painted, not focusable and not read by a screen reader**, so a collapsed field is never a hidden
+tab stop. By default the content is discarded once the section closes and rebuilt, fresh, when it
+opens; `maintainState: true` keeps it mounted — a half-typed field, a scroll position — while out
+of sight. The header is one control ("Advanced options, button, expanded") and a long title
+wraps. The content opens with a short animation that is skipped when the system asks for reduced
+motion. Apple builds draw a disclosure row with a turning chevron and no Material ripple.
+
+```dart
+ZenExpandableSection(title: messages.advanced, subtitle: messages.advancedHelp,
+  expanded: open, onChanged: (value) => setState(() => open = value),
+  child: AdvancedOptions());
 ```
 
 ### ZenTextField
@@ -383,7 +556,10 @@ Copy this into your application's `CLAUDE.md` (or equivalent agent instructions)
 Build Flutter screens from the jZen framework's controls, never raw Material equivalents:
 `ZenListItemActions` with `ZenListItemAction` for item actions; `ZenButton` (not
 ElevatedButton/FilledButton/OutlinedButton/TextButton), `ZenSelect<T>` (not
-DropdownButton), `ZenSegmentedControl<T>`, `ZenSwitchRow`, `ZenDateField` / `ZenDateRangeField` (not
+DropdownButton), `ZenSegmentedControl<T>`, `ZenSwitchRow`, `ZenCheckboxRow` (not Checkbox),
+`ZenRadioGroup<T>` (not Radio), `ZenFilterChip` (not FilterChip), `ZenSlider` / `ZenRangeSlider`
+(not Slider/RangeSlider), `ZenSearchField` (not SearchBar), `ZenActionMenu` (not PopupMenuButton),
+`ZenExpandableSection` (not ExpansionTile), `ZenDateField` / `ZenDateRangeField` (not
 showDatePicker), `ZenTextField` (not TextField/TextFormField), `ZenAmountField` / `ZenAmountRangeField`
 (+ `normalizeAmount`), `ZenProgressIndicator` (not CircularProgressIndicator), `ZenProgressBar` (not LinearProgressIndicator), and
 `showAdaptivePresentation` (not showDialog/showModalBottomSheet), all from

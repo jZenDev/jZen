@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 
 import '../l10n/generated/demo_localizations.dart';
+import 'showcase/showcase_expandable_section.dart';
+import 'showcase/showcase_menu_section.dart';
+import 'showcase/showcase_search_section.dart';
+import 'showcase/showcase_selection_section.dart';
+import 'showcase/showcase_sliders_section.dart';
 
 /// Interactive examples of shared controls, with local state only.
 class ShowcaseScreen extends StatefulWidget {
@@ -113,6 +118,16 @@ class _ShowcaseScreenState extends State<ShowcaseScreen> {
             value: _selection,
             onChanged: (value) => setState(() => _selection = value),
           ),
+          const Divider(height: 32),
+          const ShowcaseSelectionSection(),
+          const Divider(height: 32),
+          const ShowcaseSlidersSection(),
+          const Divider(height: 32),
+          const ShowcaseSearchSection(),
+          const Divider(height: 32),
+          const ShowcaseMenuSection(),
+          const Divider(height: 32),
+          const ShowcaseExpandableSection(),
           const Divider(height: 32),
           Text(m.showcaseFields, style: heading),
           const SizedBox(height: 8),

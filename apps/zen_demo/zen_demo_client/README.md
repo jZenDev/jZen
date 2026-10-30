@@ -47,7 +47,11 @@ flutter run -d chrome \
 
 Sign in to zen_demo and select **Showcase** in the navigation. This interactive page demonstrates
 shared `zen_ui_widgets` controls, including enabled and disabled switch rows, buttons, a navigation
-row, selection controls, text, amount and date fields, and progress indicators. Changes on the
+row, checkboxes (with a mixed parent), a radio group, filter chips, sliders and a range slider, a
+search field over a small local list (with its clear and empty-result states), an action menu with
+a disabled action, expandable sections, selection controls, text, amount and date fields, and
+progress indicators. Each new section is its own widget under
+[`screens/showcase/`](lib/src/screens/showcase/). Changes on the
 page are local examples and are not saved to an account. The page supports English and Ukrainian.
 
 The [Showcase screen](lib/src/screens/showcase_screen.dart) shows how the controls are composed;

@@ -20,6 +20,10 @@
   "@clearDate": {
     "description": "Tooltip and screen-reader name of the button that empties an optional date field."
   },
+  "clearSearch": "Clear search",
+  "@clearSearch": {
+    "description": "Tooltip and screen-reader name of the button that empties a search field."
+  },
   "done": "Done",
   "@done": {
     "description": "Button that confirms the choice in a wheel picker."

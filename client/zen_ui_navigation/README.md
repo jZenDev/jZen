@@ -100,3 +100,21 @@ See the [`example/`](example) directory.
 ## 📄 License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
+
+### Page content width
+
+Set `contentMaxWidth` on `ZenNavigation` to center the bodies of `ZenPageScaffold` pages
+throughout the shell, including pushed and framework-owned pages. `contentGutter` defaults to
+16 logical pixels. Bars and navigation retain their available width. A page can override the
+width with `contentMaxWidth`; keep `ZenDetailHost` outside the page so it measures the full
+available host width.
+
+```dart
+ZenNavigation(
+  selectedIndex: selectedIndex,
+  onItemSelected: onItemSelected,
+  items: items,
+  contentMaxWidth: 720,
+  contentGutter: 16,
+);
+```

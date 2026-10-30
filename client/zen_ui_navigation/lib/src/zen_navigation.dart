@@ -1,6 +1,7 @@
 // Conditional imports for platform-specific widgets
 import 'package:zen_core/zen_core.dart';
 import 'package:flutter/widgets.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenPageWidthScope;
 
 // Web keys on `dart.library.js_interop` (dart2js AND dart2wasm), not `dart.library.html`
 // (dart2js only), which under Wasm would miss and fall through to the stub.
@@ -44,7 +45,12 @@ class ZenNavigation extends StatelessWidget {
     super.key,
     this.onItemSelectedId,
     this.labelMore,
-  });
+    this.contentMaxWidth,
+    this.contentGutter = 16,
+  }) : assert(
+         contentMaxWidth == null || (contentMaxWidth > 0 && contentMaxWidth < double.infinity),
+       ),
+       assert(contentGutter >= 0 && contentGutter < double.infinity);
 
   /// The selected index of the navigation item.
   final int selectedIndex;
@@ -63,12 +69,18 @@ class ZenNavigation extends StatelessWidget {
   /// If null, it comes from `NavigationLocalizations.of(context).more`.
   final String? labelMore;
 
+  /// Default maximum width of page bodies, excluding the gutter. Null leaves them unconstrained.
+  final double? contentMaxWidth;
+
+  /// Minimum horizontal space on each side of a constrained page body.
+  final double contentGutter;
+
   @override
   Widget build(BuildContext context) {
     // Expect ZEN_PLATFORM to be set
     assert(zenPlatform.isNotEmpty);
     // Forward to platform-specific implementation
-    return buildPlatformNavigation(
+    final Widget navigation = buildPlatformNavigation(
       context: context,
       selectedIndex: selectedIndex,
       onItemSelected: onItemSelected,
@@ -76,6 +88,10 @@ class ZenNavigation extends StatelessWidget {
       items: items,
       labelMore: labelMore,
     );
+    final double? width = contentMaxWidth;
+    return width == null
+        ? navigation
+        : ZenPageWidthScope(maxWidth: width, gutter: contentGutter, child: navigation);
   }
 }
 

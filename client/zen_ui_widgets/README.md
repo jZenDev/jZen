@@ -401,7 +401,21 @@ The application is responsible for contrast if it supplies a custom color.
 ZenProgressBar(label: messages.budgetUsed, value: fractionSpent);
 ```
 
+### ZenPageWidthScope
+
+Set a default for every `ZenPageScaffold` below the scope, including pages pushed in nested
+navigators. `ZenNavigation` can install this scope for its shell. Pages outside a scope keep their
+existing width. Put `ZenDetailHost` outside the page so it measures its full available width.
+
+```dart
+ZenPageWidthScope(maxWidth: 720, gutter: 16, child: navigation);
+```
+
 ### ZenPageScaffold
+
+A page can override the inherited body width and gutter with `contentMaxWidth` and
+`contentGutter`. The bar remains full width; for example, use
+`ZenPageScaffold(contentMaxWidth: 960, body: chart)` for a wider chart.
 
 A page with an adaptive top bar and body. Give the page a title and optional leading/back action
 and trailing controls. The body can contain a scrollable list or form.

@@ -4,7 +4,7 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_ui_widgets/src/page/zen_page_scaffold.dart';
-import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenIconButton;
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenIconButton, ZenPageWidthScope;
 
 import '../support/a11y.dart';
 
@@ -86,6 +86,36 @@ List<SemanticsData> headings(WidgetTester tester) {
 void main() {
   for (final MapEntry<String, Build> entry in builds.entries) {
     group(entry.key, () {
+      testWidgets('body inherits width and gutter, with a page override', (tester) async {
+        Widget view({double? width, double gutter = 20}) => ZenPageWidthScope(
+          maxWidth: 500,
+          gutter: gutter,
+          child: Builder(
+            builder: (context) => entry.value(
+              context,
+              ZenPageScaffold(
+                title: 'Title',
+                contentMaxWidth: width,
+                body: const SizedBox(key: ValueKey('body'), height: 40),
+              ),
+            ),
+          ),
+        );
+        await pumpPage(tester, view(), size: const Size(1000, 700));
+        expect(tester.getSize(find.byKey(const ValueKey('body'))).width, 500);
+        expect(
+          tester
+              .getSize(find.byType(entry.key == 'material' ? AppBar : CupertinoNavigationBar))
+              .width,
+          1000,
+        );
+        await tester.pumpWidget(MaterialApp(home: view(width: 800)));
+        expect(tester.getSize(find.byKey(const ValueKey('body'))).width, 800);
+        tester.view.physicalSize = const Size(400, 700);
+        await tester.pumpAndSettle();
+        expect(tester.getSize(find.byKey(const ValueKey('body'))).width, 360);
+      });
+
       testWidgets('the title is one heading, named once', (tester) async {
         final SemanticsHandle handle = tester.ensureSemantics();
         await pumpPage(tester, page(entry.value));

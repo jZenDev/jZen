@@ -137,6 +137,24 @@ with tempfile.TemporaryDirectory() as root:
     rc, err = run_cmd(root, "./mvnw test", session="c4")
     check("a broken regex in the map never blocks", rc == 0, err[:150])
 
+    # path segments from the payload and the map must never leave the guard's dir
+    outside = os.path.join(root, "escaped")
+    os.makedirs(os.path.join(root, ".claude", "skills", "design-system"), exist_ok=True)
+    open(os.path.join(root, ".claude", "hooks", "skill-map.json"), "w").write(json.dumps({
+        "rules": [{"skill": "design-system", "paths": ["*.qute.html"]},
+                  {"skill": "../../../escaped", "paths": ["*.qute.html"]}]}))
+    rc, err = run(root, os.path.join(root, "templates/t.qute.html"),
+                  session="../../../../escaped-session")
+    check("traversal in session id still blocks normally", rc == 2, err[:150])
+    check("traversal in skill name is reported and ignored", "invalid skill" in err, err[:150])
+    check("no marker is written outside the guard dir",
+          not os.path.exists(outside) and not os.path.exists(outside + "-session")
+          and not os.path.exists(os.path.join(root, "..", "escaped-session")))
+    guard_dir = os.path.join(root, ".git", "claude-skill-guard")
+    check("session id is confined to one directory under the guard dir",
+          "escaped-session" not in os.listdir(root)
+          and any("escaped-session" in d for d in os.listdir(guard_dir)))
+
     p = subprocess.run([sys.executable, GUARD], input="not json",
                        capture_output=True, text=True)
     check("malformed payload never blocks", p.returncode == 0)

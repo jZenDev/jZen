@@ -68,7 +68,10 @@ def cache_path(root: str, session: str) -> str:
     """Where the resume point lives. Inside .git so it is never committed."""
     git_dir = os.path.join(root, ".git")
     base = git_dir if os.path.isdir(git_dir) else tempfile.gettempdir()
-    return os.path.join(base, "claude-verify-guard", f"{session or 'nosession'}.json")
+    # The session id arrives in the hook payload and becomes a filename; a
+    # separator or `..` in it would write the cache outside the guard's dir.
+    segment = re.sub(r"[^A-Za-z0-9_-]", "_", session) or "nosession"
+    return os.path.join(base, "claude-verify-guard", f"{segment}.json")
 
 
 def head_digest(transcript: str) -> str:

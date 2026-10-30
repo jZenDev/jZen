@@ -26,12 +26,14 @@
 /// * [ZenPageScaffold] — a page: a top bar (title, back, actions) over a body.
 /// * [showZenMessage] — a transient message: a snack bar on Material, a toast on Apple.
 /// * [FocusRing] — the focus indicator the above use, for an app's own controls.
+/// * [AdaptiveInkWell] — an adaptive tap target for custom content.
 ///
 /// The few strings these controls speak are owned by [ZenWidgetsLocalizations]; register
 /// [zenWidgetsLocaleDelegate] to use them.
 library;
 
 export 'src/presentation/adaptive_presentation.dart';
+export 'src/adaptive_ink_well.dart' show AdaptiveInkWell;
 export 'src/focus_ring.dart' show FocusRing, zenFocusRingWidth;
 export 'src/l10n/generated/zen_widgets_localizations.dart';
 // The per-locale implementations, exported so an application can translate this package's

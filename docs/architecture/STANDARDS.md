@@ -681,6 +681,14 @@ fixes one screen.
 | One choice from a list | `ZenSelect<T>` | `DropdownButton`, `DropdownButtonFormField` |
 | One of a few exclusive options | `ZenSegmentedControl<T>` | `SegmentedButton`, `CupertinoSlidingSegmentedControl` |
 | A boolean setting | `ZenSwitchRow` | `SwitchListTile`, `Switch` |
+| An independent choice, a consent, one item of a multiple selection (`null` is the mixed state) | `ZenCheckboxRow` | `CheckboxListTile`, `Checkbox`, `CupertinoCheckbox` |
+| One choice from a longer list in the page (`null` is nothing chosen yet) | `ZenRadioGroup<T>` with `ZenRadioOption`s | `RadioListTile`, `Radio`, `CupertinoRadio` |
+| A compact filter or tag that is on or off | `ZenFilterChip` | `FilterChip`, `ChoiceChip`, a hand-built capsule |
+| A number within bounds | `ZenSlider` (`valueFormatter` owns units and rounding; `divisions` makes it stepped) | `Slider`, `CupertinoSlider` |
+| A lower and an upper bound within bounds | `ZenRangeSlider` (`start <= end` enforced; each thumb named) | `RangeSlider`, two `ZenSlider`s |
+| A search input with a clear button | `ZenSearchField` (the search stays the app's) | `SearchBar`, `CupertinoSearchTextField`, a `ZenTextField` with a hand-made clear button |
+| A menu of actions opened from an icon button | `ZenActionMenu` with `ZenMenuAction`s | `PopupMenuButton`, `MenuAnchor`, `CupertinoMenuAnchor`, `showMenu` |
+| A header that shows or hides content | `ZenExpandableSection` (caller-owned `expanded`; `maintainState` keeps the content) | `ExpansionTile`, `ExpansionPanelList` |
 | A date | `ZenDateField` | `showDatePicker` |
 | A from/to period | `ZenDateRangeField` | two `ZenDateField`s, `showDateRangePicker` |
 | A text input (name, email, password, a multiline note, a length-limited field) | `ZenTextField` (`maxLines`/`minLines`, `maxLength` with a counter, `textCapitalization`) | `TextField`, `TextFormField`, `CupertinoTextField` |

@@ -18,6 +18,12 @@
 ///   count badge.
 /// * [ZenSelect], [ZenSegmentedControl], [ZenSwitchRow] — a choice from a list, a small set of
 ///   exclusive choices, and an on/off setting.
+/// * [ZenCheckboxRow], [ZenRadioGroup], [ZenFilterChip] — an independent selection (with a mixed
+///   state), one choice from a longer list, and a compact filter that is on or off.
+/// * [ZenSlider], [ZenRangeSlider] — a number, and a lower/upper pair, within bounds.
+/// * [ZenSearchField] — a text input for searching, with a clear button; the search is the app's.
+/// * [ZenActionMenu] — an icon button that opens a menu of actions ([ZenMenuAction]).
+/// * [ZenExpandableSection] — a header that shows or hides the content beneath it.
 /// * [ZenDateField], [ZenDateRangeField] — a date and a from/to pair whose order is enforced.
 /// * [ZenAmountField], [ZenAmountRangeField] — a decimal number and a min/max pair whose order
 ///   is reported; the number's meaning stays with the app.
@@ -51,6 +57,14 @@ export 'src/date/zen_date_range_field.dart' show ZenDateRangeField;
 export 'src/detail/zen_detail.dart' show showZenDetail;
 export 'src/detail/zen_detail_host.dart' show ZenDetailHost, ZenDetailHostState, zenDetailMinWidth;
 export 'src/button/zen_icon_button.dart' show ZenIconButton, zenIconButtonSize;
+export 'src/checkbox/zen_checkbox_row.dart' show ZenCheckboxRow;
+export 'src/chip/zen_filter_chip.dart' show ZenFilterChip;
+export 'src/expandable/zen_expandable_section.dart' show ZenExpandableSection;
+export 'src/menu/zen_action_menu.dart' show ZenActionMenu, ZenMenuAction;
+export 'src/radio/zen_radio_group.dart' show ZenRadioGroup, ZenRadioOption;
+export 'src/search/zen_search_field.dart' show ZenSearchField;
+export 'src/slider/zen_range_slider.dart' show ZenRangeSlider;
+export 'src/slider/zen_slider.dart' show ZenSlider;
 export 'src/list/zen_list_item_actions.dart'
     show ZenListItemAction, ZenListItemActionVariant, ZenListItemActions;
 export 'src/message/zen_message.dart' show showZenMessage, zenMessageDuration;

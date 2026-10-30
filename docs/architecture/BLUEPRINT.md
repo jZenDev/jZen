@@ -246,7 +246,9 @@ one-time token hash; hosted-project setup is in [`EMAIL_AUTH.md`](../EMAIL_AUTH.
 An app's screens are assembled from three framework UI packages, each owning a concern so an app
 writes content and callbacks rather than chrome: `zen_ui_navigation` (the adaptive shell),
 `zen_ui_identity` (sign-in, register, profile) and `zen_ui_widgets` (the generic controls —
-`showAdaptivePresentation`, `ZenListItemActions`, `ZenButton`, `ZenSelect`, `ZenSegmentedControl`, `ZenSwitchRow`, the date
+`showAdaptivePresentation`, `ZenListItemActions`, `ZenButton`, `ZenSelect`, `ZenSegmentedControl`, `ZenSwitchRow`, `ZenCheckboxRow`,
+`ZenRadioGroup`, `ZenFilterChip`, `ZenSlider`, `ZenRangeSlider`, `ZenSearchField`, `ZenActionMenu`,
+`ZenExpandableSection`, the date
 and amount fields with their range pairs — and the shared `FocusRing`). Each renders Cupertino on Apple
 platforms and Material elsewhere, chosen on compile-time constants so a build keeps only the idiom it
 takes, and each meets WCAG 2.2 AA from its first commit. **Applications use these controls rather than

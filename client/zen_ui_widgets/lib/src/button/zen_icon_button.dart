@@ -48,6 +48,7 @@ class ZenIconButton extends StatefulWidget {
     required this.label,
     required this.onPressed,
     this.badge,
+    this.focusNode,
     super.key,
   }) : assert(badge == null || badge >= 0, 'a badge counts things, so it is not negative');
 
@@ -63,6 +64,10 @@ class ZenIconButton extends StatefulWidget {
   /// A count shown on the icon, such as unread items; null or 0 shows none, and above 99 it reads
   /// "99+".
   final int? badge;
+
+  /// The button's focus node, for a caller that must return focus to it (a menu that opens from
+  /// it); the button creates its own when null.
+  final FocusNode? focusNode;
 
   @override
   State<ZenIconButton> createState() => _ZenIconButtonState();
@@ -107,6 +112,7 @@ class _ZenIconButtonState extends State<ZenIconButton> {
                         widget.label,
                         onPressed,
                         badge: widget.badge,
+                        focusNode: widget.focusNode,
                       )
                     : buildMaterialIconButton(
                         buttonContext,
@@ -114,6 +120,7 @@ class _ZenIconButtonState extends State<ZenIconButton> {
                         widget.label,
                         onPressed,
                         badge: widget.badge,
+                        focusNode: widget.focusNode,
                       ),
               ),
             ),
@@ -152,6 +159,7 @@ Widget buildMaterialIconButton(
   String label,
   VoidCallback? onPressed, {
   int? badge,
+  FocusNode? focusNode,
 }) {
   final String? badgeText = _badgeText(badge);
   // The name is the icon's semantic label, merged into the button, and the tooltip is excluded
@@ -166,6 +174,7 @@ Widget buildMaterialIconButton(
         badgeText,
       ),
       onPressed: onPressed,
+      focusNode: focusNode,
       constraints: const BoxConstraints.tightFor(
         width: zenIconButtonSize,
         height: zenIconButtonSize,
@@ -181,6 +190,7 @@ Widget buildCupertinoIconButton(
   String label,
   VoidCallback? onPressed, {
   int? badge,
+  FocusNode? focusNode,
 }) {
   final String? badgeText = _badgeText(badge);
   final String name = _nameWith(label, badgeText);
@@ -191,6 +201,7 @@ Widget buildCupertinoIconButton(
 
   final Widget button = CupertinoButton(
     onPressed: onPressed,
+    focusNode: focusNode,
     foregroundColor: color,
     minimumSize: const Size.square(zenIconButtonSize),
     padding: EdgeInsets.zero,

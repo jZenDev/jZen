@@ -27,6 +27,8 @@ void main() {
     expect(uk.selectDate, 'Оберіть дату');
     expect(en.clearDate, 'Clear date');
     expect(uk.clearDate, 'Очистити дату');
+    expect(en.clearSearch, 'Clear search');
+    expect(uk.clearSearch, 'Очистити пошук');
     expect(en.done, 'Done');
     expect(uk.done, 'Готово');
   });

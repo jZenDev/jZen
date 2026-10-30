@@ -22,6 +22,14 @@ Import `package:zen_ui_widgets/zen_ui_widgets.dart` and use:
 | One choice from a list | `ZenSelect<T>(label:, items:, itemLabel:, value:, onChanged:)` | `DropdownButton(FormField)` |
 | Few exclusive options | `ZenSegmentedControl<T>(segments: [ZenSegment(value:, label:)], selected:, onChanged:)` | `SegmentedButton` |
 | Boolean setting | `ZenSwitchRow(label:, value:, onChanged:)` | `SwitchListTile`, `Switch` |
+| Independent choice / consent / item of a multiple selection | `ZenCheckboxRow(label:, value:, onChanged:)` - `value` null is the mixed state; a tap reports a definite `bool` | `CheckboxListTile`, `Checkbox` |
+| One choice from a longer list in the page | `ZenRadioGroup<T>(label:, options: [ZenRadioOption(value:, label:, enabled:)], value:, onChanged:)` - null `value` is nothing chosen yet | `RadioListTile`, `Radio` |
+| A filter or tag that is on or off | `ZenFilterChip(label:, selected:, onSelected:)` in a `Wrap` | `FilterChip`, `ChoiceChip` |
+| A number within bounds | `ZenSlider(label:, value:, min:, max:, onChanged:, divisions:, valueFormatter:)` | `Slider`, `CupertinoSlider` |
+| A lower/upper pair within bounds | `ZenRangeSlider(label:, startLabel:, endLabel:, values:, min:, max:, onChanged:)` - `start <= end` enforced | `RangeSlider` |
+| A search input | `ZenSearchField(label:, controller:, onChanged:)` - the search itself stays in the app | `SearchBar`, a `ZenTextField` plus a hand-made clear button |
+| A menu of actions from an icon button | `ZenActionMenu(label:, icon:, actions: [ZenMenuAction(label:, onPressed:, selected:)])` - null `onPressed` disables an action | `PopupMenuButton`, `MenuAnchor` |
+| A header that shows/hides content | `ZenExpandableSection(title:, expanded:, onChanged:, child:, maintainState:)` | `ExpansionTile` |
 | A date | `ZenDateField(label:, value:, onChanged:, clearable:)` | `showDatePicker` |
 | A from/to period | `ZenDateRangeField(fromLabel:, toLabel:, from:, to:, onChanged:)` | two date fields |
 | A text input (name, email, password) | `ZenTextField(label:, controller:, validator:, obscureText:)` | `TextField`, `TextFormField` |

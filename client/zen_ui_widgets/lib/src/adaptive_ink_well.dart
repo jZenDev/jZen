@@ -33,8 +33,10 @@ Widget buildCupertinoInkWell({
   required Widget child,
   required VoidCallback? onTap,
   BorderRadius? borderRadius,
+  bool canRequestFocus = true,
 }) => InkWell(
   onTap: onTap,
+  canRequestFocus: canRequestFocus,
   borderRadius: borderRadius,
   splashFactory: NoSplash.splashFactory,
   highlightColor: Colors.transparent,

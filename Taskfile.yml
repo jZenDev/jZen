@@ -872,6 +872,7 @@ tasks:
       - task: verify:boundaries
       - task: verify:modules
       - task: verify:widget-files
+      - task: verify:migrations
       - task: verify:ui-docs
       - task: test:scripts
       - task: test:server
@@ -1025,7 +1026,7 @@ tasks:
       - pnpm exec vitest run
 
   test:scripts:
-    desc: Run the fixture tests for the Python dev scripts (the boundary, modules, docs, widget-files and CVE gates)
+    desc: Run the fixture tests for the Python dev scripts (the boundary, modules, docs, widget-files, migrations and CVE gates)
     silent: true
     summary: |
       Covers the scripts on the Python side of STANDARDS "Scripting" — `verify:boundaries`,
@@ -3015,6 +3016,26 @@ tasks:
     cmds:
       - scripts/verify-docs.py
       - task: verify:ui-docs
+
+  verify:migrations:
+    desc: Fail if a versioned Flyway migration that exists on origin/main was edited or deleted
+    silent: true
+    summary: |
+      An applied Flyway migration is append-only (ADR-071). Flyway checksums the text of every
+      `V*` file, comments and whitespace included, so rewording a comment in a migration a
+      consumer database has already applied stops that consumer's deploy with "Migration checksum
+      mismatch" while the schema is unchanged. A correction goes in a new migration.
+
+      Compares every `V<n>__*.sql` under a `db/migration` directory on the base ref with the
+      working tree; an edit or a deletion fails, a new file passes. `R__*` repeatable migrations
+      are exempt, because Flyway re-applies those when they change. A base ref that cannot be
+      resolved, or that holds no versioned migration, fails rather than passing over nothing.
+
+      The base defaults to `origin/main`; `task verify:migrations -- --base REF` names another.
+      CI checks out full history so the ref exists. Implementation: `scripts/verify-migrations.py`,
+      covered by `task test:scripts`.
+    cmds:
+      - scripts/verify-migrations.py {{.CLI_ARGS}}
 
   audit:
     desc: Fail if any shipped dependency has a known CVE (Java + TypeScript + Dart). Needs network.

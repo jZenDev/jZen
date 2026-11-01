@@ -181,6 +181,15 @@ error. `scripts/widget-files-suppressions.txt` is jZen's own and is empty. An ap
 `WIDGET_FILES_SUPPRESSIONS` on its `includes:` entry to name its own. An exemption must say what the
 file carries that splitting would lose; an entry whose file stops holding two widgets fails the gate.
 
+## 🗄️ verify-migrations.py — the applied-migrations-are-append-only gate
+
+Run by `task verify:migrations` (also part of `task test` and CI). It lists every versioned
+`V<n>__*.sql` under a `db/migration` directory on the base ref (`--base`, default `origin/main`) and
+exits non-zero when the working-tree copy differs byte for byte, or is gone. New migrations pass;
+`R__*` repeatable ones are exempt, and restoring text the file had earlier in the base history passes (it undoes a bad edit). Flyway checksums the text of an applied migration, comments
+included, so an edit that changes no schema still stops every consumer database that applied it
+(ADR-071). A base ref that does not resolve, or that holds no versioned migration, exits 1.
+
 ## 🔍 audit-maven.py — the Java dependency CVE gate
 
 Run by `task audit:server` (and `task audit`, which adds `pnpm audit` for both TypeScript

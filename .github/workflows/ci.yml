@@ -43,6 +43,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # verify:migrations compares against origin/main, so the ref has to exist.
+          fetch-depth: 0
 
       - name: JDK 25
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
@@ -101,6 +104,11 @@ jobs:
       # per file". Needs the same Python as the gate above.
       - name: One widget per file
         run: task verify:widget-files
+
+      # An applied Flyway migration is append-only: a reworded comment changes its checksum and
+      # stops every consumer database that applied it (ADR-071).
+      - name: Applied migrations unchanged
+        run: task verify:migrations
 
       - run: task deps
       - name: Contract drift gate

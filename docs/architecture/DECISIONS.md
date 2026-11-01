@@ -15,6 +15,39 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-071 — An applied Flyway migration is append-only, comments included
+
+**Date:** 2026-11-01. **Status:** accepted.
+
+### Decision
+
+- A versioned migration (`V<n>__*.sql`) that has reached `main` is never edited: not its SQL, not a
+  comment, not its whitespace or line endings. A correction, or a note about a later change, goes in
+  a new migration, in Java code, or in documentation.
+- `task verify:migrations` (`scripts/verify-migrations.py`) fails when a `V*` file present on
+  `origin/main` differs from its base copy or is deleted. It runs in `task test` and in CI, which
+  checks out full history so the base ref exists. `R__*` repeatable migrations are exempt. The one allowed edit is restoring text the file had
+  earlier in the base history, which is how a bad edit already on `main` is undone.
+- `V200__init_rate_limit.sql` is restored byte for byte to its text before #155 (Flyway checksum
+  1259129914). The `'auth_confirm'` bucket is documented on `RateLimitRule`, not in the migration.
+
+### What this supersedes, and why
+
+- Nothing earlier forbade it; BLUEPRINT "Persistence" ("Flyway is the single migration authority") said
+  who applies migrations, not that applied files are frozen. *Why:* Flyway stores a CRC32 of each applied file's
+  text and refuses to start on a mismatch. #155 added one word to a comment in V200; the schema was
+  identical, yet a consumer database that had applied the old text failed its migration with
+  "Migration checksum mismatch for migration version 200" and its deploy stopped. A comment looks
+  free to change and is not; the only reliable defence is a gate, since review does not see a
+  checksum.
+
+### Consequence
+
+Rewording a comment in an applied migration now fails CI. Repairing a database that already applied
+an edited file (`flyway repair`) stays the consumer's decision and is not made by the framework.
+
+---
+
 ## ADR-069 — `verify-modules.py` requires Python 3.11, the one script above the 3.9 floor
 
 **Date:** 2026-10-30. **Status:** accepted.

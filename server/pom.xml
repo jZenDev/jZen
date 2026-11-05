@@ -146,12 +146,39 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
+      <!--
+        OpenTelemetry, pinned ahead of the platform for the same reason as Jackson above (imported
+        BOMs: earliest wins, so this precedes quarkus-bom). `task audit` reports
+        opentelemetry-api 1.62.0 against GHSA-ccrj-gw8r-854m (quadratic CPU in W3C tracestate
+        parsing, reachable from any inbound request carrying a traceparent/tracestate header);
+        1.67.0 fixes it. The whole BOM, because api, sdk and context are released in lockstep.
+        Remove once the platform's managed version passes the gate.
+      -->
+      <dependency>
+        <groupId>io.opentelemetry</groupId>
+        <artifactId>opentelemetry-bom</artifactId>
+        <version>1.67.0</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <dependency>
         <groupId>${quarkus.platform.group-id}</groupId>
         <artifactId>${quarkus.platform.artifact-id}</artifactId>
         <version>${quarkus.platform.version}</version>
         <type>pom</type>
         <scope>import</scope>
+      </dependency>
+
+      <!--
+        Guava, pinned past the platform's 33.6.0-jre: GHSA-xxph-c9ww-hj94 (uncontrolled memory
+        allocation when deserializing CompactHashMap/CompactHashSet/MapMakerInternalMap) is fixed
+        in 33.7.2. Guava arrives transitively; jZen does not deserialize Guava collections, but a
+        fixed version is cheaper than the argument. Remove once the platform's version passes the gate.
+      -->
+      <dependency>
+        <groupId>com.google.guava</groupId>
+        <artifactId>guava</artifactId>
+        <version>33.7.2-jre</version>
       </dependency>
 
       <!-- Contract-first: protobuf is the canonical model source. -->

@@ -228,6 +228,8 @@ jobs:
           version: "3.x"
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: task build:apps:runners
+      - name: Demo network capabilities in debug, profile and release
+        run: task verify:demo-network:macos
 
   # The backend @QuarkusTest suite. Uses Quarkus Dev Services, which starts Postgres in Docker —
   # available on ubuntu-latest by default, so no extra service setup.

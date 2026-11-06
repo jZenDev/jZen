@@ -46,6 +46,9 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       customLLDBInitFile = "$(SRCROOT)/Flutter/ephemeral/flutter_lldbinit"
       shouldUseLaunchSchemeArgsEnv = "YES">
+      <CommandLineArguments>
+         <CommandLineArgument argument="--disable-vm-service-publication" isEnabled="YES"/>
+      </CommandLineArguments>
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
@@ -81,6 +84,9 @@
       debugServiceExtension = "internal"
       enableGPUValidationMode = "1"
       allowLocationSimulation = "YES">
+      <CommandLineArguments>
+         <CommandLineArgument argument="--disable-vm-service-publication" isEnabled="YES"/>
+      </CommandLineArguments>
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
@@ -98,6 +104,9 @@
       savedToolIdentifier = ""
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
+      <CommandLineArguments>
+         <CommandLineArgument argument="--disable-vm-service-publication" isEnabled="YES"/>
+      </CommandLineArguments>
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference

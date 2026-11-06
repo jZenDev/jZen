@@ -8,6 +8,7 @@ import 'package:zen_ui_identity/zen_ui_identity.dart';
 
 import 'src/app.dart';
 import 'src/auth_deep_links.dart';
+import 'src/backend_network.dart';
 import 'src/demo_repository.dart';
 import 'src/providers.dart';
 
@@ -24,6 +25,7 @@ import 'src/providers.dart';
 /// before this a user signed in again on every launch. [SecureTokenStore] keeps the refresh token
 /// in the platform keystore and [IdentitySessionStore] spends it on the next start.
 void main() {
+  installBackendNetwork(zenApiUrl);
   // Plugins are reached over platform channels, and the keystore is a plugin, so the binding has
   // to exist before the store is constructed.
   WidgetsFlutterBinding.ensureInitialized();

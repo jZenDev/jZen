@@ -16,7 +16,7 @@ import 'zen_store_log.dart';
 import 'zen_sync_report.dart';
 import 'zen_sync_transport.dart';
 
-/// A light application's data: proto messages by collection and id, encrypted on this device,
+/// A Local application's data: proto messages by collection and id, encrypted on this device,
 /// readable offline, and kept in step with the user's other devices by a [ZenSyncTransport].
 ///
 /// **On disk** (the directory passed to [open]): `device.id`, this device's random id; `meta.zen`,

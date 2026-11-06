@@ -82,7 +82,7 @@ final class ConflictFixture {
   }
 }
 
-/// The app a light application builds around the screens.
+/// The app a Local application builds around the screens.
 Widget conflictApp({required Widget home, String locale = ZenLocales.en, ThemeData? theme}) =>
     MaterialApp(
       locale: Locale(locale),

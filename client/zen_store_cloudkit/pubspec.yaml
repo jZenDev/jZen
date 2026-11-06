@@ -1,6 +1,6 @@
 name: zen_store_cloudkit
 description: >-
-  CloudKit sync for a light jZen application on iOS 17 and macOS 14: CKSyncEngine against the
+  CloudKit sync for a jZen Local application on iOS 17 and macOS 14: CKSyncEngine against the
   user's private database, each record end-to-end encrypted with CloudKit encryptedValues, plus
   the Keychain key and Data Protection the store's local files need. See ADR-065.
 publish_to: 'none'

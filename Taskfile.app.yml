@@ -122,9 +122,10 @@ vars:
   ZEN_ENV: '{{.ZEN_ENV | default "dev"}}'
   API: '{{.ZEN_API_URL | default "http://localhost:8085"}}'
 
-  # A light application's sync transport (ADR-065), baked in as the ZEN_SYNC define: `folder` for
-  # zen_store's ZenFolderCloud in development, `cloudkit` for zen_store_cloudkit, empty to pass
-  # nothing. Any other value is refused, because an app that read an unknown name would fall back
+  # A Local application's development override of its sync transport (ADR-072, ADR-073), baked in
+  # as the ZEN_SYNC define: `folder` for zen_store's ZenFolderCloud emulator, `cloudkit` for
+  # zen_store_cloudkit, empty to pass nothing. A release build sets none: its transport follows
+  # ZEN_PLATFORM. Any other value is refused, because an app that read an unknown name would fall back
   # to whatever its own code defaults to, and nobody would notice which transport it ran.
   ZEN_SYNC: '{{.ZEN_SYNC | default ""}}'
   # The folder ZenFolderCloud syncs through, baked in as ZEN_SYNC_FOLDER. Give every build that
@@ -1113,7 +1114,7 @@ tasks:
           credentialed call is rejected 403 "CORS Rejected - Invalid origin"; the task prints the
           one-line fix.
 
-      A LIGHT APPLICATION (ADR-065) has no server pom at APP_SERVER_MODULE, and then the two backend
+      A LOCAL APPLICATION (ADR-065, ADR-073) has no server pom at APP_SERVER_MODULE, and then the two backend
       guards do not run and no ZEN_API_URL is baked in: there is no backend to check. Its sync
       transport is chosen here instead, at compile time:
 
@@ -1151,7 +1152,7 @@ tasks:
           exit 1
         fi
 
-        # A light application (ADR-065) has no server: there is nothing to check, no API URL to
+        # A Local application (ADR-065, ADR-073) has no server: there is nothing to check, no API URL to
         # bake in, and no CORS allowlist to match. Whether there is a server is a fact of the tree,
         # the same test deps:server and generate:api use, not a flag someone can forget to set.
         api="{{.API}}"

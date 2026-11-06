@@ -4,7 +4,7 @@ jZen is a **framework** for building products: `server/` and `client/` are reusa
 Dart libraries, and applications — the `zen_demo` reference app today, real products next — are
 built on them under `apps/<app>/{<app>_client, <app>_server, <app>_admin}`. The reference app
 proves the framework composes end to end. An application that needs no server is built from the
-client libraries alone — a *light* app, its data on the user's own devices (ADR-065).
+client libraries alone — a *Local* app, its data on the user's own devices (ADR-065, ADR-073).
 
 The stack is Quarkus, PostgreSQL, and Supabase on the server; Flutter on the client;
 react-admin for administration; and one contract, declared in protobuf, binding all three.
@@ -89,7 +89,7 @@ does take is sufficient. Reopening any of them takes a decision that supersedes 
 - **Not a Firebase/Firestore stack.** The database is PostgreSQL and authentication is
   Supabase's — both named, first-class dependencies rather than abstractions. A document store
   would mean a second data model that no product here has asked for.
-- **Not a sync engine that decides for the user.** A light app's sync merges what can be merged
+- **Not a sync engine that decides for the user.** A Local app's sync merges what can be merged
   (different fields, equal edits) and puts every real conflict to the person, with each device's
   version kept until they choose. A merge that silently keeps one of two edits is a failure
   swallowed, and the user is the one who pays for it (ADR-065).

@@ -15,6 +15,86 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-073 — A serverless jZen application is a *Local* application, and its sync transport follows the platform
+
+**Date:** 2026-11-06. **Status:** accepted. **Refines:** ADR-065 (light applications), ADR-072
+(the application taskfile and `ZEN_SYNC`).
+
+### Decision
+
+- **The mode is called jZen Local; an application in it is a Local application.** It is what
+  ADR-065 called *light*: the client tier alone, its data in `zen_store` on the person's own
+  devices, no server and no sign-in. Package names do not change (`zen_store`, `zen_store_cloudkit`,
+  `zen_ui_store`, `zen_ui_lock` never carried the word); the documents do.
+- **A Local application runs on every native target.** Its core — `zen_store` (storage, encryption,
+  per-field merge, conflicts), `zen_ui_store` and `zen_ui_lock` — is pure Dart or plain Flutter and
+  was never Apple's. What was Apple's is one transport and one key store, and those are now per
+  platform:
+
+  | `ZEN_PLATFORM` | Release sync transport | Store key kept in |
+  |---|---|---|
+  | `ios`, `macos` | CloudKit (`zen_store_cloudkit`, iOS 17 / macOS 14) | Keychain (`ZenKeychainStoreKey`) |
+  | `android`, `windows`, `linux` | a folder the person chooses (`zen_store_shared_folder`, planned) | the platform's secure storage |
+  | `web` | — a Local application does not build for the web | — |
+
+- **The transport is chosen at compile time from `ZEN_PLATFORM`**, which every build already
+  carries (STANDARDS "Client config is compile-time"). A release build names no transport of its
+  own; the platform decides it. `ZEN_SYNC` stays only as the development override from ADR-072:
+  `folder` is the `ZenFolderCloud` emulator, and `cloudkit` is accepted and means what an Apple
+  build does anyway.
+- **No web build.** The web has no durable place for an encrypted store that the browser will not
+  empty, no secure key storage, and a persistent folder only in Chromium browsers. A Local
+  application exists to work offline on the person's own device; a web build that cannot is not
+  one.
+- **The shared-folder transport, decided now and built later, in this order after CloudKit:**
+  - **The person chooses a folder that a sync service of their own keeps in step** — Dropbox,
+    OneDrive, Google Drive, Nextcloud, Syncthing, iCloud Drive on Windows. The application signs in
+    to nothing; the service the person already runs moves the files. There is no OAuth client, no
+    provider SDK and no provider review.
+  - **Each device writes only its own files** and reads everyone else's. A file sync service has
+    no conditional write and no lock that holds across machines, so two devices writing one file
+    produce a "conflicted copy" or a silent overwrite. With one writer per file neither can happen;
+    combining devices is the per-field merge `zen_store` already does, and real conflicts still go
+    to the person. This is why `ZenFolderCloud`, which relies on a file lock on one machine, is not
+    this transport and stays development-only.
+  - **Everything in the folder is encrypted by `zen_store`** with a sync key the devices share:
+    the service storing the folder sees ciphertext. The sync key reaches a new device by **pairing**
+    — a code shown on a device that already has it, scanned on the new one — not by an account. A
+    person who loses every paired device loses the key, as with iCloud Keychain under CloudKit.
+  - On Android the folder is reached through the Storage Access Framework, on desktop through the
+    system folder picker, and the grant is kept across launches.
+- **Prudent Local is the first Local application**, built for every row of the table in turn:
+  iOS and macOS on CloudKit first, then the shared-folder platforms once the transport exists.
+
+### What this supersedes, and why
+
+- **"A jZen application may be *light*"** and every use of *light application* (ADR-065; README,
+  ARCHITECTURE, MANIFESTO, BLUEPRINT, STANDARDS, ROADMAP, the package READMEs) → **renamed: a
+  Local application.** *Why:* "light" promised a smaller jZen everywhere, while what shipped was
+  serverless only on Apple's platforms. "Local" names what the mode is — the data lives on the
+  person's devices and the application works without a network — and holds whichever transport
+  a platform uses.
+- **"Its targets are iOS 17 and macOS 14 and later"** (ADR-065, Decision) → **changed: those are
+  the CloudKit transport's targets, not the mode's.** *Why:* the requirement comes from
+  `CKSyncEngine`; nothing else in the mode needs an Apple platform, and stating it as the mode's
+  target turned one transport's limit into the framework's.
+- **"`ZEN_SYNC` is `folder`, `cloudkit` or unset"** as the way an application picks its transport
+  (ADR-072, Decision) → **refined: the release transport follows `ZEN_PLATFORM`; `ZEN_SYNC` is a
+  development override.** *Why:* a define every release build must remember to set is a define
+  some release build will forget, and the platform already determines the only correct answer.
+
+### Consequence
+
+Documents only: every *light* in the README, ARCHITECTURE, MANIFESTO, BLUEPRINT, STANDARDS,
+ROADMAP, CLAUDE.md/AGENTS.md, `Taskfile.app.yml` comments and the four packages' READMEs, pubspecs
+and doc comments now reads *Local*; accepted ADRs and released changelogs keep the word. **Not
+built yet**, and listed in ROADMAP item 9: `zen_store_shared_folder` with its pairing; a key store
+for Android, Windows and Linux; transport selection from `ZEN_PLATFORM` in code (applications
+still read `ZEN_SYNC` themselves, as ADR-072 left them); and a refusal of `ZEN_PLATFORM=web` for an
+application with no server in `Taskfile.app.yml`.
+
+---
+
 ## ADR-072 — The application taskfile runs and builds a light application, with its sync transport baked in
 
 **Date:** 2026-11-06. **Status:** accepted. **Refines:** ADR-065 (light applications), ADR-046

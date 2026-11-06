@@ -6,7 +6,7 @@ The rules that keep the monorepo honest. Philosophy is in
 
 The reference demo enforces its native backend origin at socket creation and launches without
 wireless device discovery or debugger Bonjour advertising (ADR-070). This is an application
-policy, not a restriction on light apps using CloudKit. See the
+policy, not a restriction on Local apps using CloudKit. See the
 [network audit](../security/zen-demo-network.md) for checked capabilities, commands and limits.
 
 ## Orchestration
@@ -474,7 +474,7 @@ The gate covers **both client languages**: Dart (`client/*/lib`, `apps/*/*/lib`,
 `@supabase/supabase-js` is one `pnpm add` away and better documented than the Dart SDK, and a
 panel that used it would lose all three properties above in the same silent way.
 
-**A light application has no server of its own** (ADR-065). Its only outbound traffic is CloudKit,
+**A Local application has no server of its own** (ADR-065, ADR-073). Its only outbound traffic is CloudKit,
 made by Apple's framework on the user's own account and carrying ciphertext — there is no session,
 role or backend for the rule to protect — and the gate still scans `zen_store`,
 `zen_store_cloudkit`, `zen_ui_store` and `zen_ui_lock` like every other package: the Dart side of

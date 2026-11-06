@@ -10,7 +10,7 @@ import 'zen_store.dart';
 import 'zen_store_log.dart';
 import 'zen_sync_transport.dart';
 
-/// A stand-in for CloudKit in a folder on disk, for developing and testing a light application
+/// A stand-in for CloudKit in a folder on disk, for developing and testing a Local application
 /// without a paid Apple Developer Program membership (ADR-065).
 ///
 /// It keeps what CloudKit keeps — one record per store record, each with a change tag, and a

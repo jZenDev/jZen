@@ -15,6 +15,50 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-072 — The application taskfile runs and builds a light application, with its sync transport baked in
+
+**Date:** 2026-11-06. **Status:** accepted. **Refines:** ADR-065 (light applications), ADR-046
+(the tasks an application includes).
+
+### Decision
+
+- **`run:client` runs an application with no server.** Whether there is one is a fact of the
+  tree — a server pom at `APP_SERVER_MODULE`, the test `deps:server` and `generate:api` already
+  use — not a flag. With none, the `/api/v1/health` check and the CORS check do not run and no
+  `ZEN_API_URL` is baked in. An application with a server behaves exactly as before.
+- **`ZEN_SYNC` and `ZEN_SYNC_FOLDER`** reach `run:client`, `build:runners` and
+  `build:runners:release` as compile-time defines (STANDARDS "Client config is compile-time").
+  `ZEN_SYNC` is `folder`, `cloudkit` or unset; any other value fails the task, and `folder`
+  without a folder fails it too — an app that read an unknown value would fall back to whatever
+  its own code defaults to, and nobody would see which transport it ran.
+- **`DART_DEFINES`** passes an application's own `KEY=VALUE` pairs to the same three tasks; an
+  entry that is not `KEY=VALUE` fails the task.
+
+### What this supersedes, and why
+
+- **"Run the Flutter application, pointed at a local backend"** (`run:client`, ADR-046) →
+  **refined: pointed at a local backend if the application has one.** *Why:* the task refused to
+  start an application with no backend at all ("No backend answering"), so the first light
+  application could not be launched through the framework's own task.
+- **"a macOS build and a simulator build pointed at one folder sync as two devices"** (ADR-065,
+  the `ZenFolderCloud` bullet) → **refined: through a folder the sandboxed macOS app can reach.**
+  *Why:* a sandboxed macOS app — Flutter's default — reaches only its own container. The folder
+  is one inside it (`~/Library/Containers/<bundle id>/Data/...`), which the simulator app, a plain
+  process on the Mac, reaches too; or the macOS Debug entitlements carry a read-write exception
+  for it. ADR-065 stated the shared folder without that condition.
+
+### Consequence
+
+Verified against a throwaway application with no server, including this file, with a stub
+`flutter` that prints its arguments: `run:client` passes `ZEN_PLATFORM`, `ZEN_SYNC`,
+`ZEN_SYNC_FOLDER` and the application's defines and no `ZEN_API_URL`; an unknown `ZEN_SYNC`,
+`folder` without a folder, and a malformed `DART_DEFINES` entry each fail; with a server pom
+present and no server running the task still stops at the health check; `build:runners` passes
+the defines to the macOS and iOS-simulator builds. **Not verified here:** two real builds syncing
+through a folder inside a macOS app container — the first light application is that test.
+
+---
+
 ## ADR-071 — An applied Flyway migration is append-only, comments included
 
 **Date:** 2026-11-01. **Status:** accepted.

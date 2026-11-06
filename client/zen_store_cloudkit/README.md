@@ -50,10 +50,12 @@ await ZenKeychainStoreKey.protectDirectory(directory);   // before the store wri
 final key = (await ZenKeychainStoreKey.load()).dataOrNull!;
 final store = (await ZenStore.open(directory, deviceName: "Alex's iPhone", key: key)).dataOrNull!;
 
-// Chosen at compile time (STANDARDS "Client config is compile-time"), never at runtime.
+// Chosen at compile time (STANDARDS "Client config is compile-time"), never at runtime:
+// `task zen:run:client ZEN_SYNC=folder|cloudkit` bakes these in (ADR-072).
 const syncMode = String.fromEnvironment('ZEN_SYNC');
+const syncFolder = String.fromEnvironment('ZEN_SYNC_FOLDER');
 final sync = syncMode == 'folder'
-    ? await ZenFolderCloud.start(store, developmentFolder)
+    ? await ZenFolderCloud.start(store, Directory(syncFolder))
     : await ZenCloudKitSync.start(store, containerId: 'iCloud.com.example.app');
 ```
 

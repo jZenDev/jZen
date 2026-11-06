@@ -22,10 +22,13 @@ import 'zen_sync_transport.dart';
 /// **Development only.** Payloads are stored as they are — not encrypted end to end, as CloudKit's
 /// encrypted fields are — and nothing is uploaded anywhere. An iOS Simulator app runs as a process
 /// on the Mac and can reach the Mac's files, so a macOS build and a simulator build given the same
-/// folder sync as two devices. Choose it at compile time, never at runtime:
+/// folder sync as two devices; a sandboxed macOS app reaches only its own container, so the folder
+/// lives there (ADR-072). Choose it at compile time, never at runtime — `task zen:run:client` with
+/// `ZEN_SYNC=folder` and `ZEN_SYNC_FOLDER` set to an absolute path bakes both in:
 ///
 /// ```dart
 /// const sync = String.fromEnvironment('ZEN_SYNC'); // 'folder' in development, 'cloudkit' in release
+/// const folder = String.fromEnvironment('ZEN_SYNC_FOLDER');
 /// ```
 final class ZenFolderCloud implements ZenSyncTransport {
   final ZenStore _store;

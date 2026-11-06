@@ -122,6 +122,20 @@ vars:
   ZEN_ENV: '{{.ZEN_ENV | default "dev"}}'
   API: '{{.ZEN_API_URL | default "http://localhost:8085"}}'
 
+  # A light application's sync transport (ADR-065), baked in as the ZEN_SYNC define: `folder` for
+  # zen_store's ZenFolderCloud in development, `cloudkit` for zen_store_cloudkit, empty to pass
+  # nothing. Any other value is refused, because an app that read an unknown name would fall back
+  # to whatever its own code defaults to, and nobody would notice which transport it ran.
+  ZEN_SYNC: '{{.ZEN_SYNC | default ""}}'
+  # The folder ZenFolderCloud syncs through, baked in as ZEN_SYNC_FOLDER. Give every build that
+  # should sync with the others the same absolute path (see run:client's summary for the macOS
+  # sandbox). Only passed with ZEN_SYNC=folder; empty with it is refused.
+  ZEN_SYNC_FOLDER: '{{.ZEN_SYNC_FOLDER | default ""}}'
+  # Further compile-time config of the application's own: space-separated KEY=VALUE pairs, each
+  # passed as --dart-define by run:client, build:runners and build:runners:release. A value cannot
+  # contain a space; an application whose config needs one has outgrown a define.
+  DART_DEFINES: '{{.DART_DEFINES | default ""}}'
+
   # GCP_PROJECT, GCP_REGION, SERVICE_NAME and AR_REPO are deliberately NOT declared here: a var the
   # included file declares wins over the same name passed by the calling task, so declaring them
   # would make `deploy:cloudrun`'s own values invisible. They arrive from the calling task's `vars:`
@@ -820,6 +834,23 @@ tasks:
         if [ -n '{{.SCHEME}}' ]; then
           defines="$defines --dart-define=ZEN_AUTH_REDIRECT_URI={{.SCHEME}}"
         fi
+        for pair in {{.DART_DEFINES}}; do
+          case "$pair" in
+            *=*) defines="$defines --dart-define=$pair" ;;
+            *) echo "DART_DEFINES entry '$pair' is not KEY=VALUE."; exit 1 ;;
+          esac
+        done
+        case '{{.ZEN_SYNC}}' in
+          "") ;;
+          cloudkit) defines="$defines --dart-define=ZEN_SYNC=cloudkit" ;;
+          folder)
+            if [ -z '{{.ZEN_SYNC_FOLDER}}' ]; then
+              echo "ZEN_SYNC=folder needs ZEN_SYNC_FOLDER, an absolute path every syncing build shares."
+              exit 1
+            fi
+            defines="$defines --dart-define=ZEN_SYNC=folder --dart-define=ZEN_SYNC_FOLDER={{.ZEN_SYNC_FOLDER}}" ;;
+          *) echo "ZEN_SYNC='{{.ZEN_SYNC}}' is neither folder nor cloudkit."; exit 1 ;;
+        esac
 
         case "$(uname -s)" in
           Darwin)                 HOST=macos ;;
@@ -912,6 +943,23 @@ tasks:
         if [ -n '{{.SCHEME}}' ]; then
           defines="$defines --dart-define=ZEN_AUTH_REDIRECT_URI={{.SCHEME}}"
         fi
+        for pair in {{.DART_DEFINES}}; do
+          case "$pair" in
+            *=*) defines="$defines --dart-define=$pair" ;;
+            *) echo "DART_DEFINES entry '$pair' is not KEY=VALUE."; exit 1 ;;
+          esac
+        done
+        case '{{.ZEN_SYNC}}' in
+          "") ;;
+          cloudkit) defines="$defines --dart-define=ZEN_SYNC=cloudkit" ;;
+          folder)
+            if [ -z '{{.ZEN_SYNC_FOLDER}}' ]; then
+              echo "ZEN_SYNC=folder needs ZEN_SYNC_FOLDER, an absolute path every syncing build shares."
+              exit 1
+            fi
+            defines="$defines --dart-define=ZEN_SYNC=folder --dart-define=ZEN_SYNC_FOLDER={{.ZEN_SYNC_FOLDER}}" ;;
+          *) echo "ZEN_SYNC='{{.ZEN_SYNC}}' is neither folder nor cloudkit."; exit 1 ;;
+        esac
 
         case "$(uname -s)" in
           Darwin)                 HOST=macos ;;
@@ -1043,7 +1091,7 @@ tasks:
         "{{.JZEN_DIR}}/server/mvnw" -f "$pom" quarkus:dev -Dquarkus.http.port="{{.APP_PORT}}"
 
   run:client:
-    desc: Run the Flutter application, pointed at a local backend (DEVICE selects the target)
+    desc: Run the Flutter application, pointed at a local backend if it has one (DEVICE selects the target)
     silent: true
     summary: |
       `flutter run -d DEVICE` (default `chrome`, on a fixed WEB_PORT so the server's CORS allowlist
@@ -1064,6 +1112,21 @@ tasks:
           CORS allowlist (CORS_ORIGINS, defaulted to what run:server exports). If not, every
           credentialed call is rejected 403 "CORS Rejected - Invalid origin"; the task prints the
           one-line fix.
+
+      A LIGHT APPLICATION (ADR-065) has no server pom at APP_SERVER_MODULE, and then the two backend
+      guards do not run and no ZEN_API_URL is baked in: there is no backend to check. Its sync
+      transport is chosen here instead, at compile time:
+
+        task zen:run:client DEVICE=macos ZEN_SYNC=folder ZEN_SYNC_FOLDER=/abs/path
+        task zen:run:client DEVICE=<simulator-udid> CLIENT_PLATFORM=ios ZEN_SYNC=folder ZEN_SYNC_FOLDER=/abs/path
+
+      Two builds given the same ZEN_SYNC_FOLDER sync through zen_store's ZenFolderCloud, with no
+      Apple account. An iOS Simulator app is a process on the Mac and reaches the Mac's files; a
+      sandboxed macOS app reaches only its own container, so either point both at a folder inside
+      the macOS app's container (~/Library/Containers/<bundle id>/Data/...) or give the macOS
+      Debug entitlements a read-write exception for the folder. ZEN_SYNC=cloudkit needs the
+      CloudKit capability, which needs a paid Apple Developer Program membership. DART_DEFINES
+      passes the application's own KEY=VALUE pairs.
     vars:
       APP_CLIENT_DIR: '{{.APP_CLIENT_DIR | default (printf "%s/%s_client" .CLIENT_DIR .APP_NAME)}}'
       PLATFORM:
@@ -1088,30 +1151,59 @@ tasks:
           exit 1
         fi
 
+        # A light application (ADR-065) has no server: there is nothing to check, no API URL to
+        # bake in, and no CORS allowlist to match. Whether there is a server is a fact of the tree,
+        # the same test deps:server and generate:api use, not a flag someone can forget to set.
         api="{{.API}}"
-        curl -sf "$api/api/v1/health" >/dev/null 2>&1 || {
-          echo "No backend answering on {{.APP_PORT}} — run 'task run:server' in another terminal."
-          exit 1
-        }
+        has_server=no
+        [ -f "{{.ROOT_DIR}}/{{.APP_SERVER_MODULE}}/pom.xml" ] && has_server=yes
+        if [ "$has_server" = yes ]; then
+          curl -sf "$api/api/v1/health" >/dev/null 2>&1 || {
+            echo "No backend answering on {{.APP_PORT}} — run 'task run:server' in another terminal."
+            exit 1
+          }
+        fi
 
         cd "{{.ROOT_DIR}}/{{.APP_CLIENT_DIR}}"
-        defines="--dart-define=ZEN_ENV={{.ZEN_ENV}} --dart-define=ZEN_PLATFORM=$platform --dart-define=ZEN_API_URL=$api"
+        defines="--dart-define=ZEN_ENV={{.ZEN_ENV}} --dart-define=ZEN_PLATFORM=$platform"
+        if [ "$has_server" = yes ]; then
+          defines="$defines --dart-define=ZEN_API_URL=$api"
+        fi
         # A custom-scheme redirect (myapp://auth-callback) is native-only by construction: handing
         # one to a web build makes the server refuse the unlisted address as invalid_redirect. Pass
         # it only when the resolved platform is not web.
         if [ -n '{{.AUTH_REDIRECT_URI}}' ] && [ "$platform" != web ]; then
           defines="$defines --dart-define=ZEN_AUTH_REDIRECT_URI={{.AUTH_REDIRECT_URI}}"
         fi
+        for pair in {{.DART_DEFINES}}; do
+          case "$pair" in
+            *=*) defines="$defines --dart-define=$pair" ;;
+            *) echo "DART_DEFINES entry '$pair' is not KEY=VALUE."; exit 1 ;;
+          esac
+        done
+        case '{{.ZEN_SYNC}}' in
+          "") ;;
+          cloudkit) defines="$defines --dart-define=ZEN_SYNC=cloudkit" ;;
+          folder)
+            if [ -z '{{.ZEN_SYNC_FOLDER}}' ]; then
+              echo "ZEN_SYNC=folder needs ZEN_SYNC_FOLDER, an absolute path every syncing build shares."
+              exit 1
+            fi
+            defines="$defines --dart-define=ZEN_SYNC=folder --dart-define=ZEN_SYNC_FOLDER={{.ZEN_SYNC_FOLDER}}" ;;
+          *) echo "ZEN_SYNC='{{.ZEN_SYNC}}' is neither folder nor cloudkit."; exit 1 ;;
+        esac
         case "{{.DEVICE}}" in
           chrome|web-server|edge)
-            allowed="${CORS_ORIGINS:-http://localhost:{{.WEB_PORT}},http://localhost:8080,http://localhost:5173}"
-            case ",$allowed," in
-              *",http://localhost:{{.WEB_PORT}},"*) ;;
-              *)
-                echo "WEB_PORT={{.WEB_PORT}} is not in the server's CORS allowlist. Either drop WEB_PORT, or"
-                echo "start the server with:  CORS_ORIGINS=http://localhost:{{.WEB_PORT}} task run:server"
-                exit 1 ;;
-            esac
+            if [ "$has_server" = yes ]; then
+              allowed="${CORS_ORIGINS:-http://localhost:{{.WEB_PORT}},http://localhost:8080,http://localhost:5173}"
+              case ",$allowed," in
+                *",http://localhost:{{.WEB_PORT}},"*) ;;
+                *)
+                  echo "WEB_PORT={{.WEB_PORT}} is not in the server's CORS allowlist. Either drop WEB_PORT, or"
+                  echo "start the server with:  CORS_ORIGINS=http://localhost:{{.WEB_PORT}} task run:server"
+                  exit 1 ;;
+              esac
+            fi
             set -- --web-port="{{.WEB_PORT}}" ;;
           *) set -- ;;
         esac

@@ -48,6 +48,49 @@ an edited file (`flyway repair`) stays the consumer's decision and is not made b
 
 ---
 
+## ADR-070 — The demo restricts native backend sockets and launches without device discovery
+
+**Date:** 2026-10-30. **Status:** accepted.
+
+### Decision
+
+- `zen_demo_client` installs an application-owned native HTTP connection policy before
+  constructing clients. Only the compile-time backend origin is allowed, with checked public
+  addresses or explicitly configured loopback. DNS answers, redirects, proxies and WebSocket
+  upgrades cannot introduce another destination. TLS keeps hostname and certificate validation.
+- Native launch selects built-in/USB devices only, bypasses enumeration for an explicit desktop
+  target, and disables debugger Bonjour advertising. Wireless debugging is outside this demo's
+  launch path. `ZEN_MODE` selects debug, profile or release through the same task.
+- Debug retains JIT and a loopback debugger listener; AOT Profile retains its profiler listener
+  without JIT; Release has neither listener entitlement nor debugger-attachment entitlement.
+  Ordinary Android INTERNET access is declared in the main manifest for every build mode.
+- Source and signed-artifact checks guard capabilities and reviewed Apple plugin versions. The
+  runtime connection policy belongs to this demo, not every framework consumer: a light app's
+  CloudKit sync is a separate product capability and must not inherit this restriction.
+
+### What this supersedes, and why
+
+- **"The client talks to one server, and it is ours"** (STANDARDS, "The client talks to one
+  server") → **refined for the demo:** the origin and resolved destination are now checked at
+  socket creation. *Why:* static dependency/URL checks alone cannot stop a redirect or a public
+  hostname resolving to a local device. A configurable private LAN destination is no longer an
+  acceptable demo backend; local development uses same-machine loopback instead.
+- **"one attached device is used without asking; several produce a numbered menu"** (scripts
+  README, "pick-device.py") → **refined:** attached means built-in/USB, with no wireless search.
+  *Why:* the prior Flutter enumeration enabled a confirmed discovery path before the application
+  even launched. It is not evidence that this path caused the macOS dialog in issue 199.
+
+### Consequence
+
+Backend access remains compile-time configured. Local development and local debugger/profiler
+attachment remain supported; denying unnecessary Local Network access does not gate backend
+requests. Socket, TLS and configuration regression tests accompany the change. The investigation
+and its explicit limits are in [the network audit](../security/zen-demo-network.md): the historical
+macOS dialog has not been attributed, a clean-state permission test remains outstanding, and
+`HttpOverrides` does not constitute an OS firewall or intercept native plugin/engine sockets.
+
+---
+
 ## ADR-069 — `verify-modules.py` requires Python 3.11, the one script above the 3.9 floor
 
 **Date:** 2026-10-30. **Status:** accepted.

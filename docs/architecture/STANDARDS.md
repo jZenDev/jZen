@@ -4,6 +4,11 @@ The rules that keep the monorepo honest. Philosophy is in
 [`MANIFESTO.md`](./MANIFESTO.md); the structure they apply to is in
 [`BLUEPRINT.md`](./BLUEPRINT.md).
 
+The reference demo enforces its native backend origin at socket creation and launches without
+wireless device discovery or debugger Bonjour advertising (ADR-070). This is an application
+policy, not a restriction on light apps using CloudKit. See the
+[network audit](../security/zen-demo-network.md) for checked capabilities, commands and limits.
+
 ## Orchestration
 
 - **`Taskfile.yml` is the only orchestrator.** It triggers native tools; it never

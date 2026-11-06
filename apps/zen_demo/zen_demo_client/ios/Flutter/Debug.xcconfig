@@ -1,1 +1,3 @@
 #include "Generated.xcconfig"
+// The debugger connects explicitly; the app must not advertise itself over mDNS.
+DISABLE_PORT_PUBLICATION = YES

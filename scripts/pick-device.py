@@ -18,12 +18,13 @@ ZEN_PLATFORM=ios and skipped the JDK check that would have explained the failure
 
 import json
 import os
+import platform
 import subprocess
 import sys
 
 # Flutter's targetPlatform prefixes mapped to what ZEN_PLATFORM calls them. Web is deliberately
 # absent: `task run:demo` runs the web app, and this is the native counterpart.
-FAMILIES = {"darwin": "macos", "ios": "ios", "android": "android"}
+FAMILIES = {"darwin": "macos", "ios": "ios", "android": "android", "linux": "linux", "windows": "windows"}
 
 
 def die(message):
@@ -42,10 +43,13 @@ def family(device):
 def devices():
     try:
         result = subprocess.run(
-            ["flutter", "devices", "--machine"], capture_output=True, text=True
+            ["flutter", "--suppress-analytics", "devices", "--machine", "--device-connection=attached"],
+            capture_output=True, text=True
         )
     except FileNotFoundError:
         die("`flutter` is not on PATH. Run `task doctor`.")
+    if result.returncode:
+        die('Could not list attached Flutter devices:\n' + result.stderr.strip())
     try:
         return json.loads(result.stdout)
     except ValueError:
@@ -106,6 +110,13 @@ def choose(usable):
 
 
 def main():
+    # An explicit desktop target needs no device enumeration at all. In
+    # particular, never search the LAN to find the computer we are running on.
+    wanted = os.environ.get('ZEN_TARGET', '').strip()
+    desktop = {'macos': 'Darwin', 'linux': 'Linux', 'windows': 'Windows'}
+    if wanted in desktop and platform.system() == desktop[wanted]:
+        print('%s\t%s' % (wanted, os.environ.get('ZEN_PLATFORM') or wanted))
+        return
     usable = [d for d in devices() if family(d) and d.get("isSupported", True)]
     chosen = choose(usable)
     # ZEN_PLATFORM remains an override for an odd case, but it is no longer load-bearing.

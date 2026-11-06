@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The configured jZen backend is required in every build mode. This is
+         ordinary Internet access, not permission to discover nearby devices. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="zen_demo_client"
         android:name="${applicationName}"

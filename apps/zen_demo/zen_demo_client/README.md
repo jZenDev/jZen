@@ -43,6 +43,18 @@ flutter run -d chrome \
   --dart-define=ZEN_API_URL=http://localhost:8085
 ```
 
+## Native network boundary
+
+For native runs, use `ZEN_TARGET=macos ZEN_API_URL=http://127.0.0.1:8085 task run:demo:native`
+from the repository root. `ZEN_MODE` selects `debug` (default), `profile`, or `release`.
+The launcher lists attached devices only and disables debugger Bonjour advertising.
+Native HTTP and WebSocket connections are restricted to the configured backend's origin,
+with public unicast addresses or explicitly configured loopback; LAN destinations and
+cross-origin redirects are refused. Android emulator development can use `adb reverse`
+to reach the host through device loopback instead of allowing a LAN gateway address.
+See the [network audit](../../../docs/security/zen-demo-network.md) for evidence,
+remaining platform limitations and verification commands.
+
 ## Widget Showcase
 
 Sign in to zen_demo and select **Showcase** in the navigation. This interactive page demonstrates

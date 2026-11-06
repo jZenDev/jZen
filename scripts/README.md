@@ -273,11 +273,13 @@ Paste the before/after into #177 before closing it.
 Used by `task run:demo:native`. Prints `<device-id>\t<platform>` on stdout and everything a human
 reads on stderr, so the task can capture the answer without the conversation.
 
-`ZEN_TARGET` (an id **or** a name) wins when set; one attached device is used without asking;
+`ZEN_TARGET` (an id **or** a name) wins when set; an explicit desktop target bypasses discovery.
+Otherwise Flutter lists only built-in and USB-attached devices (`--device-connection=attached`),
+with CLI analytics suppressed. Wireless device discovery is disabled. One attached device is used without asking;
 several produce a numbered menu read from `/dev/tty`, which is what makes it work inside a command
 substitution. A non-interactive caller with several devices is told to pass `ZEN_TARGET` rather
 than left at a prompt nobody can see.
 
-The platform comes from Flutter's `targetPlatform`, never from the shape of the id — `emulator-5554`
+For enumerated devices the platform comes from Flutter's `targetPlatform`, never from the shape of the id — `emulator-5554`
 and a simulator UUID are both just strings, and guessing there is how an Android emulator once
 built with `ZEN_PLATFORM=ios` and skipped the JDK check that would have explained the failure.

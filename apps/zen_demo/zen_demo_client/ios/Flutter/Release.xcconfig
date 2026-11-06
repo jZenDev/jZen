@@ -1,1 +1,3 @@
 #include "Generated.xcconfig"
+// Profile uses this config too. Do not inject Bonjour declarations into its bundle.
+DISABLE_PORT_PUBLICATION = YES

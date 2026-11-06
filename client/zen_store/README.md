@@ -3,7 +3,7 @@
 [![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-**A light jZen app's data, encrypted on the user's own devices — and no edit is ever dropped
+**A jZen Local app's data, encrypted on the user's own devices — and no edit is ever dropped
 without them knowing.**
 
 Proto messages stored by collection and id in a directory on this device, encrypted with a key the

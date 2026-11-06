@@ -3,10 +3,10 @@
 [![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-**CloudKit sync, the store's key and Data Protection for a light jZen application, on iOS 17 and
+**CloudKit sync, the store's key and Data Protection for a jZen Local application, on iOS 17 and
 macOS 14.**
 
-Three things a light app's `zen_store` needs from Apple's APIs, and nothing else:
+Three things a Local app's `zen_store` needs from Apple's APIs, and nothing else:
 
 - **`ZenCloudKitSync`** — the `ZenSyncTransport` a release build uses. `CKSyncEngine` against the
   user's private database, one CloudKit record per store record in a custom zone, the record's

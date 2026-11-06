@@ -1,4 +1,4 @@
-/// jZen UI Store - what a light jZen application shows when two devices changed the same data
+/// jZen UI Store - what a jZen Local application shows when two devices changed the same data
 /// differently, so that the person, not the sync, decides what to keep — and when sync stops.
 ///
 /// - [ZenConflictBanner]: says that choices are waiting, and opens them

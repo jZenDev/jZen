@@ -19,8 +19,9 @@ JSON or binary, over the same endpoints, with nothing to hand-sync.**
   surface come from the framework, not something every new app rebuilds.
 - 🚀 **Cheap to run, fast to wake.** Ships as a native image on Cloud Run scaled to zero — pennies a
   month idle, and a cold request answers in **~1.5s** (see "Capacity" under Deploy, below).
-- 🪶 **Or no server at all.** A *light* app is the Flutter client alone — no backend, no sign-in —
-  with its data on the user's own devices, synced through their iCloud. Edits merge field by field,
+- 🪶 **Or no server at all.** A *Local* app is the Flutter client alone — no backend, no sign-in —
+  with its data on the user's own devices, synced through their iCloud on Apple's platforms and
+  through a folder of their choosing elsewhere. Edits merge field by field,
   and anything that cannot merge is put to the person to decide, never silently dropped. An
   optional PIN closes the app instead of a login.
 - 🧪 **No mocks at the finish line.** The reference app's end-to-end suite runs against a real
@@ -30,7 +31,7 @@ jZen is a **framework/platform for building products**, not a single deployable 
 `server/` (Java/Quarkus) and `client/` (Dart/Flutter) are reusable **framework libraries**;
 `apps/<app>/{<app>_client, <app>_server, <app>_admin}` are the **applications** that assemble
 them. An application comes in one of two shapes: **full-stack** (client, server and admin panel,
-everything below) or **light** (the client alone, see [Light apps](#-light-apps-no-server-no-sign-in)).
+everything below) or **Local** (the client alone, see [jZen Local](#-jzen-local-no-server-no-sign-in)).
 Today the only app is `zen_demo`, the full-stack reference app, which doubles as the product
 showcase and the living end-to-end test stand.
 
@@ -79,14 +80,17 @@ human walks through here are asserted headlessly by `task test:e2e` (the release
 the same real stack, with no mocks. See
 [`apps/zen_demo/README.md`](apps/zen_demo/README.md) for what it exercises.
 
-## 🪶 Light apps: no server, no sign-in
+## 🪶 jZen Local: no server, no sign-in
 
-Not every product needs a backend. A **light** app is the client tier alone — for a personal app
+Not every product needs a backend. A **Local** app is the client tier alone — for a personal app
 whose data belongs on its owner's devices, where a server, a database and an account would be pure
-cost. It runs on **macOS and iOS** and is built from the same packages as any jZen client, plus
-four of its own:
+cost. It runs on **iOS, macOS, Android, Windows and Linux** — not the web, which has nowhere durable
+to keep an encrypted store offline — and is built from the same packages as any jZen client, plus
+four of its own. How it syncs follows the platform, chosen at compile time (ADR-073): CloudKit on
+iOS 17 and macOS 14, and elsewhere a folder the person's own sync service keeps in step (Dropbox,
+OneDrive, Syncthing, ...) — that transport is planned, not built yet.
 
-| Package | What it gives a light app |
+| Package | What it gives a Local app |
 |---|---|
 | [`zen_store`](client/zen_store/README.md) | The data: proto messages by collection and id, encrypted on the device (no database), fully offline, answering with `ZenResult` like `ZenClient` does. |
 | [`zen_store_cloudkit`](client/zen_store_cloudkit/README.md) | The sync: CloudKit in the user's private iCloud database, end-to-end encrypted, plus the store's key in the Keychain. |
@@ -118,7 +122,7 @@ language-neutral — only `Taskfile.yml` lives there; there is no root `pom.xml`
 | Directory | What it is |
 |---|---|
 | [`server/`](server/README.md) | Java/Quarkus framework libraries (multi-module Maven): the transport seam, identity, email, jobs. |
-| [`client/`](client/README.md) | Dart/Flutter framework libraries (pub workspace): core, transport, identity, the `zen_ui_*` UI packages, and the light-app packages (`zen_store`, `zen_store_cloudkit`, `zen_ui_store`, `zen_ui_lock`). |
+| [`client/`](client/README.md) | Dart/Flutter framework libraries (pub workspace): core, transport, identity, the `zen_ui_*` UI packages, and the Local-app packages (`zen_store`, `zen_store_cloudkit`, `zen_ui_store`, `zen_ui_lock`). |
 | [`apps/`](apps/zen_demo/README.md) | The applications built on the framework. Today: the `zen_demo` reference app (client + server + admin panel). |
 | [`admin/`](admin/README.md) | `@jzen/admin-core`, the reusable react-admin scaffold each app assembles into its own panel. |
 | [`proto/`](proto/README.md) | The canonical protobuf contract (`zen.v1`) — the source of truth every language generates from. |

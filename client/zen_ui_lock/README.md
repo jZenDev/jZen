@@ -3,9 +3,9 @@
 [![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-**No sign-in, but not open to whoever picks up the phone: an optional PIN for a light jZen app.**
+**No sign-in, but not open to whoever picks up the phone: an optional PIN for a jZen Local app.**
 
-A light application (ADR-065) has no account and no login. This package lets its user close it
+A Local application (ADR-065, ADR-073) has no account and no login. This package lets its user close it
 with a PIN anyway — off by default, turned on from settings.
 
 ## 🚀 Use

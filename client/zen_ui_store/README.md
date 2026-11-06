@@ -6,7 +6,7 @@
 **When two devices disagree, the person decides — and this is the screen where they do.**
 
 `zen_store` never settles a conflict on its own (ADR-065): it keeps every device's version and
-refuses writes to the record until someone chooses. This package is where they choose, so a light
+refuses writes to the record until someone chooses. This package is where they choose, so a Local
 app does not have to build its own.
 
 ## 🚀 Use

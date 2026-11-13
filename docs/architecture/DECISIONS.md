@@ -15,6 +15,115 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-074 — The cleanup deletes registry versions itself; no Artifact Registry cleanup policy
+
+**Date:** 2026-11-13. **Status:** accepted, **not yet verified in a real environment** (see
+"Verification"). **Supersedes:** the registry-policy half of ADR-064 and the policy mechanics of
+ADR-068; the revision and local-Docker parts of ADR-064 and ADR-068's pins stand. **Issues:** #177,
+#173.
+
+### Decision
+
+- **`deploy-cleanup.py` deletes the versions it selects, in the same run, and arms no cleanup
+  policy.** The selection is the one the policy expressed — keep the newest `CLEANUP_KEEP_VERSIONS`
+  per package, keep every version tagged `zen-pin-` or `zen-hold-`, expire versions tagged with a
+  `CLEANUP_TAG_PREFIXES` prefix and untagged versions older than `CLEANUP_IMAGE_DAYS` — computed
+  from a fresh listing on every run. What `simulate` used to *predict* is now the *plan* the run
+  carries out. Each deletion is `gcloud artifacts docker images delete <package>@<digest>
+  --delete-tags --quiet`, one version per call, so a failure names its version.
+- **Pins first, then the plan, then the hazard check, then deletion, then the listing again.** The
+  pin step of ADR-068 runs unchanged before anything is selected. A plan that contains a digest a
+  revision or job needs deletes nothing at all (fail closed), as does a consumer whose image is
+  already gone or a consumer list that cannot be read. The run prints the versions before, the plan,
+  each deletion, and the versions after: the before/after listing is the evidence, in the run's own
+  output.
+- **Parent before child, and only when every parent goes.** Every version's manifest is read
+  (`docker buildx imagetools inspect --raw`), not only the tagged ones, because an index whose tag
+  has moved is untagged and still lists its children. A child is planned only when every parent
+  that lists it is planned too, and is deleted after them; a failed parent deletion skips its
+  children in that run. **A manifest that cannot be read deletes nothing in that run**: the
+  simulation's "upper bound" was the safe direction for a report and is the unsafe one for an
+  action.
+- **An attachment leaves only with its target.** A version whose manifest has a `subject` (an OCI
+  referrer: cosign v3's `application/vnd.dev.sigstore.bundle.v0.3+json` signatures and SBOM
+  attestations, buildx attestation manifests) is never planned on its own; the registry deletes
+  an attachment when it deletes the target. A version tagged `sha256-<hex>.sig|.att|.sbom` (the
+  tag scheme of cosign before v3) is treated the same way, as attached to `sha256:<hex>`, deleted
+  after its target in the same run and never before. `sha256-` is removed from the default
+  `CLEANUP_TAG_PREFIXES`, and a supplied prefix that would match it is refused. A kept image keeps
+  its signature, so `cosign verify` of a running or rollback image keeps working.
+- **Transition: the policies this script created are removed.** On a repository whose cleanup
+  policies are all jZen's own (rule names beginning `zen-`), the run deletes them
+  (`gcloud artifacts repositories delete-cleanup-policies`) before it deletes any version, so two
+  deleters with different models never act on one repository. A policy with any other name is the
+  operator's: the registry step reports it and deletes nothing, and the operator either removes it
+  or opts out with `CLEANUP_REGISTRY=off`. There is no staging run: nothing long-lived is armed, so
+  there is nothing for a first run to stage. `CLEANUP_DRY_RUN=1` prints the same plan and the pins it
+  would add and release, and changes nothing anywhere.
+- **Failure stays loud** (ADR-064): a failed deletion is reported per version, the remaining
+  independent ones proceed, and the step exits non-zero with "the deploy itself succeeded";
+  `CLEANUP_ON_FAILURE=warn` reports the same and exits 0. A failed revision step still skips the
+  registry step.
+
+### What this supersedes, and why
+
+- **"then the Artifact Registry cleanup policy, armed idempotently"**, **"The registry policy is a
+  Keep rule plus two Delete rules"** and **"Arming takes two runs, and the registry is the memory"**
+  (ADR-064, Decision) → **reversed: the script deletes; nothing is armed.** *Why:* the registry's
+  evaluator never acted on `jzen`. With the policy in real mode from 2026-10-23, in dry run from
+  2026-11-06 and under diagnostic thresholds from 2026-11-11, not one `BatchDeleteVersions` entry by
+  the Artifact Registry service agent exists for `jzen`, while a probe repository in the same project
+  and region was evaluated and cleaned exactly per an identical policy. The one difference between
+  the two that the investigation did not rule out is content: `jzen` and its digest-for-digest copy
+  (also never evaluated) carry cosign v3 sigstore-bundle attachments, the probe carries none. Whatever
+  the evaluator's reason, it is Google's, undocumented and asynchronous, and cleanup that may never
+  happen is not a bound. A plan executed in the run is deterministic, testable against stubs, and
+  shows its own before/after listing.
+- **"Select untagged versions by hand → a date cutoff with a Keep rule, applied by the registry
+  itself. *Why:* parent and child versions are ordered by the registry, not by a script piping
+  deletes to `sh`"** (ADR-064, What this supersedes) → **reversed, with the reason answered.** The
+  hand prune that half-failed did not know which index listed which image. This plan reads every
+  manifest, deletes parents before children and stops when it cannot read one; nothing is piped to a
+  shell, and every deletion is one argument list.
+- **"Tagged versions are matched by tag prefix (commit-SHA hex digits and cosign's `sha256-`)"**
+  (ADR-064) and the matching comment on `DEFAULT_TAG_PREFIXES` → **reversed.** *Why:* cosign v3
+  (the version `task doctor` accepts) writes signatures and attestations as OCI referrers, not as
+  `sha256-*` tags, so the prefix matched nothing; and where it did match (cosign before v3) it
+  expired a signature on its own clock, independently of the image it signs, which breaks
+  verification of a kept image.
+- **"the policy gains a Keep rule on tag prefixes `zen-pin-` and `zen-hold-` … a pin holds however
+  old the image is and whenever the registry next evaluates"**, **"Transition from an active
+  policy"** and **"Parent and child … Nothing safety-critical rests on the parent rule"** (ADR-068,
+  Decision) → **changed.** Pins and holds still protect, now as an exclusion in the plan rather than
+  a Keep rule the registry applies; the transition is the removal above; and the parent rule is now
+  safety-critical, which is why an unreadable manifest deletes nothing. Everything else in ADR-068 —
+  consumers are every revision and job in the project and region, add before release after, a new
+  consumer is pinned before it exists, the release grace — stands unchanged.
+
+### Consequence
+
+`task test:scripts` covers it against stub `gcloud` and `docker` that keep state: the plan deletes
+what the old model would have expired and nothing else; a pinned, held or newest version is never
+deleted; a parent is deleted before its children and a child of a surviving parent is not deleted;
+an untagged index shields its children; an attachment is never deleted on its own; an unreadable
+manifest, a hazard, a missing consumer image or an unreadable consumer list delete nothing; a
+foreign cleanup policy blocks deletion and jZen's own are removed first; a failed parent deletion
+skips its children and makes the step fail; `--dry-run` changes nothing; a rerun deletes nothing
+more.
+
+### Verification, and what is not claimed
+
+Not established until run on `jzen-prod` / `europe-central2` / `jzen`: that `gcloud artifacts docker
+images delete --delete-tags` deletes an image index without its children and refuses or cascades as
+modelled; that deleting a target removes its sigstore and attestation attachments; and the
+before/after listing of a real run. The operator runs `CLEANUP_DRY_RUN=1` first and then the real
+cleanup (the `deploy` skill: commands are prepared, not run). The throwaway repositories
+`zen-cleanup-probe` and `zen-cleanup-copy` are deleted afterwards. Remaining limitations: a consumer
+nobody lists and nobody holds; an operator pointing a consumer at an image between a run's listing
+and its deletions without pinning it first.
+
+---
+
 ## ADR-073 — A serverless jZen application is a *Local* application, and its sync transport follows the platform
 
 **Date:** 2026-11-06. **Status:** accepted. **Refines:** ADR-065 (light applications), ADR-072

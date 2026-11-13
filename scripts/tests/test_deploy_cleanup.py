@@ -73,14 +73,37 @@ if os.path.basename(sys.argv[0]) == "gcloud":
         state["revisions"] = [r for r in state["revisions"] if r["metadata"]["name"] != argv[3]]
     elif argv[:3] == ["artifacts", "repositories", "describe"]:
         out = json.dumps(state["repo"])
-    elif argv[:3] == ["artifacts", "repositories", "set-cleanup-policies"]:
-        policy_file = [a for a in argv if a.startswith("--policy=")][0].split("=", 1)[1]
-        with open(policy_file) as pf:
-            rules = json.load(pf)
-        state["repo"]["cleanupPolicies"] = {r["name"]: r for r in rules}
-        state["repo"]["cleanupPolicyDryRun"] = "--no-dry-run" not in argv
-    elif argv[:3] == ["artifacts", "docker", "images"]:
+    elif argv[:3] == ["artifacts", "repositories", "delete-cleanup-policies"]:
+        if state.get("fail_policy_delete"):
+            print("PERMISSION_DENIED", file=sys.stderr)
+            with open(path, "w") as f:
+                json.dump(state, f)
+            sys.exit(1)
+        names = [a for a in argv if a.startswith("--policynames=")][0].split("=", 1)[1].split(",")
+        for name in names:
+            state["repo"]["cleanupPolicies"].pop(name)
+    elif argv[:4] == ["artifacts", "docker", "images", "list"]:
         out = json.dumps(state["versions"])
+    elif argv[:4] == ["artifacts", "docker", "images", "delete"]:
+        package, digest = argv[4].split("@")
+        problem = None
+        if "--delete-tags" not in argv or "--quiet" not in argv:
+            problem = "INVALID_ARGUMENT: a version with tags needs --delete-tags"
+        elif digest in state.get("fail_image_delete", []):
+            problem = "PERMISSION_DENIED"
+        elif not any(v["package"] == package and v["version"] == digest for v in state["versions"]):
+            problem = "NOT_FOUND"
+        if problem:
+            print(problem, file=sys.stderr)
+            with open(path, "w") as f:
+                json.dump(state, f)
+            sys.exit(1)
+        # The registry deletes a version's attachments (OCI referrers) together with it.
+        # `cascade` models a registry that also removes an index's images with the index.
+        gone = ({digest} | set(state.get("referrers", {}).get(digest, []))
+                | set(state.get("cascade", {}).get(digest, [])))
+        state["versions"] = [v for v in state["versions"]
+                             if not (v["package"] == package and v["version"] in gone)]
     elif argv[:4] == ["artifacts", "docker", "tags", "add"]:
         if state.get("fail_tag_add"):
             print("PERMISSION_DENIED", file=sys.stderr)
@@ -110,8 +133,19 @@ else:
     elif argv[:2] == ["image", "inspect"]:
         out = json.dumps([i for i in state["images"] if set(i["RepoTags"]) & set(argv[2:])])
     elif argv[:4] == ["buildx", "imagetools", "inspect", "--raw"]:
+        if argv[4] in state.get("unreadable", []):
+            print("manifest unknown", file=sys.stderr)
+            with open(path, "w") as f:
+                json.dump(state, f)
+            sys.exit(1)
         kids = state.get("manifests", {}).get(argv[4])
-        out = json.dumps({"manifests": [{"digest": d} for d in kids]} if kids else {"layers": []})
+        subject = state.get("subjects", {}).get(argv[4])
+        doc = {}
+        if kids:
+            doc["manifests"] = [{"digest": d} for d in kids]
+        if subject:
+            doc["subject"] = {"digest": subject}
+        out = json.dumps(doc or {"layers": []})
     elif argv[0] == "rmi":
         state["images"] = [i for i in state["images"] if argv[1] not in i["RepoTags"]]
 with open(path, "w") as f:
@@ -144,12 +178,16 @@ def deploy_versions(n: int, age_days: float, tag: str) -> list:
     ]
 
 
-# Ten deploys, newest first. With keep-versions 20 the newest 20 of 30 versions (deploys 1-6 and
-# two of deploy 7) are kept; the rest are old enough to expire under a 30-day window.
+# Ten deploys, newest first. With keep-versions 20 the newest 20 of 30 versions (deploys 1-6 and two
+# of deploy 7, whose attestation is the one left over) are kept. Everything of deploys 8-10 is older
+# than the 30-day window and beyond the newest 20, so the plan is exactly those nine versions, each
+# index before the image and attestation it lists.
 AGES = [1, 3, 5, 20, 40, 60, 80, 100, 120, 140]
+HEX_TARGET = "sha256:" + "a1" * 32
+HEX_SIG_TAG = "sha256-" + "a1" * 32 + ".sig"
 
 
-def scenario(serving=("r1",), staged=False, armed=False) -> dict:
+def scenario(serving=("r1",), policies=()) -> dict:
     versions = []
     for i, age in enumerate(AGES, start=1):
         versions += deploy_versions(i, age, "abc%04d" % i)
@@ -158,11 +196,14 @@ def scenario(serving=("r1",), staged=False, armed=False) -> dict:
         "service": {"status": {"traffic": [{"revisionName": r, "percent": 100} for r in serving],
                                "latestReadyRevisionName": "r1"}},
         "revisions": [revision("r%d" % i, age, "sha256:image%d" % i) for i, age in enumerate(AGES, start=1)],
-        "repo": {"cleanupPolicies": {}, "cleanupPolicyDryRun": False},
+        "repo": {"cleanupPolicies": {n: {"name": n} for n in policies}, "cleanupPolicyDryRun": False},
         "versions": versions,
-        # What each tagged index lists: the image Cloud Run runs and the attestation.
+        # What each index lists: the image Cloud Run runs and the attestation.
         "manifests": {"%s@sha256:index%d" % (PACKAGE, n): ["sha256:image%d" % n, "sha256:att%d" % n]
                       for n in range(1, len(AGES) + 1)},
+        "subjects": {},
+        "referrers": {},
+        "unreadable": [],
         "jobs": [],
         "other_revisions": [],
         "images": [
@@ -173,10 +214,20 @@ def scenario(serving=("r1",), staged=False, armed=False) -> dict:
             {"RepoTags": ["other.example/team/app:v1", "other.example/team/app:v0"], "Created": ago(300)},
         ],
     }
-    if staged or armed:
-        policy = dc.build_policy(20, 30, dc.DEFAULT_TAG_PREFIXES)
-        state["repo"]["cleanupPolicies"] = {r["name"]: r for r in policy}
-        state["repo"]["cleanupPolicyDryRun"] = not armed
+    return state
+
+
+def version(digest: str, age: float, tags=()) -> dict:
+    return {"package": PACKAGE, "version": digest, "createTime": ago(age), "tags": list(tags)}
+
+
+def mini(versions: list, manifests=None, **extra) -> dict:
+    """A small registry. The first version is young and is what the one revision runs."""
+    state = scenario()
+    state["versions"] = versions
+    state["manifests"] = {"%s@%s" % (PACKAGE, k): v for k, v in (manifests or {}).items()}
+    state["revisions"] = [revision("r1", 1, versions[0]["version"])]
+    state.update(extra)
     return state
 
 
@@ -203,7 +254,7 @@ class Harness(unittest.TestCase):
 
     def run_cleanup(self, *extra: str, **opts):
         argv = ["--project", PROJECT, "--region", REGION, "--service", SERVICE, "--repo", REPO,
-                "--keep-revisions", "3", "--revision-days", "14", "--keep-versions", "20",
+                "--keep-revisions", "3", "--revision-days", "14", "--keep-versions", opts.get("keep_versions", "20"),
                 "--image-days", "30", "--docker-cache-hours", "168",
                 "--revisions", opts.get("revisions", "on"), "--registry", opts.get("registry", "on"),
                 "--docker", opts.get("docker", "on")] + list(extra)
@@ -213,13 +264,22 @@ class Harness(unittest.TestCase):
         return code, out.getvalue()
 
     def mutating(self, calls: list) -> list:
-        marks = ("revisions delete", "set-cleanup-policies", "rmi ", "prune", "tags add", "tags delete")
+        marks = ("revisions delete", "images delete", "delete-cleanup-policies", "rmi ", "prune",
+                 "tags add", "tags delete")
         return [c for c in calls if any(m in c for m in marks)]
+
+    def deleted(self, calls=None) -> list:
+        """The digests passed to `images delete`, in the order they were deleted."""
+        calls = self.state()["calls"] if calls is None else calls
+        return [c.split("@", 1)[1].split()[0] for c in calls if "images delete" in c]
+
+    def digests(self) -> set:
+        return {v["version"] for v in self.state()["versions"]}
 
     def test_failed_revision_delete_skips_registry_in_fail_and_warn_modes(self) -> None:
         for mode, expected in (("fail", 1), ("warn", 0)):
             with self.subTest(mode=mode):
-                state = scenario(staged=True)
+                state = scenario()
                 state["fail_delete"] = ["r8"]
                 self.load(state)
                 code, out = self.run_cleanup("--on-failure", mode)
@@ -235,7 +295,7 @@ class Harness(unittest.TestCase):
     def test_failed_revision_list_skips_registry_in_fail_and_warn_modes(self) -> None:
         for mode, expected in (("fail", 1), ("warn", 0)):
             with self.subTest(mode=mode):
-                state = scenario(staged=True)
+                state = scenario()
                 state["fail_list"] = True
                 self.load(state)
                 code, out = self.run_cleanup("--on-failure", mode)
@@ -248,33 +308,628 @@ class Harness(unittest.TestCase):
                 self.assertTrue(any("docker " in c for c in calls))
 
 
-class PolicyTest(unittest.TestCase):
-    def test_policy_keeps_newest_and_never_deletes_untagged_without_it(self) -> None:
-        policy = dc.build_policy(20, 30, dc.DEFAULT_TAG_PREFIXES)
-        keeps = [r for r in policy if r["action"]["type"] == "Keep"]
-        self.assertEqual(20, keeps[0]["mostRecentVersions"]["keepCount"])
-        self.assertTrue(any(r["action"]["type"] == "Delete" and r["condition"]["tagState"] == "UNTAGGED"
-                            for r in policy))
+class PlanTest(Harness):
+    """ADR-074 "Consequence": the plan, and what it never touches."""
 
-    def test_a_policy_that_deletes_untagged_with_no_keep_is_refused(self) -> None:
-        bare = [{"name": "x", "action": {"type": "Delete"},
-                 "condition": {"tagState": "UNTAGGED", "olderThan": "86400s"}}]
-        with self.assertRaises(dc.StepError):
-            dc.assert_policy_safe(bare)
-        with self.assertRaises(dc.StepError):
-            dc.build_policy(0, 30, dc.DEFAULT_TAG_PREFIXES)
+    NINE = ["sha256:%s%d" % (kind, n) for n in (8, 9, 10) for kind in ("index", "image", "att")]
 
+    def test_the_plan_deletes_what_the_old_policy_would_have_expired_and_nothing_else(self) -> None:
+        self.load(scenario())
+        code, out = self.run_cleanup(docker="off")
+        self.assertEqual(0, code, out)
+        self.assertEqual(sorted(self.NINE), sorted(self.deleted()))
+        # deploys 1-7 are kept whole: count-kept, window-kept, and deploy 7's leftover attestation
+        # shielded by its surviving index.
+        self.assertEqual(21, len(self.state()["versions"]))
+        self.assertIn("sha256:att7", self.digests())
+
+    def test_every_deletion_is_one_version_per_call_with_its_tags_and_no_shell(self) -> None:
+        self.load(scenario())
+        self.run_cleanup(docker="off")
+        calls = [c for c in self.state()["calls"] if "images delete" in c]
+        self.assertEqual(9, len(calls))
+        for c in calls:
+            self.assertRegex(c, r"^gcloud artifacts docker images delete \S+@sha256:\S+ --delete-tags --quiet$")
+
+    def test_the_before_and_after_listings_are_printed(self) -> None:
+        self.load(scenario())
+        code, out = self.run_cleanup(docker="off")
+        self.assertIn("before: 30 versions", out)
+        self.assertIn("after: 21 versions", out)
+        self.assertIn("30 versions before, 21 after", out)
+
+    def test_the_newest_versions_are_never_deleted(self) -> None:
+        self.load(scenario())
+        self.assertEqual(0, self.run_cleanup(docker="off", keep_versions="30")[0])
+        self.assertEqual([], self.deleted())
+        self.assertEqual(30, len(self.state()["versions"]))
+
+    def test_a_pinned_version_is_never_deleted_even_when_old_and_beyond_the_newest(self) -> None:
+        """r8 serves traffic from a `--no-traffic` deploy: it is kept, and so is its image."""
+        self.load(scenario(serving=("r1", "r8")))
+        self.assertEqual(0, self.run_cleanup(docker="off")[0])
+        self.assertIn("sha256:image8", self.digests())
+        self.assertNotIn("sha256:image8", self.deleted())
+        pins = [t for v in self.state()["versions"] for t in v["tags"] if t.startswith(dc.PIN_PREFIX)]
+        self.assertIn(dc.pin_tag("sha256:image8"), pins)
+
+    def test_a_held_version_is_never_deleted_and_its_hold_is_never_released(self) -> None:
+        state = scenario()
+        for v in state["versions"]:
+            if v["version"] == "sha256:image10":
+                v["tags"] = ["zen-hold-other-project"]
+        self.load(state)
+        self.assertEqual(0, self.run_cleanup(docker="off")[0])
+        self.assertIn("sha256:image10", self.digests())
+        self.assertNotIn("sha256:image10", self.deleted())
+        self.assertFalse(any("tags delete" in c and "zen-hold" in c for c in self.state()["calls"]))
+
+    def test_a_parent_is_deleted_before_its_children(self) -> None:
+        self.load(scenario())
+        self.run_cleanup(docker="off")
+        order = self.deleted()
+        for n in (8, 9, 10):
+            self.assertLess(order.index("sha256:index%d" % n), order.index("sha256:image%d" % n))
+            self.assertLess(order.index("sha256:index%d" % n), order.index("sha256:att%d" % n))
+
+    def test_a_child_of_a_surviving_parent_is_not_deleted(self) -> None:
+        """A job pins index8: its image and attestation are old and untagged and still stay."""
+        state = scenario()
+        state["jobs"] = [job("migrate", "%s:abc0008" % PACKAGE)]
+        self.load(state)
+        self.assertEqual(0, self.run_cleanup(docker="off")[0])
+        for d in ("index8", "image8", "att8"):
+            self.assertIn("sha256:" + d, self.digests())
+        self.assertNotIn("sha256:index9", self.digests())
+
+    def test_an_untagged_index_shields_its_children(self) -> None:
+        """The tag moved off a young index; its old untagged child must not be deleted from under it."""
+        versions = [version("sha256:run", 1), version("sha256:idx", 2), version("sha256:child", 100)]
+        manifests = {"sha256:idx": ["sha256:child"]}
+        self.load(mini(versions, manifests))
+        self.assertEqual(0, self.run_cleanup(revisions="off", docker="off", keep_versions="1")[0])
+        self.assertIn("sha256:child", self.digests())
+        # The control: with nothing to read, the child is just an old untagged version.
+        self.load(mini(versions, {}))
+        self.assertEqual(0, self.run_cleanup(revisions="off", docker="off", keep_versions="1")[0])
+        self.assertNotIn("sha256:child", self.digests())
+
+    def test_a_child_whose_other_parent_survives_is_not_deleted(self) -> None:
+        versions = [version("sha256:run", 1), version("sha256:old", 60, ["abc1"]),
+                    version("sha256:young", 2), version("sha256:child", 100)]
+        manifests = {"sha256:old": ["sha256:child"], "sha256:young": ["sha256:child"]}
+        self.load(mini(versions, manifests))
+        self.assertEqual(0, self.run_cleanup(revisions="off", docker="off", keep_versions="1")[0])
+        self.assertIn("sha256:child", self.digests())
+        self.assertNotIn("sha256:old", self.digests())
+
+    def test_latest_is_never_deleted(self) -> None:
+        versions = [version("sha256:run", 1), version("sha256:old", 90, ["abc1", "latest"])]
+        self.load(mini(versions))
+        self.assertEqual(0, self.run_cleanup(revisions="off", docker="off", keep_versions="1")[0])
+        self.assertIn("sha256:old", self.digests())
+
+    def test_a_rerun_deletes_nothing_more(self) -> None:
+        self.load(scenario())
+        self.assertEqual(0, self.run_cleanup()[0])
+        first = self.state()
+        n = len(first["calls"])
+        code, out = self.run_cleanup()
+        self.assertEqual(0, code, out)
+        second = self.state()
+        self.assertEqual([], [c for c in self.mutating(second["calls"][n:]) if "prune" not in c], out)
+        for key in ("revisions", "repo", "versions", "images"):
+            self.assertEqual(first[key], second[key], key)
+
+
+class AttachmentTest(Harness):
+    """An attachment leaves only with its target."""
+
+    def versions(self, target_tags=("abc1",), with_sig=True, with_referrer=True):
+        v = [version("sha256:run", 1), version(HEX_TARGET, 60, list(target_tags))]
+        if with_sig:
+            v.append(version("sha256:" + "b2" * 32, 200, [HEX_SIG_TAG]))
+        if with_referrer:
+            v.append(version("sha256:referrer", 200))
+        return v
+
+    def go(self, versions, **extra):
+        state = mini(versions, subjects={"%s@sha256:referrer" % PACKAGE: HEX_TARGET},
+                     referrers={HEX_TARGET: ["sha256:referrer"]}, **extra)
+        self.load(state)
+        return self.run_cleanup(revisions="off", docker="off", keep_versions="1")
+
+    def test_attachments_are_deleted_with_their_target_and_the_signature_after_it(self) -> None:
+        code, out = self.go(self.versions())
+        self.assertEqual(0, code, out)
+        self.assertEqual({"sha256:run"}, self.digests())
+        order = self.deleted()
+        self.assertEqual([HEX_TARGET, "sha256:" + "b2" * 32], order,
+                         "the target, then its signature; the referrer goes with the target")
+        self.assertNotIn("sha256:referrer", order)
+
+    def test_attachments_are_never_deleted_on_their_own(self) -> None:
+        """200 days old and untagged or `sha256-`-tagged, yet the target is held, so they stay."""
+        code, out = self.go(self.versions(target_tags=("abc1", "zen-hold-x")))
+        self.assertEqual(0, code, out)
+        self.assertEqual([], self.deleted())
+        self.assertEqual(4, len(self.state()["versions"]))
+
+    def test_a_signature_whose_target_is_gone_is_left_alone(self) -> None:
+        versions = [version("sha256:run", 1), version("sha256:" + "b2" * 32, 200, [HEX_SIG_TAG])]
+        self.load(mini(versions))
+        self.assertEqual(0, self.run_cleanup(revisions="off", docker="off", keep_versions="1")[0])
+        self.assertEqual([], self.deleted())
+
+    def test_a_referrer_is_never_in_the_plan_even_when_nothing_holds_its_target(self) -> None:
+        code, out = self.go(self.versions(with_sig=False))
+        self.assertEqual(0, code, out)
+        self.assertEqual([HEX_TARGET], self.deleted())
+        self.assertIn("goes with its target", out)
+
+    def test_sha256_is_not_a_default_prefix_and_a_prefix_matching_it_is_refused(self) -> None:
+        self.assertNotIn("sha256-", dc.DEFAULT_TAG_PREFIXES)
+        for prefix in ("s", "sh", "sha256-"):
+            with self.assertRaises(dc.StepError, msg=prefix):
+                dc.validate_tag_prefixes(20, 30, [prefix])
+        self.load(mini(self.versions()))
+        code, out = self.run_cleanup("--tag-prefixes", "a,sha256-", revisions="off", docker="off")
+        self.assertEqual(1, code, out)
+        self.assertEqual([], self.deleted())
+
+
+class FailClosedTest(Harness):
+    """Anything that makes the plan unprovable deletes nothing in the run."""
+
+    def assertNothingDeleted(self, out: str = "") -> None:
+        self.assertEqual([], self.deleted(), out)
+        self.assertEqual(30, len(self.state()["versions"]))
+
+    def test_an_unreadable_manifest_deletes_nothing(self) -> None:
+        state = scenario()
+        state["unreadable"] = ["%s@sha256:att9" % PACKAGE]   # an untagged attestation, not an index
+        self.load(state)
+        code, out = self.run_cleanup(docker="off")
+        self.assertEqual(1, code, out)
+        self.assertIn("could not be read", out)
+        self.assertIn("the deploy itself succeeded", out)
+        self.assertNothingDeleted(out)
+
+    def test_every_version_is_read_not_only_tagged_ones(self) -> None:
+        self.load(scenario())
+        self.run_cleanup(docker="off")
+        inspected = [c for c in self.state()["calls"] if "imagetools inspect" in c]
+        self.assertEqual(30, len(inspected))
+        self.assertTrue(any("sha256:att9" in c for c in inspected))
+
+    def test_docker_missing_deletes_nothing(self) -> None:
+        self.load(scenario())
+        old = dc.shutil.which
+        dc.shutil.which = lambda name: None if name == "docker" else old(name)
+        try:
+            code, out = self.run_cleanup(docker="off")
+        finally:
+            dc.shutil.which = old
+        self.assertEqual(1, code, out)
+        self.assertNothingDeleted(out)
+
+    def test_a_hazard_deletes_nothing(self) -> None:
+        """Defence in depth: a plan that contains a digest a revision runs is refused whole."""
+        self.load(scenario())
+        real = dc.build_plan
+
+        def bad(versions, *rest):
+            plan = real(versions, *rest)
+            runs = [v for v in versions if v["version"] == "sha256:image1"][0]
+            plan.delete.insert(0, runs)
+            return plan
+
+        dc.build_plan = bad
+        try:
+            code, out = self.run_cleanup(docker="off")
+        finally:
+            dc.build_plan = real
+        self.assertEqual(1, code, out)
+        self.assertIn("a revision or job needs", out)
+        self.assertNothingDeleted(out)
+
+    def test_a_consumer_whose_image_is_gone_deletes_nothing(self) -> None:
+        state = scenario()
+        state["jobs"] = [job("migrate", "%s:expired" % PACKAGE)]
+        self.load(state)
+        code, out = self.run_cleanup(docker="off")
+        self.assertEqual(1, code, out)
+        self.assertIn("job migrate", out)
+        self.assertIn("already gone", out)
+        self.assertNothingDeleted(out)
+        self.assertFalse(any("tags delete" in c for c in self.state()["calls"]))
+
+    def test_an_unreadable_consumer_list_deletes_nothing(self) -> None:
+        state = scenario()
+        state["fail_jobs"] = True
+        self.load(state)
+        code, out = self.run_cleanup(docker="off")
+        self.assertEqual(1, code, out)
+        self.assertIn("PERMISSION_DENIED", out)
+        self.assertNothingDeleted(out)
+        self.assertFalse(any("tags add" in c or "tags delete" in c for c in self.state()["calls"]))
+
+    def test_a_revision_without_a_digest_deletes_nothing(self) -> None:
+        state = scenario()
+        state["revisions"][0]["status"] = {}
+        self.load(state)
+        code, out = self.run_cleanup(docker="off")
+        self.assertEqual(1, code, out)
+        self.assertIn("no usable image digest", out)
+        self.assertNothingDeleted(out)
+
+    def test_a_failed_pin_deletes_nothing(self) -> None:
+        state = scenario()
+        state["fail_tag_add"] = True
+        self.load(state)
+        code, out = self.run_cleanup(docker="off")
+        self.assertEqual(1, code, out)
+        self.assertIn("could not pin", out)
+        self.assertIn("the deploy itself succeeded", out)
+        self.assertNothingDeleted(out)
+
+    def test_a_failed_revision_step_never_reaches_the_registry(self) -> None:
+        state = scenario()
+        state["fail_delete"] = ["r8"]
+        self.load(state)
+        self.run_cleanup()
+        calls = self.state()["calls"]
+        self.assertFalse(any("tags add" in c or "tags delete" in c or "images delete" in c for c in calls))
+
+
+class TransitionTest(Harness):
+    OWN = ("zen-v2-keep-newest-20", "zen-v2-keep-pinned", "zen-v2-delete-untagged-older-than-30d")
+
+    def test_jzens_own_policies_are_removed_before_any_version_is_deleted(self) -> None:
+        self.load(scenario(policies=self.OWN))
+        code, out = self.run_cleanup(docker="off")
+        self.assertEqual(0, code, out)
+        calls = self.state()["calls"]
+        removal = [i for i, c in enumerate(calls) if "delete-cleanup-policies" in c]
+        deletes = [i for i, c in enumerate(calls) if "images delete" in c]
+        self.assertEqual(1, len(removal))
+        self.assertTrue(deletes and removal[0] < min(deletes))
+        self.assertEqual({}, self.state()["repo"]["cleanupPolicies"])
+        self.assertIn("--policynames=" + ",".join(sorted(self.OWN)), calls[removal[0]])
+
+    def test_a_foreign_policy_blocks_deletion_and_is_named(self) -> None:
+        self.load(scenario(policies=("zen-v2-keep-pinned", "teams-own-policy")))
+        code, out = self.run_cleanup(docker="off")
+        self.assertEqual(1, code, out)
+        self.assertIn("teams-own-policy", out)
+        self.assertIn("CLEANUP_REGISTRY=off", out)
+        self.assertEqual([], self.deleted())
+        self.assertFalse(any("delete-cleanup-policies" in c for c in self.state()["calls"]))
+        self.assertEqual(2, len(self.state()["repo"]["cleanupPolicies"]))
+
+    def test_a_policy_that_cannot_be_removed_deletes_nothing(self) -> None:
+        state = scenario(policies=self.OWN)
+        state["fail_policy_delete"] = True
+        self.load(state)
+        code, out = self.run_cleanup(docker="off")
+        self.assertEqual(1, code, out)
+        self.assertEqual([], self.deleted())
+
+    def test_no_policy_is_ever_armed(self) -> None:
+        self.load(scenario())
+        self.run_cleanup()
+        self.assertFalse(any("set-cleanup-policies" in c for c in self.state()["calls"]))
+        self.assertEqual({}, self.state()["repo"]["cleanupPolicies"])
+
+
+class FailedDeletionTest(Harness):
+    def test_a_failed_parent_deletion_skips_its_children_and_fails_the_step(self) -> None:
+        state = scenario()
+        state["fail_image_delete"] = ["sha256:index9"]
+        self.load(state)
+        code, out = self.run_cleanup(docker="off")
+        self.assertEqual(1, code, out)
+        self.assertIn("the deploy itself succeeded", out)
+        self.assertIn("PERMISSION_DENIED", out)
+        self.assertIn("sha256:index9", out)
+        attempted = self.deleted()
+        self.assertNotIn("sha256:image9", attempted)
+        self.assertNotIn("sha256:att9", attempted)
+        # the independent deletions still happened
+        self.assertEqual({"sha256:index9", "sha256:image9", "sha256:att9"} | {"sha256:%s%d" % (k, n)
+                         for n in range(1, 8) for k in ("index", "image", "att")},
+                         self.digests())
+
+    def test_a_version_the_registry_already_removed_is_not_a_failure(self) -> None:
+        state = scenario()
+        state["cascade"] = {"sha256:index9": ["sha256:image9", "sha256:att9"]}
+        self.load(state)
+        code, out = self.run_cleanup(docker="off")
+        self.assertEqual(0, code, out)
+        self.assertIn("already gone", out)
+        self.assertNotIn("could not delete", out)
+        self.assertTrue({"sha256:index9", "sha256:image9", "sha256:att9"}.isdisjoint(self.digests()))
+
+    def test_a_failed_delete_of_a_version_still_listed_stays_a_failure(self) -> None:
+        state = scenario()
+        state["fail_image_delete"] = ["sha256:image9"]
+        self.load(state)
+        code, out = self.run_cleanup(docker="off")
+        self.assertEqual(1, code, out)
+        self.assertIn("could not delete", out)
+        self.assertNotIn("already gone", out)
+        self.assertIn("sha256:image9", self.digests())
+
+    def test_warn_mode_reports_the_same_failure_and_exits_zero(self) -> None:
+        state = scenario()
+        state["fail_image_delete"] = ["sha256:index9"]
+        self.load(state)
+        code, out = self.run_cleanup("--on-failure", "warn", docker="off")
+        self.assertEqual(0, code, out)
+        self.assertIn("PERMISSION_DENIED", out)
+        self.assertIn("the deploy itself succeeded", out)
+
+    def test_a_failed_attachment_target_keeps_the_signature(self) -> None:
+        versions = [version("sha256:run", 1), version(HEX_TARGET, 60, ["abc1"]),
+                    version("sha256:" + "b2" * 32, 200, [HEX_SIG_TAG])]
+        state = mini(versions, fail_image_delete=[HEX_TARGET])
+        self.load(state)
+        code, out = self.run_cleanup(revisions="off", docker="off", keep_versions="1")
+        self.assertEqual(1, code, out)
+        self.assertEqual([HEX_TARGET], self.deleted())
+        self.assertIn("sha256:" + "b2" * 32, self.digests())
+
+
+class DryRunTest(Harness):
+    def test_dry_run_prints_the_plan_and_changes_nothing(self) -> None:
+        self.load(scenario(policies=TransitionTest.OWN))
+        code, out = self.run_cleanup("--dry-run")
+        self.assertEqual(0, code, out)
+        self.assertEqual([], self.mutating(self.state()["calls"]))
+        self.assertEqual(30, len(self.state()["versions"]))
+        self.assertEqual(3, len(self.state()["repo"]["cleanupPolicies"]))
+        self.assertIn("would delete", out)
+        self.assertIn("sha256:index9", out)
+        self.assertIn("would pin", out)
+        self.assertIn("would remove the cleanup policies", out)
+
+    def test_nothing_is_pinned_or_released_in_a_dry_run(self) -> None:
+        self.load(scenario())
+        code, out = self.run_cleanup("--dry-run", docker="off")
+        self.assertEqual(0, code, out)
+        self.assertEqual([], self.mutating(self.state()["calls"]))
+
+
+class OperationsTest(Harness):
+    def test_a_failed_delete_of_a_revision_fails_loudly_and_says_the_deploy_succeeded(self) -> None:
+        state = scenario()
+        state["fail_delete"] = ["r5"]
+        self.load(state)
+        code, out = self.run_cleanup()
+        self.assertEqual(1, code, out)
+        self.assertIn("the deploy itself succeeded", out)
+        self.assertIn("PERMISSION_DENIED", out)
+
+    def test_docker_removes_old_project_images_only(self) -> None:
+        self.load(scenario())
+        self.assertEqual(0, self.run_cleanup(revisions="off", registry="off")[0])
+        tags = [t for i in self.state()["images"] for t in i["RepoTags"]]
+        self.assertIn("%s:abc0001" % PACKAGE, tags)
+        self.assertIn("%s:abc0002" % PACKAGE, tags)
+        self.assertNotIn("%s:abc0003" % PACKAGE, tags)
+        self.assertNotIn("%s:abc0004" % PACKAGE, tags)
+        self.assertIn("%s:latest" % PACKAGE, tags)
+        self.assertIn("other.example/team/app:v1", tags)
+        calls = self.state()["calls"]
+        self.assertTrue(any("image prune -f" in c for c in calls))
+        self.assertTrue(any("builder prune -f --filter until=168h" in c for c in calls))
+
+    def test_every_step_can_be_switched_off(self) -> None:
+        self.load(scenario())
+        code, out = self.run_cleanup(revisions="off", registry="off", docker="off")
+        self.assertEqual(0, code, out)
+        self.assertEqual([], self.state()["calls"])
+
+    def test_revisions_are_deleted_before_any_version(self) -> None:
+        self.load(scenario())
+        self.assertEqual(0, self.run_cleanup(docker="off")[0])
+        calls = self.state()["calls"]
+        revs = [i for i, c in enumerate(calls) if "revisions delete" in c]
+        vers = [i for i, c in enumerate(calls) if "images delete" in c]
+        self.assertEqual(7, len(revs))
+        self.assertLess(max(revs), min(vers))
+        self.assertEqual({"r1", "r2", "r3"}, {r["metadata"]["name"] for r in self.state()["revisions"]})
+
+    def test_pins_are_added_before_anything_is_deleted(self) -> None:
+        self.load(scenario())
+        self.assertEqual(0, self.run_cleanup(docker="off")[0])
+        calls = self.state()["calls"]
+        pins = [i for i, c in enumerate(calls) if "tags add" in c]
+        deletes = [i for i, c in enumerate(calls) if "images delete" in c]
+        self.assertEqual(3, len(pins))
+        self.assertLess(max(pins), min(deletes))
+
+    def test_revisions_switched_off_still_pins_what_remains(self) -> None:
+        self.load(scenario())
+        self.assertEqual(0, self.run_cleanup(revisions="off", docker="off")[0])
+        for n in range(1, 11):
+            self.assertIn(dc.pin_tag("sha256:image%d" % n),
+                          [t for v in self.state()["versions"] for t in v["tags"]], n)
+        # every revision still lists, so every image it runs survives the plan
+        for n in range(1, 11):
+            self.assertIn("sha256:image%d" % n, self.digests())
+
+    def test_a_revision_older_than_the_window_that_still_exists_keeps_its_image(self) -> None:
+        """r3 retained, its image pushed out of the newest 20 and past the window."""
+        state = scenario()
+        for v in state["versions"]:
+            if v["version"] in ("sha256:image3", "sha256:index3"):
+                v["createTime"] = ago(100)
+        for n in range(11, 21):
+            state["versions"] += deploy_versions(n, 0.5, "new%04d" % n)
+        self.load(state)
+        self.assertEqual(0, self.run_cleanup(docker="off")[0])
+        self.assertIn("sha256:image3", self.digests())
+        self.assertNotIn("sha256:image8", self.digests())
+
+
+class ConsumerTest(Harness):
+    def test_a_job_naming_a_digest_pins_that_digest(self) -> None:
+        state = scenario()
+        state["jobs"] = [job("migrate", "%s@sha256:image9" % PACKAGE)]
+        self.load(state)
+        self.assertEqual(0, self.run_cleanup(docker="off")[0])
+        self.assertIn("sha256:image9", self.digests())
+
+    def test_another_services_revision_pins_its_image(self) -> None:
+        state = scenario()
+        state["other_revisions"] = [revision("other-1", 90, "sha256:image7", service="other")]
+        self.load(state)
+        self.assertEqual(0, self.run_cleanup(docker="off")[0])
+        self.assertIn("sha256:image7", self.digests())
+
+    def test_an_image_outside_this_registry_is_not_a_consumer(self) -> None:
+        state = scenario()
+        state["jobs"] = [job("elsewhere", "gcr.io/other/app:1")]
+        state["other_revisions"] = [{"metadata": {"name": "x", "labels": {}},
+                                     "status": {"imageDigest": "gcr.io/other/app@sha256:zzz"}}]
+        self.load(state)
+        self.assertEqual(0, self.run_cleanup(docker="off")[0])
+
+    def test_a_pin_is_released_only_when_no_consumer_needs_the_digest(self) -> None:
+        """A digest shared by a revision and a job stays pinned until both are gone."""
+        state = scenario()
+        state["jobs"] = [job("migrate", "%s@sha256:image2" % PACKAGE)]   # r2's digest, shared
+        state["other_revisions"] = [revision("o", 90, "sha256:image6", service="other")]
+        self.load(state)
+        self.assertEqual(0, self.run_cleanup(docker="off")[0])
+        pinned = lambda st, n: dc.pin_tag("sha256:image%d" % n) in [
+            t for v in st["versions"] for t in v["tags"]]
+        self.assertTrue(pinned(self.state(), 2) and pinned(self.state(), 6))
+
+        state = self.state()   # the revision goes; the job still names its image
+        state["revisions"] = [r for r in state["revisions"] if r["metadata"]["name"] != "r2"]
+        self.load(state)
+        self.assertEqual(0, self.run_cleanup(docker="off")[0])
+        self.assertTrue(pinned(self.state(), 2), "the job still needs it")
+        self.assertTrue(pinned(self.state(), 6))
+
+        state = self.state()   # now the job and the other service's revision go too
+        state["jobs"] = []
+        state["other_revisions"] = []
+        self.load(state)
+        self.assertEqual(0, self.run_cleanup(docker="off")[0])
+        self.assertFalse(pinned(self.state(), 2), "nothing needs it now")
+        self.assertFalse(pinned(self.state(), 6))
+        self.assertTrue(pinned(self.state(), 1))
+
+    def test_a_pin_on_a_young_version_is_not_released(self) -> None:
+        state = scenario()
+        state["versions"].append(version("sha256:fresh", 0.1, [dc.pin_tag("sha256:fresh")]))
+        self.load(state)
+        self.assertEqual(0, self.run_cleanup(docker="off")[0])
+        tags = [t for v in self.state()["versions"] if v["version"] == "sha256:fresh" for t in v["tags"]]
+        self.assertEqual([dc.pin_tag("sha256:fresh")], tags)
+
+    def test_a_failed_release_keeps_the_pin_and_is_reported(self) -> None:
+        state = scenario()
+        for v in state["versions"]:
+            if v["version"] == "sha256:image9":
+                v["tags"] = [dc.pin_tag("sha256:image9")]
+        state["fail_tag_delete"] = True
+        self.load(state)
+        code, out = self.run_cleanup(docker="off")
+        self.assertEqual(1, code, out)
+        self.assertIn("could not release a pin", out)
+        self.assertIn(dc.pin_tag("sha256:image9"),
+                      [t for v in self.state()["versions"] for t in v["tags"]])
+
+    def test_a_pin_naming_another_digest_is_refused(self) -> None:
+        state = scenario()
+        state["versions"][1]["tags"] = [dc.pin_tag("sha256:other")]
+        self.load(state)
+        code, out = self.run_cleanup(docker="off")
+        self.assertEqual(1, code, out)
+        self.assertIn("does not name that version", out)
+        self.assertEqual([], self.deleted())
+
+    def test_another_services_revision_without_a_digest_does_not_block_this_service(self) -> None:
+        state = scenario()
+        state["other_revisions"] = [{"metadata": {"name": "broken", "labels": {"serving.knative.dev/service": "other"}},
+                                     "status": {}}]
+        self.load(state)
+        code, out = self.run_cleanup(docker="off")
+        self.assertEqual(0, code, out)
+        self.assertIn("reports no image digest", out)
+
+    def test_one_hold_name_never_moves_between_digests(self) -> None:
+        self.load(scenario())
+        argv = ["pin", "--project", PROJECT, "--region", REGION, "--repo", REPO, "--hold", "gke"]
+        for image, expected in (("%s:abc0009" % PACKAGE, 0), ("%s:abc0008" % PACKAGE, 1)):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+                code = dc.main(argv + ["--image", image], now=NOW)
+            self.assertEqual(expected, code, out.getvalue())
+        holders = [v["version"] for v in self.state()["versions"] if "zen-hold-gke" in v["tags"]]
+        self.assertEqual(["sha256:index9"], holders)
+
+
+class PlanUnitTest(unittest.TestCase):
+    """build_plan on its own: the reference-cycle and ordering cases the harness cannot easily make."""
+
+    def plan(self, versions, manifests, keep=1):
+        full = {dc.key_of(v): dict({"children": [], "subject": ""}, **manifests.get(v["version"], {}))
+                for v in versions}
+        return dc.build_plan(versions, full, NOW, keep, 30, dc.DEFAULT_TAG_PREFIXES)
+
+    def test_a_reference_cycle_plans_none_of_its_members(self) -> None:
+        versions = [version("sha256:new", 1), version("sha256:a", 90), version("sha256:b", 90)]
+        plan = self.plan(versions, {"sha256:a": {"children": ["sha256:b"]},
+                                    "sha256:b": {"children": ["sha256:a"]}})
+        self.assertEqual([], plan.delete)
+
+    def test_parents_come_before_children_whatever_the_listing_order(self) -> None:
+        versions = [version("sha256:new", 1), version("sha256:z-child", 90),
+                    version("sha256:a-parent", 90, ["abc1"])]
+        plan = self.plan(versions, {"sha256:a-parent": {"children": ["sha256:z-child"]}})
+        self.assertEqual(["sha256:a-parent", "sha256:z-child"], [v["version"] for v in plan.delete])
+
+    def test_a_pinned_child_outlives_its_deleted_parent(self) -> None:
+        versions = [version("sha256:new", 1), version("sha256:p", 90, ["abc1"]),
+                    version("sha256:c", 90, [dc.pin_tag("sha256:c")])]
+        plan = self.plan(versions, {"sha256:p": {"children": ["sha256:c"]}})
+        self.assertEqual(["sha256:p"], [v["version"] for v in plan.delete])
+
+    def test_versions_inside_the_window_are_never_planned(self) -> None:
+        versions = [version("sha256:new", 1), version("sha256:mid", 29), version("sha256:t", 29, ["abc1"])]
+        self.assertEqual([], self.plan(versions, {}).delete)
+
+
+class PrefixTest(unittest.TestCase):
     def test_latest_is_never_matched_by_a_tag_prefix(self) -> None:
-        for rule in dc.build_policy(20, 30, dc.DEFAULT_TAG_PREFIXES):
-            for prefix in rule.get("condition", {}).get("tagPrefixes", []):
-                self.assertFalse("latest".startswith(prefix))
         with self.assertRaises(dc.StepError):
-            dc.build_policy(20, 30, ["l"])
+            dc.validate_tag_prefixes(20, 30, ["l"])
 
-    def test_changing_a_number_changes_the_rule_names(self) -> None:
-        a = {r["name"] for r in dc.build_policy(20, 30, dc.DEFAULT_TAG_PREFIXES)}
-        self.assertNotEqual(a, {r["name"] for r in dc.build_policy(21, 30, dc.DEFAULT_TAG_PREFIXES)})
-        self.assertNotEqual(a, {r["name"] for r in dc.build_policy(20, 31, dc.DEFAULT_TAG_PREFIXES)})
+    def test_a_tag_prefix_that_would_match_a_pin_or_hold_is_refused(self) -> None:
+        for prefix in ("z", "zen-", "zen-pin-", "zen-hold-"):
+            with self.assertRaises(dc.StepError, msg=prefix):
+                dc.validate_tag_prefixes(20, 30, [prefix])
+
+    def test_the_defaults_are_valid_and_match_no_protected_tag(self) -> None:
+        dc.validate_tag_prefixes(20, 30, dc.DEFAULT_TAG_PREFIXES)
+        for tag in (dc.PIN_PREFIX, dc.HOLD_PREFIX, "sha256-", "latest"):
+            self.assertFalse(any(tag.startswith(p) for p in dc.DEFAULT_TAG_PREFIXES))
+
+    def test_a_count_below_one_is_refused(self) -> None:
+        with self.assertRaises(dc.StepError):
+            dc.validate_tag_prefixes(0, 30, dc.DEFAULT_TAG_PREFIXES)
+        with self.assertRaises(dc.StepError):
+            dc.validate_tag_prefixes(20, 0, dc.DEFAULT_TAG_PREFIXES)
+
+    def test_a_prefix_that_could_blur_a_list_is_refused(self) -> None:
+        for bad in ("a\nb", "a b", "", "-a", ".a", "a;b", "a/b", "a\u00fc"):
+            with self.assertRaises(dc.StepError, msg=repr(bad)):
+                dc.validate_tag_prefixes(20, 30, [bad])
 
     def test_revision_window_must_be_shorter_than_the_image_window(self) -> None:
         for revision_days in ("30", "31"):
@@ -315,495 +970,6 @@ class DockerSelectionTest(unittest.TestCase):
             {"RepoTags": ["%s-other/x/y/z:t" % PREFIX], "Created": ago(500)},
         ]
         self.assertEqual(["%s:c" % PACKAGE], dc.docker_victims(images, PREFIX, 2))
-
-
-class EndToEndTest(Harness):
-    def test_missing_revision_digest_does_not_arm_policy(self) -> None:
-        state = scenario(staged=True)
-        state["revisions"][0]["status"] = {}
-        self.load(state)
-        code, out = self.run_cleanup(docker="off")
-        self.assertEqual(1, code, out)
-        self.assertIn("no usable image digest", out)
-        self.assertFalse(any("--no-dry-run" in c for c in self.state()["calls"]))
-
-    def test_first_run_stages_the_policy_in_dry_run_and_does_not_arm_it(self) -> None:
-        self.load(scenario())
-        code, out = self.run_cleanup()
-        self.assertEqual(0, code, out)
-        calls = self.state()["calls"]
-        self.assertTrue(any("set-cleanup-policies" in c and "--dry-run" in c for c in calls))
-        self.assertFalse(any("--no-dry-run" in c for c in calls))
-        self.assertIn("NOT ARMED", out)
-
-    def test_a_staged_policy_is_armed_by_the_next_run_after_the_revisions_are_deleted(self) -> None:
-        self.load(scenario(staged=True))
-        code, out = self.run_cleanup()
-        self.assertEqual(0, code, out)
-        calls = self.state()["calls"]
-        deletes = [i for i, c in enumerate(calls) if "revisions delete" in c]
-        arm = [i for i, c in enumerate(calls) if "--no-dry-run" in c]
-        self.assertEqual(7, len(deletes))
-        self.assertEqual(1, len(arm))
-        self.assertLess(max(deletes), arm[0], "every old revision goes before the policy is armed")
-        repo = self.state()["repo"]
-        self.assertFalse(repo["cleanupPolicyDryRun"])
-        self.assertEqual({"r1", "r2", "r3"}, {r["metadata"]["name"] for r in self.state()["revisions"]})
-
-    def test_a_rerun_changes_nothing(self) -> None:
-        self.load(scenario(staged=True))
-        self.assertEqual(0, self.run_cleanup()[0])
-        first = self.state()
-        n = len(first["calls"])
-        code, out = self.run_cleanup()
-        self.assertEqual(0, code, out)
-        second = self.state()
-        self.assertEqual([], [c for c in self.mutating(second["calls"][n:]) if "prune" not in c], out)
-        for key in ("revisions", "repo", "versions", "images"):
-            self.assertEqual(first[key], second[key], key)
-        self.assertIn("already current", out)
-
-    def test_dry_run_deletes_and_arms_nothing(self) -> None:
-        self.load(scenario(staged=True))
-        code, out = self.run_cleanup("--dry-run")
-        self.assertEqual(0, code, out)
-        self.assertEqual([], self.mutating(self.state()["calls"]))
-
-    def test_a_failed_delete_fails_loudly_and_says_the_deploy_succeeded(self) -> None:
-        state = scenario(staged=True)
-        state["fail_delete"] = ["r5"]
-        self.load(state)
-        code, out = self.run_cleanup()
-        self.assertEqual(1, code, out)
-        self.assertIn("the deploy itself succeeded", out)
-        self.assertIn("PERMISSION_DENIED", out)
-
-    def test_warn_mode_reports_the_same_failure_and_exits_zero(self) -> None:
-        state = scenario(staged=True)
-        state["fail_delete"] = ["r5"]
-        self.load(state)
-        code, out = self.run_cleanup("--on-failure", "warn")
-        self.assertEqual(0, code, out)
-        self.assertIn("PERMISSION_DENIED", out)
-
-    def test_docker_removes_old_project_images_only(self) -> None:
-        self.load(scenario(staged=True))
-        self.assertEqual(0, self.run_cleanup(revisions="off", registry="off")[0])
-        tags = [t for i in self.state()["images"] for t in i["RepoTags"]]
-        self.assertIn("%s:abc0001" % PACKAGE, tags)
-        self.assertIn("%s:abc0002" % PACKAGE, tags)
-        self.assertNotIn("%s:abc0003" % PACKAGE, tags)
-        self.assertNotIn("%s:abc0004" % PACKAGE, tags)
-        self.assertIn("%s:latest" % PACKAGE, tags)
-        self.assertIn("other.example/team/app:v1", tags)
-        calls = self.state()["calls"]
-        self.assertTrue(any("image prune -f" in c for c in calls))
-        self.assertTrue(any("builder prune -f --filter until=168h" in c for c in calls))
-
-    def test_every_step_can_be_switched_off(self) -> None:
-        self.load(scenario(staged=True))
-        code, out = self.run_cleanup(revisions="off", registry="off", docker="off")
-        self.assertEqual(0, code, out)
-        self.assertEqual([], self.state()["calls"])
-
-
-def registry_runs(state: dict, at: dt.datetime) -> None:
-    """The registry's evaluation of an ARMED policy at time `at`, repeated until it stops changing.
-
-    Deliberately not `dc.simulate`: it is written from the documented semantics (Keep outranks
-    Delete; `mostRecentVersions` counts per package; a version listed by a parent that still exists
-    is not deleted; evaluation is asynchronous and repeats) so that the script is checked against
-    something other than itself. It is still a MODEL of the documented behaviour, not the registry.
-    """
-    repo = state["repo"]
-    if repo["cleanupPolicyDryRun"] or not repo["cleanupPolicies"]:
-        return
-    stamp = lambda text: dt.datetime.strptime(text, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=dt.timezone.utc)
-    while True:
-        versions = state["versions"]
-        keep, delete = set(), set()
-        for rule in repo["cleanupPolicies"].values():
-            into = keep if rule["action"]["type"] == "Keep" else delete
-            if "mostRecentVersions" in rule:
-                for package in {v["package"] for v in versions}:
-                    group = sorted((v for v in versions if v["package"] == package),
-                                   key=lambda v: v["createTime"], reverse=True)
-                    into.update((package, v["version"]) for v in group[:rule["mostRecentVersions"]["keepCount"]])
-                continue
-            cond = rule["condition"]
-            for v in versions:
-                tags = v["tags"]
-                if cond.get("tagState") == "TAGGED" and not tags:
-                    continue
-                if cond.get("tagState") == "UNTAGGED" and tags:
-                    continue
-                if cond.get("tagPrefixes") and not any(t.startswith(p) for t in tags for p in cond["tagPrefixes"]):
-                    continue
-                if "olderThan" in cond and (at - stamp(v["createTime"])).total_seconds() <= int(cond["olderThan"][:-1]):
-                    continue
-                into.add((v["package"], v["version"]))
-        present = {(v["package"], v["version"]) for v in versions}
-        shielded = set()
-        for ref, kids in state.get("manifests", {}).items():
-            package, _, parent = ref.partition("@")
-            if (package, parent) in present:
-                shielded.update((package, kid) for kid in kids)
-        gone = {k for k in delete - keep if k not in shielded}
-        if not gone:
-            return
-        state["versions"] = [v for v in versions if (v["package"], v["version"]) not in gone]
-
-
-def exists(state: dict, digest: str) -> bool:
-    return any(v["version"] == digest for v in state["versions"])
-
-
-class PinProtectionTest(Harness):
-    def armed_after_two_runs(self, state=None) -> dict:
-        self.load(state or scenario())
-        self.assertEqual(0, self.run_cleanup(docker="off")[0])   # stages
-        self.assertEqual(0, self.run_cleanup(docker="off")[0])   # arms
-        self.assertFalse(self.state()["repo"]["cleanupPolicyDryRun"])
-        return self.state()
-
-    def test_a_retained_revisions_image_survives_a_long_gap_between_deploys(self) -> None:
-        """Thirty newer versions push r3's image out of the newest 20 and 160 days pass."""
-        state = self.armed_after_two_runs()
-        for n in range(11, 21):
-            state["versions"] += deploy_versions(n, -150, "new%04d" % n)
-        later = NOW + dt.timedelta(days=160)
-        registry_runs(state, later)
-        for n in (1, 2, 3):
-            self.assertTrue(exists(state, "sha256:image%d" % n), "revision r%d lost its image" % n)
-        self.assertFalse(exists(state, "sha256:image8"), "an image no revision runs is still bounded")
-
-    def test_without_the_pin_rule_the_same_gap_loses_the_image(self) -> None:
-        """The control: the scenario above has teeth, since count and age alone do not protect r3."""
-        state = self.armed_after_two_runs()
-        for v in state["versions"]:
-            v["tags"] = [t for t in v["tags"] if not t.startswith(dc.PIN_PREFIX)]
-        for n in range(11, 21):
-            state["versions"] += deploy_versions(n, -150, "new%04d" % n)
-        registry_runs(state, NOW + dt.timedelta(days=160))
-        self.assertFalse(exists(state, "sha256:image3"))
-
-    def test_a_manual_rollback_to_a_retained_revision_finds_its_image(self) -> None:
-        state = scenario(serving=("r2",))
-        state["service"]["status"]["latestReadyRevisionName"] = "r1"
-        state = self.armed_after_two_runs(state)
-        for n in range(11, 21):
-            state["versions"] += deploy_versions(n, -150, "new%04d" % n)
-        registry_runs(state, NOW + dt.timedelta(days=160))
-        self.assertTrue(exists(state, "sha256:image1") and exists(state, "sha256:image2"))
-
-    def test_an_old_serving_revision_is_pinned_so_the_policy_arms(self) -> None:
-        """r8 serves traffic from a `--no-traffic` deploy: it is kept and so is its image."""
-        state = self.armed_after_two_runs(scenario(serving=("r1", "r8")))
-        self.assertIn("r8", {r["metadata"]["name"] for r in state["revisions"]})
-        registry_runs(state, NOW + dt.timedelta(days=60))
-        self.assertTrue(exists(state, "sha256:image8"))
-
-    def test_revisions_switched_off_still_pins_what_remains(self) -> None:
-        self.load(scenario(staged=True))
-        self.assertEqual(0, self.run_cleanup(revisions="off", docker="off")[0])
-        state = self.state()
-        registry_runs(state, NOW + dt.timedelta(days=60))
-        for n in range(1, 11):
-            self.assertTrue(exists(state, "sha256:image%d" % n), n)
-
-    def test_pins_are_added_before_the_policy_is_staged_or_armed(self) -> None:
-        self.load(scenario())
-        self.assertEqual(0, self.run_cleanup(docker="off")[0])
-        calls = self.state()["calls"]
-        pins = [i for i, c in enumerate(calls) if "tags add" in c]
-        policy = [i for i, c in enumerate(calls) if "set-cleanup-policies" in c]
-        self.assertEqual(3, len(pins))
-        self.assertTrue(pins and policy and max(pins) < min(policy), calls)
-
-    def test_a_policy_of_an_older_shape_is_replaced_in_dry_run_after_the_pins_exist(self) -> None:
-        state = scenario()
-        state["repo"]["cleanupPolicies"] = {"zen-v1-keep-newest-20": {"name": "zen-v1-keep-newest-20"}}
-        state["repo"]["cleanupPolicyDryRun"] = False
-        self.load(state)
-        code, out = self.run_cleanup(docker="off")
-        self.assertEqual(0, code, out)
-        calls = self.state()["calls"]
-        pins = [i for i, c in enumerate(calls) if "tags add" in c]
-        policy = [i for i, c in enumerate(calls) if "set-cleanup-policies" in c]
-        self.assertTrue(max(pins) < policy[0])
-        self.assertIn("--dry-run", calls[policy[0]])
-        self.assertTrue(self.state()["repo"]["cleanupPolicyDryRun"])
-        self.assertIn("NOT ARMED", out)
-
-    def test_a_rerun_after_arming_changes_nothing(self) -> None:
-        first = self.armed_after_two_runs()
-        n = len(first["calls"])
-        code, out = self.run_cleanup(docker="off")
-        self.assertEqual(0, code, out)
-        second = self.state()
-        self.assertEqual([], self.mutating(second["calls"][n:]), out)
-        for key in ("revisions", "repo", "versions"):
-            self.assertEqual(first[key], second[key], key)
-
-    def test_a_failed_pin_does_not_stage_or_arm_and_stands_an_armed_policy_down(self) -> None:
-        for armed in (False, True):
-            with self.subTest(armed=armed):
-                state = scenario(staged=not armed, armed=armed)
-                state["fail_tag_add"] = True
-                self.load(state)
-                code, out = self.run_cleanup(docker="off")
-                calls = self.state()["calls"]
-                self.assertEqual(1, code, out)
-                self.assertIn("could not pin", out)
-                self.assertIn("the deploy itself succeeded", out)
-                self.assertFalse(any("--no-dry-run" in c for c in calls))
-                self.assertTrue(self.state()["repo"]["cleanupPolicyDryRun"])
-
-    def test_a_failed_pin_stands_down_a_policy_of_an_older_shape(self) -> None:
-        state = scenario()
-        state["repo"]["cleanupPolicies"] = {"zen-v1-keep-newest-20": {"name": "zen-v1-keep-newest-20"}}
-        state["repo"]["cleanupPolicyDryRun"] = False
-        state["fail_tag_add"] = True
-        self.load(state)
-        self.assertEqual(1, self.run_cleanup(docker="off")[0])
-        self.assertTrue(self.state()["repo"]["cleanupPolicyDryRun"])
-
-    def test_nothing_is_pinned_or_released_in_a_dry_run(self) -> None:
-        self.load(scenario(staged=True))
-        code, out = self.run_cleanup("--dry-run", docker="off")
-        self.assertEqual(0, code, out)
-        self.assertEqual([], self.mutating(self.state()["calls"]))
-        self.assertIn("would pin", out)
-
-    def test_a_failed_revision_step_never_reaches_pinning(self) -> None:
-        state = scenario(staged=True)
-        state["fail_delete"] = ["r8"]
-        self.load(state)
-        self.run_cleanup()
-        calls = self.state()["calls"]
-        self.assertFalse(any("tags add" in c or "tags delete" in c or "set-cleanup-policies" in c
-                             for c in calls))
-
-
-class ConsumerTest(Harness):
-    def test_a_job_naming_a_tag_pins_the_index_and_its_children_survive(self) -> None:
-        state = scenario(staged=True)
-        state["jobs"] = [job("migrate", "%s:abc0008" % PACKAGE)]
-        self.load(state)
-        self.assertEqual(0, self.run_cleanup(docker="off")[0])
-        state = self.state()
-        index8 = [v for v in state["versions"] if v["version"] == "sha256:index8"][0]
-        self.assertIn(dc.pin_tag("sha256:index8"), index8["tags"])
-        registry_runs(state, NOW + dt.timedelta(days=60))
-        self.assertTrue(exists(state, "sha256:index8") and exists(state, "sha256:image8"),
-                        "the pinned index keeps the image it lists")
-        self.assertFalse(exists(state, "sha256:index9"))
-
-    def test_a_job_naming_a_digest_pins_that_digest(self) -> None:
-        state = scenario(staged=True)
-        state["jobs"] = [job("migrate", "%s@sha256:image9" % PACKAGE)]
-        self.load(state)
-        self.assertEqual(0, self.run_cleanup(docker="off")[0])
-        state = self.state()
-        registry_runs(state, NOW + dt.timedelta(days=60))
-        self.assertTrue(exists(state, "sha256:image9"))
-
-    def test_another_services_revision_pins_its_image(self) -> None:
-        state = scenario(staged=True)
-        state["other_revisions"] = [revision("other-1", 90, "sha256:image7", service="other")]
-        self.load(state)
-        self.assertEqual(0, self.run_cleanup(docker="off")[0])
-        state = self.state()
-        registry_runs(state, NOW + dt.timedelta(days=60))
-        self.assertTrue(exists(state, "sha256:image7"))
-
-    def test_an_image_outside_this_registry_is_not_a_consumer(self) -> None:
-        state = scenario(staged=True)
-        state["jobs"] = [job("elsewhere", "gcr.io/other/app:1")]
-        state["other_revisions"] = [{"metadata": {"name": "x", "labels": {}},
-                                     "status": {"imageDigest": "gcr.io/other/app@sha256:zzz"}}]
-        self.load(state)
-        self.assertEqual(0, self.run_cleanup(docker="off")[0])
-
-    def test_a_pin_is_released_only_when_no_consumer_needs_the_digest(self) -> None:
-        """A digest shared by a revision and a job stays pinned until both are gone."""
-        state = scenario(staged=True)
-        state["jobs"] = [job("migrate", "%s@sha256:image2" % PACKAGE)]   # r2's digest, shared
-        state["other_revisions"] = [revision("o", 90, "sha256:image6", service="other")]
-        self.load(state)
-        self.assertEqual(0, self.run_cleanup(docker="off")[0])
-        pinned = lambda st, n: dc.pin_tag("sha256:image%d" % n) in [
-            t for v in st["versions"] for t in v["tags"]]
-        self.assertTrue(pinned(self.state(), 2) and pinned(self.state(), 6))
-
-        state = self.state()   # the revision goes; the job still names its image
-        state["revisions"] = [r for r in state["revisions"] if r["metadata"]["name"] != "r2"]
-        self.load(state)
-        self.assertEqual(0, self.run_cleanup(docker="off")[0])
-        self.assertTrue(pinned(self.state(), 2), "the job still needs it")
-        self.assertTrue(pinned(self.state(), 6))
-
-        state = self.state()   # now the job and the other service's revision go too
-        state["jobs"] = []
-        state["other_revisions"] = []
-        self.load(state)
-        self.assertEqual(0, self.run_cleanup(docker="off")[0])
-        self.assertFalse(pinned(self.state(), 2), "nothing needs it now")
-        self.assertFalse(pinned(self.state(), 6))
-        self.assertTrue(pinned(self.state(), 1))
-
-    def test_a_pin_on_a_young_version_is_not_released(self) -> None:
-        state = scenario(staged=True)
-        young = {"package": PACKAGE, "version": "sha256:fresh", "createTime": ago(0.1),
-                 "tags": [dc.pin_tag("sha256:fresh")]}
-        state["versions"].append(young)
-        self.load(state)
-        self.assertEqual(0, self.run_cleanup(docker="off")[0])
-        tags = [t for v in self.state()["versions"] if v["version"] == "sha256:fresh" for t in v["tags"]]
-        self.assertEqual([dc.pin_tag("sha256:fresh")], tags)
-
-    def test_an_operator_hold_is_never_released_and_protects_the_digest(self) -> None:
-        state = scenario(staged=True)
-        for v in state["versions"]:
-            if v["version"] == "sha256:image10":
-                v["tags"] = ["zen-hold-other-project"]
-        self.load(state)
-        self.assertEqual(0, self.run_cleanup(docker="off")[0])
-        state = self.state()
-        registry_runs(state, NOW + dt.timedelta(days=60))
-        self.assertTrue(exists(state, "sha256:image10"))
-        self.assertFalse(any("tags delete" in c and "zen-hold" in c for c in state["calls"]))
-
-    def test_an_unreadable_job_list_fails_closed(self) -> None:
-        state = scenario(staged=True)
-        state["fail_jobs"] = True
-        self.load(state)
-        code, out = self.run_cleanup(docker="off")
-        self.assertEqual(1, code, out)
-        self.assertIn("PERMISSION_DENIED", out)
-        self.assertFalse(any("tags add" in c or "tags delete" in c or "set-cleanup-policies" in c
-                             for c in self.state()["calls"]))
-
-    def test_a_consumer_whose_image_is_gone_is_reported_and_blocks_arming(self) -> None:
-        state = scenario(staged=True)
-        state["jobs"] = [job("migrate", "%s:expired" % PACKAGE)]
-        self.load(state)
-        code, out = self.run_cleanup(docker="off")
-        self.assertEqual(1, code, out)
-        self.assertIn("job migrate", out)
-        self.assertIn("already gone", out)
-        self.assertFalse(any("--no-dry-run" in c for c in self.state()["calls"]))
-        self.assertFalse(any("tags delete" in c for c in self.state()["calls"]))
-
-    def test_a_failed_release_keeps_the_pin_and_is_reported(self) -> None:
-        state = scenario(staged=True)
-        for v in state["versions"]:
-            if v["version"] == "sha256:image9":
-                v["tags"] = [dc.pin_tag("sha256:image9")]
-        state["fail_tag_delete"] = True
-        self.load(state)
-        code, out = self.run_cleanup(docker="off")
-        self.assertEqual(1, code, out)
-        self.assertIn("could not release a pin", out)
-        self.assertIn(dc.pin_tag("sha256:image9"),
-                      [t for v in self.state()["versions"] for t in v["tags"]])
-
-    def test_a_pin_naming_another_digest_is_refused(self) -> None:
-        state = scenario(staged=True)
-        state["versions"][1]["tags"] = [dc.pin_tag("sha256:other")]
-        self.load(state)
-        code, out = self.run_cleanup(docker="off")
-        self.assertEqual(1, code, out)
-        self.assertIn("does not name that version", out)
-
-
-class ReviewFixesTest(Harness):
-    def test_an_unlistable_job_set_stands_an_enforcing_policy_down(self) -> None:
-        state = scenario(armed=True)
-        state["fail_jobs"] = True
-        self.load(state)
-        code, out = self.run_cleanup(docker="off")
-        self.assertEqual(1, code, out)
-        self.assertIn("put back into dry run", out)
-        self.assertTrue(self.state()["repo"]["cleanupPolicyDryRun"])
-
-    def test_another_services_revision_without_a_digest_does_not_block_this_service(self) -> None:
-        state = scenario(staged=True)
-        state["other_revisions"] = [{"metadata": {"name": "broken", "labels": {"serving.knative.dev/service": "other"}},
-                                     "status": {}}]
-        self.load(state)
-        code, out = self.run_cleanup(docker="off")
-        self.assertEqual(0, code, out)
-        self.assertIn("reports no image digest", out)
-
-    def test_one_hold_name_never_moves_between_digests(self) -> None:
-        self.load(scenario())
-        argv = ["pin", "--project", PROJECT, "--region", REGION, "--repo", REPO, "--hold", "gke"]
-        for image, expected in (("%s:abc0009" % PACKAGE, 0), ("%s:abc0008" % PACKAGE, 1)):
-            out = io.StringIO()
-            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
-                code = dc.main(argv + ["--image", image], now=NOW)
-            self.assertEqual(expected, code, out.getvalue())
-        holders = [v["version"] for v in self.state()["versions"] if "zen-hold-gke" in v["tags"]]
-        self.assertEqual(["sha256:index9"], holders)
-
-
-class ParentChildTest(unittest.TestCase):
-    POLICY = dc.build_policy(1, 30, dc.DEFAULT_TAG_PREFIXES)
-
-    def versions(self, index_tags, index_age=40, child_age=40):
-        return [
-            {"package": PACKAGE, "version": "sha256:newest", "createTime": ago(1), "tags": ["abc"]},
-            {"package": PACKAGE, "version": "sha256:index", "createTime": ago(index_age), "tags": index_tags},
-            {"package": PACKAGE, "version": "sha256:child", "createTime": ago(child_age), "tags": []},
-        ]
-
-    CHILDREN = {(PACKAGE, "sha256:index"): ["sha256:child"]}
-
-    def expired(self, versions):
-        return {v["version"] for v in dc.simulate(self.POLICY, versions, NOW, self.CHILDREN)}
-
-    def test_both_parent_and_child_expired_go_eventually(self) -> None:
-        self.assertEqual({"sha256:index", "sha256:child"}, self.expired(self.versions(["abc1"])))
-
-    def test_an_old_untagged_child_is_shielded_by_a_retained_parent(self) -> None:
-        pinned = self.versions(["abc1", dc.pin_tag("sha256:index")])
-        self.assertEqual(set(), self.expired(pinned))
-
-    def test_a_pinned_child_outlives_its_expired_parent(self) -> None:
-        versions = self.versions(["abc1"])
-        versions[2]["tags"] = [dc.pin_tag("sha256:child")]
-        self.assertEqual({"sha256:index"}, self.expired(versions))
-
-    def test_without_parent_data_the_answer_is_an_upper_bound(self) -> None:
-        pinned = self.versions(["abc1", dc.pin_tag("sha256:index")])
-        selected = {v["version"] for v in dc.simulate(self.POLICY, pinned, NOW)}
-        self.assertEqual({"sha256:child"}, selected)
-
-    def test_a_reference_cycle_shields_nothing_it_cannot_prove(self) -> None:
-        versions = self.versions([])
-        loop = {(PACKAGE, "sha256:index"): ["sha256:child"], (PACKAGE, "sha256:child"): ["sha256:index"]}
-        got = {v["version"] for v in dc.simulate(self.POLICY, versions, NOW, loop)}
-        self.assertEqual(set(), got & {"sha256:newest"})
-
-
-class ParentChildEndToEndTest(Harness):
-    def test_the_list_does_not_claim_a_shielded_child_will_expire(self) -> None:
-        state = scenario(staged=True)
-        state["jobs"] = [job("migrate", "%s:abc0008" % PACKAGE)]
-        self.load(state)
-        code, out = self.run_cleanup(docker="off")
-        self.assertEqual(0, code, out)
-        self.assertNotIn("sha256:image8", out)
-        self.assertNotIn("sha256:att8", out)
-        self.assertIn("sha256:index9", out)
-
-    def test_unreadable_manifests_are_reported_and_the_list_is_an_upper_bound(self) -> None:
-        state = scenario(staged=True)
-        state["manifests"] = {}
-        self.load(state)
-        code, out = self.run_cleanup(docker="off")
-        self.assertEqual(0, code, out)
 
 
 class PinCommandTest(Harness):
@@ -852,50 +1018,6 @@ class PinCommandTest(Harness):
         state["fail_tag_add"] = True
         self.load(state)
         self.assertEqual(1, self.run_pin("--image", "%s:abc0009" % PACKAGE)[0])
-
-
-class PinPolicyTest(unittest.TestCase):
-    def test_the_policy_has_a_keep_rule_for_pins_and_holds(self) -> None:
-        keep = [r for r in dc.build_policy(20, 30, dc.DEFAULT_TAG_PREFIXES) if r["name"].endswith("keep-pinned")]
-        self.assertEqual(1, len(keep))
-        self.assertEqual("Keep", keep[0]["action"]["type"])
-        self.assertEqual(["zen-pin-", "zen-hold-"], keep[0]["condition"]["tagPrefixes"])
-
-    def test_a_policy_with_deletes_and_no_pin_keep_is_refused(self) -> None:
-        policy = [r for r in dc.build_policy(20, 30, dc.DEFAULT_TAG_PREFIXES) if not r["name"].endswith("keep-pinned")]
-        with self.assertRaises(dc.StepError):
-            dc.assert_policy_safe(policy)
-
-    def test_a_tag_prefix_that_would_match_a_pin_is_refused(self) -> None:
-        for prefix in ("z", "zen-", "zen-pin-", "zen-hold-"):
-            with self.assertRaises(dc.StepError, msg=prefix):
-                dc.build_policy(20, 30, [prefix])
-
-    def test_neither_pin_prefix_matches_the_default_delete_prefixes(self) -> None:
-        for tag in (dc.PIN_PREFIX, dc.HOLD_PREFIX):
-            self.assertFalse(any(tag.startswith(p) for p in dc.DEFAULT_TAG_PREFIXES))
-
-
-class PolicyIdTest(unittest.TestCase):
-    """The identifier in the tagged Delete rule's name: stable, and unambiguous for a valid list."""
-
-    def test_the_default_identifier_never_changes(self) -> None:
-        # Stored in the name of every rule already armed; a different value renames the rule and
-        # sends each repository back through a dry run. Pinned on purpose.
-        self.assertEqual("d8d5d5c4", dc.policy_id(dc.DEFAULT_TAG_PREFIXES))
-        names = {r["name"] for r in dc.build_policy(20, 30, dc.DEFAULT_TAG_PREFIXES)}
-        self.assertIn("zen-v2-delete-tagged-d8d5d5c4-older-than-30d", names)
-
-    def test_different_lists_get_different_identifiers(self) -> None:
-        lists = [["a"], ["b"], ["a", "b"], ["b", "a"], ["ab"], ["a", "bb"], ["aa", "b"], ["sha256-"]]
-        ids = [dc.policy_id(x) for x in lists]
-        self.assertEqual(len(ids), len(set(ids)), ids)
-
-    def test_a_prefix_that_could_blur_the_list_delimiter_is_refused(self) -> None:
-        # ["a\nb"] would hash exactly like ["a", "b"]: the delimiter must not be a legal character.
-        for bad in ("a\nb", "a b", "", "-a", ".a", "a;b", "a/b", "a\u00fc"):
-            with self.assertRaises(dc.StepError, msg=repr(bad)):
-                dc.build_policy(20, 30, [bad])
 
 
 class ArgumentShapeTest(Harness):

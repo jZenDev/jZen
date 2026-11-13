@@ -1,4 +1,4 @@
-/// jZen Store - encrypted, offline-first persistence for a light (serverless) jZen application.
+/// jZen Store - encrypted, offline-first persistence for a jZen Local (serverless) application.
 ///
 /// - [ZenStore]: proto messages by collection and id, AES-256-GCM on disk, readable offline
 /// - [ZenCollection]: a typed view of one collection, answering with `ZenResult`

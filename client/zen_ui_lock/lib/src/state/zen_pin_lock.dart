@@ -9,7 +9,7 @@ import 'zen_owner_check.dart';
 import 'zen_pin_hash.dart';
 import 'zen_pin_locked_out_error.dart';
 
-/// An optional PIN that closes a light application, whose data has no sign-in in front of it.
+/// An optional PIN that closes a Local application, whose data has no sign-in in front of it.
 ///
 /// Off until the person turns it on ([enable]). When on, the app starts locked, and `ZenLockGate`
 /// locks it again after it has been in the background a while. Wrong PINs are counted across

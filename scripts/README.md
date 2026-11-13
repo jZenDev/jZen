@@ -226,47 +226,97 @@ task zen:deploy:pin PIN_IMAGE=<registry>/<svc>:<tag>               # protect an 
 task zen:deploy:pin PIN_IMAGE=<registry>/<svc>:<tag> PIN_HOLD=name # a consumer the cleanup cannot see
 ```
 
-Deletes superseded Cloud Run revisions, arms an Artifact Registry retention policy (keep the newest
-N versions and every pinned one, expire older tagged and untagged ones), and prunes local Docker
-images and build cache, in that order. Python by Rule 3: it parses `gcloud` and `docker` JSON. The
-first run on a repository only stages the policy in dry run; the next arms it. The operator
-contract, every knob and the failure semantics are in `task zen:deploy:cleanup --summary`; the
-decisions are ADR-064 and ADR-068. Tests run against stub `gcloud` and `docker` that keep state,
-under `task test:scripts`.
+Deletes superseded Cloud Run revisions, then **deletes old Artifact Registry versions itself** (keep
+the newest N per package and every pinned or held one; delete older tagged and untagged ones), and
+prunes local Docker images and build cache, in that order. Python by Rule 3: it parses `gcloud` and
+`docker` JSON. No registry cleanup policy is armed: Google's asynchronous evaluator never ran on the
+`jzen` repository, and a plan carried out in the run is deterministic, testable, and prints its own
+before/after listing (ADR-074, which supersedes the registry-policy half of ADR-064 and the policy
+mechanics of ADR-068). The operator contract, every knob and the failure semantics are in `task
+zen:deploy:cleanup --summary`. Tests run against stub `gcloud` and `docker` that keep state, under
+`task test:scripts`.
+
+**A run, in order.** List versions (before) → pins added and released → read EVERY version's manifest
+(`docker buildx imagetools inspect --raw`) → plan → hazard check → remove jZen's own old cleanup
+policies → delete one version per call, parents before children → list again (after). Anything that
+makes the plan unprovable deletes **nothing** in the run: an unreadable manifest, a digest a
+revision or job needs in the plan, a consumer whose image is already gone, an unreadable consumer
+list, a failed pin, a cleanup policy that is not jZen's. A failed deletion is reported per version,
+its children are skipped, the rest proceed, and the step exits non-zero ("the deploy itself
+succeeded"; `CLEANUP_ON_FAILURE=warn` exits 0).
 
 **What keeps an image that something still runs.** A count of newest versions and an age do not:
 a quiet service ages out of its own window. So each digest a revision or Cloud Run job needs gets a
-`zen-pin-<digest>` tag and the policy keeps that tag prefix. Consumers are every revision and job in
-the project and region that names this repository; pins are added before the policy is staged or
-armed and released only when no consumer needs the digest. A deploy pins its image right after the
-push, before anything is pointed at it. A consumer the script cannot see is protected by a hold
+`zen-pin-<digest>` tag and the plan never selects a version carrying it. Consumers are every revision
+and job in the project and region that names this repository; pins are added before anything is
+selected and released only when no consumer needs the digest. A deploy pins its image right after
+the push, before anything is pointed at it. A consumer the script cannot see is protected by a hold
 (`PIN_HOLD`), which it never removes.
+
+**Attachments leave only with their target.** A version whose manifest has a `subject` (cosign v3
+signatures and SBOM attestations, an OCI referrer) is never selected; the registry deletes it with
+its target. A version tagged `sha256-<hex>.sig|.att|.sbom` (cosign before v3) is deleted after
+`sha256:<hex>` in the same run, never alone. A kept image therefore keeps its signature.
+
+**Transition.** If every cleanup policy on the repository has an id starting `zen-`, the run removes
+them before deleting any version. Any other id is reported and nothing is deleted; remove it or set
+`CLEANUP_REGISTRY=off`.
 
 **Operator requirements.** Point a service or job at an image by hand only after
 `task zen:deploy:pin`; add a hold for any puller outside this project and region; never run the
 cleanup concurrently with a deploy; do not delete `zen-pin-*` or `zen-hold-*` tags by hand while a
 consumer exists; run the cleanup after a manual traffic change (it re-reads the consumers).
 
-**Verifying on a real repository** (what the stubs cannot show; run by the owner, since it changes
-cloud resources; `jzen-prod` / `europe-central2` / `jzen` / `zen-demo-server`):
+### Validating on the real repository (#177, #173)
+
+What the stubs cannot show, and what ADR-074 does not claim until it is run: that `images delete
+--delete-tags` removes an image index without its children (or refuses, or cascades), that deleting
+a target removes its sigstore and attestation attachments, and a real before/after. The owner runs
+it, since it changes cloud resources (`jzen-prod` / `europe-central2` / repo `jzen` / service
+`zen-demo-server`).
 
 ```sh
+# 0. Environment for every task call below.
+export GCP_PROJECT=jzen-prod GCP_REGION=europe-central2 AR_REPO=jzen SERVICE_NAME=zen-demo-server
 R=europe-central2-docker.pkg.dev/jzen-prod/jzen
+
+# 1. Evidence before. Keep these files for the issue.
+gcloud artifacts docker images list $R --include-tags --format=json > /tmp/images.before.json
 gcloud run revisions list --project=jzen-prod --region=europe-central2 --format=json > /tmp/rev.before.json
 gcloud run jobs list --project=jzen-prod --region=europe-central2 --format=json > /tmp/jobs.before.json
-gcloud artifacts docker images list $R --include-tags --format=json > /tmp/images.before.json
 gcloud artifacts repositories describe jzen --project=jzen-prod --location=europe-central2 --format=json > /tmp/repo.before.json
-CLEANUP_DRY_RUN=1 task zen:deploy:cleanup      # stages in dry run; prints pins it would add; read it
-task zen:deploy:cleanup                         # pins, then (second run) arms
-# wait for the registry's documented delay, then inspect the real dry-run / enforcement result:
+
+# 2. Dry run: prints the plan, the pins and releases, and any policy removal. Changes nothing.
+#    Read it: no digest a revision or job runs may appear under "would delete".
+CLEANUP_DRY_RUN=1 task zen:deploy:cleanup
+
+# 3. The real run: pins, removes the zen- cleanup policies, deletes, lists again.
+task zen:deploy:cleanup
+
+# 4. Evidence after, then check it.
 gcloud artifacts docker images list $R --include-tags --format=json > /tmp/images.after.json
 gcloud run revisions list --project=jzen-prod --region=europe-central2 --format=json > /tmp/rev.after.json
+gcloud artifacts repositories describe jzen --project=jzen-prod --location=europe-central2 \
+  --format='value(cleanupPolicies)'                       # must print nothing
+
+# 5. A rerun must delete nothing more.
+task zen:deploy:cleanup
+
+# 6. Only once 2-5 are as expected: delete the throwaway repositories (whole repositories,
+#    so no empty shell is left behind). Check what you are deleting first.
+gcloud artifacts repositories list --project=jzen-prod --location=europe-central2
+gcloud artifacts repositories delete zen-cleanup-probe --project=jzen-prod --location=europe-central2
+gcloud artifacts repositories delete zen-cleanup-copy  --project=jzen-prod --location=europe-central2
 ```
 
-Check: every `status.imageDigest` in `rev.after.json` and the digest each job resolves to is present
-in `images.after.json` with a `zen-pin-` tag; the migrate job's image is present; no unpinned old
-digest a consumer needs was removed; an unpinned unreferenced old version is the only thing missing.
-Paste the before/after into #177 before closing it.
+Check: every `status.imageDigest` in `rev.after.json` and the digest each job resolves to is in
+`images.after.json` with a `zen-pin-` tag; the migrate job's image is present; the signature or
+attestation of every kept image is still listed (`cosign verify` of the serving image still
+passes); the versions missing are only old, unreferenced ones. Paste the run's own before/after
+listings and these files into #177 and #173 before closing them.
+
+If a deletion fails on a version that has children, or an attachment is left behind, that is the
+finding: stop, keep the output, and amend ADR-074 rather than working around it.
 
 ## 📱 pick-device.py — which device a native run targets
 

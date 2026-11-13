@@ -3,10 +3,10 @@
 [![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-**CloudKit sync, the store's key and Data Protection for a light jZen application, on iOS 17 and
+**CloudKit sync, the store's key and Data Protection for a jZen Local application, on iOS 17 and
 macOS 14.**
 
-Three things a light app's `zen_store` needs from Apple's APIs, and nothing else:
+Three things a Local app's `zen_store` needs from Apple's APIs, and nothing else:
 
 - **`ZenCloudKitSync`** — the `ZenSyncTransport` a release build uses. `CKSyncEngine` against the
   user's private database, one CloudKit record per store record in a custom zone, the record's
@@ -50,10 +50,12 @@ await ZenKeychainStoreKey.protectDirectory(directory);   // before the store wri
 final key = (await ZenKeychainStoreKey.load()).dataOrNull!;
 final store = (await ZenStore.open(directory, deviceName: "Alex's iPhone", key: key)).dataOrNull!;
 
-// Chosen at compile time (STANDARDS "Client config is compile-time"), never at runtime.
+// Chosen at compile time (STANDARDS "Client config is compile-time"), never at runtime:
+// `task zen:run:client ZEN_SYNC=folder|cloudkit` bakes these in (ADR-072).
 const syncMode = String.fromEnvironment('ZEN_SYNC');
+const syncFolder = String.fromEnvironment('ZEN_SYNC_FOLDER');
 final sync = syncMode == 'folder'
-    ? await ZenFolderCloud.start(store, developmentFolder)
+    ? await ZenFolderCloud.start(store, Directory(syncFolder))
     : await ZenCloudKitSync.start(store, containerId: 'iCloud.com.example.app');
 ```
 

@@ -125,11 +125,13 @@ Two pub workspaces resolve independently: `client/` (framework libs: `zen_core`,
 `zen_identity`, `zen_ui_*`, `zen_store`, `zen_store_cloudkit`) and `apps/` (app clients,
 path-depending into `client/`). Both share one product version (lockstep).
 
-**A light application is the client alone** (ADR-065): no server, no `zen_transport`/`zen_identity`,
-no sign-in; iOS 17 and macOS 14. Its data lives in `zen_store` (proto messages, AES-256-GCM on
-the device with the key in the Keychain, versioned per field with version vectors) and syncs
-through CloudKit with `zen_store_cloudkit` (`CKSyncEngine`, end-to-end encrypted fields; SwiftPM
-only), or through `ZenFolderCloud` in development, chosen at compile time. Sync merges different fields and equal edits; anything else is a
+**A Local application (jZen Local) is the client alone** (ADR-065, ADR-073): no server, no
+`zen_transport`/`zen_identity`, no sign-in; iOS, macOS, Android, Windows and Linux, never the web.
+Its data lives in `zen_store` (proto messages, AES-256-GCM on the device, versioned per field with
+version vectors). Its sync transport follows `ZEN_PLATFORM` at compile time: CloudKit with
+`zen_store_cloudkit` on iOS 17 / macOS 14 (`CKSyncEngine`, end-to-end encrypted fields, key in the
+Keychain; SwiftPM only), a person-chosen synced folder elsewhere (planned), and `ZenFolderCloud`
+only as the development override `ZEN_SYNC=folder`. Do not call it *light*. Sync merges different fields and equal edits; anything else is a
 `ZenConflict` the person settles in `zen_ui_store`'s screens (`ZenConflictBanner`) — the record
 refuses writes until `resolve`. **Never add a
 last-writer-wins shortcut**: a silently dropped edit is a swallowed failure. An optional PIN comes

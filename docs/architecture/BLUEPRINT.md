@@ -27,7 +27,7 @@ jZen/
 ├── client/                   # Dart/Flutter FRAMEWORK libraries (pub workspace)
 │   ├── pubspec.yaml          # workspace root
 │   └── zen_core/  zen_transport/  zen_identity/  zen_ui_*/   # zen_ui_navigation, zen_ui_identity, zen_ui_widgets
-│       zen_store/  zen_store_cloudkit/  zen_ui_store/  zen_ui_lock/   # light apps (ADR-065)
+│       zen_store/  zen_store_cloudkit/  zen_ui_store/  zen_ui_lock/   # Local apps (ADR-065, ADR-073)
 ├── apps/                     # APPLICATIONS built on the framework
 │   ├── pubspec.yaml          # pub workspace root for the app clients
 │   └── zen_demo/             # the reference app (showcase + living e2e test stand)
@@ -340,11 +340,14 @@ work** (see [`DECISIONS.md`](./DECISIONS.md) ADR-010): an application that sells
 implements checkout in its own server, so no step of this roadmap delivers one. The column stays
 because the exemption needs it, and keeping it from the start avoided a schema migration.
 
-## Light applications
+## Local applications
 
-A light application (ADR-065) is the client tier alone: no server, no admin panel, no
-`zen_transport` or `zen_identity`, no sign-in; iOS 17 and macOS 14. Four packages replace what the
-server tier gave it:
+A Local application (ADR-065, renamed from *light* by ADR-073) is the client tier alone: no
+server, no admin panel, no `zen_transport` or `zen_identity`, no sign-in. It builds for iOS, macOS,
+Android, Windows and Linux, never the web, and its sync transport follows `ZEN_PLATFORM`: CloudKit
+on iOS 17 and macOS 14; on the other three a folder the person's own sync service keeps in step,
+each device writing only its own files, the sync key moved between devices by pairing
+(`zen_store_shared_folder`, planned). Four packages replace what the server tier gave it:
 
 - **`zen_store`** — persistence, with no database. Proto messages by collection and id, in a
   directory the app chooses, as encrypted files: `device.id`, `meta.zen` (unsent records, the

@@ -1809,14 +1809,15 @@ tasks:
         - No `firebase deploy`: jZen serves Cloud Run directly with no Firebase Hosting
           edge, which is what lets it use normal cookie names and proactive auth.
         - CLEANUP AFTER THE DEPLOY. Once the service is accepted it calls `zen:deploy:cleanup`,
-          which deletes superseded Cloud Run revisions, arms an Artifact Registry retention
-          policy, and prunes local Docker images and build cache. Every image a revision or job
-          still needs carries a pin tag the policy keeps, whatever its age; the deploy pins its own
-          image right after the push, before anything is pointed at it (`zen:deploy:pin`). The
-          first run on a repository only STAGES the policy in dry run and the next run arms it. A failure there leaves the
-          deploy in place and exits non-zero (CLEANUP_ON_FAILURE=warn exits 0); CLEANUP=off opts
-          out. Every number and switch, and what each protects: `task zen:deploy:cleanup
-          --summary`.
+          which deletes superseded Cloud Run revisions, then deletes old Artifact Registry
+          versions ITSELF (no registry cleanup policy is armed, ADR-074), and prunes local Docker
+          images and build cache. Every image a revision or job still needs carries a pin tag the
+          cleanup never deletes, whatever its age; the deploy pins its own image right after the
+          push, before anything is pointed at it (`zen:deploy:pin`). A plan that cannot be proven
+          safe deletes nothing, and `CLEANUP_DRY_RUN=1` prints it without changing anything. A
+          failure there leaves the deploy in place and exits non-zero (CLEANUP_ON_FAILURE=warn
+          exits 0); CLEANUP=off opts out. Every number and switch, and what each protects: `task
+          zen:deploy:cleanup --summary`.
         - Scheduled work is triggered from OUTSIDE the container. min-instances=0 means
           there is no thread alive to run an in-process cron, so zen-jobs exposes
           POST /api/v1/jobs/trigger and one Cloud Scheduler entry calls it. One entry, one
@@ -1956,76 +1957,14 @@ tasks:
                --location=REGION --project=PROJECT
              gcloud auth configure-docker REGION-docker.pkg.dev
 
-        0a. Artifact Registry cleanup policy (issue #90). AUTOMATED since issue #137: the deploy
-           runs `zen:deploy:cleanup` (summary: `task zen:deploy:cleanup --summary`), which deletes
-           old revisions first, stages this policy in dry run on its first run and arms it on the
-           next. The manual procedure below is the historical shape of that task, kept for a repository
-           you want to inspect by hand; it PREDATES PIN TAGS (issue #177) and, as written, protects
-           an old serving or rollback image only by count and age. Prefer the task. Every build pushes THREE registry
-           versions — a multi-arch index (the tag lands here), the platform-specific image it
-           resolves to (what Cloud Run actually runs, and what shows as "untagged" because the
-           tag is on the index, not on this child), and a small config/attestation blob — so the
-           repo grows by roughly 3 versions per deploy with nothing pruning it.
-
-           A CLOUD RUN REVISION IS NOT A REFERENCE the registry respects. Cloud Run accumulates
-           revisions forever unless something deletes them, and this policy has no idea a
-           revision exists — it only sees image age and tag state. On an EXISTING repository,
-           PRUNE OLD CLOUD RUN REVISIONS FIRST (they carry no traffic once superseded, so
-           deleting them is safe):
-
-             gcloud run revisions list --service=SERVICE --project=PROJECT --region=REGION \
-               --format='value(metadata.name,metadata.creationTimestamp.date(),status.imageDigest)'
-             # delete every revision you no longer need as a rollback target (keep the last
-             # several; none but the most recent carries traffic, verified by
-             # `gcloud run services describe SERVICE --format='value(status.traffic)'`)
-             gcloud run revisions delete REVISION --project=PROJECT --region=REGION --quiet
-
-           THEN stage the policy in dry run and verify it BEFORE enabling — not by reading the
-           dry-run's own output, which only echoes the policy back, and not via Cloud Logging,
-           which is silent unless Data Access audit logs are separately enabled for
-           artifactregistry.googleapis.com. Verify by simulating the policy directly: list every
-           image with its tags and creation time, and confirm none of the untagged ones older
-           than the `olderThan` window match a digest any surviving revision still points at.
-
-             cat > cleanup-policy.json <<'EOF'
-             [
-               {
-                 "name": "keep-tagged",
-                 "action": {"type": "Keep"},
-                 "condition": {"tagState": "TAGGED"}
-               },
-               {
-                 "name": "keep-recent-untagged",
-                 "action": {"type": "Keep"},
-                 "mostRecentVersions": {"keepCount": 10}
-               },
-               {
-                 "name": "delete-old-untagged",
-                 "action": {"type": "Delete"},
-                 "condition": {"tagState": "UNTAGGED", "olderThan": "2592000s"}
-               }
-             ]
-             EOF
-             gcloud artifacts repositories set-cleanup-policies jzen \
-               --project=PROJECT --location=REGION \
-               --policy=cleanup-policy.json --dry-run
-             gcloud run revisions list --service=SERVICE --project=PROJECT --region=REGION \
-               --format='value(status.imageDigest)' | sort -u > /tmp/live-digests.txt
-             gcloud artifacts docker images list europe-central2-docker.pkg.dev/PROJECT/jzen \
-               --include-tags --format=json > /tmp/images.json
-             # cross-check /tmp/images.json (untagged, createTime older than the policy's
-             # olderThan window) against /tmp/live-digests.txt — any overlap means the policy
-             # would delete a rollback target; fix keepCount or prune more revisions first
-
-           Only once that cross-check comes back empty, enable it for real. `--dry-run` bare or
-           its ABSENCE both leave the repository's existing dry-run state untouched — confirmed
-           live: reissuing the command with neither flag still reported "Dry run is enabled."
-           `--no-dry-run` is the only thing that actually flips it off:
-
-             gcloud artifacts repositories set-cleanup-policies jzen \
-               --project=PROJECT --location=REGION --policy=cleanup-policy.json --no-dry-run
-             gcloud artifacts repositories describe jzen --project=PROJECT --location=REGION \
-               --format='value(cleanupPolicyDryRun)'   # must print nothing (i.e. false)
+        0a. Registry and revision cleanup (issues #90, #137, #177). Automated: the deploy runs
+           `zen:deploy:cleanup` (summary: `task zen:deploy:cleanup --summary`), which deletes old
+           Cloud Run revisions first and then deletes old Artifact Registry versions itself. No
+           Artifact Registry cleanup policy is armed (ADR-074): Google's evaluator never ran on
+           this repository, so an armed policy bounds nothing. A repository an earlier jZen armed
+           has its `zen-` policies removed by the first run; a policy of any other name stops the
+           run until you remove it (or set CLEANUP_REGISTRY=off). Nothing to do by hand here;
+           inspect what it would do with `CLEANUP_DRY_RUN=1 task zen:deploy:cleanup`.
 
         1. The seven genuine secrets. `--set-secrets` below fails the deploy if any is absent,
            so create them all before the first run.
@@ -2465,9 +2404,9 @@ tasks:
         docker push "$IMAGE"
 
         # Protect the image BEFORE the migration job or the service is pointed at it: a consumer
-        # that exists ahead of its pin is the gap the registry cleanup policy could expire an image
+        # that exists ahead of its pin is the gap the registry cleanup could delete an image
         # through. A failure here stops the deploy, since nothing has yet depended on the image.
-        # CLEANUP=off / CLEANUP_REGISTRY=off mean no policy is managed here, so nothing is tagged;
+        # CLEANUP=off / CLEANUP_REGISTRY=off mean the registry is not cleaned here, so nothing is tagged;
         # they are read as task variables, the same way zen:deploy:cleanup reads them below.
         # CLEANUP_ON_FAILURE=warn continues past a failed pin (the cleanup after the deploy pins
         # what is in use); the default stops the deploy, while nothing yet depends on the image.

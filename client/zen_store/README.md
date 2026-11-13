@@ -3,7 +3,7 @@
 [![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-**A light jZen app's data, encrypted on the user's own devices — and no edit is ever dropped
+**A jZen Local app's data, encrypted on the user's own devices — and no edit is ever dropped
 without them knowing.**
 
 Proto messages stored by collection and id in a directory on this device, encrypted with a key the
@@ -93,10 +93,27 @@ noticeable launch past tens of thousands.
 ## 🧪 Developing sync without an Apple account
 
 `ZenFolderCloud` emulates CloudKit in a folder on disk — change tags, a refused save that returns
-the server's copy, change tokens — under a file lock. An iOS Simulator app runs as a process on the
-Mac and sees its files, so a macOS build and a simulator build pointed at one folder sync as two
-devices. Choose it at compile time (`--dart-define=ZEN_SYNC=folder`). It stores payloads as they
-are and uploads nothing: **development only**, never what a release build syncs through.
+the server's copy, change tokens — under a file lock. It stores payloads as they are and uploads
+nothing: **development only**, never what a release build syncs through.
+
+Two builds given the same folder sync as two devices. The application's tasks bake the choice in
+at compile time (ADR-072):
+
+```sh
+task zen:run:client DEVICE=macos ZEN_SYNC=folder ZEN_SYNC_FOLDER="$FOLDER"
+task zen:run:client DEVICE=<simulator-udid> CLIENT_PLATFORM=ios ZEN_SYNC=folder ZEN_SYNC_FOLDER="$FOLDER"
+```
+
+```dart
+const sync = String.fromEnvironment('ZEN_SYNC');            // 'folder', 'cloudkit' or ''
+const folder = String.fromEnvironment('ZEN_SYNC_FOLDER');
+```
+
+**Which folder.** An iOS Simulator app is a process on the Mac and reaches the Mac's files. A
+sandboxed macOS app — Flutter's default — reaches only its own container, so pick a folder inside
+it, `~/Library/Containers/<bundle id>/Data/Library/Application Support/zen-cloud`, and give both
+builds that absolute path; or add a read-write exception for the folder to the macOS Debug
+entitlements only.
 
 ## ⚖️ Conflicts
 

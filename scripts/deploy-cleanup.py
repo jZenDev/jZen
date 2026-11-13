@@ -1,43 +1,49 @@
 """Keep Artifact Registry, Cloud Run revisions and local Docker bounded after a deploy.
 
 Run by `task zen:deploy:cleanup` (Taskfile.app.yml), which carries the operator-facing contract
-(`task zen:deploy:cleanup --summary`); this docstring is about the implementation.
+(`task zen:deploy:cleanup --summary`); this docstring is about the implementation. The decision is
+ADR-074 (which supersedes the registry-policy half of ADR-064 and the policy mechanics of ADR-068).
 
 Three parts, in this order, and the order is the design:
 
 1. REVISIONS first. A Cloud Run revision is not a reference the registry respects, so the revisions
    that remain are bounded here and the registry step below is told about every one of them.
-   Revisions are deleted before the policy is armed, and the policy's window is refused unless it
+   Revisions are deleted before any registry version, and the registry window is refused unless it
    is longer than the revisions' (the image is older than its revision by the build time, so equal
-   windows would expire the image first).
-2. The REGISTRY POLICY. Keep the newest N versions per package; delete tagged versions (by tag
-   prefix, never `latest`) and untagged versions older than the window. A count and an age cannot
-   protect an arbitrarily old image that something still runs — a serving revision, a rollback
-   target, a Cloud Run job — so protection is carried by the image itself: every digest a
-   consumer needs gets a PIN TAG (`zen-pin-<digest>`) and the policy has a Keep rule on that tag
-   prefix. A Keep rule outranks every Delete rule, and a pinned version is *tagged*, so it is
-   outside the untagged Delete rule as well; the protection does not depend on how old the image
-   is, how many newer ones exist, or when the policy next runs. Pins are added BEFORE the policy
-   is staged, armed or left armed, and released only for a digest no consumer needs — for every
-   consumer this script can enumerate (all revisions and jobs in the project and region), and
-   never for an operator `zen-hold-*` tag, which is how a consumer it cannot see is protected.
-   The untagged rule remains safe only beside the Keep rules, so `build_policy` refuses a policy
-   that deletes anything without them. Before the policy is armed it is simulated against the
-   registry's own version list, with the parent/child references between a tagged index and the
-   images it lists; a digest a consumer needs that the simulation still expires means a pin
-   failed, and the policy is not armed (an armed one is put back into dry run).
+   windows would delete the image first).
+2. The REGISTRY, deleted by this script in the run, with no cleanup policy armed. Google's
+   asynchronous evaluator is not a bound we can rely on (it never acted on the `jzen` repository),
+   and a plan carried out here is deterministic, testable against stubs, and prints its own
+   before/after listing. In order:
+   a. list the versions (before);
+   b. PINS: every digest a consumer needs (every revision and job in the project and region) gets a
+      PIN TAG (`zen-pin-<digest>`), released only for a digest no consumer needs; an operator
+      `zen-hold-*` tag is never touched and is how a consumer this script cannot see is protected;
+   c. read EVERY version's manifest (`docker buildx imagetools inspect --raw`), not only tagged
+      ones: an index whose tag moved is untagged and still lists its children;
+   d. PLAN: keep the newest N per package and every pinned or held version; delete versions tagged
+      with a `--tag-prefixes` prefix, and untagged ones, once older than the window. A child is
+      planned only when every parent that lists it is planned, and goes after them;
+   e. HAZARDS: a planned digest a consumer needs, a consumer whose image is already gone, a
+      consumer list that cannot be read, an unreadable manifest: delete NOTHING in the run;
+   f. TRANSITION: remove the cleanup policies an earlier version of this script armed (every id
+      starts `zen-`); any other id is the operator's, is reported, and blocks deletion;
+   g. delete one version per call (`gcloud artifacts docker images delete <package>@<digest>
+      --delete-tags --quiet`), parents before children, skipping the children of a parent whose
+      deletion failed; then list again (after).
+   An ATTACHMENT leaves only with its target. A version whose manifest has a `subject` (an OCI
+   referrer: a cosign v3 sigstore bundle, an SBOM or attestation) is never planned: the registry
+   deletes it with its target. A version tagged `sha256-<hex>.sig|.att|.sbom` (cosign before v3) is
+   attached to `sha256:<hex>` and is deleted after that target in the same run, never alone; a tag
+   scheme that expired a signature on its own clock would break `cosign verify` of a kept image.
 3. LOCAL DOCKER: dangling layers, aged build cache, and this project's tagged images beyond the two
    newest per repository. Never `latest`, never anything outside this project's registry path.
 
 A deploy pins its own image with `pin` (below) BEFORE any job or service is pointed at it, so a new
 consumer is never ahead of its protection.
 
-Two-phase arming. The first run on a repository stages the policy in the registry's own dry-run
-state and stops there; the run after that arms it. The registry is the memory, so "a dry run was
-required once" cannot be skipped by a fresh checkout. Replacing an already ARMED policy of an older
-shape stages the new one in dry run the same way, after the pins exist, so enforcement pauses for
-one run instead of continuing without protection. `--dry-run` stages without arming, adds and
-releases no pin, and deletes nothing anywhere: it prints the pins it would add and release.
+`--dry-run` prints the plan and the pins, releases, policy removals and deletions it would make,
+and changes nothing anywhere.
 
 Failure semantics: every step runs and reports; any failure makes the exit code non-zero
 (`--on-failure fail`, the default) with the words "the deploy itself succeeded", or is printed as a
@@ -55,7 +61,8 @@ forms are immune (the value cannot start a new option), the positional ones are 
 the repository, an image reference). So each name is checked once, where it enters
 (`parse_args`, `pin_image`), against the shape its resource allows, and in every case the first
 character is a letter or a digit. A value that does not fit is a usage error before any command
-runs; the cleanup is not partially run on a name it could not vouch for.
+runs; the cleanup is not partially run on a name it could not vouch for. Names read BACK from the
+registry that become an argument (a cleanup policy id) are checked the same way.
 
 Written to the 3.9 floor, stdlib only.
 """
@@ -64,41 +71,43 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-import hashlib
 import json
 import re
 import shutil
 import subprocess
 import sys
-import tempfile
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 import lib
 
-# Bump when the SHAPE of the policy changes; the numbers are already in the rule names, so a changed
-# number re-arms an existing repository without touching this. v2 added the pin Keep rule.
-POLICY_REVISION = "v2"
-
 # A tag on a digest that a consumer (a revision, a job) needs. Owned by this script: added when a
-# consumer needs the digest, removed when none does. Neither prefix begins with a hex digit or
-# `sha256-`, so the tagged Delete rule can never match a pin even if the Keep rule were missing.
+# consumer needs the digest, removed when none does. Neither prefix begins with a hex digit, so the
+# tagged-delete rule can never match a pin even if the exclusion were missing.
 PIN_PREFIX = "zen-pin-"
 # A tag an OPERATOR adds for a consumer this script cannot enumerate (another project, another
 # region, a non-Cloud-Run puller). Never removed by this script.
 HOLD_PREFIX = "zen-hold-"
 PROTECTING_PREFIXES = [PIN_PREFIX, HOLD_PREFIX]
 
+# The id prefix of every cleanup policy an earlier version of this script armed. Only policies that
+# all begin with it are removed; anything else belongs to the operator.
+OWN_POLICY_PREFIX = "zen-"
+POLICY_ID_SHAPE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+
 # A pin is not released while its version is younger than this, so a cleanup that runs while a
 # deploy has pushed and pinned an image but not yet pointed a job or service at it cannot undo it.
 PIN_RELEASE_GRACE = dt.timedelta(hours=24)
 
 # A tag begins with a hex digit when it is a (short) commit SHA — what `deploy:cloudrun` pushes,
-# with an optional `-dirty` — or with `sha256-` when it is a cosign signature/attestation, which is
-# tagged on the registry and would otherwise outlive the image it signs. `latest` and `stable`
-# start with neither. Any other tag that starts with a hex digit (`1.0.0`) is expiry-eligible too;
-# an application that keeps such tags overrides the prefixes.
-DEFAULT_TAG_PREFIXES = list("0123456789abcdef") + ["sha256-"]
+# with an optional `-dirty`. `latest` and `stable` start with neither. Any other tag that starts
+# with a hex digit (`1.0.0`) is expiry-eligible too; an application that keeps such tags overrides
+# the prefixes. `sha256-` is deliberately NOT here: it is cosign's tag for a signature or
+# attestation, which leaves with the image it signs and never on its own clock (ADR-074).
+DEFAULT_TAG_PREFIXES = list("0123456789abcdef")
+
+# `sha256-<hex>.sig|.att|.sbom`: cosign (before v3) tags an attachment with its target's digest.
+ATTACHMENT_TAG = re.compile(r"sha256-([0-9a-f]+)\.(?:sig|att|sbom)")
+ATTACHMENT_TAG_PREFIX = "sha256-"
 
 DOCKER_KEEP_PER_REPOSITORY = 2
 PROTECTED_TAGS = {"latest"}
@@ -150,26 +159,11 @@ def parse_ts(value: str) -> dt.datetime:
     return parsed
 
 
-def policy_id(prefixes: Sequence[str]) -> str:
-    """The short identifier of a tag-prefix list, embedded in the tagged Delete rule's name.
-
-    It names a policy, it does not authenticate one: the input is the operator's own flag, nobody
-    else chooses it, and there is no secret to protect or signature to forge, so collision
-    resistance against an adversary is not a requirement (`usedforsecurity=False` says so, and keeps
-    it working where a build refuses SHA-1 for security uses). What it must be is STABLE: the value
-    is part of a rule name already stored in every repository this script has armed, and changing
-    the function would rename the rule and put each of those repositories back through a dry run.
-    The delimiter cannot appear in a prefix (`build_policy` refuses anything outside a tag's
-    characters), so two different lists never share an input.
-    """
-    return hashlib.sha1("\n".join(prefixes).encode("utf-8"), usedforsecurity=False).hexdigest()[:8]
-
-
-def build_policy(keep_versions: int, image_days: int, tag_prefixes: Sequence[str]) -> List[Dict[str, Any]]:
-    """The repository cleanup policy. Refuses any shape that could expire a running image."""
+def validate_tag_prefixes(keep_versions: int, image_days: int, tag_prefixes: Sequence[str]) -> None:
+    """Refuse a setting that could delete a running, protected or attached image."""
     if keep_versions < 1:
-        raise StepError("keep-versions must be at least 1: the Keep rule is what makes deleting "
-                        "untagged versions safe, because the image Cloud Run runs is untagged.")
+        raise StepError("keep-versions must be at least 1: the newest versions are what the plan "
+                        "never touches, and the image Cloud Run runs is untagged.")
     if image_days < 1:
         raise StepError("image-days must be at least 1.")
     prefixes = list(tag_prefixes)
@@ -179,64 +173,10 @@ def build_policy(keep_versions: int, image_days: int, tag_prefixes: Sequence[str
         if not TAG_PREFIX_SHAPE.fullmatch(prefix):
             raise StepError("tag prefix %r cannot begin any tag (tags use letters, digits, '_', '.' "
                             "and '-', and start with a letter, digit or '_')." % prefix)
-    for tag in sorted(PROTECTED_TAGS) + PROTECTING_PREFIXES:
+    for tag in sorted(PROTECTED_TAGS) + PROTECTING_PREFIXES + [ATTACHMENT_TAG_PREFIX]:
         if any(tag.startswith(p) for p in prefixes):
             raise StepError("tag prefix %r would also match the protected tag %r." %
                             (next(p for p in prefixes if tag.startswith(p)), tag))
-    seconds = "%ds" % (image_days * 86400)
-    digest = policy_id(prefixes)
-    policy = [
-        {
-            "name": "zen-%s-keep-newest-%d" % (POLICY_REVISION, keep_versions),
-            "action": {"type": "Keep"},
-            "mostRecentVersions": {"keepCount": keep_versions},
-        },
-        {
-            "name": "zen-%s-keep-pinned" % POLICY_REVISION,
-            "action": {"type": "Keep"},
-            "condition": {"tagState": "TAGGED", "tagPrefixes": list(PROTECTING_PREFIXES)},
-        },
-        {
-            "name": "zen-%s-delete-tagged-%s-older-than-%dd" % (POLICY_REVISION, digest, image_days),
-            "action": {"type": "Delete"},
-            "condition": {"tagState": "TAGGED", "tagPrefixes": prefixes, "olderThan": seconds},
-        },
-        {
-            "name": "zen-%s-delete-untagged-older-than-%dd" % (POLICY_REVISION, image_days),
-            "action": {"type": "Delete"},
-            "condition": {"tagState": "UNTAGGED", "olderThan": seconds},
-        },
-    ]
-    assert_policy_safe(policy)
-    return policy
-
-
-def assert_policy_safe(policy: Sequence[Dict[str, Any]]) -> None:
-    """A Delete of untagged versions is allowed only beside a Keep of the newest ones."""
-    has_keep = any(
-        r["action"]["type"] == "Keep" and r.get("mostRecentVersions", {}).get("keepCount", 0) >= 1
-        for r in policy
-    )
-    deletes_untagged = any(
-        r["action"]["type"] == "Delete"
-        and r.get("condition", {}).get("tagState", "ANY") in ("UNTAGGED", "ANY")
-        for r in policy
-    )
-    if deletes_untagged and not has_keep:
-        raise StepError("policy deletes untagged versions with no Keep rule; the image Cloud Run "
-                        "runs is untagged, so this would delete the running image.")
-    # The pin rule is what protects an image that is old and no longer among the newest: without
-    # it the count and the age are the only protection, and neither covers an arbitrary old consumer.
-    has_pin_keep = any(
-        r["action"]["type"] == "Keep"
-        and r.get("condition", {}).get("tagState") == "TAGGED"
-        and set(PROTECTING_PREFIXES) <= set(r.get("condition", {}).get("tagPrefixes", []))
-        for r in policy
-    )
-    if any(r["action"]["type"] == "Delete" for r in policy) and not has_pin_keep:
-        raise StepError("policy deletes versions with no Keep rule for the pin tags (%s); an image "
-                        "a revision or job needs would be protected only by age and count." %
-                        ", ".join(PROTECTING_PREFIXES))
 
 
 def select_revisions(revisions: Sequence[Dict[str, Any]], serving: Set[str], now: dt.datetime,
@@ -267,72 +207,119 @@ def version_tags(version: Dict[str, Any]) -> List[str]:
     return list(tags)
 
 
-def _matches(version: Dict[str, Any], condition: Dict[str, Any], now: dt.datetime) -> bool:
-    tags = version_tags(version)
-    state = condition.get("tagState", "ANY")
-    if state == "TAGGED" and not tags:
-        return False
-    if state == "UNTAGGED" and tags:
-        return False
-    prefixes = condition.get("tagPrefixes")
-    if prefixes and not any(t.startswith(p) for t in tags for p in prefixes):
-        return False
-    older = condition.get("olderThan")
-    if older and now - parse_ts(version["createTime"]) <= dt.timedelta(seconds=int(older.rstrip("s"))):
-        return False
-    return True
-
-
 Key = Tuple[str, str]  # (package, version digest)
 
 
-def simulate(policy: Sequence[Dict[str, Any]], versions: Sequence[Dict[str, Any]],
-             now: dt.datetime, children: Optional[Dict[Key, Sequence[str]]] = None) -> List[Dict[str, Any]]:
-    """The versions the policy would delete, over successive runs of the registry's evaluation.
+def key_of(version: Dict[str, Any]) -> Key:
+    return (version["package"], version["version"])
 
-    Mirrors the registry's documented semantics (Keep wins; `mostRecentVersions` counts per
-    package; a version listed by a parent manifest is not deleted while the parent exists). It is a
-    safety check, not a promise about what the registry will do.
 
-    `children` maps a parent (an image index) to the digests it lists. A selected child whose
-    parent survives is shielded, so it is not proof of anything that it matched a Delete rule; but
-    once the parent is itself deleted the child is evaluated again by the same rules, so a child is
-    reported only when every parent it has would also go. That is the *eventual* set: the registry
-    evaluates asynchronously and repeatedly, and an answer for one pass would be false safety for
-    the next. Without `children` this is an upper bound, which is the safe direction to be wrong.
+class Plan:
+    """What a run deletes: `delete` in the order to do it, and what it depends on."""
+
+    def __init__(self, delete: List[Dict[str, Any]], after: Dict[Key, Set[Key]],
+                 with_target: List[Dict[str, Any]]) -> None:
+        self.delete = delete            # versions to delete explicitly, parents before children
+        self.after = after              # key -> the planned keys that must be deleted before it
+        self.with_target = with_target  # referrers the registry deletes together with their target
+
+
+def build_plan(versions: Sequence[Dict[str, Any]], manifests: Dict[Key, Dict[str, Any]],
+               now: dt.datetime, keep_versions: int, image_days: int,
+               tag_prefixes: Sequence[str]) -> Plan:
+    """The versions to delete, computed from a fresh listing and every version's manifest.
+
+    This is the selection the registry's cleanup policy used to express, now carried out here:
+    keep the newest `keep_versions` per package and every pinned or held version; a tagged version
+    is eligible when a tag begins with a prefix and an untagged one when it is older than
+    `image_days`. `latest` is never eligible. On top of that:
+
+    - A child is planned only when every parent that lists it is planned (an untagged index shields
+      the image Cloud Run runs and the attestation), and is deleted after them. A reference cycle
+      shields nothing it cannot prove, so none of its members is planned.
+    - An attachment is never eligible on its own. A version whose manifest has a `subject` goes
+      with its target (the registry's doing, so it is not deleted here); a version tagged
+      `sha256-<hex>.sig|.att|.sbom` is attached to `sha256:<hex>` and is deleted after that target
+      in this run, and only when that target is planned.
+
+    `manifests` must hold every version: an unread manifest is the caller's refusal to plan, not a
+    guess made here.
     """
-    kept: Set[Tuple[str, str]] = set()
-    doomed: Set[Tuple[str, str]] = set()
+    now_age = dt.timedelta(days=image_days)
+    by_key = {key_of(v): v for v in versions}
+    kept: Set[Key] = set()
     by_package: Dict[str, List[Dict[str, Any]]] = {}
     for v in versions:
         by_package.setdefault(v["package"], []).append(v)
-    for rule in policy:
-        is_keep = rule["action"]["type"] == "Keep"
-        if "mostRecentVersions" in rule:
-            n = rule["mostRecentVersions"]["keepCount"]
-            for group in by_package.values():
-                newest = sorted(group, key=lambda v: parse_ts(v["createTime"]), reverse=True)[:n]
-                (kept if is_keep else doomed).update((v["package"], v["version"]) for v in newest)
-        elif "condition" in rule:
-            hits = {(v["package"], v["version"]) for v in versions if _matches(v, rule["condition"], now)}
-            (kept if is_keep else doomed).update(hits)
-    wanted = doomed - kept
-    known = {(v["package"], v["version"]) for v in versions}
-    parents: Dict[Key, List[Key]] = {}
-    for (package, parent), kids in (children or {}).items():
-        if (package, parent) not in known:
-            continue  # a parent the listing does not show shields nothing we can verify
-        for kid in kids:
-            parents.setdefault((package, kid), []).append((package, parent))
+    for group in by_package.values():
+        newest = sorted(group, key=lambda v: parse_ts(v["createTime"]), reverse=True)[:keep_versions]
+        kept.update(key_of(v) for v in newest)
+    for v in versions:
+        if any(t.startswith(p) for t in version_tags(v) for p in PROTECTING_PREFIXES):
+            kept.add(key_of(v))
+
+    parents: Dict[Key, Set[Key]] = {}
+    referrer_of: Dict[Key, Key] = {}   # a version with a `subject` -> its target
+    tag_attached: Dict[Key, Key] = {}  # a `sha256-<hex>.sig` version -> its target
+    for v in versions:
+        k = key_of(v)
+        m = manifests[k]
+        for kid in m.get("children", []):
+            if (k[0], kid) in by_key:
+                parents.setdefault((k[0], kid), set()).add(k)
+        if m.get("subject") and (k[0], m["subject"]) in by_key:
+            referrer_of[k] = (k[0], m["subject"])
+        for tag in version_tags(v):
+            hit = ATTACHMENT_TAG.fullmatch(tag)
+            if hit and (k[0], "sha256:" + hit.group(1)) in by_key:
+                tag_attached[k] = (k[0], "sha256:" + hit.group(1))
+    attached = set(referrer_of) | set(tag_attached)
+
+    def eligible(v: Dict[str, Any]) -> bool:
+        k = key_of(v)
+        tags = version_tags(v)
+        if k in kept or k in attached or manifests[k].get("subject") or PROTECTED_TAGS & set(tags):
+            return False
+        if now - parse_ts(v["createTime"]) <= now_age:
+            return False
+        return not tags or any(t.startswith(p) for t in tags for p in tag_prefixes)
+
     memo: Dict[Key, bool] = {}
 
-    def eventually_deleted(key: Key) -> bool:
-        if key not in memo:
-            memo[key] = False  # a reference cycle shields nothing it cannot prove
-            memo[key] = key in wanted and all(eventually_deleted(p) for p in parents.get(key, []))
-        return memo[key]
+    def planned(k: Key) -> bool:
+        if k not in memo:
+            memo[k] = False  # a cycle shields nothing it cannot prove
+            v = by_key[k]
+            if k in tag_attached:
+                ok = (k not in kept and not (PROTECTED_TAGS & set(version_tags(v)))
+                      and planned(tag_attached[k]))
+            else:
+                ok = eligible(v)
+            memo[k] = ok and all(planned(p) for p in parents.get(k, ()))
+        return memo[k]
 
-    return [v for v in versions if eventually_deleted((v["package"], v["version"]))]
+    chosen = [k for k in sorted(by_key) if planned(k)]
+    after: Dict[Key, Set[Key]] = {}
+    for k in chosen:
+        deps = set(parents.get(k, ()))
+        if k in tag_attached:
+            deps.add(tag_attached[k])
+        after[k] = deps
+    ordered: List[Key] = []
+    seen: Set[Key] = set()
+
+    def visit(k: Key) -> None:
+        if k in seen:
+            return
+        seen.add(k)
+        for d in sorted(after[k]):
+            visit(d)
+        ordered.append(k)
+
+    for k in chosen:
+        visit(k)
+    cascade = sorted(k for k, target in referrer_of.items() if planned(target) and k not in after)
+    return Plan([by_key[k] for k in ordered], after, [by_key[k] for k in cascade])
 
 
 def digest_of(image_digest: str) -> str:
@@ -476,16 +463,17 @@ def with_pins(versions: Sequence[Dict[str, Any]], pins: Set[Key]) -> List[Dict[s
 
 
 def running_hazards(selected: Sequence[Dict[str, Any]], consumers: Sequence[Dict[str, str]]) -> List[str]:
-    """Digests a consumer needs that the policy would still expire: a pin did not take effect."""
+    """Digests a consumer needs that the plan would delete: a pin did not take effect."""
     live = {(c["package"], c["digest"]) for c in consumers}
     return sorted({v["version"] for v in selected if (v["package"], v["version"]) in live})
 
 
-def policy_names(repo: Dict[str, Any]) -> Set[str]:
+def policy_names(repo: Dict[str, Any]) -> List[str]:
+    """The ids of the repository's cleanup policies (`describe` prints them as a map keyed by id)."""
     policies = repo.get("cleanupPolicies") or {}
     if isinstance(policies, dict):
-        return set(policies)
-    return {p["name"] for p in policies}
+        return sorted(policies)
+    return sorted(p["name"] for p in policies)
 
 
 def docker_victims(images: Sequence[Dict[str, Any]], prefix: str, keep: int) -> List[str]:
@@ -597,31 +585,39 @@ def list_jobs(a: argparse.Namespace) -> List[Dict[str, Any]]:
     return run_json(["gcloud", "run", "jobs", "list", "--project=" + a.project, "--region=" + a.region])
 
 
-def fetch_children(versions: Sequence[Dict[str, Any]]) -> Tuple[Dict[Key, List[str]], List[str]]:
-    """Which digests each tagged version lists, read from the manifest itself.
+def read_manifests(versions: Sequence[Dict[str, Any]]) -> Dict[Key, Dict[str, Any]]:
+    """Every version's manifest: which digests it lists (`children`) and what it is attached to.
 
-    The version listing does not say that an index references an image; the manifest does. `docker
-    buildx imagetools inspect --raw` prints it with the credentials `docker push` already uses. A
-    manifest that cannot be read is reported, not guessed: the simulation then has no parent for it
-    and so reports more deletions than the registry will make, which is the safe direction.
+    The version listing does not say that an index references an image or that a signature is
+    attached to one; the manifest does. `docker buildx imagetools inspect --raw` prints it with the
+    credentials `docker push` already uses. ALL versions are read, tagged or not: an index whose
+    tag moved is untagged and still lists its children. A manifest that cannot be read deletes
+    nothing in this run. The old simulation could report an upper bound, which is the safe way to be
+    wrong in a report; for an action it is the unsafe one.
     """
     if shutil.which("docker") is None:
-        return {}, ["docker is not on PATH, so no parent/child reference could be read"]
-    children: Dict[Key, List[str]] = {}
+        raise StepError("docker is not on PATH, so no manifest can be read; nothing is deleted "
+                        "without knowing which version lists or is attached to which.")
+    manifests: Dict[Key, Dict[str, Any]] = {}
     unreadable: List[str] = []
     for v in versions:
-        if not version_tags(v):
-            continue
         ref = "%s@%s" % (v["package"], v["version"])
         try:
-            manifest = json.loads(run(["docker", "buildx", "imagetools", "inspect", "--raw", ref]))
+            raw = json.loads(run(["docker", "buildx", "imagetools", "inspect", "--raw", ref]))
+            if not isinstance(raw, dict):
+                raise ValueError("not a manifest object")
         except (StepError, ValueError) as exc:
             unreadable.append("%s: %s" % (ref, exc))
             continue
-        kids = [m["digest"] for m in manifest.get("manifests", []) if m.get("digest")]
-        if kids:
-            children[(v["package"], v["version"])] = kids
-    return children, unreadable
+        subject = raw.get("subject") or {}
+        manifests[key_of(v)] = {
+            "children": [m["digest"] for m in raw.get("manifests", []) if m.get("digest")],
+            "subject": subject.get("digest", "") if isinstance(subject, dict) else "",
+        }
+    if unreadable:
+        raise StepError("%d of %d manifests could not be read, so nothing is deleted in this run "
+                        "(first: %s)" % (len(unreadable), len(versions), "; ".join(unreadable[:3])))
+    return manifests
 
 
 def _tag_add(package: str, digest: str, tag: str) -> None:
@@ -633,28 +629,31 @@ def _tag_delete(package: str, tag: str) -> None:
     run(["gcloud", "artifacts", "docker", "tags", "delete", "%s:%s" % (package, tag), "--quiet"])
 
 
+def describe_version(v: Dict[str, Any]) -> str:
+    return "%s %s %s" % (v["package"].rsplit("/", 1)[-1], v["version"][:19],
+                         ",".join(version_tags(v)) or "(untagged)")
+
+
+def print_listing(label: str, versions: Sequence[Dict[str, Any]]) -> None:
+    lib.info("%s: %d versions" % (label, len(versions)))
+    for v in sorted(versions, key=lambda x: (x["package"], parse_ts(x["createTime"]))):
+        print("    %s  %s" % (v["createTime"][:19], describe_version(v)))
+
+
 def step_registry(a: argparse.Namespace, now: dt.datetime, ctx: Dict[str, Any]) -> List[str]:
-    policy = build_policy(a.keep_versions, a.image_days, a.tag_prefixes)
-    wanted = {r["name"] for r in policy}
+    validate_tag_prefixes(a.keep_versions, a.image_days, a.tag_prefixes)
     registry = "%s-docker.pkg.dev/%s/%s" % (a.region, a.project, a.repo)
     repo = run_json(["gcloud", "artifacts", "repositories", "describe", a.repo,
                      "--project=" + a.project, "--location=" + a.region])
-    armed = policy_names(repo) == wanted and not repo.get("cleanupPolicyDryRun")
-    staged = policy_names(repo) == wanted and bool(repo.get("cleanupPolicyDryRun"))
-    # Whatever policy is active right now, of this shape or an older one, is enforcing.
-    enforcing = bool(policy_names(repo)) and not repo.get("cleanupPolicyDryRun")
+    policies = policy_names(repo)
+    foreign = [n for n in policies if not n.startswith(OWN_POLICY_PREFIX)]
     failures: List[str] = []
 
-    def stand_down(why: str) -> str:
-        """Stop an enforcing policy enforcing, so that a failure here cannot be the failure that expires an image."""
-        if not enforcing or a.dry_run:
-            return why
-        _set_policy(a, policy, "--dry-run")
-        return why + "; the active policy was put back into dry run"
-
     versions = run_json(["gcloud", "artifacts", "docker", "images", "list", registry, "--include-tags"])
+    print_listing("registry %s, before" % registry, versions)
     # Every consumer, not only this service's: a job and another service pull from this repository
-    # too, and a digest is released only when none of them needs it.
+    # too, and a digest is released only when none of them needs it. An unreadable list deletes
+    # nothing: without it nothing can be pinned, so nothing can be shown to be unneeded.
     try:
         service_revisions = ctx["remaining"] if "remaining" in ctx else list_revisions(a)
         consumers, missing = resolve_consumers(
@@ -662,9 +661,7 @@ def step_registry(a: argparse.Namespace, now: dt.datetime, ctx: Dict[str, Any]) 
             + revision_consumers(list_other_revisions(a), registry, strict=False)
             + job_consumers(list_jobs(a), registry), versions)
     except StepError as exc:
-        # Without the consumer list nothing can be pinned, so an enforcing policy is running
-        # unprotected: stop it enforcing rather than leave it to the next run.
-        raise StepError(stand_down("could not establish which images are in use (%s)" % exc))
+        raise StepError("could not establish which images are in use, so nothing is deleted (%s)" % exc)
     needed = {(c["package"], c["digest"]) for c in consumers}
     to_add, to_release, pins = plan_pins(needed, versions, now)
     if missing:
@@ -676,7 +673,7 @@ def step_registry(a: argparse.Namespace, now: dt.datetime, ctx: Dict[str, Any]) 
               sum(c["kind"] == "revision" for c in consumers), sum(c["kind"] == "job" for c in consumers),
               len(needed), len(needed & current_pins(versions)), len(to_add), len(to_release)))
 
-    # Protection first, before the policy is staged, armed or left armed.
+    # Protection first, before anything is selected or deleted.
     for package, digest in to_add:
         if a.dry_run:
             lib.ok("would pin %s@%s" % (package.rsplit("/", 1)[-1], digest[:19]))
@@ -685,8 +682,7 @@ def step_registry(a: argparse.Namespace, now: dt.datetime, ctx: Dict[str, Any]) 
             _tag_add(package, digest, pin_tag(digest))
             lib.ok("pinned %s@%s" % (package.rsplit("/", 1)[-1], digest[:19]))
         except StepError as exc:
-            raise StepError(stand_down("could not pin %s@%s, so nothing may expire past it (%s)" %
-                                       (package, digest, exc)))
+            raise StepError("could not pin %s@%s, so nothing is deleted (%s)" % (package, digest, exc))
     for package, digest in to_release:
         if a.dry_run:
             lib.ok("would release the pin on %s@%s: no revision or job needs it" %
@@ -701,53 +697,99 @@ def step_registry(a: argparse.Namespace, now: dt.datetime, ctx: Dict[str, Any]) 
             failures.append("registry: could not release a pin (%s)" % exc)
             lib.fail("release pin %s" % digest[:19], [str(exc)])
 
-    future = with_pins(versions, pins)
-    children, unreadable = fetch_children(future)
-    if unreadable:
-        lib.warn("parent/child references not fully modelled; the list below is an upper bound: %s"
-                 % "; ".join(unreadable[:3]))
-    selected = simulate(policy, future, now, children)
-    lib.info("the policy would expire %d versions, over its successive runs" % len(selected))
-    for v in selected:
-        lib.ok("would expire %s %s %s" % (v["package"].rsplit("/", 1)[-1], v["version"][:19],
-                                          ",".join(version_tags(v)) or "(untagged)"))
+    if foreign:
+        raise StepError(
+            "the repository has cleanup policies this script did not create (%s); a second deleter "
+            "with another model must not act on the same repository, so nothing is deleted. Remove "
+            "them (`gcloud artifacts repositories delete-cleanup-policies %s --project=%s "
+            "--location=%s --policynames=...`) or opt out with CLEANUP_REGISTRY=off." %
+            (", ".join(foreign), a.repo, a.project, a.region))
 
-    hazards = running_hazards(selected, consumers)
+    future = with_pins(versions, pins)
+    manifests = read_manifests(future)
+    plan = build_plan(future, manifests, now, a.keep_versions, a.image_days, a.tag_prefixes)
+    lib.info("plan: delete %d versions (and %d attachments that go with their targets); keep the "
+             "newest %d per package, every pinned or held version, and everything newer than %dd" %
+             (len(plan.delete), len(plan.with_target), a.keep_versions, a.image_days))
+    for v in plan.delete:
+        lib.ok("%s %s" % ("would delete" if a.dry_run else "planned:", describe_version(v)))
+    for v in plan.with_target:
+        lib.ok("goes with its target: %s" % describe_version(v))
+
+    hazards = running_hazards(list(plan.delete) + list(plan.with_target), consumers)
     if hazards:
-        raise StepError(stand_down(
-            "the policy would still expire a digest a revision or job needs (%s) although it is "
-            "pinned" % ", ".join(hazards)))
+        raise StepError("the plan would delete a digest a revision or job needs (%s) although it "
+                        "is pinned; nothing is deleted." % ", ".join(hazards))
     if missing:
         for sentence in missing:
             lib.fail("registry", [sentence])
-        raise StepError("not arming or advancing the policy past an image that is already gone: "
-                        + " ".join(missing))
+        raise StepError("nothing is deleted past an image that is already gone: " + " ".join(missing))
 
-    if armed:
-        lib.info("registry policy already current (%s); nothing to change." % ", ".join(sorted(wanted)))
-        return failures
-    if a.dry_run or not staged:
-        if staged:
-            lib.info("registry policy already staged in dry run; --dry-run changes nothing.")
+    # The transition: the policies this script armed before ADR-074 go before any version does, so
+    # that two deleters with different models never act on one repository.
+    if policies:
+        bad = [n for n in policies if not POLICY_ID_SHAPE.fullmatch(n)]
+        if bad:
+            raise StepError("cleanup policy id %r is not a name this script will pass to gcloud; "
+                            "nothing is deleted." % bad[0])
+        if a.dry_run:
+            lib.ok("would remove the cleanup policies jZen armed earlier: %s" % ", ".join(policies))
         else:
-            _set_policy(a, policy, "--dry-run")
-            lib.warn("registry policy STAGED IN DRY RUN, NOT ARMED. Read the list above; the next run arms it.")
+            try:
+                run(["gcloud", "artifacts", "repositories", "delete-cleanup-policies", a.repo,
+                     "--project=" + a.project, "--location=" + a.region,
+                     "--policynames=" + ",".join(policies)])
+            except StepError as exc:
+                raise StepError("could not remove the earlier cleanup policies, so nothing is "
+                                "deleted (%s)" % exc)
+            lib.ok("removed the cleanup policies jZen armed earlier: %s" % ", ".join(policies))
+
+    if a.dry_run:
+        lib.info("--dry-run: nothing was changed.")
         return failures
-    _set_policy(a, policy, "--no-dry-run")
-    after = run_json(["gcloud", "artifacts", "repositories", "describe", a.repo,
-                      "--project=" + a.project, "--location=" + a.region])
-    if after.get("cleanupPolicyDryRun") or policy_names(after) != wanted:
-        raise StepError("armed the policy but the repository does not report it as current; check "
-                        "`gcloud artifacts repositories describe %s`." % a.repo)
-    lib.ok("registry policy armed. The registry deletes asynchronously and meters size periodically: "
-           "list versions again later, and do not claim a saving until the size is re-measured.")
+
+    stuck: Set[Key] = set()  # versions whose deletion failed or was skipped
+    for v in plan.delete:
+        k = key_of(v)
+        blocked = plan.after[k] & stuck
+        if blocked:
+            stuck.add(k)
+            lib.warn("skipped %s: %s was not deleted" % (describe_version(v),
+                                                         ", ".join(sorted(b[1][:19] for b in blocked))))
+            continue
+        try:
+            run(["gcloud", "artifacts", "docker", "images", "delete", "%s@%s" % k,
+                 "--delete-tags", "--quiet"])
+            lib.ok("deleted %s" % describe_version(v))
+        except StepError as exc:
+            # A version can leave before its own call: the registry removes an attachment with its
+            # target, and may remove an index's images with the index. The goal is that the version
+            # is gone, so a failed call is checked against a fresh listing rather than assumed; a
+            # version still listed, or a listing that cannot be read, is the failure it looks like.
+            try:
+                still_there = any(key_of(x) == k for x in run_json(
+                    ["gcloud", "artifacts", "docker", "images", "list", registry, "--include-tags"]))
+            except StepError:
+                still_there = True
+            if not still_there:
+                lib.ok("already gone %s (removed by the registry with a parent or target)" %
+                       describe_version(v))
+                continue
+            stuck.add(k)
+            failures.append("registry: could not delete %s@%s (%s)" % (k[0], k[1], exc))
+            lib.fail("delete %s" % describe_version(v), [str(exc)])
+    after = run_json(["gcloud", "artifacts", "docker", "images", "list", registry, "--include-tags"])
+    print_listing("registry %s, after" % registry, after)
+    lib.info("registry: %d versions before, %d after (listed again, not assumed). The repository's "
+             "reported size lags deletion: do not claim a saving until it is re-measured." %
+             (len(versions), len(after)))
     return failures
 
 
 def pin_image(argv: Sequence[str]) -> int:
     """`pin`: protect an image BEFORE a job or service is pointed at it. Exits non-zero if it cannot."""
     p = argparse.ArgumentParser(prog="deploy-cleanup.py pin",
-                                description="pin an image so the registry policy cannot expire it")
+                                description="pin an image so the registry cleanup never deletes it")
     for name in ("project", "region", "repo", "image"):
         p.add_argument("--" + name, required=True, type=name_arg(name))
     p.add_argument("--hold", default="",
@@ -781,22 +823,6 @@ def pin_image(argv: Sequence[str]) -> int:
     except StepError as exc:
         lib.fail("pin", [str(exc)])
         return 1
-
-
-def _write_policy(policy: Sequence[Dict[str, Any]]) -> str:
-    handle = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
-    json.dump(list(policy), handle)
-    handle.close()
-    return handle.name
-
-
-def _set_policy(a: argparse.Namespace, policy: Sequence[Dict[str, Any]], mode: str) -> None:
-    path = _write_policy(policy)
-    try:
-        run(["gcloud", "artifacts", "repositories", "set-cleanup-policies", a.repo,
-             "--project=" + a.project, "--location=" + a.region, "--policy=" + path, mode])
-    finally:
-        Path(path).unlink(missing_ok=True)
 
 
 def step_docker(a: argparse.Namespace) -> List[str]:
@@ -838,7 +864,7 @@ def parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
     for name in ("keep-revisions", "revision-days", "keep-versions", "image-days", "docker-cache-hours"):
         p.add_argument("--" + name, type=int, required=True)
     p.add_argument("--tag-prefixes", default=",".join(DEFAULT_TAG_PREFIXES),
-                   help="comma-separated tag prefixes the tagged-delete rule may expire")
+                   help="comma-separated tag prefixes of the tagged versions the plan may delete")
     for name in ("revisions", "registry", "docker"):
         p.add_argument("--" + name, choices=("on", "off"), required=True)
     p.add_argument("--on-failure", choices=("fail", "warn"), default="fail")
@@ -880,8 +906,8 @@ def main(argv: Optional[Sequence[str]] = None, now: Optional[dt.datetime] = None
     else:
         lib.info("revisions: skipped (off)")
     if a.registry == "on":
-        # Never arm a policy past a revision step that did not finish: what still lists as a
-        # rollback target is exactly what the policy must not outrun.
+        # Never delete a version past a revision step that did not finish: what still lists as a
+        # rollback target is exactly what the plan must not outrun.
         if revisions_ok:
             guarded("registry", lambda: step_registry(a, now, ctx))
         else:

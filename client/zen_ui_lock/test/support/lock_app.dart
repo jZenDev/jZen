@@ -3,7 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_ui_lock/zen_ui_lock.dart';
 
-/// The `MaterialApp` a light application builds: the lock's delegate composed, and the gate in
+/// The `MaterialApp` a Local application builds: the lock's delegate composed, and the gate in
 /// `builder`, above every route.
 Widget lockedApp({
   required ZenPinLock lock,

@@ -1,4 +1,4 @@
-/// jZen Store CloudKit - CloudKit sync, the Keychain key and Data Protection for a light jZen
+/// jZen Store CloudKit - CloudKit sync, the Keychain key and Data Protection for a jZen Local
 /// application on iOS 17 and macOS 14.
 ///
 /// - [ZenCloudKitSync]: the `ZenSyncTransport` a release build uses

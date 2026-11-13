@@ -1,6 +1,6 @@
 name: zen_store
 description: >-
-  Encrypted, offline-first persistence for a light (serverless) jZen application: proto messages
+  Encrypted, offline-first persistence for a jZen Local (serverless) application: proto messages
   stored by collection and id, merged across devices field by field, with real conflicts handed
   to the person. See docs/architecture/DECISIONS.md ADR-065.
 # Lockstep with the product version - see docs/architecture/STANDARDS.md "Versioning".

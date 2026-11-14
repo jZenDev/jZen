@@ -74,6 +74,9 @@ final class ZenPinLock extends ChangeNotifier {
   /// [eraseDeviceCopy] is what "Forgot PIN?" does on a device that cannot check its owner (Linux;
   /// see [ZenOwnerCheck.isAvailable]): it deletes this device's copy of the app's data and its
   /// key, which the other devices then re-sync. Without it such a device offers no recovery.
+  /// It must be idempotent — if it succeeds and removing the PIN then fails, a retry calls it
+  /// again — and it must delete locally, not through the sync engine: a deletion record would
+  /// propagate and erase the data on the other devices too.
   ///
   /// [now] and [iterations] exist for tests.
   static Future<ZenResult<ZenPinLock>> load({
@@ -180,11 +183,18 @@ final class ZenPinLock extends ChangeNotifier {
     });
   }
 
-  /// How a forgotten PIN can be reset on this device.
-  Future<ZenPinRecovery> recoveryOption() async {
-    if (!isEnabled) return ZenPinRecovery.none;
-    if (await _owner.isAvailable()) return ZenPinRecovery.ownerCheck;
-    return _erase != null ? ZenPinRecovery.eraseDeviceCopy : ZenPinRecovery.none;
+  /// How a forgotten PIN can be reset on this device, or the error if that could not be found out
+  /// (the screen then says so and lets the person retry, rather than guessing).
+  Future<ZenResult<ZenPinRecovery>> recoveryOption() async {
+    if (!isEnabled) return const ZenResult.ok(ZenPinRecovery.none);
+    final available = await _owner.isAvailable();
+    return switch (available) {
+      ZenFailure(:final error) => ZenResult.err(error),
+      ZenSuccess(:final data) when data => const ZenResult.ok(ZenPinRecovery.ownerCheck),
+      ZenSuccess() => ZenResult.ok(
+        _erase != null ? ZenPinRecovery.eraseDeviceCopy : ZenPinRecovery.none,
+      ),
+    };
   }
 
   /// For a forgotten PIN on a device that cannot check its owner: erases this device's copy of the

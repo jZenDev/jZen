@@ -24,13 +24,14 @@ of `docs/plans/JZEN-LOCAL-PLAN.md`; issue #210.
 ### Decision
 
 - **Where `local_auth` cannot check the owner, "Forgot PIN?" offers to erase this device's copy of
-  the app's data and re-sync it from the other devices — it is never hidden by default and never a
-  bare reset.** "Cannot check" is `ZenOwnerCheck.isAvailable()` false: always on Linux (`local_auth`
+  the app's data and re-sync it from the other devices — never a bare reset. (Only an app that
+  supplies no eraser gets no button; see the next bullet.)** "Cannot check" is `ZenOwnerCheck.isAvailable()` false: always on Linux (`local_auth`
   has no implementation there), and on any device with no passcode or Windows Hello set up (or where
   asking fails). Elsewhere the owner check stays as ADR-065 decided.
 - **The erase is the application's, passed to `ZenPinLock.load(eraseDeviceCopy:)`.** `zen_ui_lock`
   does not depend on `zen_store`; the app wires the callback to delete the store's files and its
-  key. `ZenPinLock.recoveryOption()` says which of `ownerCheck`, `eraseDeviceCopy` or `none` applies,
+  key, locally and idempotently — not through the sync engine, whose deletion records would erase
+  the data on the other devices too (Unit 7's job). `ZenPinLock.recoveryOption()` says which of `ownerCheck`, `eraseDeviceCopy` or `none` applies,
   and the unlock screen shows "Forgot PIN?" only for the first two. Without a callback a device
   with no owner check has no recovery: that is the honest default for an app that has not said how
   to erase.

@@ -153,7 +153,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Forgot PIN?'), findsNothing);
-      expect(await lock.recoveryOption(), ZenPinRecovery.none);
+      expect((await lock.recoveryOption()).dataOrNull, ZenPinRecovery.none);
     });
 
     testWidgets('"Forgot PIN?" asks first, then erases the copy and removes the PIN', (
@@ -214,6 +214,29 @@ void main() {
     });
   });
 
+  testWidgets('when the owner check cannot be probed it says so, offers a retry, never erase', (
+    tester,
+  ) async {
+    final owner = FailingProbeOwner();
+    final lock = await memoryLock(
+      pin: '2468',
+      owner: owner,
+      erase: () async => const ZenResult.ok(null),
+    );
+    await tester.pumpWidget(lockedApp(lock: lock));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining("Couldn't check whether"), findsOneWidget);
+    expect(find.text('Forgot PIN?'), findsNothing);
+    expect(find.text('Erase and Reset PIN'), findsNothing);
+
+    owner.fails = false;
+    await tester.tap(find.text('Try Again'));
+    await tester.pumpAndSettle();
+    expect(find.text('Forgot PIN?'), findsOneWidget);
+    expect(find.textContaining("Couldn't check whether"), findsNothing);
+  });
+
   // The privacy cover and the lifecycle lock rest on `AppLifecycleListener`; what differs by
   // platform is which states the engine sends. A desktop window that loses focus is only
   // `inactive`; a phone's app switcher is `inactive` then `hidden`.
@@ -235,6 +258,23 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(lock.isLocked, isTrue);
+    });
+  }
+
+  for (final platform in [TargetPlatform.windows, TargetPlatform.linux, TargetPlatform.macOS]) {
+    testWidgets('on ${platform.name}, a short unfocus does not lock the app', (tester) async {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final lock = await memoryLock(pin: '2468');
+      await tester.pumpWidget(lockedApp(lock: lock));
+      await enterPin(tester, '2468');
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(lock.isLocked, isFalse);
     });
   }
 

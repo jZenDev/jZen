@@ -13,7 +13,7 @@ final class FakeOwner implements ZenOwnerCheck {
   FakeOwner({this.passes = true});
 
   @override
-  Future<bool> isAvailable() async => available;
+  Future<ZenResult<bool>> isAvailable() async => ZenResult.ok(available);
 
   @override
   Future<ZenResult<void>> confirm(String reason) async {
@@ -164,8 +164,11 @@ void main() {
     )).dataOrNull!;
     await (await linux()).enable('2468');
 
-    expect(await (await linux()).recoveryOption(), ZenPinRecovery.eraseDeviceCopy);
-    expect(await (await linux(withEraser: false)).recoveryOption(), ZenPinRecovery.none);
+    expect((await (await linux()).recoveryOption()).dataOrNull, ZenPinRecovery.eraseDeviceCopy);
+    expect(
+      (await (await linux(withEraser: false)).recoveryOption()).dataOrNull,
+      ZenPinRecovery.none,
+    );
     expect((await (await linux(withEraser: false)).recoverByErasing()).isFailure, isTrue);
 
     final lock = await linux();

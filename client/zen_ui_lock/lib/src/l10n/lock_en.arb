@@ -108,5 +108,13 @@
   "eraseFailed": "Couldn't erase this device's copy. The PIN was not reset.",
   "@eraseFailed": {
     "description": "Error when erasing this device's copy fails."
+  },
+  "recoveryUnknown": "Couldn't check whether this device can reset a forgotten PIN.",
+  "@recoveryUnknown": {
+    "description": "Shown when asking the device whether it can confirm its owner failed."
+  },
+  "retryButton": "Try Again",
+  "@retryButton": {
+    "description": "Button that repeats the check for resetting a forgotten PIN."
   }
 }

@@ -52,7 +52,7 @@ Future<ZenPinLock> memoryLock({
 /// A device whose owner check always passes.
 final class PassingOwner implements ZenOwnerCheck {
   @override
-  Future<bool> isAvailable() async => true;
+  Future<ZenResult<bool>> isAvailable() async => const ZenResult.ok(true);
 
   @override
   Future<ZenResult<void>> confirm(String reason) async => const ZenResult.ok(null);
@@ -62,9 +62,21 @@ final class PassingOwner implements ZenOwnerCheck {
 /// device with no passcode.
 final class NoOwnerCheck implements ZenOwnerCheck {
   @override
-  Future<bool> isAvailable() async => false;
+  Future<ZenResult<bool>> isAvailable() async => const ZenResult.ok(false);
 
   @override
   Future<ZenResult<void>> confirm(String reason) async =>
       const ZenResult.err(ZenUnauthorizedError('no owner check on this device'));
+}
+
+/// A device whose owner check cannot be probed until [fails] is cleared, then has one.
+final class FailingProbeOwner implements ZenOwnerCheck {
+  bool fails = true;
+
+  @override
+  Future<ZenResult<bool>> isAvailable() async =>
+      fails ? const ZenResult.err(ZenUnknownError('probe failed')) : const ZenResult.ok(true);
+
+  @override
+  Future<ZenResult<void>> confirm(String reason) async => const ZenResult.ok(null);
 }

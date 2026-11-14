@@ -32,6 +32,7 @@ class _ZenUnlockScreenState extends State<ZenUnlockScreen> {
   Timer? _waiting;
   ZenPinRecovery _recovery = ZenPinRecovery.none;
   bool _confirmingErase = false;
+  bool _recoveryUnknown = false;
 
   @override
   void initState() {
@@ -44,7 +45,17 @@ class _ZenUnlockScreenState extends State<ZenUnlockScreen> {
   /// shows, so a slow platform check never offers the wrong one.
   Future<void> _findRecovery() async {
     final option = await widget.lock.recoveryOption();
-    if (mounted) setState(() => _recovery = option);
+    if (!mounted) return;
+    setState(() {
+      switch (option) {
+        case ZenSuccess(:final data):
+          _recovery = data;
+          _recoveryUnknown = false;
+        case ZenFailure():
+          _recovery = ZenPinRecovery.none;
+          _recoveryUnknown = true;
+      }
+    });
   }
 
   @override
@@ -174,6 +185,17 @@ class _ZenUnlockScreenState extends State<ZenUnlockScreen> {
                         isLoading: _busy,
                       ),
                       const SizedBox(height: 8),
+                      if (_recoveryUnknown) ...[
+                        Text(
+                          messages.recoveryUnknown,
+                          style: TextStyle(color: Theme.of(context).colorScheme.error),
+                        ),
+                        ZenButton(
+                          label: messages.retryButton,
+                          variant: ZenButtonVariant.text,
+                          onPressed: _findRecovery,
+                        ),
+                      ],
                       if (_recovery != ZenPinRecovery.none)
                         ZenButton(
                           label: messages.forgotPinButton,

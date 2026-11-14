@@ -9,7 +9,7 @@ import 'zen_folder_access.dart';
 import 'zen_shared_folder_cipher.dart';
 
 /// Sync for a jZen Local application through a folder that a sync service of the person's own
-/// (Syncthing, Dropbox, OneDrive, Nextcloud, ...) keeps in step between their devices (ADR-075).
+/// (Syncthing, Dropbox, OneDrive, Nextcloud, ...) keeps in step between their devices (ADR-076).
 ///
 /// ```
 /// <folder>/<device id>/<64 hex>.zen     one file per record, written by that device only
@@ -311,7 +311,7 @@ final class ZenSharedFolderSync implements ZenSyncTransport {
   /// Each directory is then a whole copy of what its device knows, so a new or re-paired device
   /// needs one directory to learn everything, and a record does not vanish from the folder when
   /// the device that wrote it is removed or its directory deleted. The price is that the folder
-  /// holds every record once per device (ADR-075). A file already holding the current state is
+  /// holds every record once per device (ADR-076). A file already holding the current state is
   /// left alone, so nothing is rewritten once the devices agree.
   Future<void> _mirror(ZenSharedFolderCipher cipher, Set<String> alreadyWritten) async {
     for (final name in _toMirror.toList()) {

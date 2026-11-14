@@ -2,7 +2,7 @@ name: zen_store_shared_folder
 description: >-
   Sync for a jZen Local application over a folder the person chooses and a sync service of their
   own (Syncthing, Dropbox, OneDrive, ...) keeps in step: one subfolder per device, every file
-  encrypted with the shared sync key, nothing else in the folder readable. See ADR-075.
+  encrypted with the shared sync key, nothing else in the folder readable. See ADR-076.
 publish_to: none
 # Lockstep with the product version - see docs/architecture/STANDARDS.md "Versioning".
 version: 0.1.0
@@ -15,7 +15,7 @@ resolution: workspace
 # Pure Dart on purpose, like zen_store: `dart test` loads it, and the whole transport - layout,
 # encryption, merge hand-off, the fake sync service - is tested on the host. The one thing that is
 # not pure Dart is reaching an Android `content://` tree, which a ZenFolderAccess supplied by the
-# application (or a later Flutter package) does; see ADR-075.
+# application (or a later Flutter package) does; see ADR-076.
 dependencies:
   cryptography: ^2.9.0
   meta: ^1.11.0

@@ -5,7 +5,7 @@
 /// - [ZenFolderAccess]: how the transport reaches the folder; [ZenDirectoryAccess] for `dart:io`,
 ///   an application-supplied one for an Android `content://` tree
 ///
-/// See docs/architecture/DECISIONS.md ADR-075.
+/// See docs/architecture/DECISIONS.md ADR-076.
 library;
 
 export 'src/zen_directory_access.dart';

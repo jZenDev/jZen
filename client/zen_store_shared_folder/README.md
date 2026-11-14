@@ -6,7 +6,7 @@
 **Sync for a jZen Local application over a folder the person chooses**, kept in step by a sync
 service of their own (Syncthing, Dropbox, OneDrive, Nextcloud, ...). It is the transport for
 Android, Windows and Linux; CloudKit (`zen_store_cloudkit`) is the one for iOS and macOS. See
-`docs/architecture/DECISIONS.md` ADR-075.
+`docs/architecture/DECISIONS.md` ADR-076.
 
 ```
 <folder>/<device id>/<64 hex>.zen        one file per record, written by that device only
@@ -35,7 +35,7 @@ final sync = await ZenSharedFolderSync.start(
 ```
 
 `ZenFolderAccess` is the seam: `dart:io` on desktop, the Storage Access Framework on Android
-(ADR-075 records the choice of plugin and what is not yet verified on a device).
+(ADR-076 records the choice of plugin and what is not yet verified on a device).
 
 ## Not here
 

@@ -46,7 +46,7 @@ final class ZenFolderEntry {
 ///
 /// On desktop it is `dart:io` ([ZenDirectoryAccess]). On Android a chosen folder is a
 /// `content://` tree that `dart:io` cannot open, so an implementation on the Storage Access
-/// Framework plugs in here (ADR-075) and nothing in the transport changes.
+/// Framework plugs in here (ADR-076) and nothing in the transport changes.
 ///
 /// Paths are relative to the chosen folder, `/`-separated, and never contain `..`. The transport
 /// only ever writes a file under its own device's directory, so an implementation needs no notion

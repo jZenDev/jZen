@@ -36,6 +36,20 @@ includes:
       ZEN_AUTH_REDIRECT_URI: zendemo://auth-callback
       # jZen's own exemption list for verify:widget-files, which is empty by design.
       WIDGET_FILES_SUPPRESSIONS: scripts/widget-files-suppressions.txt
+  # The Local reference application (ADR-073): the client alone, no server and no panel, so it
+  # names no APP_SERVER_MODULE that exists. That absence is what Taskfile.app.yml reads as "this
+  # is a Local application" and what makes it refuse the web target.
+  zenlocal:
+    taskfile: ./Taskfile.app.yml
+    vars:
+      APP_NAME: zen_demo_local
+      CLIENT_DIR: client
+      SERVER_DIR: server
+      PROTO_DIR: proto
+      DART_ROOTS: "client apps"
+      APP_SERVER_MODULE: apps/zen_demo_local/zen_demo_local_server
+      APP_CLIENT_DIR: apps/zen_demo_local/zen_demo_local_client
+      WIDGET_FILES_SUPPRESSIONS: scripts/widget-files-suppressions.txt
 
 vars:
   # server/ + client/ are the Java + Dart FRAMEWORK libraries; apps/ holds the full-stack
@@ -50,6 +64,7 @@ vars:
   # The runnable reference backend (the only Quarkus app) is apps/zen_demo/zen_demo_server.
   DEMO_SERVER_DIR: apps/zen_demo/zen_demo_server
   DEMO_CLIENT_DIR: apps/zen_demo/zen_demo_client
+  DEMO_LOCAL_CLIENT_DIR: apps/zen_demo_local/zen_demo_local_client
   # The zen_demo app's admin panel: assembles @jzen/admin-core, owns the generated schema.
   DEMO_ADMIN_DIR: apps/zen_demo/zen_demo_admin
   OPENAPI_JSON: apps/zen_demo/zen_demo_server/target/openapi/openapi.json
@@ -588,6 +603,30 @@ tasks:
           APP_CLIENT_DIR: "{{.DEMO_CLIENT_DIR}}"
           ZEN_API_URL: '{{.ZEN_API_URL | default "http://localhost:8085"}}'
           ZEN_AUTH_REDIRECT_URI: '{{.ZEN_AUTH_REDIRECT_URI | default "zendemo://auth-callback"}}'
+
+  build:apps:runners:local:
+    desc: Compile the Local reference app's native runners (zen_demo_local) on every host that can build them
+    summary: |
+      The Local counterpart of build:apps:runners (ADR-073): iOS simulator and macOS on an Apple
+      host, Android on Linux or macOS, Linux desktop on Linux, Windows on Windows, each skipped
+      loudly elsewhere. It has no web target, and no API URL or redirect is baked in.
+
+      CI runs it in android-runner, windows-runner and macos-runner right after build:apps:runners.
+      The application lands in its own PR (the plan's Unit 7), so until
+      apps/zen_demo_local/zen_demo_local_client exists this task announces that it is waiting and
+      succeeds: the absence is a known state with a named end, and the message says so. The moment
+      the directory exists the same CI step builds it, and a build failure fails the job. Nothing
+      else keys off the directory.
+    silent: true
+    cmds:
+      - |
+        set -eu
+        if [ ! -d "{{.DEMO_LOCAL_CLIENT_DIR}}" ]; then
+          echo ">> SKIPPED zen_demo_local: {{.DEMO_LOCAL_CLIENT_DIR}} does not exist yet (ADR-073, plan Unit 7)."
+          echo "   This step builds it as soon as the directory is added; nothing needs editing."
+          exit 0
+        fi
+        exec task zenlocal:build:runners
 
   build:apps:runners:release:
     desc: Compile the app's native runners in --release --obfuscate --split-debug-info mode (opt-in, not part of `build`)

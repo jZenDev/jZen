@@ -360,13 +360,16 @@ each device writing only its own files, the sync key moved between devices by pa
   version not replaced by another: different fields and equal values combine, and two surviving
   versions of one field — or a delete against an edit that never saw it — are a conflict. A
   conflicted record is still readable, refuses `put`/`delete`, and is settled only by `resolve`.
-- **`zen_store_cloudkit`** — the sync and the key. `CKSyncEngine` against the user's private
+- **`zen_store_key`** — the store's key on every platform (`ZenDeviceStoreKey`): Keychain, Android
+  Keystore, Windows Credential Manager or libsecret, this device only; it refuses to make a key
+  beside existing files (ADR-075).
+- **`zen_store_cloudkit`** — the sync. `CKSyncEngine` against the user's private
   database, one record per store record in a custom zone, its state in an `encryptedValues` field
   (end to end, keys in iCloud Keychain); a save refused because another device saved first is
-  merged by the store and sent again. Also `ZenKeychainStoreKey` (the store's key, this device
-  only, readable while unlocked) and iOS Data Protection `complete` on the store's directory.
+  merged by the store and sent again. Also iOS Data Protection `complete` on the store's
+  directory (`ZenDataProtection`).
   Swift, SwiftPM only.
-- **`zen_store_shared_folder`** — the sync on Android, Windows and Linux (ADR-075). A folder the
+- **`zen_store_shared_folder`** — the sync on Android, Windows and Linux (ADR-076). A folder the
   person chooses and a sync service of their own keeps in step: `<device id>/<hmac>.zen`, one
   writer per file, each file AES-256-GCM under a key derived from the shared sync key with its path
   as associated data, bad files skipped and reported, folder access behind `ZenFolderAccess`.

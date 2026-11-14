@@ -74,8 +74,8 @@ final class ZenStore {
   }
 
   /// Opens the store kept in [directory], creating it on first use, encrypted with [key] — 32
-  /// random bytes the application keeps in the Keychain (`zen_store_cloudkit`'s
-  /// `ZenKeychainStoreKey`), never beside the data.
+  /// random bytes the application keeps in the platform's secret storage (`zen_store_key`'s
+  /// `ZenDeviceStoreKey`), never beside the data.
   ///
   /// [deviceName] is what a person sees in a conflict on another device ("Alex's iPhone").
   ///

@@ -1,0 +1,29 @@
+name: zen_store_key
+description: >-
+  The key a jZen Local application's zen_store encrypts its files with, kept in the platform's
+  secret storage on iOS, macOS, Android, Windows and Linux, and never minted over existing files.
+  See ADR-075.
+publish_to: 'none'
+# Lockstep with the product version, see docs/architecture/STANDARDS.md "Versioning".
+version: 0.1.0
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+
+resolution: workspace
+
+dependencies:
+  # A plugin imports package:flutter/services.dart and therefore dart:ui, which the Dart VM cannot
+  # load -- the reason this is not part of zen_store, whose suite runs under `dart test`.
+  flutter:
+    sdk: flutter
+  # Keychain (iOS, macOS), Keystore (Android), Credential Manager (Windows), libsecret (Linux).
+  # 10.x is a floor for the reason zen_secure_store gives (ADR-024).
+  flutter_secure_storage: ^10.3.1
+  zen_core:
+    path: ../zen_core
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter

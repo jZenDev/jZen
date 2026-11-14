@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:protobuf/well_known_types/google/protobuf/api.pb.dart';
 import 'package:zen_core/zen_core.dart';
@@ -198,21 +197,30 @@ void main() {
     expect((await ZenCloudKitSync.start(await store('a'))).errorOrNull, isA<ZenNotFoundError>());
   });
 
-  test('the store key is made once, 32 bytes, and the same on every later load', () async {
-    FlutterSecureStorage.setMockInitialValues({});
-
-    final first = (await ZenKeychainStoreKey.load()).dataOrNull!;
-    final second = (await ZenKeychainStoreKey.load()).dataOrNull!;
-
-    expect(first, hasLength(32));
-    expect(second, first);
-  });
-
-  test('a damaged key in the Keychain fails the load instead of making a new one', () async {
-    FlutterSecureStorage.setMockInitialValues({
-      'zen_store.key': base64Encode([1, 2, 3]),
+  test('protectDirectory asks the plugin to protect the directory and reports its answer', () async {
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      sent.add(call);
+      return true;
     });
 
-    expect((await ZenKeychainStoreKey.load()).errorOrNull, isA<ZenUnknownError>());
+    final result = await ZenDataProtection.protectDirectory(root);
+
+    expect(result.dataOrNull, isTrue);
+    expect(sent.single.method, 'protectDirectory');
+    expect((sent.single.arguments as Map)['path'], root.path);
+  });
+
+  test('protectDirectory succeeds with false where there is no plugin', () async {
+    messenger.setMockMethodCallHandler(channel, null);
+
+    expect((await ZenDataProtection.protectDirectory(root)).dataOrNull, isFalse);
+  });
+
+  test('protectDirectory surfaces a platform failure as an error', () async {
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      throw PlatformException(code: 'denied', message: 'no');
+    });
+
+    expect((await ZenDataProtection.protectDirectory(root)).errorOrNull, isA<ZenUnknownError>());
   });
 }

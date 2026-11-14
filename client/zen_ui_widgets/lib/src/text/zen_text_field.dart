@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:zen_core/zen_core.dart';
 
+import '../button/zen_icon_button.dart';
+import '../l10n/generated/zen_widgets_localizations.dart';
 import 'zen_cupertino_text_form_field.dart';
 
 /// A labelled text input that renders Cupertino on Apple platforms and Material elsewhere.
@@ -12,10 +14,13 @@ import 'zen_cupertino_text_form_field.dart';
 /// owns how the field looks per platform and where focus shows.
 ///
 /// There is no trailing-widget slot: the field and its error are one merged accessible node, and
-/// a control inside it would be announced as part of the field instead of on its own.
+/// a control inside it would be announced as part of the field instead of on its own. The one
+/// control a field offers is [revealable]'s show/hide button, which sits *beside* that node, so a
+/// screen reader meets it as a separate, named button and a keyboard reaches it as its own Tab
+/// stop. It speaks "Show password" / "Hide password"; register `zenWidgetsLocaleDelegate`.
 ///
 /// For a decimal number use `ZenAmountField`, which builds on this one.
-class ZenTextField extends StatelessWidget {
+class ZenTextField extends StatefulWidget {
   /// Creates a text field labelled [label].
   const ZenTextField({
     required this.label,
@@ -27,6 +32,7 @@ class ZenTextField extends StatelessWidget {
     this.errorText,
     this.hint,
     this.obscureText = false,
+    this.revealable = false,
     this.keyboardType,
     this.inputFormatters,
     this.autofillHints,
@@ -44,7 +50,8 @@ class ZenTextField extends StatelessWidget {
          'minLines cannot exceed maxLines',
        ),
        assert(maxLength == null || maxLength > 0, 'maxLength must be positive'),
-       assert(!obscureText || maxLines == 1, 'a hidden text is a single line');
+       assert(!obscureText || maxLines == 1, 'a hidden text is a single line'),
+       assert(!revealable || obscureText, 'only a hidden text can be revealed');
 
   /// The field's name.
   final String label;
@@ -73,6 +80,11 @@ class ZenTextField extends StatelessWidget {
 
   /// Whether the text is hidden, for a password.
   final bool obscureText;
+
+  /// Whether a button beside the field shows and hides the [obscureText]'d text, so a password
+  /// typed, pasted or filled in by a password manager can be checked. Requires [obscureText];
+  /// the text starts hidden. Off by default: hiding a PIN may be deliberate.
+  final bool revealable;
 
   /// The keyboard to show.
   final TextInputType? keyboardType;
@@ -106,25 +118,54 @@ class ZenTextField extends StatelessWidget {
   final bool enabled;
 
   @override
+  State<ZenTextField> createState() => _ZenTextFieldState();
+}
+
+class _ZenTextFieldState extends State<ZenTextField> {
+  bool _revealed = false;
+
+  void _toggle() => setState(() => _revealed = !_revealed);
+
+  @override
   Widget build(BuildContext context) {
     return zenIsApplePlatform
-        ? buildCupertinoTextField(context, this)
-        : buildMaterialTextField(context, this);
+        ? buildCupertinoTextField(context, widget, revealed: _revealed, onToggleReveal: _toggle)
+        : buildMaterialTextField(context, widget, revealed: _revealed, onToggleReveal: _toggle);
   }
+}
+
+/// The show/hide button of a [ZenTextField.revealable]: named for what pressing it does.
+Widget _revealButton(
+  BuildContext context,
+  ZenTextField field,
+  bool revealed,
+  VoidCallback? toggle,
+) {
+  final ZenWidgetsLocalizations messages = ZenWidgetsLocalizations.of(context);
+  return ZenIconButton(
+    icon: revealed ? Icons.visibility_off : Icons.visibility,
+    label: revealed ? messages.hidePassword : messages.showPassword,
+    onPressed: field.enabled ? toggle : null,
+  );
 }
 
 /// The Material field. Exposed to the package's tests, which cannot reach the branch the host
 /// platform did not compile.
-Widget buildMaterialTextField(BuildContext context, ZenTextField field) {
+Widget buildMaterialTextField(
+  BuildContext context,
+  ZenTextField field, {
+  bool revealed = false,
+  VoidCallback? onToggleReveal,
+}) {
   // Merged so the error text is read with the field: left beside it, the error sat on a node a
   // screen reader never lands on, and the focused input was named by its label alone.
-  return MergeSemantics(
+  final Widget input = MergeSemantics(
     child: TextFormField(
       controller: field.controller,
       enabled: field.enabled,
       autovalidateMode: field.autovalidateMode,
       forceErrorText: field.errorText,
-      obscureText: field.obscureText,
+      obscureText: field.obscureText && !revealed,
       keyboardType: field.keyboardType,
       inputFormatters: field.inputFormatters,
       autofillHints: field.autofillHints,
@@ -145,10 +186,27 @@ Widget buildMaterialTextField(BuildContext context, ZenTextField field) {
       ),
     ),
   );
+  if (!field.revealable) return input;
+  // The 48-pixel button is centred on the 56-pixel input box, not on the error text beneath it.
+  return Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: <Widget>[
+      Expanded(child: input),
+      Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: _revealButton(context, field, revealed, onToggleReveal),
+      ),
+    ],
+  );
 }
 
 /// The Cupertino field; see [buildMaterialTextField].
-Widget buildCupertinoTextField(BuildContext context, ZenTextField field) {
+Widget buildCupertinoTextField(
+  BuildContext context,
+  ZenTextField field, {
+  bool revealed = false,
+  VoidCallback? onToggleReveal,
+}) {
   return ZenCupertinoTextFormField(
     label: field.label,
     controller: field.controller,
@@ -158,7 +216,7 @@ Widget buildCupertinoTextField(BuildContext context, ZenTextField field) {
     autovalidateMode: field.autovalidateMode,
     forceErrorText: field.errorText,
     hint: field.hint,
-    obscureText: field.obscureText,
+    obscureText: field.obscureText && !revealed,
     keyboardType: field.keyboardType,
     inputFormatters: field.inputFormatters,
     autofillHints: field.autofillHints,
@@ -168,5 +226,6 @@ Widget buildCupertinoTextField(BuildContext context, ZenTextField field) {
     minLines: field.minLines,
     maxLength: field.maxLength,
     enabled: field.enabled,
+    trailing: field.revealable ? _revealButton(context, field, revealed, onToggleReveal) : null,
   );
 }

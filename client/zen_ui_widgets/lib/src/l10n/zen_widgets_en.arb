@@ -24,6 +24,14 @@
   "@clearSearch": {
     "description": "Tooltip and screen-reader name of the button that empties a search field."
   },
+  "showPassword": "Show password",
+  "@showPassword": {
+    "description": "Tooltip and screen-reader name of the button that reveals the hidden text of a revealable text field."
+  },
+  "hidePassword": "Hide password",
+  "@hidePassword": {
+    "description": "Tooltip and screen-reader name of the button that hides the revealed text of a revealable text field."
+  },
   "done": "Done",
   "@done": {
     "description": "Button that confirms the choice in a wheel picker."

@@ -45,6 +45,13 @@ Register `storeLocaleDelegate` in `MaterialApp.localizationsDelegates`.
   deleted, storage full, an app update needed. It takes no space while sync works: a sync that
   stops quietly would leave the person believing their other devices see their edits.
 
+- **Adding a device** (`ZenAddDeviceScreen`, `ZenJoinScreen`, ADR-075): the old device shows a
+  QR code and 77 typed characters only after "Show Code", counts down five minutes, and withdraws
+  the code at expiry, on Cancel and when the app leaves the screen. The new device scans it (pass a
+  `ZenQrScannerBuilder` built on `mobile_scanner` where there is a camera) or types it in a hidden
+  field; a typo is reported by group. The screen hands the key to your `onKey`; the code is never
+  logged, put in a URL or copied, and **it is the sync key**, so show it only to yourself.
+
 Only `title` is required. A field is shown by its proto name and value until `fieldLabel` and
 `fieldValue` give the app's words and formatting.
 

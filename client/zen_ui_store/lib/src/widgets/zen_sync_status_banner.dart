@@ -31,6 +31,11 @@ class ZenSyncStatusBanner extends StatelessWidget {
         ZenSyncIssue.cloudDataDeleted => messages.syncCloudDataDeleted,
         ZenSyncIssue.quotaExceeded => messages.syncQuotaExceeded,
         ZenSyncIssue.unreadableRecords => messages.syncUnreadableRecords,
+        ZenSyncIssue.noFolder => messages.syncNoFolder,
+        ZenSyncIssue.folderUnreachable => messages.syncFolderUnreachable,
+        ZenSyncIssue.accessRevoked => messages.syncAccessRevoked,
+        ZenSyncIssue.notPaired => messages.syncNotPaired,
+        ZenSyncIssue.newerAppVersion => messages.syncNewerAppVersion,
         ZenSyncIssue.other || null => messages.syncOther,
       };
       return Semantics(

@@ -101,5 +101,25 @@
   "syncOther": "Sync isn't working right now. Your data is safe on this device.",
   "@syncOther": {
     "description": "Sync status: any other failure."
+  },
+  "syncNoFolder": "Not syncing: no sync folder is chosen yet. Your data is safe here; choose a folder to sync it.",
+  "@syncNoFolder": {
+    "description": "Sync status: no shared folder has been chosen."
+  },
+  "syncFolderUnreachable": "Not syncing: the sync folder can't be reached. It may have been moved, deleted or its drive disconnected.",
+  "@syncFolderUnreachable": {
+    "description": "Sync status: the chosen shared folder is not reachable."
+  },
+  "syncAccessRevoked": "Not syncing: this app no longer has access to the sync folder. Choose the folder again to allow it.",
+  "@syncAccessRevoked": {
+    "description": "Sync status: access to the shared folder was withdrawn."
+  },
+  "syncNotPaired": "Not syncing: this device isn't paired yet. Pair it with a device you already use to sync.",
+  "@syncNotPaired": {
+    "description": "Sync status: this device does not hold the sync key."
+  },
+  "syncNewerAppVersion": "Some changes from another device were made with a newer version of the app. Update the app on this device.",
+  "@syncNewerAppVersion": {
+    "description": "Sync status: another device uses a newer app version."
   }
 }

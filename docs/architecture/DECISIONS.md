@@ -15,6 +15,111 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-075 — The shared-folder transport: one directory per device, every file encrypted, Android through the Storage Access Framework
+
+**Date:** 2026-11-14. **Status:** accepted; the Android folder access is **chosen on a desk study and
+not yet verified on a device** (see "Verification"). **Refines:** ADR-073 (the shared-folder
+transport "decided now and built later"). **Issues:** #210, plan `docs/plans/JZEN-LOCAL-PLAN.md`
+unit 2 and spike 0.1.
+
+### Decision
+
+- **A new package, `zen_store_shared_folder`**, pure Dart (so `dart test` runs it), holding
+  `ZenSharedFolderSync`, a `ZenSyncTransport` over a folder a sync service of the person's own keeps
+  in step. It has no network code and signs in to nothing.
+- **Layout.** `<folder>/<device id>/<64 hex>.zen`: one subdirectory per device, named by the store's
+  random 128-bit device id, one file per record, named by the hex HMAC-SHA-256 of the record's name
+  under a key derived for the purpose. A device **writes only inside its own directory** and reads
+  every other; no file ever has two writers, which is the only discipline a file sync service can
+  honour (it has no conditional write and no cross-machine lock).
+- **A file is a record's whole state**, exactly what `ZenStore.outgoing` produces, so the transport
+  moves opaque bytes and the merge stays the store's. Delivery late, twice, out of order, as an
+  older version after a newer one, or in part is therefore harmless by construction: a stale state
+  merges to nothing, a partial file does not decrypt. **No path in this package picks a winner**;
+  the "newest file" is never consulted, only the store's version vectors.
+- **Each directory is a whole copy of what its device knows.** A device also writes, into its own
+  directory, every record it merged from another, in the state it now holds it (nothing is written
+  once the file already holds that state). Without it a record that only its author's directory
+  carried would vanish from the folder when that device was removed, and a new device could not
+  learn it from the folder. The price is that the folder holds every record once per device. A
+  device whose directory is missing from a folder that it had written to (the folder was changed,
+  or the directory deleted) sends everything again; if the directory still does not appear after
+  that, sync says so (`ZenSyncIssue.other`) instead of refilling it on every pass.
+- **Encryption.** `ZSF`, a format byte, a fresh 12-byte nonce, AES-256-GCM ciphertext, the 16-byte
+  tag. Plaintext is `<name length: 2 bytes><record name><payload>`, so the collection and the id
+  are inside the ciphertext. The key and the file-name key are derived from the 32-byte shared sync
+  key with HKDF-SHA-256 under distinct labels. **The file's path (`<device id>/<file name>`) is the
+  associated data**, so a file copied under another device, another name or a "conflicted copy" name
+  fails to open rather than merging as something it is not. A format byte newer than this version's
+  is recognised before decryption and reported as `ZenSyncIssue.newerAppVersion`.
+- **What the folder exposes** to whoever stores it: the number of devices (directories), how many
+  records each holds (files), their sizes and modification times (so roughly when and how much is
+  edited, and by which device). Not a record, a collection name, an id, a field, or a device's name.
+  Sizes follow payload sizes, so a very large or very small record is distinguishable from the
+  rest; padding is not done.
+- **Bad files are skipped, never merged, never fatal.** An unreadable file is named in
+  `ZenSyncReport.problems` (kept on `lastReport`, emitted on `reports`), the rest are merged, and
+  the file is read again on the next pass because it is only fingerprinted (size and modification
+  time) after it merged. A name that is not exactly 64 hex characters and `.zen` is ignored — a
+  temp file, Dropbox's `(conflicted copy ...)`, Syncthing's `.sync-conflict-...`, OneDrive's
+  `-HOSTNAME`, Google Drive's `(1)`, a copied directory — and silently, since a service writing
+  these is behaving normally. A copy that keeps an exact-looking name cannot be newer than its
+  writer's own file and fails the path-bound decryption anyway.
+- **Writes** are temp-file-then-rename (`.<name>.<random>.tmp`, ignored by readers). Change detection
+  is polling (default 15 s) plus the folder's watcher where the platform has one (debounced); the
+  watcher only brings a poll forward, because it misses what happened while the app was not running.
+- **Status.** The statuses a person can act on are named in `ZenSyncIssue` (new: `noFolder`,
+  `folderUnreachable`, `accessRevoked`, `notPaired`, `newerAppVersion`), each with an en and uk
+  message in `ZenSyncStatusBanner`. A device with no sync key reports `notPaired` and touches
+  nothing.
+- **Folder access is an interface, `ZenFolderAccess`**, with a `dart:io` implementation
+  (`ZenDirectoryAccess`) for the desktop and a seam for Android, where a folder chosen through the
+  Storage Access Framework is a `content://` tree `dart:io` cannot open.
+- **Spike 0.1 (desk study), Android: use `saf_util` (listing, `mkdirp`, `rename`, `delete`,
+  `hasPersistedPermission`, the picker) with `saf_stream` (`readFileBytes`, `writeFileBytes` with
+  `overwrite`), behind `ZenFolderAccess`, rather than our own Kotlin.** Both are by one
+  organisation, BSD-3, maintained (releases 2026-09 and 2026-10), Android-only plugins with no
+  further dependencies, and between them cover every operation the transport needs. The other
+  candidates were `docman` (maintained but last released 2025-01), `saf` (broader, one maintainer,
+  releases 2026-08) and `shared_storage` (discontinued). Our own Kotlin stays the fallback if the
+  verification below finds a missing guarantee. Two Android facts shape the adapter: SAF cannot
+  rename over an existing document, so `write` there writes a temp document, deletes the target,
+  and renames (a reader may briefly see no file, which the transport already treats as "not
+  delivered yet", never as a deletion); and a listing's modification times come from the provider,
+  which is why the fingerprint pairs it with the size.
+- **The Android adapter is not in this package.** It needs Flutter and the two plugins, which
+  would take this package off the Dart VM; it is a small package or part of the application that
+  implements `ZenFolderAccess` (and the folder picker and `accessRevoked` detection through
+  `hasPersistedPermission`), added when a device is available to verify it.
+
+### What this supersedes, and why
+
+- **"`zen_store_shared_folder`, planned"** and **"On Android the folder is reached through the
+  Storage Access Framework"** (ADR-073, Decision) → **built, and refined:** the choice of plugin is
+  now made (`saf_util` + `saf_stream`) and the adapter sits behind an interface. *Why:* the
+  transport's logic is the part that can lose a person's edit, so it must be testable on a laptop
+  with a fake sync service; only reaching the folder differs per platform.
+- **"A device writes only its own files and reads everyone else's"** (ADR-073) → **kept, with one
+  addition:** a device also copies, into its own directory, what it merged from others. *Why:* the
+  alternative loses data that exists in no other file the moment a device is removed, which the plan
+  names a case to survive. One writer per file still holds.
+
+### Consequence
+
+New: `client/zen_store_shared_folder` (workspace member), five `ZenSyncIssue` values and their
+strings in `zen_ui_store`. Not decided here: pairing and how the sync key reaches a device (unit 3),
+choosing the transport from `ZEN_PLATFORM` (unit 4), the Android adapter. **Verification:** the
+package's suite runs on the host, including a lazy sync-service fake that delays, reorders,
+duplicates, truncates and hands back older versions of files and writes conflicted copies, with three
+devices converging under all of it, a delete against an unseen edit surfacing as a conflict, and no
+plaintext on disk. **Not verified:** any real sync service (Syncthing, Dropbox, OneDrive); anything
+on an Android device (spike 0.1's "done when" needs a real device and a real sync app and is open,
+as is whether a SAF grant survives a restart); the `Directory.watch` behaviour on Windows and Linux
+(tests ran on macOS); scale (every file is re-listed each poll and only changed ones are read, but a
+folder with many thousands of records was not measured).
+
+---
+
 ## ADR-074 — The cleanup deletes registry versions itself; no Artifact Registry cleanup policy
 
 **Date:** 2026-11-13. **Status:** accepted, **not yet verified in a real environment** (see

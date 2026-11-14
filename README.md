@@ -94,6 +94,7 @@ OneDrive, Syncthing, ...) — that transport is planned, not built yet.
 |---|---|
 | [`zen_store`](client/zen_store/README.md) | The data: proto messages by collection and id, encrypted on the device (no database), fully offline, answering with `ZenResult` like `ZenClient` does. |
 | [`zen_store_cloudkit`](client/zen_store_cloudkit/README.md) | The sync: CloudKit in the user's private iCloud database, end-to-end encrypted, plus the store's key in the Keychain. |
+| [`zen_store_shared_folder`](client/zen_store_shared_folder/README.md) | The sync on Android, Windows and Linux: a folder the person chooses and a sync service of their own keeps in step, one directory per device, every file encrypted. |
 | [`zen_ui_store`](client/zen_ui_store/README.md) | The choice: a banner and screens where the person picks between devices' versions when they conflict. |
 | [`zen_ui_lock`](client/zen_ui_lock/README.md) | The door: an optional PIN in place of a login, with "Forgot PIN?" through Face ID or the device passcode. |
 

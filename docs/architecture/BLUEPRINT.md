@@ -366,6 +366,11 @@ each device writing only its own files, the sync key moved between devices by pa
   merged by the store and sent again. Also `ZenKeychainStoreKey` (the store's key, this device
   only, readable while unlocked) and iOS Data Protection `complete` on the store's directory.
   Swift, SwiftPM only.
+- **`zen_store_shared_folder`** — the sync on Android, Windows and Linux (ADR-075). A folder the
+  person chooses and a sync service of their own keeps in step: `<device id>/<hmac>.zen`, one
+  writer per file, each file AES-256-GCM under a key derived from the shared sync key with its path
+  as associated data, bad files skipped and reported, folder access behind `ZenFolderAccess`.
+  Pure Dart; the Android Storage Access Framework adapter is not built yet.
 - **`zen_ui_store`** — the choice. A banner while conflicts wait, the list of them, and each
   device's version side by side, plus `ZenSyncStatusBanner`, which says why sync stopped; a record is named by the app's `title`, a field by its proto name
   and value unless the app formats it.

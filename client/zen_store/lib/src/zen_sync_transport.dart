@@ -62,6 +62,24 @@ enum ZenSyncIssue {
   /// Something another device sent cannot be read here — usually a newer version of the app.
   unreadableRecords,
 
+  /// No sync folder has been chosen yet (`zen_store_shared_folder`).
+  noFolder,
+
+  /// The chosen folder cannot be reached: deleted, renamed, on a drive or share that is not there.
+  folderUnreachable,
+
+  /// The person withdrew this app's access to the folder (Android), or the operating system no
+  /// longer allows it. Choosing the folder again grants it anew.
+  accessRevoked,
+
+  /// This device does not hold the sync key yet, so nothing in the folder can be read or written;
+  /// it has to be paired with a device that has it.
+  notPaired,
+
+  /// Another device wrote in a format a newer version of the app introduced. Its files are left
+  /// alone until this device is updated.
+  newerAppVersion,
+
   /// Anything else; [ZenSyncStatus.message] says what.
   other,
 }

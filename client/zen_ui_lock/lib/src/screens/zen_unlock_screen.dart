@@ -12,8 +12,9 @@ import '../state/zen_pin_lock.dart';
 /// The screen that covers the app until the PIN is entered. `ZenLockGate` shows it; an app does
 /// not push it.
 ///
-/// It has no way back on purpose: the only ways past it are the PIN and the device owner's own
-/// check ("Forgot PIN?").
+/// It has no way back on purpose: the only ways past it are the PIN, the device owner's own
+/// check ("Forgot PIN?") and, on a device that has no such check (Linux), erasing this device's
+/// copy of the data after a confirmation (ADR-075). With neither, there is no "Forgot PIN?".
 class ZenUnlockScreen extends StatefulWidget {
   /// The lock this screen opens.
   final ZenPinLock lock;
@@ -29,11 +30,21 @@ class _ZenUnlockScreenState extends State<ZenUnlockScreen> {
   String? _error;
   bool _busy = false;
   Timer? _waiting;
+  ZenPinRecovery _recovery = ZenPinRecovery.none;
+  bool _confirmingErase = false;
 
   @override
   void initState() {
     super.initState();
     _waitOutShutOut();
+    _findRecovery();
+  }
+
+  /// Asks once how a forgotten PIN can be reset here. Until the answer arrives no recovery button
+  /// shows, so a slow platform check never offers the wrong one.
+  Future<void> _findRecovery() async {
+    final option = await widget.lock.recoveryOption();
+    if (mounted) setState(() => _recovery = option);
   }
 
   @override
@@ -87,6 +98,45 @@ class _ZenUnlockScreenState extends State<ZenUnlockScreen> {
     });
   }
 
+  Future<void> _erase() async {
+    final messages = LockLocalizations.of(context);
+    setState(() => _busy = true);
+    final result = await widget.lock.recoverByErasing();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _confirmingErase = result.isFailure;
+      _error = result.isFailure ? messages.eraseFailed : null;
+    });
+  }
+
+  Widget _eraseConfirmation(LockLocalizations messages) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text(messages.eraseTitle, style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      Text(messages.eraseExplanation),
+      if (_error case final error?) ...[
+        const SizedBox(height: 8),
+        Text(error, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+      ],
+      const SizedBox(height: 16),
+      ZenButton(
+        label: messages.eraseButton,
+        variant: ZenButtonVariant.secondary,
+        onPressed: _busy ? null : _erase,
+        isLoading: _busy,
+      ),
+      const SizedBox(height: 8),
+      ZenButton(
+        label: messages.cancelButton,
+        variant: ZenButtonVariant.text,
+        onPressed: _busy ? null : () => setState(() => _confirmingErase = false),
+      ),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) {
     final messages = LockLocalizations.of(context);
@@ -103,31 +153,41 @@ class _ZenUnlockScreenState extends State<ZenUnlockScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                ZenTextField(
-                  label: messages.pinLabel,
-                  controller: _pin,
-                  obscureText: true,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => _unlock(),
-                  errorText: error,
-                  enabled: wait == null,
-                ),
-                const SizedBox(height: 16),
-                ZenButton(
-                  label: messages.unlockButton,
-                  onPressed: wait == null && !_busy ? _unlock : null,
-                  isLoading: _busy,
-                ),
-                const SizedBox(height: 8),
-                ZenButton(
-                  label: messages.forgotPinButton,
-                  variant: ZenButtonVariant.text,
-                  onPressed: _busy ? null : _recover,
-                ),
-              ],
+              children: _confirmingErase
+                  ? [_eraseConfirmation(messages)]
+                  : [
+                      ZenTextField(
+                        label: messages.pinLabel,
+                        controller: _pin,
+                        obscureText: true,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _unlock(),
+                        errorText: error,
+                        enabled: wait == null,
+                      ),
+                      const SizedBox(height: 16),
+                      ZenButton(
+                        label: messages.unlockButton,
+                        onPressed: wait == null && !_busy ? _unlock : null,
+                        isLoading: _busy,
+                      ),
+                      const SizedBox(height: 8),
+                      if (_recovery != ZenPinRecovery.none)
+                        ZenButton(
+                          label: messages.forgotPinButton,
+                          variant: ZenButtonVariant.text,
+                          onPressed: _busy
+                              ? null
+                              : _recovery == ZenPinRecovery.ownerCheck
+                              ? _recover
+                              : () => setState(() {
+                                  _error = null;
+                                  _confirmingErase = true;
+                                }),
+                        ),
+                    ],
             ),
           ),
         ),

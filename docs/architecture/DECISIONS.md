@@ -15,6 +15,56 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-075 — "Forgot PIN?" on a device with no owner check erases this device's copy
+
+**Date:** 2026-11-14. **Status:** accepted. **Refines:** ADR-065 ("Forgot PIN" through the device's
+own owner check), ADR-073 (Local applications on five platforms). **Plan:** spike 0.3 and Unit 5
+of `docs/plans/JZEN-LOCAL-PLAN.md`; issue #210.
+
+### Decision
+
+- **Where `local_auth` cannot check the owner, "Forgot PIN?" offers to erase this device's copy of
+  the app's data and re-sync it from the other devices — it is never hidden by default and never a
+  bare reset.** "Cannot check" is `ZenOwnerCheck.isAvailable()` false: always on Linux (`local_auth`
+  has no implementation there), and on any device with no passcode or Windows Hello set up (or where
+  asking fails). Elsewhere the owner check stays as ADR-065 decided.
+- **The erase is the application's, passed to `ZenPinLock.load(eraseDeviceCopy:)`.** `zen_ui_lock`
+  does not depend on `zen_store`; the app wires the callback to delete the store's files and its
+  key. `ZenPinLock.recoveryOption()` says which of `ownerCheck`, `eraseDeviceCopy` or `none` applies,
+  and the unlock screen shows "Forgot PIN?" only for the first two. Without a callback a device
+  with no owner check has no recovery: that is the honest default for an app that has not said how
+  to erase.
+- **Confirm first, erase before unlocking.** The unlock screen swaps to a confirmation naming what
+  is lost (anything not yet synced); only its button runs the erase. The PIN is removed only after
+  the erase succeeds, so a failed erase leaves the app locked.
+- **The lifecycle lock is checked on every platform.** `ZenLockGate` starts its background clock on
+  `inactive` on Windows, Linux and macOS, because a desktop window that loses focus is `inactive`
+  and becomes `hidden` only when minimised; without it a window left behind another one would
+  never relock. On Android and iOS only `hidden` counts, so a notification shade or system dialog
+  (also `inactive`) does not lock. The cover over the app is drawn on `inactive` everywhere.
+
+### What this supersedes, and why
+
+- **"Forgot PIN" is answered by the device's own owner check … whoever can unlock the device already
+  holds everything the PIN protects.** (ADR-065; `zen_ui_lock` README) → **refined.** *Why:* the
+  premise needs an owner check to exist. On Linux there is none, so resetting without proof would
+  open the data to anyone at the keyboard. Erasing is safe without proof of ownership precisely
+  because it leaves nothing to read, and a synced person loses nothing but unsynced edits.
+- **Hiding recovery on Linux** was the alternative, rejected as the default: a forgotten PIN would
+  strand the person with the app unusable, and the only way out — deleting the app's data by hand —
+  is the same erase, unguided and without the warning. It remains the behaviour when the app
+  supplies no eraser.
+
+### Consequence
+
+`zen_ui_lock`'s suite names the Linux path (no eraser → no button; confirm → erase → PIN off;
+failed erase → still locked; cancel erases nothing) and the lifecycle rules per platform. Not
+verified on hardware: that Linux, Windows and Android deliver `inactive` as described, and that
+Android's recents snapshot is taken after the cover is painted (Flutter does not set
+`FLAG_SECURE`); the tests drive the lifecycle states by hand.
+
+---
+
 ## ADR-074 — The cleanup deletes registry versions itself; no Artifact Registry cleanup policy
 
 **Date:** 2026-11-13. **Status:** accepted, **not yet verified in a real environment** (see

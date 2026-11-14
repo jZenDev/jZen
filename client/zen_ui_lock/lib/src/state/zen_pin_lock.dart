@@ -9,13 +9,29 @@ import 'zen_owner_check.dart';
 import 'zen_pin_hash.dart';
 import 'zen_pin_locked_out_error.dart';
 
+/// Erases this device's copy of the app's data and its key; see [ZenPinLock.load].
+typedef ZenDeviceErase = Future<ZenResult<void>> Function();
+
+/// How a forgotten PIN can be reset on a device.
+enum ZenPinRecovery {
+  /// The device's own passcode, Face ID, Touch ID or Windows Hello confirms the owner.
+  ownerCheck,
+
+  /// The device cannot confirm its owner, so the person erases this device's copy and re-syncs it.
+  eraseDeviceCopy,
+
+  /// No way: no PIN is set, or the device cannot check its owner and the app gave no eraser.
+  none,
+}
+
 /// An optional PIN that closes a Local application, whose data has no sign-in in front of it.
 ///
 /// Off until the person turns it on ([enable]). When on, the app starts locked, and `ZenLockGate`
 /// locks it again after it has been in the background a while. Wrong PINs are counted across
 /// restarts: from the [freeAttempts]th miss on, each one shuts attempts out for longer (30 seconds,
 /// doubling, at most an hour), so guessing a four-digit PIN by hand is not practical. A forgotten
-/// PIN is reset through the device's own owner check ([recover]), never by reinstalling around it.
+/// PIN is reset through the device's own owner check ([recover]) or, where the device has none,
+/// by erasing this device's copy ([recoverByErasing]); never by a bare reset.
 final class ZenPinLock extends ChangeNotifier {
   /// The fewest digits a PIN may have.
   static const int minDigits = 4;
@@ -32,6 +48,7 @@ final class ZenPinLock extends ChangeNotifier {
 
   final ZenLockStorage _storage;
   final ZenOwnerCheck _owner;
+  final ZenDeviceErase? _erase;
   final int Function() _now;
   final int _iterations;
 
@@ -43,6 +60,7 @@ final class ZenPinLock extends ChangeNotifier {
   ZenPinLock._(
     this._storage,
     this._owner,
+    this._erase,
     this._now,
     this._iterations,
     this._hash,
@@ -53,10 +71,15 @@ final class ZenPinLock extends ChangeNotifier {
   /// Reads the lock's state. Fails if the stored state cannot be read — and an unreadable PIN is
   /// not taken to mean "no PIN": that would open the app to anyone who could damage the item.
   ///
+  /// [eraseDeviceCopy] is what "Forgot PIN?" does on a device that cannot check its owner (Linux;
+  /// see [ZenOwnerCheck.isAvailable]): it deletes this device's copy of the app's data and its
+  /// key, which the other devices then re-sync. Without it such a device offers no recovery.
+  ///
   /// [now] and [iterations] exist for tests.
   static Future<ZenResult<ZenPinLock>> load({
     ZenLockStorage? storage,
     ZenOwnerCheck? owner,
+    ZenDeviceErase? eraseDeviceCopy,
     int Function()? now,
     @visibleForTesting int iterations = zenPinIterations,
   }) async {
@@ -75,6 +98,7 @@ final class ZenPinLock extends ChangeNotifier {
         ZenPinLock._(
           store,
           owner ?? ZenDeviceOwnerCheck(),
+          eraseDeviceCopy,
           now ?? () => DateTime.now().millisecondsSinceEpoch,
           iterations,
           hashText == null ? null : ZenPinHash.decode(hashText),
@@ -150,6 +174,37 @@ final class ZenPinLock extends ChangeNotifier {
     if (!isEnabled) return const ZenResult.ok(null);
     final confirmed = await _owner.confirm(reason);
     if (confirmed case ZenFailure(:final error)) return ZenResult.err(error);
+    return _store(() async {
+      await _recordFailures(0, 0);
+      await _setHash(null);
+    });
+  }
+
+  /// How a forgotten PIN can be reset on this device.
+  Future<ZenPinRecovery> recoveryOption() async {
+    if (!isEnabled) return ZenPinRecovery.none;
+    if (await _owner.isAvailable()) return ZenPinRecovery.ownerCheck;
+    return _erase != null ? ZenPinRecovery.eraseDeviceCopy : ZenPinRecovery.none;
+  }
+
+  /// For a forgotten PIN on a device that cannot check its owner: erases this device's copy of the
+  /// app's data through the `eraseDeviceCopy` given to [load], then removes the PIN. The PIN goes
+  /// only after the data is gone, so a failed erase leaves the app locked, never open with data.
+  Future<ZenResult<void>> recoverByErasing() async {
+    final erase = _erase;
+    if (!isEnabled) return const ZenResult.ok(null);
+    if (erase == null) {
+      return const ZenResult.err(ZenUnauthorizedError('This device has no way to reset the PIN.'));
+    }
+    final ZenResult<void> erased;
+    try {
+      erased = await erase();
+    } on Object catch (e, stack) {
+      return ZenResult.err(
+        ZenUnknownError('This device\'s copy was not erased: $e', stackTrace: stack),
+      );
+    }
+    if (erased case ZenFailure(:final error)) return ZenResult.err(error);
     return _store(() async {
       await _recordFailures(0, 0);
       await _setHash(null);

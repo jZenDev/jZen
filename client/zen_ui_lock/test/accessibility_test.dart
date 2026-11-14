@@ -36,6 +36,7 @@ void main() {
     final lock = await memoryLock(pin: '2468');
 
     await tester.pumpWidget(lockedApp(lock: lock));
+    await tester.pumpAndSettle();
 
     final field = tester.getSemantics(find.byType(EditableText));
     expect(RegExp('PIN').allMatches(field.label), hasLength(1), reason: field.label);

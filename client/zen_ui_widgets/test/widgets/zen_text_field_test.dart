@@ -5,10 +5,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_ui_widgets/src/text/zen_cupertino_text_form_field.dart';
 import 'package:zen_ui_widgets/src/text/zen_text_field.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenIconButton;
 
 import '../support/a11y.dart';
 
-typedef Build = Widget Function(BuildContext context, ZenTextField field);
+typedef Build =
+    Widget Function(
+      BuildContext context,
+      ZenTextField field, {
+      bool revealed,
+      VoidCallback? onToggleReveal,
+    });
 
 final Map<String, Build> builds = <String, Build>{
   'material': buildMaterialTextField,
@@ -132,6 +139,100 @@ void main() {
         await tester.enterText(find.byType(EditableText), 'a@b.c');
         await tester.testTextInput.receiveAction(TextInputAction.done);
         expect(submitted, <String>['a@b.c']);
+      });
+
+      group('revealable', () {
+        /// A harness that owns the revealed state the way [ZenTextField] does.
+        Widget password(Build build, {bool enabled = true, String? errorText}) {
+          bool revealed = false;
+          return StatefulBuilder(
+            builder: (BuildContext context, StateSetter set) => build(
+              context,
+              ZenTextField(
+                label: 'Password',
+                obscureText: true,
+                revealable: true,
+                enabled: enabled,
+                errorText: errorText,
+              ),
+              revealed: revealed,
+              onToggleReveal: () => set(() => revealed = !revealed),
+            ),
+          );
+        }
+
+        bool obscured(WidgetTester tester) =>
+            tester.widget<EditableText>(find.byType(EditableText)).obscureText;
+
+        testWidgets('starts hidden; the button reveals and hides it, keeping the text', (
+          tester,
+        ) async {
+          final TextEditingController controller = TextEditingController();
+          addTearDown(controller.dispose);
+          await pumpApp(
+            tester,
+            Builder(
+              builder: (BuildContext context) {
+                bool revealed = false;
+                return StatefulBuilder(
+                  builder: (BuildContext context, StateSetter set) => entry.value(
+                    context,
+                    ZenTextField(
+                      label: 'Password',
+                      controller: controller,
+                      obscureText: true,
+                      revealable: true,
+                    ),
+                    revealed: revealed,
+                    onToggleReveal: () => set(() => revealed = !revealed),
+                  ),
+                );
+              },
+            ),
+          );
+          expect(obscured(tester), isTrue);
+
+          await tester.enterText(find.byType(EditableText), 's3cret');
+          await tester.tap(find.byType(ZenIconButton));
+          await tester.pump();
+          expect(obscured(tester), isFalse);
+          expect(controller.text, 's3cret');
+
+          await tester.tap(find.byType(ZenIconButton));
+          await tester.pump();
+          expect(obscured(tester), isTrue);
+        });
+
+        testWidgets('the button is its own named node, apart from the input', (tester) async {
+          final SemanticsHandle handle = tester.ensureSemantics();
+          await pumpApp(tester, password(entry.value, errorText: 'Too short'));
+
+          expect(find.bySemanticsLabel('Show password'), findsOneWidget);
+          final SemanticsNode input = tester.getSemantics(find.byType(EditableText));
+          expect(input.label, isNot(contains('Show password')));
+          expect(input.label, contains('Password'));
+
+          await tester.tap(find.byType(ZenIconButton));
+          await tester.pump();
+          expect(find.bySemanticsLabel('Hide password'), findsOneWidget);
+          expect(find.bySemanticsLabel('Show password'), findsNothing);
+          handle.dispose();
+        });
+
+        testWidgets('a disabled field cannot be revealed', (tester) async {
+          await pumpApp(tester, password(entry.value, enabled: false));
+          expect(tester.widget<ZenIconButton>(find.byType(ZenIconButton)).onPressed, isNull);
+        });
+
+        testWidgets('is Ukrainian under the Ukrainian locale', (tester) async {
+          await pumpApp(tester, password(entry.value), locale: const Locale('uk'));
+          expect(tester.widget<ZenIconButton>(find.byType(ZenIconButton)).label, 'Показати пароль');
+        });
+
+        testWidgets('a field without revealable has no button', (tester) async {
+          await pumpApp(tester, field(entry.value, obscureText: true));
+          expect(find.byType(ZenIconButton), findsNothing);
+        });
       });
 
       testWidgets('a hint shows while empty, and obscureText hides the text', (tester) async {

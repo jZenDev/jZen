@@ -10,6 +10,7 @@
 /// MaterialApp(
 ///   localizationsDelegates: const [
 ///     identityLocaleDelegate,          // not IdentityLocalizations.delegate - see below
+///     zenWidgetsLocaleDelegate,        // from zen_ui_widgets: the password show/hide button
 ///     GlobalMaterialLocalizations.delegate,
 ///     GlobalCupertinoLocalizations.delegate,
 ///     GlobalWidgetsLocalizations.delegate,

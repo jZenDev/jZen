@@ -5,7 +5,7 @@ import 'package:zen_ui_identity/src/state/identity_repository.dart';
 import 'package:zen_ui_identity/src/widgets/identity_button.dart';
 import 'package:zen_ui_identity/src/widgets/identity_text_field.dart';
 import 'package:flutter/material.dart';
-import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenButton;
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenButton, ZenIconButton;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -268,12 +268,14 @@ void main() {
 
     String? focused() {
       final context = FocusManager.instance.primaryFocus?.context;
-      return context?.findAncestorWidgetOfExactType<IdentityTextField>()?.label ??
+      // The reveal button is inside the password field's widget, so it is asked first.
+      return context?.findAncestorWidgetOfExactType<ZenIconButton>()?.label ??
+          context?.findAncestorWidgetOfExactType<IdentityTextField>()?.label ??
           context?.findAncestorWidgetOfExactType<IdentityButton>()?.text;
     }
 
     final visited = <String?>[];
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 6; i++) {
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.pump();
       visited.add(focused());
@@ -281,13 +283,14 @@ void main() {
     expect(visited, [
       messages.emailLabel,
       messages.passwordLabel,
+      'Show password',
       messages.restorePasswordTitle,
       messages.loginButton,
       messages.registerTitle,
     ]);
 
     // Back to the email field, type, move on with the keyboard's own "next", submit with "done".
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 5; i++) {
       await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
       await tester.sendKeyEvent(LogicalKeyboardKey.tab);
       await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);

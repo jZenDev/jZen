@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show zenWidgetsLocaleDelegate;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_ui_identity/zen_ui_identity.dart';
@@ -30,6 +31,7 @@ Widget localizedApp({
     // that supports the locale, so this is the seam ADR-044 documents.
     ...extraDelegates,
     identityLocaleDelegate,
+    zenWidgetsLocaleDelegate,
     GlobalMaterialLocalizations.delegate,
     GlobalCupertinoLocalizations.delegate,
     GlobalWidgetsLocalizations.delegate,

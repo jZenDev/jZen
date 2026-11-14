@@ -6,5 +6,7 @@
   "selectDate": "Оберіть дату",
   "clearDate": "Очистити дату",
   "clearSearch": "Очистити пошук",
+  "showPassword": "Показати пароль",
+  "hidePassword": "Сховати пароль",
   "done": "Готово"
 }

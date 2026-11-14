@@ -7,6 +7,7 @@ import 'package:zen_demo_client/src/l10n/generated/demo_localizations.dart';
 import 'package:zen_demo_client/src/screens/auth_flow.dart';
 import 'package:zen_demo_client/src/screens/home_shell.dart';
 import 'package:zen_identity/zen_identity.dart';
+import 'package:zen_ui_widgets/zen_ui_widgets.dart' show zenWidgetsLocaleDelegate;
 import 'package:zen_ui_identity/zen_ui_identity.dart';
 import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 
@@ -87,6 +88,7 @@ void main() {
             ...DemoLocalizations.localizationsDelegates,
             identityLocaleDelegate,
             navigationLocaleDelegate,
+            zenWidgetsLocaleDelegate,
           ],
           supportedLocales: DemoLocalizations.supportedLocales,
           home: const DemoRoot(),

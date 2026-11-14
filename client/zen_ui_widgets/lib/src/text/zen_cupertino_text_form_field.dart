@@ -10,7 +10,8 @@ import '../focus_ring.dart';
 /// `CupertinoTextFormFieldRow` is not used because it is a list-row idiom: it has no forced
 /// error, no trailing widget, and its error text is a separate node a screen reader never lands
 /// on. This lays out a label above a bordered field with the error beneath, and merges all three
-/// into one accessible node so the label and the error are read with the field.
+/// into one accessible node so the label and the error are read with the field. An optional
+/// trailing control sits beside the field, outside that node.
 class ZenCupertinoTextFormField extends FormField<String> {
   /// Creates a field labelled [label].
   ZenCupertinoTextFormField({
@@ -28,6 +29,7 @@ class ZenCupertinoTextFormField extends FormField<String> {
     this.minLines,
     this.maxLength,
     this.onSubmitted,
+    this.trailing,
     super.validator,
     super.autovalidateMode,
     super.forceErrorText,
@@ -43,23 +45,12 @@ class ZenCupertinoTextFormField extends FormField<String> {
            final bool invalid = error != null;
            final Color border = invalid ? scheme.error : scheme.outline;
 
-           return MergeSemantics(
+           final Widget input = MergeSemantics(
              child: Semantics(
                label: label,
                child: Column(
                  crossAxisAlignment: CrossAxisAlignment.start,
                  children: <Widget>[
-                   // Named by the merged node's label; read twice if left in the tree.
-                   ExcludeSemantics(
-                     child: Text(
-                       label,
-                       style: theme.textTheme.bodyMedium?.copyWith(
-                         fontWeight: FontWeight.w600,
-                         color: scheme.onSurface,
-                       ),
-                     ),
-                   ),
-                   const SizedBox(height: 6),
                    FocusRing.wrapping(
                      child: CupertinoTextField(
                        controller: state._effectiveController,
@@ -122,6 +113,32 @@ class ZenCupertinoTextFormField extends FormField<String> {
                ),
              ),
            );
+
+           // The label is drawn here, outside the merged node, and said by that node's own
+           // [label]; the trailing control then sits beside the input as a node of its own.
+           return Column(
+             crossAxisAlignment: CrossAxisAlignment.start,
+             children: <Widget>[
+               // Named by the merged node's label; read twice if left in the tree.
+               ExcludeSemantics(
+                 child: Text(
+                   label,
+                   style: theme.textTheme.bodyMedium?.copyWith(
+                     fontWeight: FontWeight.w600,
+                     color: scheme.onSurface,
+                   ),
+                 ),
+               ),
+               const SizedBox(height: 6),
+               Row(
+                 crossAxisAlignment: CrossAxisAlignment.start,
+                 children: <Widget>[
+                   Expanded(child: input),
+                   ?trailing,
+                 ],
+               ),
+             ],
+           );
          },
        );
 
@@ -166,6 +183,10 @@ class ZenCupertinoTextFormField extends FormField<String> {
 
   /// Called with the text when the keyboard's action key is pressed.
   final ValueChanged<String>? onSubmitted;
+
+  /// A control beside the input, outside its merged accessible node so it is announced and
+  /// reached on its own.
+  final Widget? trailing;
 
   @override
   FormFieldState<String> createState() => _State();

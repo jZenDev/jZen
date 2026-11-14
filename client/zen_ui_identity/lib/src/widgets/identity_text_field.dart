@@ -46,8 +46,10 @@ class IdentityTextField extends StatefulWidget {
   State<IdentityTextField> createState() => _IdentityTextFieldState();
 }
 
-// Centres the 48-pixel button on the 54-pixel input box beside it.
+// Centres the 48-pixel button on the 54-pixel input box it sits over, and the room the box keeps
+// at its right edge so typed text never runs under the button.
 const double _toggleTop = 3;
+const double _toggleInset = zenIconButtonSize;
 
 class _IdentityTextFieldState extends State<IdentityTextField> {
   bool _revealed = false;
@@ -56,12 +58,15 @@ class _IdentityTextFieldState extends State<IdentityTextField> {
   Widget _withToggle(BuildContext context, Widget field, double top) {
     if (!widget.obscureText) return field;
     final messages = ZenWidgetsLocalizations.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    // Laid over the field's right edge rather than beside it, so the box keeps the width of the
+    // other fields. The button is outside the field's merged node; the field makes room for it
+    // with [_toggleInset].
+    return Stack(
       children: [
-        Expanded(child: field),
-        Padding(
-          padding: EdgeInsets.only(top: top),
+        field,
+        Positioned(
+          top: top,
+          right: 0,
           child: ZenIconButton(
             icon: _revealed ? Icons.visibility_off : Icons.visibility,
             label: _revealed ? messages.hidePassword : messages.showPassword,
@@ -136,9 +141,11 @@ class _IdentityTextFieldState extends State<IdentityTextField> {
                   errorText: widget.errorText,
                   filled: true,
                   fillColor: theme.surfaceColor,
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: theme.spacing,
-                    vertical: theme.spacing,
+                  contentPadding: EdgeInsetsDirectional.only(
+                    start: theme.spacing,
+                    end: theme.spacing + (widget.obscureText ? _toggleInset : 0),
+                    top: theme.spacing,
+                    bottom: theme.spacing,
                   ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),

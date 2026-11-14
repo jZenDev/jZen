@@ -245,7 +245,6 @@ void main() {
       tester,
     ) async {
       debugDefaultTargetPlatformOverride = platform;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
       final lock = await memoryLock(pin: '2468');
       await tester.pumpWidget(lockedApp(lock: lock, relockAfter: Duration.zero));
       await enterPin(tester, '2468');
@@ -256,6 +255,8 @@ void main() {
       expect(find.byType(ColoredBox), findsWidgets, reason: 'the cover is drawn');
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
+      // Flutter checks this is unset before tearDown runs, so it is reset here.
+      debugDefaultTargetPlatformOverride = null;
 
       expect(lock.isLocked, isTrue);
     });
@@ -264,7 +265,6 @@ void main() {
   for (final platform in [TargetPlatform.windows, TargetPlatform.linux, TargetPlatform.macOS]) {
     testWidgets('on ${platform.name}, a short unfocus does not lock the app', (tester) async {
       debugDefaultTargetPlatformOverride = platform;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
       final lock = await memoryLock(pin: '2468');
       await tester.pumpWidget(lockedApp(lock: lock));
       await enterPin(tester, '2468');
@@ -273,6 +273,8 @@ void main() {
       await tester.pump();
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
+      // Flutter checks this is unset before tearDown runs, so it is reset here.
+      debugDefaultTargetPlatformOverride = null;
 
       expect(lock.isLocked, isFalse);
     });
@@ -283,7 +285,6 @@ void main() {
       tester,
     ) async {
       debugDefaultTargetPlatformOverride = platform;
-      addTearDown(() => debugDefaultTargetPlatformOverride = null);
       final lock = await memoryLock(pin: '2468');
       await tester.pumpWidget(lockedApp(lock: lock, relockAfter: Duration.zero));
       await enterPin(tester, '2468');
@@ -292,6 +293,8 @@ void main() {
       await tester.pump();
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
+      // Flutter checks this is unset before tearDown runs, so it is reset here.
+      debugDefaultTargetPlatformOverride = null;
 
       expect(lock.isLocked, isFalse);
     });

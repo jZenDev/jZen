@@ -15,6 +15,79 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-075 — A new device joins by a code that carries the sync key: 77 characters, a QR code beside them
+
+**Date:** 2026-11-14. **Status:** accepted; camera scanning **not yet verified on a device** (see
+"Verification"). **Refines:** ADR-073's "the sync key moved by pairing a device with a code".
+**Closes:** spike 0.2 of `docs/plans/JZEN-LOCAL-PLAN.md`. **Issue:** #210.
+
+### Decision
+
+- **The code carries the key itself; it does not wrap it.** Two devices with no server, no network
+  of their own and a person between them have exactly one channel: a screen and a pair of eyes or a
+  camera. A short code that only *unlocked* a blob stored elsewhere (the shared folder, CloudKit)
+  would hand that blob's holder an offline guessing game against a few dozen bits; a code long
+  enough to resist guessing is as long as the key. So the code is the key, plus its framing.
+- **Format** (`ZenPairing` in `zen_store`): 41 bytes — `version` (1) · `expires` (4, minutes
+  since the Unix epoch) · `key` (32) · `crc32` over those 37 (4) — written in **Crockford base32**
+  (`0-9 A-Z` without `I L O U`, 5 bits a character): 66 characters in 11 groups of six, **each
+  group followed by a check character** (Luhn mod 32), joined by dashes: `XXXXXXX-XXXXXXX-…`,
+  **77 characters**, about a minute to type. Input ignores case, spaces and dashes and reads
+  `O`/`I`/`L` as `0`/`1`/`1`. The QR code carries the same text behind `zenpair1:`, so a scanner
+  that reads some other QR code is told so.
+- **Typing is checked in three layers**: the per-group check character catches any single wrong
+  character and names the group (the person re-reads seven characters, not seventy-seven) and,
+  in the tests, every adjacent swap in the sample code; the CRC catches groups typed out of order;
+  the length and alphabet checks catch the rest. A failure never echoes the code.
+- **Expiry is five minutes** (`ZenPairing.lifetime`), refused by the joining device with one minute
+  of clock tolerance. The showing device counts down, withdraws the code at expiry and when the app
+  leaves the foreground, and shows nothing until the person presses "Show Code".
+- **Threat model — a screen photographed.** A photograph of the code taken while it is on screen
+  *is* the key, whatever the expiry: expiry is honoured by an honest joining device, so it refuses
+  a stale screenshot, but it does not bind an attacker who reads the bytes. We accept this because
+  the alternative (a second secret shown elsewhere) needs a second channel that does not exist, and
+  we reduce the window instead: the code is shown only on request, for five minutes, never in a log,
+  a URL or the clipboard (it is a plain, non-selectable `Text`, and the typed field is hidden by
+  default, which also keeps a keyboard from learning it), and it is hidden when the app is
+  backgrounded, where task switchers snapshot. Whoever can see the screen long enough to copy 77
+  characters could equally read the data on it; pairing is done with the screen to oneself.
+  A device that is lost or photographed after pairing is a *rekey* question, not a pairing one, and
+  is out of scope here.
+- **QR where a camera exists, a typed code always.** `ZenAddDeviceScreen` draws the QR beside the
+  groups on every platform (a phone can scan a desktop); `ZenJoinScreen` takes a
+  `ZenQrScannerBuilder` and offers "Scan with Camera" only when the application supplies one. The
+  typed field is always there. **Scanner plugin: `mobile_scanner`** (ML Kit on Android, Vision on
+  iOS and macOS) — supplied by the application, not by `zen_ui_store`, because its camera permission
+  strings belong in the application's own manifest and `Info.plist`, and a Windows or Linux build
+  must not link a camera plugin it cannot use. QR drawing uses `qr_flutter` (pure Dart, every platform).
+- **The screens never touch storage.** `ZenJoinScreen` hands the decoded key to the application's
+  `onKey`, which keeps it in the store key's secure storage and opens the store; a failure there is
+  shown on the screen, and the screen keeps nothing.
+
+### What this supersedes, and why
+
+- **"the sync key moved by pairing a device with a code"** (ROADMAP item 9, ADR-073) → **refined.**
+  *Why:* the format, its length and what it does and does not defend against were open (plan 0.2).
+
+### Consequence
+
+- `zen_store` exports `ZenPairing`, `ZenPairingOffer`, `ZenPairingError` and `ZenPairingProblem`;
+  `zen_ui_store` exports `ZenAddDeviceScreen`, `ZenJoinScreen`, `ZenQrScannerBuilder` and
+  `ZenPairingCodeView`, in English and Ukrainian, with a widget and accessibility suite.
+- Changing the layout means a new `version` byte; a device reads only the versions it knows and says
+  "newer app" for the rest.
+
+### Verification
+
+- Verified: the round trip, wrong length and alphabet, every single-character typo (named group),
+  adjacent swaps, scrambled groups, expiry and clock tolerance (`zen_store` suite); the screens'
+  flows, lifecycle hiding, no clipboard write, contrast, target size and 200% text.
+- **Not verified:** scanning with a real camera on iOS, Android or macOS (the scanner is a seam; no
+  `mobile_scanner` build exists yet), a QR code read from a real screen at various brightnesses,
+  and the platform keyboards' behaviour with the hidden field on Windows and Linux.
+
+---
+
 ## ADR-074 — The cleanup deletes registry versions itself; no Artifact Registry cleanup policy
 
 **Date:** 2026-11-13. **Status:** accepted, **not yet verified in a real environment** (see

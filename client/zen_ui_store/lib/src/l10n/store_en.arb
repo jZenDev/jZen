@@ -101,5 +101,112 @@
   "syncOther": "Sync isn't working right now. Your data is safe on this device.",
   "@syncOther": {
     "description": "Sync status: any other failure."
+  },
+  "addDeviceTitle": "Add a Device",
+  "@addDeviceTitle": {
+    "description": "Title of the screen that shows the code a new device joins with."
+  },
+  "addDeviceIntro": "On the new device, choose Join, then scan this code or type it. The code is valid for 5 minutes. Anyone who sees it can read your data, so keep the screen to yourself.",
+  "@addDeviceIntro": {
+    "description": "Explanation above the pairing code; the 5 minutes must match ZenPairing.lifetime."
+  },
+  "showCodeButton": "Show Code",
+  "@showCodeButton": {
+    "description": "Button that reveals the pairing code."
+  },
+  "cancelButton": "Cancel",
+  "@cancelButton": {
+    "description": "Button that closes the pairing screens without pairing."
+  },
+  "qrCodeLabel": "QR code with the pairing code, for the new device to scan",
+  "@qrCodeLabel": {
+    "description": "Accessible name of the QR image."
+  },
+  "pairingCodeLabel": "Pairing code",
+  "@pairingCodeLabel": {
+    "description": "Label of the typed pairing code, shown and entered."
+  },
+  "codeValidFor": "Valid for {time}",
+  "@codeValidFor": {
+    "description": "Countdown under the code.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "codeExpired": "This code has expired. It is no longer shown.",
+  "@codeExpired": {
+    "description": "Shown in place of an expired code."
+  },
+  "codeHidden": "The code was hidden because the app left the screen.",
+  "@codeHidden": {
+    "description": "Shown in place of a code hidden when the app went to the background."
+  },
+  "showNewCodeButton": "Show a New Code",
+  "@showNewCodeButton": {
+    "description": "Button that creates a fresh code after one expired or was hidden."
+  },
+  "joinTitle": "Join",
+  "@joinTitle": {
+    "description": "Title of the screen where a new device enters the pairing code."
+  },
+  "joinIntro": "On a device that already has your data, choose Add a Device. Then scan the code it shows, or type it here.",
+  "@joinIntro": {
+    "description": "Explanation at the top of the join screen."
+  },
+  "joinCodeHint": "Seven characters, then a dash, eleven times",
+  "@joinCodeHint": {
+    "description": "Hint inside the join field describing the code layout."
+  },
+  "joinButton": "Join",
+  "@joinButton": {
+    "description": "Button that checks the typed code and joins."
+  },
+  "scanButton": "Scan with Camera",
+  "@scanButton": {
+    "description": "Button that opens the camera to scan the QR code."
+  },
+  "typeInsteadButton": "Type the Code Instead",
+  "@typeInsteadButton": {
+    "description": "Button that returns from the camera to the typed field."
+  },
+  "joinWrongLength": "That is not the whole code. It has 11 groups of 7 characters.",
+  "@joinWrongLength": {
+    "description": "Join error: wrong length."
+  },
+  "joinBadCharacter": "The code has only digits and letters. Check what you typed.",
+  "@joinBadCharacter": {
+    "description": "Join error: a character outside the alphabet."
+  },
+  "joinMistyped": "Group {group} has a mistake. Compare it with the other device.",
+  "@joinMistyped": {
+    "description": "Join error: a check character failed; names the group.",
+    "placeholders": {
+      "group": {
+        "type": "int"
+      }
+    }
+  },
+  "joinScrambled": "The groups are in the wrong order. Type them as shown.",
+  "@joinScrambled": {
+    "description": "Join error: all groups pass but the whole fails."
+  },
+  "joinUnsupported": "This code comes from a newer version of the app. Update this device and try again.",
+  "@joinUnsupported": {
+    "description": "Join error: unsupported code version."
+  },
+  "joinExpired": "This code has expired. Show a new one on the other device.",
+  "@joinExpired": {
+    "description": "Join error: expired code."
+  },
+  "joinFailed": "Joining did not work: {reason}",
+  "@joinFailed": {
+    "description": "Join error: the application could not store the key.",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
   }
 }

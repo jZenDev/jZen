@@ -85,7 +85,7 @@ void main() {
       await open(tester);
       await tester.tap(find.text('Show Code'));
       await tester.pump();
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
       await tester.pump();
       expect(find.byType(ZenPairingCodeView), findsNothing);
       expect(find.textContaining('hidden'), findsOneWidget);
@@ -114,6 +114,8 @@ void main() {
       expect(find.byType(SelectableText), findsNothing);
       expect(find.byType(SelectionArea), findsNothing);
       await tester.scrollUntilVisible(find.text('Cancel'), 200);
+      await tester.ensureVisible(find.text('Cancel'));
+      await tester.pump();
       await tester.tap(find.text('Cancel'));
       expect(closed, 1);
       expect(clipboardWrites, isEmpty);
@@ -157,7 +159,7 @@ void main() {
     }
 
     Future<void> typeAndJoin(WidgetTester tester, String text) async {
-      await tester.enterText(find.byType(TextFormField), text);
+      await tester.enterText(find.byType(EditableText), text);
       await tester.tap(find.widgetWithText(ZenButton, 'Join'));
       await tester.pumpAndSettle();
     }
@@ -328,6 +330,7 @@ void main() {
         ),
       );
       await tester.scrollUntilVisible(find.text('Show Code'), 200);
+      await tester.ensureVisible(find.text('Show Code'));
       await tester.tap(find.text('Show Code'));
       await tester.pump();
       expect(tester.takeException(), isNull);

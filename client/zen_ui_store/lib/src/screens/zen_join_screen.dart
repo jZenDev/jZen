@@ -94,6 +94,7 @@ class _ZenJoinScreenState extends State<ZenJoinScreen> {
           if (stored case ZenFailure(:final error)) {
             _error = _explain(messages, error);
           } else {
+            _scanning = false;
             _controller.clear();
           }
         });
@@ -131,7 +132,10 @@ class _ZenJoinScreenState extends State<ZenJoinScreen> {
           if (_scanning && _error != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+              child: Semantics(
+                liveRegion: true,
+                child: Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
+              ),
             ),
           const SizedBox(height: 16),
           if (!_scanning)

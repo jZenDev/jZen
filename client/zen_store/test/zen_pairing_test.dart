@@ -107,5 +107,6 @@ void main() {
 
   test('a key of the wrong size cannot be offered', () {
     expect(() => ZenPairing.offer([1, 2, 3], now: now), throwsArgumentError);
+    expect(() => ZenPairing.offer(List.filled(32, 256), now: now), throwsArgumentError);
   });
 }

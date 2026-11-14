@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:zen_core/zen_core.dart' show zenIsDesktop;
 import 'package:zen_store/zen_store.dart';
 import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 
@@ -61,7 +62,16 @@ class _ZenAddDeviceScreenState extends State<ZenAddDeviceScreen> with WidgetsBin
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed || _phase != _Phase.showing) return;
+    if (_phase != _Phase.showing) return;
+    // `inactive` is when a phone's task switcher snapshots the screen, so it hides the code
+    // there. On a desktop it only means another window was clicked, which mid-pairing (reading
+    // the code while typing it elsewhere) must not hide it; `hidden` and `paused` still do.
+    final leaving = switch (state) {
+      AppLifecycleState.resumed => false,
+      AppLifecycleState.inactive => !zenIsDesktop,
+      _ => true,
+    };
+    if (!leaving) return;
     // Leaving the screen is when a code is photographed or caught in a task switcher.
     _end(_Phase.hidden);
   }

@@ -111,6 +111,9 @@ abstract final class ZenPairing {
     if (key.length != _keyLength) {
       throw ArgumentError('a sync key is $_keyLength bytes, not ${key.length}');
     }
+    if (key.any((byte) => byte < 0 || byte > 255)) {
+      throw ArgumentError('a sync key is bytes, each 0 to 255');
+    }
     final expiresAt = now.toUtc().add(lifetime);
     // Rounded up to the minute so the code shown is never good for less than it says.
     final minutes = (expiresAt.millisecondsSinceEpoch + 59999) ~/ 60000;

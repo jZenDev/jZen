@@ -37,7 +37,7 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
   that reads some other QR code is told so.
 - **Typing is checked in three layers**: the per-group check character catches any single wrong
   character and names the group (the person re-reads seven characters, not seventy-seven) and,
-  in the tests, every adjacent swap in the sample code; the CRC catches groups typed out of order;
+  nearly every swap of two neighbours (Luhn mod 32 misses a few; every one in the tested sample code is caught); the CRC catches groups typed out of order;
   the length and alphabet checks catch the rest. A failure never echoes the code.
 - **Expiry is five minutes** (`ZenPairing.lifetime`), refused by the joining device with one minute
   of clock tolerance. The showing device counts down, withdraws the code at expiry and when the app

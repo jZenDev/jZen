@@ -4,6 +4,7 @@
 /// - [ZenCollection]: a typed view of one collection, answering with `ZenResult`
 /// - [ZenConflict]: edits that cannot both be kept, waiting for a person to choose
 /// - [ZenSyncTransport]: what carries records between devices (`zen_store_cloudkit` in release)
+/// - [ZenPairing]: the code that hands the sync key to a new device, typed or as a QR code
 /// - [ZenFolderCloud]: a CloudKit stand-in in a folder, for development without an Apple account
 ///
 /// See docs/architecture/DECISIONS.md ADR-065.
@@ -12,6 +13,7 @@ library;
 export 'src/zen_collection.dart' show ZenCollection;
 export 'src/zen_conflict.dart';
 export 'src/zen_folder_cloud.dart';
+export 'src/zen_pairing.dart';
 export 'src/zen_storage_error.dart';
 export 'src/zen_store.dart';
 export 'src/zen_sync_report.dart';

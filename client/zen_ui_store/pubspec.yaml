@@ -24,6 +24,7 @@ dependencies:
   # A side's fields are read by proto reflection, so a conflict shows sensibly before an
   # application has written a single formatter.
   protobuf: ^6.0.0
+  qr_flutter: ^4.1.0
   zen_core:
     path: ../zen_core
   zen_store:

@@ -31,6 +31,7 @@ workspace:
   - zen_identity
   - zen_secure_store
   - zen_store
+  - zen_store_key
   - zen_store_cloudkit
   - zen_ui_navigation
   - zen_ui_navigation/example

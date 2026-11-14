@@ -2,7 +2,8 @@ name: zen_store_cloudkit
 description: >-
   CloudKit sync for a jZen Local application on iOS 17 and macOS 14: CKSyncEngine against the
   user's private database, each record end-to-end encrypted with CloudKit encryptedValues, plus
-  the Keychain key and Data Protection the store's local files need. See ADR-065.
+  and the Data Protection the store's local files need. The store's key is zen_store_key's.
+  See ADR-065, ADR-075.
 publish_to: 'none'
 # Lockstep with the product version, see docs/architecture/STANDARDS.md "Versioning".
 version: 0.1.0
@@ -20,9 +21,6 @@ dependencies:
   # load -- the reason this is not part of zen_store, whose suite runs under `dart test`.
   flutter:
     sdk: flutter
-  # The store's key, in the Keychain. 10.x is a floor for the reason zen_secure_store gives
-  # (ADR-024).
-  flutter_secure_storage: ^10.3.1
   zen_core:
     path: ../zen_core
   zen_store:

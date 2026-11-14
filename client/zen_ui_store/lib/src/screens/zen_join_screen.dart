@@ -10,7 +10,7 @@ import '../l10n/generated/store_localizations.dart';
 
 /// Builds a camera view that calls `onCode` with the text of each QR code it reads.
 ///
-/// An application supplies one where the device has a camera (the `mobile_scanner` plugin, ADR-075),
+/// An application supplies one where the device has a camera (the `mobile_scanner` plugin, ADR-077),
 /// because the plugin's permission strings and platform setup belong to the application's own
 /// manifest and `Info.plist`, and a Windows or Linux build must not carry a camera plugin it
 /// cannot use. The builder renders its own "camera not allowed" message.

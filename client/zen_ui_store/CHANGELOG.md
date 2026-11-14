@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- `ZenAddDeviceScreen`, `ZenJoinScreen`, `ZenQrScannerBuilder` and `ZenPairingCodeView`: pairing a new device with a code (ADR-075).
+- `ZenAddDeviceScreen`, `ZenJoinScreen`, `ZenQrScannerBuilder` and `ZenPairingCodeView`: pairing a new device with a code (ADR-077).
 
 ## 0.1.0
 

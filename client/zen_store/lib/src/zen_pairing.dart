@@ -58,7 +58,7 @@ final class ZenPairingOffer {
   const ZenPairingOffer({required this.text, required this.qrData, required this.expiresAt});
 }
 
-/// The pairing format of ADR-075: how a device that holds the sync key hands it to a new one
+/// The pairing format of ADR-077: how a device that holds the sync key hands it to a new one
 /// with nothing between them but a screen and a person.
 ///
 /// The code **carries the key itself**. Two devices that share no server and no network have no

@@ -123,7 +123,7 @@ now read as `zen`.
 ## Client structure (Dart) and the compile-time config rule
 
 Two pub workspaces resolve independently: `client/` (framework libs: `zen_core`, `zen_transport`,
-`zen_identity`, `zen_ui_*`, `zen_store`, `zen_store_cloudkit`) and `apps/` (app clients,
+`zen_identity`, `zen_ui_*`, `zen_store`, `zen_store_key`, `zen_store_cloudkit`) and `apps/` (app clients,
 path-depending into `client/`). Both share one product version (lockstep).
 
 **A Local application (jZen Local) is the client alone** (ADR-065, ADR-073): no server, no

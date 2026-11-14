@@ -3,21 +3,20 @@
 [![jZen](https://img.shields.io/badge/jZen-monorepo-blue.svg)](https://github.com/jZenDev/jZen)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-**CloudKit sync, the store's key and Data Protection for a jZen Local application, on iOS 17 and
-macOS 14.**
+**CloudKit sync and Data Protection for a jZen Local application, on iOS 17 and macOS 14.**
 
-Three things a Local app's `zen_store` needs from Apple's APIs, and nothing else:
+Two things a Local app's `zen_store` needs from Apple's APIs, and nothing else:
 
 - **`ZenCloudKitSync`** — the `ZenSyncTransport` a release build uses. `CKSyncEngine` against the
   user's private database, one CloudKit record per store record in a custom zone, the record's
   whole state in one `encryptedValues` field: encrypted on the device with keys in the user's
   iCloud Keychain, so Apple holds ciphertext whether or not Advanced Data Protection is on.
-- **`ZenKeychainStoreKey`** — the 256-bit key `zen_store` encrypts its files with, in the Keychain,
-  this device only, readable only while the device is unlocked. Made once; a Keychain that cannot
-  be read fails the load rather than producing a new key that would orphan the existing files.
-- **`ZenKeychainStoreKey.protectDirectory`** — iOS Data Protection `complete` on the store's
+- **`ZenDataProtection.protectDirectory`** — iOS Data Protection `complete` on the store's
   directory, so its files are unreadable while the phone is locked. macOS has no such class; the
   store's own encryption covers it there.
+
+The store's key is not here: every platform needs one, so it is `zen_store_key`'s
+`ZenDeviceStoreKey` (ADR-075).
 
 See `docs/architecture/DECISIONS.md` ADR-065.
 
@@ -46,8 +45,8 @@ app created with a current Flutter is already on SwiftPM; an older one turns it 
 
 ```dart
 final directory = await getApplicationSupportDirectory();
-await ZenKeychainStoreKey.protectDirectory(directory);   // before the store writes anything
-final key = (await ZenKeychainStoreKey.load()).dataOrNull!;
+await ZenDataProtection.protectDirectory(directory);   // before the store writes anything
+final key = (await ZenDeviceStoreKey.load(dataDirectory: directory)).dataOrNull!;
 final store = (await ZenStore.open(directory, deviceName: "Alex's iPhone", key: key)).dataOrNull!;
 
 // Chosen at compile time (STANDARDS "Client config is compile-time"), never at runtime:
@@ -91,5 +90,5 @@ cd client/zen_store_cloudkit && flutter test
 
 The suite drives the Dart half against every message the Swift half sends — fetched, saved,
 refused, status, a reset of the cloud copy, a record from a newer version — with a real `ZenStore`
-underneath, and pins the Keychain key. Syncing through real CloudKit needs a signed build on two
+underneath, and pins `protectDirectory`. Syncing through real CloudKit needs a signed build on two
 devices and is not covered by any suite here.

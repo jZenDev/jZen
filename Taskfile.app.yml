@@ -831,8 +831,16 @@ tasks:
       - |
         set -eu
         cd "{{.ROOT_DIR}}/{{.APP_CLIENT_DIR}}"
-        defines="--dart-define=ZEN_ENV={{.ZEN_ENV}} --dart-define=ZEN_API_URL={{.API}}"
-        if [ -n '{{.SCHEME}}' ]; then
+        # A Local application (no server pom at APP_SERVER_MODULE, ADR-073) has no backend to name
+        # and no auth redirect: neither define is passed, and it builds the same five native
+        # targets below, each on the host that can build it. There is no web target to skip.
+        defines="--dart-define=ZEN_ENV={{.ZEN_ENV}}"
+        has_server=no
+        [ -f "{{.ROOT_DIR}}/{{.APP_SERVER_MODULE}}/pom.xml" ] && has_server=yes
+        if [ "$has_server" = yes ]; then
+          defines="$defines --dart-define=ZEN_API_URL={{.API}}"
+        fi
+        if [ -n '{{.SCHEME}}' ] && [ "$has_server" = yes ]; then
           defines="$defines --dart-define=ZEN_AUTH_REDIRECT_URI={{.SCHEME}}"
         fi
         for pair in {{.DART_DEFINES}}; do
@@ -940,8 +948,14 @@ tasks:
       - |
         set -eu
         cd "{{.ROOT_DIR}}/{{.APP_CLIENT_DIR}}"
-        defines="--dart-define=ZEN_ENV={{.ZEN_ENV}} --dart-define=ZEN_API_URL={{.API}}"
-        if [ -n '{{.SCHEME}}' ]; then
+        # No server pom (a Local application, ADR-073): no API URL and no auth redirect, as in build:runners.
+        defines="--dart-define=ZEN_ENV={{.ZEN_ENV}}"
+        has_server=no
+        [ -f "{{.ROOT_DIR}}/{{.APP_SERVER_MODULE}}/pom.xml" ] && has_server=yes
+        if [ "$has_server" = yes ]; then
+          defines="$defines --dart-define=ZEN_API_URL={{.API}}"
+        fi
+        if [ -n '{{.SCHEME}}' ] && [ "$has_server" = yes ]; then
           defines="$defines --dart-define=ZEN_AUTH_REDIRECT_URI={{.SCHEME}}"
         fi
         for pair in {{.DART_DEFINES}}; do
@@ -1091,6 +1105,51 @@ tasks:
         (cd "{{.JZEN_DIR}}/server" && ./mvnw -B -q install -DskipTests)
         "{{.JZEN_DIR}}/server/mvnw" -f "$pom" quarkus:dev -Dquarkus.http.port="{{.APP_PORT}}"
 
+  guard:web:
+    internal: true
+    silent: true
+    summary: |
+      Refuses a web target for a Local application (ADR-073). Called by `run:client` and
+      `build:web` with the resolved PLATFORM and DEVICE; a no-op for an application that has a server.
+
+      Whether there is a server is the same fact of the tree `run:client` and `deps:server` read: a
+      pom at APP_SERVER_MODULE. A Local application keeps its data in `zen_store` on the device, and
+      a browser has no such place: no Keychain/Keystore-held key, no file the person chose to sync
+      through, no CloudKit. So the web is not a target it can be made to run on, and the refusal is
+      loud rather than a build that boots and cannot store anything.
+    cmds:
+      - |
+        set -eu
+        if [ -f "{{.ROOT_DIR}}/{{.APP_SERVER_MODULE}}/pom.xml" ]; then
+          exit 0
+        fi
+        web=no
+        [ '{{.PLATFORM}}' = web ] && web=yes
+        case '{{.DEVICE}}' in chrome|edge|web-server) web=yes ;; esac
+        if [ "$web" = yes ]; then
+          echo "{{.APP_NAME}} is a Local application (no server at {{.APP_SERVER_MODULE}}/pom.xml): it has no web target."
+          echo "ADR-073: a Local application runs on iOS, macOS, Android, Windows and Linux, never the web,"
+          echo "because its data lives in zen_store on the device and a browser has no place to keep it."
+          echo "Run it on a native device, e.g.  task run:client DEVICE=macos"
+          exit 1
+        fi
+
+  build:web:
+    desc: Refused for a Local application (ADR-073); the framework ships no generic web build
+    silent: true
+    summary: |
+      An application with a server builds its web bundle with its own task (the reference app's is
+      the root `build:web`: it stages the bundle where Quarkus serves it, which is the application's
+      business, not the framework's). What this file adds is the refusal: a Local application has no
+      web target (ADR-073), and this task says so by name instead of leaving "no such task" to be
+      read as "not wired up yet".
+    cmds:
+      - task: guard:web
+        vars: { PLATFORM: web, DEVICE: "" }
+      - |
+        echo "{{.APP_NAME}} has a server, and the framework has no generic web build: define build:web in the application's own Taskfile."
+        exit 1
+
   run:client:
     desc: Run the Flutter application, pointed at a local backend if it has one (DEVICE selects the target)
     silent: true
@@ -1142,6 +1201,8 @@ tasks:
             *)                      echo "" ;;
           esac
     cmds:
+      - task: guard:web
+        vars: { PLATFORM: '{{.PLATFORM}}', DEVICE: '{{.DEVICE}}' }
       - task: generate:l10n
       - |
         set -eu

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_core/zen_core.dart';
@@ -99,8 +100,9 @@ void main() {
   });
 
   testWidgets('"Forgot PIN?" removes the PIN once the device owner is confirmed', (tester) async {
-    final lock = await memoryLock(pin: '2468', owner: _PassingOwner());
+    final lock = await memoryLock(pin: '2468', owner: PassingOwner());
     await tester.pumpWidget(lockedApp(lock: lock));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('Forgot PIN?'));
     await tester.pumpAndSettle();
@@ -143,9 +145,155 @@ void main() {
     expect(find.text('Введіть PIN-код'), findsOneWidget);
     expect(find.text('Розблокувати'), findsOneWidget);
   });
-}
 
-final class _PassingOwner implements ZenOwnerCheck {
-  @override
-  Future<ZenResult<void>> confirm(String reason) async => const ZenResult.ok(null);
+  group('on a device that cannot check its owner (Linux)', () {
+    testWidgets('with no eraser there is no "Forgot PIN?" at all', (tester) async {
+      final lock = await memoryLock(pin: '2468', owner: NoOwnerCheck());
+      await tester.pumpWidget(lockedApp(lock: lock));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Forgot PIN?'), findsNothing);
+      expect((await lock.recoveryOption()).dataOrNull, ZenPinRecovery.none);
+    });
+
+    testWidgets('"Forgot PIN?" asks first, then erases the copy and removes the PIN', (
+      tester,
+    ) async {
+      var erased = 0;
+      final lock = await memoryLock(
+        pin: '2468',
+        owner: NoOwnerCheck(),
+        erase: () async {
+          erased++;
+          return const ZenResult.ok(null);
+        },
+      );
+      await tester.pumpWidget(lockedApp(lock: lock));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Forgot PIN?'));
+      await tester.pumpAndSettle();
+      expect(erased, 0, reason: 'nothing is erased before the person confirms');
+      expect(find.text("Erase this device's copy?"), findsOneWidget);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.text('Unlock'), findsOneWidget);
+      expect(lock.isEnabled, isTrue);
+
+      await tester.tap(find.text('Forgot PIN?'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Erase and Reset PIN'));
+      await tester.pumpAndSettle();
+
+      expect(erased, 1);
+      expect(lock.isEnabled, isFalse);
+      expect(find.text('secret balance'), findsOneWidget);
+    });
+
+    testWidgets('a failed erase keeps the app locked and says so', (tester) async {
+      final lock = await memoryLock(
+        pin: '2468',
+        owner: NoOwnerCheck(),
+        erase: () async => const ZenResult.err(ZenUnknownError('disk')),
+      );
+      await tester.pumpWidget(lockedApp(lock: lock));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Forgot PIN?'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Erase and Reset PIN'));
+      await tester.pumpAndSettle();
+
+      expect(lock.isEnabled, isTrue);
+      expect(lock.isLocked, isTrue);
+      expect(
+        find.text("Couldn't erase this device's copy. The PIN was not reset."),
+        findsOneWidget,
+      );
+    });
+  });
+
+  testWidgets('when the owner check cannot be probed it says so, offers a retry, never erase', (
+    tester,
+  ) async {
+    final owner = FailingProbeOwner();
+    final lock = await memoryLock(
+      pin: '2468',
+      owner: owner,
+      erase: () async => const ZenResult.ok(null),
+    );
+    await tester.pumpWidget(lockedApp(lock: lock));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining("Couldn't check whether"), findsOneWidget);
+    expect(find.text('Forgot PIN?'), findsNothing);
+    expect(find.text('Erase and Reset PIN'), findsNothing);
+
+    owner.fails = false;
+    await tester.tap(find.text('Try Again'));
+    await tester.pumpAndSettle();
+    expect(find.text('Forgot PIN?'), findsOneWidget);
+    expect(find.textContaining("Couldn't check whether"), findsNothing);
+  });
+
+  // The privacy cover and the lifecycle lock rest on `AppLifecycleListener`; what differs by
+  // platform is which states the engine sends. A desktop window that loses focus is only
+  // `inactive`; a phone's app switcher is `inactive` then `hidden`.
+  for (final platform in [TargetPlatform.windows, TargetPlatform.linux, TargetPlatform.macOS]) {
+    testWidgets('on ${platform.name}, a window left unfocused long enough locks the app', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final lock = await memoryLock(pin: '2468');
+      await tester.pumpWidget(lockedApp(lock: lock, relockAfter: Duration.zero));
+      await enterPin(tester, '2468');
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      expect(find.text('secret balance'), findsOneWidget);
+      expect(find.byType(ColoredBox), findsWidgets, reason: 'the cover is drawn');
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(lock.isLocked, isTrue);
+    });
+  }
+
+  for (final platform in [TargetPlatform.windows, TargetPlatform.linux, TargetPlatform.macOS]) {
+    testWidgets('on ${platform.name}, a short unfocus does not lock the app', (tester) async {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final lock = await memoryLock(pin: '2468');
+      await tester.pumpWidget(lockedApp(lock: lock));
+      await enterPin(tester, '2468');
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(lock.isLocked, isFalse);
+    });
+  }
+
+  for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
+    testWidgets('on ${platform.name}, a brief `inactive` (shade, dialog) does not lock', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = platform;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final lock = await memoryLock(pin: '2468');
+      await tester.pumpWidget(lockedApp(lock: lock, relockAfter: Duration.zero));
+      await enterPin(tester, '2468');
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(lock.isLocked, isFalse);
+    });
+  }
 }

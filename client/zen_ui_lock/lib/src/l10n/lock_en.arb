@@ -88,5 +88,33 @@
   "lockError": "The app lock couldn't be saved. Try again.",
   "@lockError": {
     "description": "Error when the PIN could not be read from or written to the device's keychain."
+  },
+  "eraseTitle": "Erase this device's copy?",
+  "@eraseTitle": {
+    "description": "Heading of the confirmation shown instead of a PIN reset on a device that cannot check its owner."
+  },
+  "eraseExplanation": "This device can't confirm it's you, so the PIN can't be reset directly. Erasing removes the app's data from this device and turns the PIN off. If your other devices are in sync, they send the data back; anything not yet synced is lost.",
+  "@eraseExplanation": {
+    "description": "Explains what erasing this device's copy does and what it risks."
+  },
+  "eraseButton": "Erase and Reset PIN",
+  "@eraseButton": {
+    "description": "Button that erases this device's copy of the data and removes the PIN."
+  },
+  "cancelButton": "Cancel",
+  "@cancelButton": {
+    "description": "Button that backs out of erasing this device's copy."
+  },
+  "eraseFailed": "Couldn't erase this device's copy. The PIN was not reset.",
+  "@eraseFailed": {
+    "description": "Error when erasing this device's copy fails."
+  },
+  "recoveryUnknown": "Couldn't check whether this device can reset a forgotten PIN.",
+  "@recoveryUnknown": {
+    "description": "Shown when asking the device whether it can confirm its owner failed."
+  },
+  "retryButton": "Try Again",
+  "@retryButton": {
+    "description": "Button that repeats the check for resetting a forgotten PIN."
   }
 }

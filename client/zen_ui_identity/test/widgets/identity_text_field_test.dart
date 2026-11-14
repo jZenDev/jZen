@@ -123,6 +123,29 @@ void main() {
       });
     });
 
+    testWidgets('a password box is as wide as any other, the button sits over its edge', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          localizationsDelegates: [zenWidgetsLocaleDelegate],
+          home: Scaffold(
+            body: Column(
+              children: [
+                IdentityTextField(label: 'Email'),
+                IdentityTextField(label: 'Password', obscureText: true),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      final boxes = find.byType(TextField);
+      expect(tester.getSize(boxes.at(0)).width, tester.getSize(boxes.at(1)).width);
+      final button = tester.getRect(toggle('Show password'));
+      expect(button.right, tester.getRect(boxes.at(1)).right);
+    });
+
     testWidgets('a field that is not a password has no reveal button', (tester) async {
       await tester.pumpWidget(
         const MaterialApp(

@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../button/zen_icon_button.dart' show zenIconButtonSize;
 import '../focus_ring.dart';
 
 /// The Cupertino half of `ZenTextField`: a labelled [CupertinoTextField] that is also a
@@ -70,7 +71,12 @@ class ZenCupertinoTextFormField extends FormField<String> {
                        style: TextStyle(color: scheme.onSurface),
                        placeholderStyle: TextStyle(color: scheme.onSurfaceVariant),
                        cursorColor: scheme.primary,
-                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                       padding: EdgeInsetsDirectional.fromSTEB(
+                         12,
+                         14,
+                         trailing == null ? 12 : 12 + zenIconButtonSize,
+                         14,
+                       ),
                        decoration: BoxDecoration(
                          color: scheme.surface,
                          border: Border.all(color: border, width: invalid ? 2 : 1),
@@ -130,11 +136,12 @@ class ZenCupertinoTextFormField extends FormField<String> {
                  ),
                ),
                const SizedBox(height: 6),
-               Row(
-                 crossAxisAlignment: CrossAxisAlignment.start,
+               // Over the input's right edge, so the box keeps a plain field's width; the field
+               // leaves room for it in its own padding.
+               Stack(
                  children: <Widget>[
-                   Expanded(child: input),
-                   ?trailing,
+                   input,
+                   if (trailing != null) PositionedDirectional(top: 0, end: 0, child: trailing),
                  ],
                ),
              ],

@@ -183,19 +183,20 @@ Widget buildMaterialTextField(
         // A tall box's label starts at the top with the text, not at its middle.
         alignLabelWithHint: field.maxLines != 1,
         border: const OutlineInputBorder(),
+        contentPadding: field.revealable
+            ? const EdgeInsetsDirectional.fromSTEB(16, 16, 16 + zenIconButtonSize, 16)
+            : null,
       ),
     ),
   );
   if (!field.revealable) return input;
-  // The 48-pixel button is centred on the 56-pixel input box, not on the error text beneath it.
-  return Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
+  // Laid over the input's right edge, outside its merged node, so the box keeps the width of a
+  // plain field; the input leaves room for it. Centred on the 56-pixel box, not on the error
+  // text beneath it.
+  return Stack(
     children: <Widget>[
-      Expanded(child: input),
-      Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: _revealButton(context, field, revealed, onToggleReveal),
-      ),
+      input,
+      Positioned(top: 4, right: 0, child: _revealButton(context, field, revealed, onToggleReveal)),
     ],
   );
 }

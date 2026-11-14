@@ -17,7 +17,7 @@ See `docs/architecture/DECISIONS.md` ADR-065.
 final store = (await ZenStore.open(
   directory,                       // the app's own, e.g. Application Support
   deviceName: "Alex's iPhone",     // what the other devices show in a conflict
-  key: key,                        // 32 bytes from the Keychain (ZenKeychainStoreKey)
+  key: key,                        // 32 bytes from the Keychain (ZenDeviceStoreKey)
 )).dataOrNull!;
 final accounts = store.collection('accounts', Account.fromBuffer);
 
@@ -47,9 +47,9 @@ app passes to `ZenStore.open`:
 
 - **Encrypted, always.** Every file but `device.id` is AES-256-GCM with the key passed to `open`
   and a fresh nonce per write, the file's own name bound in as associated data so files cannot be
-  swapped. The key lives in the Keychain, this device only, readable while the device is unlocked;
-  this package takes it as bytes and never stores it. On iOS the directory also gets Data
-  Protection `complete` (`ZenKeychainStoreKey.protectDirectory`).
+  swapped. The key lives in the platform's secret storage, this device only (`zen_store_key`'s
+  `ZenDeviceStoreKey`); this package takes it as bytes and never stores it. On iOS the directory
+  also gets Data Protection `complete` (`ZenDataProtection.protectDirectory`).
 - **Offline first, always.** Every read and write works with no network and no iCloud account.
 - **Everything is held in memory.** `open` decrypts and parses the files; every read after that is
   a map lookup, which is why reads are synchronous.

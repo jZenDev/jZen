@@ -15,6 +15,63 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-075 — The store key is `zen_store_key`'s `ZenDeviceStoreKey`, on every platform, and is never made over existing files
+
+**Date:** 2026-11-14. **Status:** accepted.
+
+### Decision
+
+- **A new package, `zen_store_key`**, holds `ZenDeviceStoreKey`: the 256-bit key `zen_store` encrypts
+  its files with, made once, kept by `flutter_secure_storage` ^10.3.1 (Keychain on iOS/macOS,
+  Keystore-wrapped on Android, Credential Manager on Windows, libsecret on Linux). Every Local
+  application depends on it. It replaces `ZenKeychainStoreKey` (the name said Keychain, and three of
+  the five platforms have none), which is removed from `zen_store_cloudkit`.
+- **`load` takes the store's data directory.** A missing key beside a directory that already holds
+  files is an error, never a new key. Every other failure is an error too: unreadable secret
+  storage, a stored value that is not 32 bytes, a key that cannot be written, no secret service.
+- **`protectDirectory` stays Apple-only**, now `ZenDataProtection.protectDirectory` in
+  `zen_store_cloudkit`, same channel and behaviour (false on macOS and where the plugin is absent).
+- **Android is configured `resetOnError: false`.** iOS and macOS keep `unlocked_this_device`.
+
+### What this supersedes, and why
+
+- **"`ZenKeychainStoreKey` ... in `zen_store_cloudkit`"** (ADR-065, ADR-073 table) → **moved and
+  renamed.** *Why:* ADR-073 gives Android, Windows and Linux the same Local mode, so the key cannot
+  live in an Apple-only plugin package.
+- **"The key lives in the Keychain, this device only, readable only while the device is unlocked"**
+  (ADR-065) → **refined per platform** (spike 0.4 below): the guarantee is the strongest each
+  platform offers, not one sentence for all.
+
+### Spike 0.4 — what the plugin sources show
+
+Read from `flutter_secure_storage` 10.3.4 and its Linux 3.0.3 and Windows 4.2.2 implementations;
+**nothing here was run on a device.**
+
+| | Where the value lives | "This device only" | When it fails |
+|---|---|---|---|
+| iOS, macOS | Keychain, `unlocked_this_device` | yes, and readable only while unlocked; not backed up | unchanged |
+| Android | AES-GCM value in the app's private storage, wrapped by a non-exportable Keystore key | the wrapping key never leaves the device, so a restored backup cannot unwrap it; **not** bound to the screen lock (readable after first unlock) | **default `resetOnError: true` answers a Keystore failure by deleting every stored value and returning success**, so the key vanishes and a new one would be made. Set to `false`; the failure then reaches `load` as an exception |
+| Windows | a `.secure` file under `%APPDATA%` (Roaming), AES-GCM, its 16-byte key in Credential Manager (`CRED_PERSIST_LOCAL_MACHINE`) | the file is useless on another machine; per user, not per unlock | **`read` returns `null` for any failure** (credential unreadable, file damaged, decrypt fails), indistinguishable from "never written"; and a credential of the wrong size is deleted and replaced, orphaning the file. Hence the directory check above |
+| Linux | one JSON entry in the default libsecret collection (GNOME Keyring, KWallet, or the portal in a sandbox) | as strong as the unlocked login keyring; per user | no secret service or a failed call throws a `Libsecret error`; a locked keyring throws `KeyringLocked`; both surface as exceptions and `load` fails. No file fallback exists in the plugin |
+
+Consequences for applications: Android must not let the app's preferences into Auto Backup
+(`android:allowBackup="false"` or an exclusion), or a restored install fails loudly with data it
+can no longer open; a Linux build needs `libsecret-1` and a keyring service, and an install
+without one cannot open the store at all, which is a message to show, not a key to make elsewhere.
+Recovery from a lost key is to erase this device's copy and sync again from the others.
+
+### Consequence
+
+- iOS and macOS behave as before on every success path. One failure path is new: a device whose
+  store files exist but whose Keychain item does not (a restore, a Keychain reset) now fails to open
+  instead of silently making a key that can never decrypt them.
+- Unverified: real Android, Windows and Linux devices (Keystore failure, Credential Manager
+  removal, no secret service); the table is from source reading. `zen_store_key`'s suite pins this
+  class's answer to each outcome a plugin can give, with a fake storage.
+- Applications adopt it with `ZenDeviceStoreKey.load(dataDirectory: directory)`.
+
+---
+
 ## ADR-074 — The cleanup deletes registry versions itself; no Artifact Registry cleanup policy
 
 **Date:** 2026-11-13. **Status:** accepted, **not yet verified in a real environment** (see

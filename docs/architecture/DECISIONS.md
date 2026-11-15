@@ -15,7 +15,7 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
-## ADR-075 — "Forgot PIN?" on a device with no owner check erases this device's copy
+## ADR-078 — "Forgot PIN?" on a device with no owner check erases this device's copy
 
 **Date:** 2026-11-14. **Status:** accepted. **Refines:** ADR-065 ("Forgot PIN" through the device's
 own owner check), ADR-073 (Local applications on five platforms). **Plan:** spike 0.3 and Unit 5
@@ -63,6 +63,238 @@ failed erase → still locked; cancel erases nothing) and the lifecycle rules pe
 verified on hardware: that Linux, Windows and Android deliver `inactive` as described, and that
 Android's recents snapshot is taken after the cover is painted (Flutter does not set
 `FLAG_SECURE`); the tests drive the lifecycle states by hand.
+
+---
+
+## ADR-077 — A new device joins by a code that carries the sync key: 77 characters, a QR code beside them
+
+**Date:** 2026-11-14. **Status:** accepted; camera scanning **not yet verified on a device** (see
+"Verification"). **Refines:** ADR-073's "the sync key moved by pairing a device with a code".
+**Closes:** spike 0.2 of `docs/plans/JZEN-LOCAL-PLAN.md`. **Issue:** #210.
+
+### Decision
+
+- **The code carries the key itself; it does not wrap it.** Two devices with no server, no network
+  of their own and a person between them have exactly one channel: a screen and a pair of eyes or a
+  camera. A short code that only *unlocked* a blob stored elsewhere (the shared folder, CloudKit)
+  would hand that blob's holder an offline guessing game against a few dozen bits; a code long
+  enough to resist guessing is as long as the key. So the code is the key, plus its framing.
+- **Format** (`ZenPairing` in `zen_store`): 41 bytes — `version` (1) · `expires` (4, minutes
+  since the Unix epoch) · `key` (32) · `crc32` over those 37 (4) — written in **Crockford base32**
+  (`0-9 A-Z` without `I L O U`, 5 bits a character): 66 characters in 11 groups of six, **each
+  group followed by a check character** (Luhn mod 32), joined by dashes: `XXXXXXX-XXXXXXX-…`,
+  **77 characters**, about a minute to type. Input ignores case, spaces and dashes and reads
+  `O`/`I`/`L` as `0`/`1`/`1`. The QR code carries the same text behind `zenpair1:`, so a scanner
+  that reads some other QR code is told so.
+- **Typing is checked in three layers**: the per-group check character catches any single wrong
+  character and names the group (the person re-reads seven characters, not seventy-seven) and,
+  nearly every swap of two neighbours (Luhn mod 32 misses a few; every one in the tested sample code is caught); the CRC catches groups typed out of order;
+  the length and alphabet checks catch the rest. A failure never echoes the code.
+- **Expiry is five minutes** (`ZenPairing.lifetime`), refused by the joining device with one minute
+  of clock tolerance. The showing device counts down, withdraws the code at expiry and when the app
+  leaves the foreground, and shows nothing until the person presses "Show Code".
+- **Threat model — a screen photographed.** A photograph of the code taken while it is on screen
+  *is* the key, whatever the expiry: expiry is honoured by an honest joining device, so it refuses
+  a stale screenshot, but it does not bind an attacker who reads the bytes. We accept this because
+  the alternative (a second secret shown elsewhere) needs a second channel that does not exist, and
+  we reduce the window instead: the code is shown only on request, for five minutes, never in a log,
+  a URL or the clipboard (it is a plain, non-selectable `Text`, and the typed field is hidden by
+  default, which also keeps a keyboard from learning it), and it is hidden when the app is
+  backgrounded, where task switchers snapshot. Whoever can see the screen long enough to copy 77
+  characters could equally read the data on it; pairing is done with the screen to oneself.
+  A device that is lost or photographed after pairing is a *rekey* question, not a pairing one, and
+  is out of scope here.
+- **QR where a camera exists, a typed code always.** `ZenAddDeviceScreen` draws the QR beside the
+  groups on every platform (a phone can scan a desktop); `ZenJoinScreen` takes a
+  `ZenQrScannerBuilder` and offers "Scan with Camera" only when the application supplies one. The
+  typed field is always there. **Scanner plugin: `mobile_scanner`** (ML Kit on Android, Vision on
+  iOS and macOS) — supplied by the application, not by `zen_ui_store`, because its camera permission
+  strings belong in the application's own manifest and `Info.plist`, and a Windows or Linux build
+  must not link a camera plugin it cannot use. QR drawing uses `qr_flutter` (pure Dart, every platform).
+- **The screens never touch storage.** `ZenJoinScreen` hands the decoded key to the application's
+  `onKey`, which keeps it in the store key's secure storage and opens the store; a failure there is
+  shown on the screen, and the screen keeps nothing.
+
+### What this supersedes, and why
+
+- **"the sync key moved by pairing a device with a code"** (ROADMAP item 9, ADR-073) → **refined.**
+  *Why:* the format, its length and what it does and does not defend against were open (plan 0.2).
+
+### Consequence
+
+- `zen_store` exports `ZenPairing`, `ZenPairingOffer`, `ZenPairingError` and `ZenPairingProblem`;
+  `zen_ui_store` exports `ZenAddDeviceScreen`, `ZenJoinScreen`, `ZenQrScannerBuilder` and
+  `ZenPairingCodeView`, in English and Ukrainian, with a widget and accessibility suite.
+- Changing the layout means a new `version` byte; a device reads only the versions it knows and says
+  "newer app" for the rest.
+
+### Verification
+
+- Verified: the round trip, wrong length and alphabet, every single-character typo (named group),
+  adjacent swaps, scrambled groups, expiry and clock tolerance (`zen_store` suite); the screens'
+  flows, lifecycle hiding, no clipboard write, contrast, target size and 200% text.
+- **Not verified:** scanning with a real camera on iOS, Android or macOS (the scanner is a seam; no
+  `mobile_scanner` build exists yet), a QR code read from a real screen at various brightnesses,
+  and the platform keyboards' behaviour with the hidden field on Windows and Linux.
+
+---
+
+## ADR-076 — The shared-folder transport: one directory per device, every file encrypted, Android through the Storage Access Framework
+
+**Date:** 2026-11-14. **Status:** accepted; the Android folder access is **chosen on a desk study and
+not yet verified on a device** (see "Verification"). **Refines:** ADR-073 (the shared-folder
+transport "decided now and built later"). **Issues:** #210, plan `docs/plans/JZEN-LOCAL-PLAN.md`
+unit 2 and spike 0.1.
+
+### Decision
+
+- **A new package, `zen_store_shared_folder`**, pure Dart (so `dart test` runs it), holding
+  `ZenSharedFolderSync`, a `ZenSyncTransport` over a folder a sync service of the person's own keeps
+  in step. It has no network code and signs in to nothing.
+- **Layout.** `<folder>/<device id>/<64 hex>.zen`: one subdirectory per device, named by the store's
+  random 128-bit device id, one file per record, named by the hex HMAC-SHA-256 of the record's name
+  under a key derived for the purpose. A device **writes only inside its own directory** and reads
+  every other; no file ever has two writers, which is the only discipline a file sync service can
+  honour (it has no conditional write and no cross-machine lock).
+- **A file is a record's whole state**, exactly what `ZenStore.outgoing` produces, so the transport
+  moves opaque bytes and the merge stays the store's. Delivery late, twice, out of order, as an
+  older version after a newer one, or in part is therefore harmless by construction: a stale state
+  merges to nothing, a partial file does not decrypt. **No path in this package picks a winner**;
+  the "newest file" is never consulted, only the store's version vectors.
+- **Each directory is a whole copy of what its device knows.** A device also writes, into its own
+  directory, every record it merged from another, in the state it now holds it (nothing is written
+  once the file already holds that state). Without it a record that only its author's directory
+  carried would vanish from the folder when that device was removed, and a new device could not
+  learn it from the folder. The price is that the folder holds every record once per device. A
+  device whose directory is missing from a folder that it had written to (the folder was changed,
+  or the directory deleted) sends everything again; if the directory still does not appear after
+  that, sync says so (`ZenSyncIssue.other`) instead of refilling it on every pass.
+- **Encryption.** `ZSF`, a format byte, a fresh 12-byte nonce, AES-256-GCM ciphertext, the 16-byte
+  tag. Plaintext is `<name length: 2 bytes><record name><payload>`, so the collection and the id
+  are inside the ciphertext. The key and the file-name key are derived from the 32-byte shared sync
+  key with HKDF-SHA-256 under distinct labels. **The file's path (`<device id>/<file name>`) is the
+  associated data**, so a file copied under another device, another name or a "conflicted copy" name
+  fails to open rather than merging as something it is not. A format byte newer than this version's
+  is recognised before decryption and reported as `ZenSyncIssue.newerAppVersion`.
+- **What the folder exposes** to whoever stores it: the number of devices (directories), how many
+  records each holds (files), their sizes and modification times (so roughly when and how much is
+  edited, and by which device). Not a record, a collection name, an id, a field, or a device's name.
+  Sizes follow payload sizes, so a very large or very small record is distinguishable from the
+  rest; padding is not done.
+- **Bad files are skipped, never merged, never fatal.** An unreadable file is named in
+  `ZenSyncReport.problems` (kept on `lastReport`, emitted on `reports`), the rest are merged, and
+  the file is read again on the next pass because it is only fingerprinted (size and modification
+  time) after it merged. A name that is not exactly 64 hex characters and `.zen` is ignored — a
+  temp file, Dropbox's `(conflicted copy ...)`, Syncthing's `.sync-conflict-...`, OneDrive's
+  `-HOSTNAME`, Google Drive's `(1)`, a copied directory — and silently, since a service writing
+  these is behaving normally. A copy that keeps an exact-looking name cannot be newer than its
+  writer's own file and fails the path-bound decryption anyway.
+- **Writes** are temp-file-then-rename (`.<name>.<random>.tmp`, ignored by readers). Change detection
+  is polling (default 15 s) plus the folder's watcher where the platform has one (debounced); the
+  watcher only brings a poll forward, because it misses what happened while the app was not running.
+- **Status.** The statuses a person can act on are named in `ZenSyncIssue` (new: `noFolder`,
+  `folderUnreachable`, `accessRevoked`, `notPaired`, `newerAppVersion`), each with an en and uk
+  message in `ZenSyncStatusBanner`. A device with no sync key reports `notPaired` and touches
+  nothing.
+- **Folder access is an interface, `ZenFolderAccess`**, with a `dart:io` implementation
+  (`ZenDirectoryAccess`) for the desktop and a seam for Android, where a folder chosen through the
+  Storage Access Framework is a `content://` tree `dart:io` cannot open.
+- **Spike 0.1 (desk study), Android: use `saf_util` (listing, `mkdirp`, `rename`, `delete`,
+  `hasPersistedPermission`, the picker) with `saf_stream` (`readFileBytes`, `writeFileBytes` with
+  `overwrite`), behind `ZenFolderAccess`, rather than our own Kotlin.** Both are by one
+  organisation, BSD-3, maintained (releases 2026-09 and 2026-10), Android-only plugins with no
+  further dependencies, and between them cover every operation the transport needs. The other
+  candidates were `docman` (maintained but last released 2025-01), `saf` (broader, one maintainer,
+  releases 2026-08) and `shared_storage` (discontinued). Our own Kotlin stays the fallback if the
+  verification below finds a missing guarantee. Two Android facts shape the adapter: SAF cannot
+  rename over an existing document, so `write` there writes a temp document, deletes the target,
+  and renames (a reader may briefly see no file, which the transport already treats as "not
+  delivered yet", never as a deletion); and a listing's modification times come from the provider,
+  which is why the fingerprint pairs it with the size.
+- **The Android adapter is not in this package.** It needs Flutter and the two plugins, which
+  would take this package off the Dart VM; it is a small package or part of the application that
+  implements `ZenFolderAccess` (and the folder picker and `accessRevoked` detection through
+  `hasPersistedPermission`), added when a device is available to verify it.
+
+### What this supersedes, and why
+
+- **"`zen_store_shared_folder`, planned"** and **"On Android the folder is reached through the
+  Storage Access Framework"** (ADR-073, Decision) → **built, and refined:** the choice of plugin is
+  now made (`saf_util` + `saf_stream`) and the adapter sits behind an interface. *Why:* the
+  transport's logic is the part that can lose a person's edit, so it must be testable on a laptop
+  with a fake sync service; only reaching the folder differs per platform.
+- **"A device writes only its own files and reads everyone else's"** (ADR-073) → **kept, with one
+  addition:** a device also copies, into its own directory, what it merged from others. *Why:* the
+  alternative loses data that exists in no other file the moment a device is removed, which the plan
+  names a case to survive. One writer per file still holds.
+
+### Consequence
+
+New: `client/zen_store_shared_folder` (workspace member), five `ZenSyncIssue` values and their
+strings in `zen_ui_store`. Not decided here: pairing and how the sync key reaches a device (unit 3),
+choosing the transport from `ZEN_PLATFORM` (unit 4), the Android adapter. **Verification:** the
+package's suite runs on the host, including a lazy sync-service fake that delays, reorders,
+duplicates, truncates and hands back older versions of files and writes conflicted copies, with three
+devices converging under all of it, a delete against an unseen edit surfacing as a conflict, and no
+plaintext on disk. **Not verified:** any real sync service (Syncthing, Dropbox, OneDrive); anything
+on an Android device (spike 0.1's "done when" needs a real device and a real sync app and is open,
+as is whether a SAF grant survives a restart); the `Directory.watch` behaviour on Windows and Linux
+(tests ran on macOS); scale (every file is re-listed each poll and only changed ones are read, but a
+folder with many thousands of records was not measured).
+## ADR-075 — The store key is `zen_store_key`'s `ZenDeviceStoreKey`, on every platform, and is never made over existing files
+
+**Date:** 2026-11-14. **Status:** accepted.
+
+### Decision
+
+- **A new package, `zen_store_key`**, holds `ZenDeviceStoreKey`: the 256-bit key `zen_store` encrypts
+  its files with, made once, kept by `flutter_secure_storage` ^10.3.1 (Keychain on iOS/macOS,
+  Keystore-wrapped on Android, Credential Manager on Windows, libsecret on Linux). Every Local
+  application depends on it. It replaces `ZenKeychainStoreKey` (the name said Keychain, and three of
+  the five platforms have none), which is removed from `zen_store_cloudkit`.
+- **`load` takes the store's data directory.** A missing key beside a directory that already holds
+  files is an error, never a new key. Every other failure is an error too: unreadable secret
+  storage, a stored value that is not 32 bytes, a key that cannot be written, no secret service.
+- **`protectDirectory` stays Apple-only**, now `ZenDataProtection.protectDirectory` in
+  `zen_store_cloudkit`, same channel and behaviour (false on macOS and where the plugin is absent).
+- **Android is configured `resetOnError: false`.** iOS and macOS keep `unlocked_this_device`.
+
+### What this supersedes, and why
+
+- **"`ZenKeychainStoreKey` ... in `zen_store_cloudkit`"** (ADR-065, ADR-073 table) → **moved and
+  renamed.** *Why:* ADR-073 gives Android, Windows and Linux the same Local mode, so the key cannot
+  live in an Apple-only plugin package.
+- **"The key lives in the Keychain, this device only, readable only while the device is unlocked"**
+  (ADR-065) → **refined per platform** (spike 0.4 below): the guarantee is the strongest each
+  platform offers, not one sentence for all.
+
+### Spike 0.4 — what the plugin sources show
+
+Read from `flutter_secure_storage` 10.3.4 and its Linux 3.0.3 and Windows 4.2.2 implementations;
+**nothing here was run on a device.**
+
+| | Where the value lives | "This device only" | When it fails |
+|---|---|---|---|
+| iOS, macOS | Keychain, `unlocked_this_device` | yes, and readable only while unlocked; not backed up | unchanged |
+| Android | AES-GCM value in the app's private storage, wrapped by a non-exportable Keystore key | the wrapping key never leaves the device, so a restored backup cannot unwrap it; **not** bound to the screen lock (readable after first unlock) | **default `resetOnError: true` answers a Keystore failure by deleting every stored value and returning success**, so the key vanishes and a new one would be made. Set to `false`; the failure then reaches `load` as an exception |
+| Windows | a `.secure` file under `%APPDATA%` (Roaming), AES-GCM, its 16-byte key in Credential Manager (`CRED_PERSIST_LOCAL_MACHINE`) | the file is useless on another machine; per user, not per unlock | **`read` returns `null` for any failure** (credential unreadable, file damaged, decrypt fails), indistinguishable from "never written"; and a credential of the wrong size is deleted and replaced, orphaning the file. Hence the directory check above |
+| Linux | one JSON entry in the default libsecret collection (GNOME Keyring, KWallet, or the portal in a sandbox) | as strong as the unlocked login keyring; per user | no secret service or a failed call throws a `Libsecret error`; a locked keyring throws `KeyringLocked`; both surface as exceptions and `load` fails. No file fallback exists in the plugin |
+
+Consequences for applications: Android must not let the app's preferences into Auto Backup
+(`android:allowBackup="false"` or an exclusion), or a restored install fails loudly with data it
+can no longer open; a Linux build needs `libsecret-1` and a keyring service, and an install
+without one cannot open the store at all, which is a message to show, not a key to make elsewhere.
+Recovery from a lost key is to erase this device's copy and sync again from the others.
+
+### Consequence
+
+- iOS and macOS behave as before on every success path. One failure path is new: a device whose
+  store files exist but whose Keychain item does not (a restore, a Keychain reset) now fails to open
+  instead of silently making a key that can never decrypt them.
+- Unverified: real Android, Windows and Linux devices (Keystore failure, Credential Manager
+  removal, no secret service); the table is from source reading. `zen_store_key`'s suite pins this
+  class's answer to each outcome a plugin can give, with a fake storage.
+- Applications adopt it with `ZenDeviceStoreKey.load(dataDirectory: directory)`.
 
 ---
 

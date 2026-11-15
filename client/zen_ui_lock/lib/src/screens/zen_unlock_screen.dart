@@ -14,7 +14,7 @@ import '../state/zen_pin_lock.dart';
 ///
 /// It has no way back on purpose: the only ways past it are the PIN, the device owner's own
 /// check ("Forgot PIN?") and, on a device that has no such check (Linux), erasing this device's
-/// copy of the data after a confirmation (ADR-075). With neither, there is no "Forgot PIN?".
+/// copy of the data after a confirmation (ADR-078). With neither, there is no "Forgot PIN?".
 class ZenUnlockScreen extends StatefulWidget {
   /// The lock this screen opens.
   final ZenPinLock lock;

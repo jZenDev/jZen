@@ -44,7 +44,7 @@ showZenPinSetup(context, lock)      // change the PIN
   `Info.plist`.
 - **On a device that cannot check its owner** — Linux (`local_auth` has no implementation there), or
   a device with no passcode — "Forgot PIN?" instead offers to **erase this device's copy** after a
-  confirmation, and the other devices re-sync it (ADR-075). Pass the eraser to
+  confirmation, and the other devices re-sync it (ADR-078). Pass the eraser to
   `ZenPinLock.load(eraseDeviceCopy: ...)`; without one that device shows no "Forgot PIN?".
 - **Desktop windows** lock too: losing focus starts the clock on Windows, Linux and macOS.
 

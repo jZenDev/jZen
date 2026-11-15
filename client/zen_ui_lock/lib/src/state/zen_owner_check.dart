@@ -7,7 +7,7 @@ import 'package:zen_core/zen_core.dart';
 abstract interface class ZenOwnerCheck {
   /// Whether this device can check its owner at all: false (a success) on Linux, where
   /// `local_auth` has no implementation, and on a device with no passcode or Windows Hello set up.
-  /// "Forgot PIN?" then offers erasing this device's copy instead (ADR-075) — never a bare reset,
+  /// "Forgot PIN?" then offers erasing this device's copy instead (ADR-078) — never a bare reset,
   /// which would hand the data to whoever holds the device.
   ///
   /// A failure to find out is an error, not "false": a glitch on a phone that does have an owner

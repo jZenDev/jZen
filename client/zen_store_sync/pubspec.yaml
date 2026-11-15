@@ -1,0 +1,36 @@
+name: zen_store_sync
+description: >-
+  The one call a jZen Local application makes to start sync: CloudKit on iOS and macOS, the shared
+  folder on Android, Windows and Linux, ZenFolderCloud for development, chosen from compile-time
+  constants. See ADR-079.
+publish_to: 'none'
+# Lockstep with the product version, see docs/architecture/STANDARDS.md "Versioning".
+version: 0.1.0
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+
+resolution: workspace
+
+# The only package that names both transports. zen_store_cloudkit (an Apple plugin) and
+# zen_store_shared_folder (pure Dart) must not depend on each other, and neither may zen_store,
+# which `dart test` loads and so cannot import a plugin; the choice therefore lives here. Android,
+# Windows and Linux builds link this package and so zen_store_cloudkit's Dart, but its plugin is
+# registered only for ios and macos and the tree-shaker drops the code the platform never reaches.
+dependencies:
+  flutter:
+    sdk: flutter
+  meta: ^1.11.0
+  zen_core:
+    path: ../zen_core
+  zen_store:
+    path: ../zen_store
+  zen_store_cloudkit:
+    path: ../zen_store_cloudkit
+  zen_store_shared_folder:
+    path: ../zen_store_shared_folder
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter

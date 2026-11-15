@@ -25,9 +25,15 @@ await accounts.put(store.newId(), Account(name: 'Cash'));
 final all = accounts.list();             // ZenResult<List<Account>>, ordered by id
 accounts.changes.listen((_) => ...);     // a local write or a sync changed it
 
-// Optional: without a transport the store is local-only.
-final sync = await ZenCloudKitSync.start(store);     // release
-// final sync = await ZenFolderCloud.start(store, folder);   // development, ZEN_SYNC=folder
+// Optional: without a transport the store is local-only. One call on every platform
+// (`zen_store_sync`, ADR-079): the build's ZEN_PLATFORM picks CloudKit or the shared folder, and
+// ZEN_SYNC=folder picks ZenFolderCloud in development. The app reads neither define.
+final sync = await ZenSync.start(
+  store,
+  cloudKitContainerId: 'iCloud.com.example.app',   // iOS, macOS
+  sharedFolder: access,                            // Android, Windows, Linux
+  syncKey: pairedKey,
+);
 ```
 
 Sync runs on its own once started: a local write is handed to the transport at once, and other
@@ -104,10 +110,7 @@ task zen:run:client DEVICE=macos ZEN_SYNC=folder ZEN_SYNC_FOLDER="$FOLDER"
 task zen:run:client DEVICE=<simulator-udid> CLIENT_PLATFORM=ios ZEN_SYNC=folder ZEN_SYNC_FOLDER="$FOLDER"
 ```
 
-```dart
-const sync = String.fromEnvironment('ZEN_SYNC');            // 'folder', 'cloudkit' or ''
-const folder = String.fromEnvironment('ZEN_SYNC_FOLDER');
-```
+`ZenSync.start` reads `ZEN_SYNC` and `ZEN_SYNC_FOLDER` itself; an application does not.
 
 **Which folder.** An iOS Simulator app is a process on the Mac and reaches the Mac's files. A
 sandboxed macOS app — Flutter's default — reaches only its own container, so pick a folder inside

@@ -36,6 +36,11 @@ const double _paneFraction = 0.4;
 /// replaced; a narrow push does not highlight it. No caller state is required.
 /// Narrowing the window under an open detail turns it into the full-screen push; widening it
 /// again leaves a pushed page where it is.
+///
+/// A page can guard the ways its pane goes away with a `PopScope` on its first page, the one it
+/// already uses for Back: Close and Escape ask it, and so does a second detail, which is dropped
+/// while the guard vetoes. Switching tab discards the pane and cannot be vetoed; the page cleans up
+/// in `State.dispose`.
 class ZenDetailHost extends StatefulWidget {
   /// Creates a host around [child], the list.
   const ZenDetailHost({required this.child, super.key});
@@ -57,7 +62,13 @@ class ZenDetailHostState extends State<ZenDetailHost> {
   Future<T?> show<T>(BuildContext caller, WidgetBuilder builder) {
     if (!_wide) return _push<T>(caller, builder);
 
-    _finish(_open, null);
+    final _OpenDetail? current = _open;
+    // A pane whose page vetoes is not replaced: its guard asks, and this request is dropped.
+    if (current != null &&
+        !(current.pane.currentState?.requestClose() ?? true)) {
+      return Future<T?>.value();
+    }
+    _finish(current, null);
     _opener = FocusManager.instance.primaryFocus;
     final Completer<T?> completer = Completer<T?>();
     setState(() {
@@ -86,7 +97,9 @@ class ZenDetailHostState extends State<ZenDetailHost> {
     }
     detail.deactivate?.call();
     detail.complete(result);
-    if (opener != null && opener.context?.mounted == true && opener.canRequestFocus) {
+    if (opener != null &&
+        opener.context?.mounted == true &&
+        opener.canRequestFocus) {
       opener.requestFocus();
     }
   }
@@ -98,9 +111,9 @@ class ZenDetailHostState extends State<ZenDetailHost> {
     setState(() => _open = null);
     _opener = null;
     detail.deactivate?.call();
-    Navigator.of(
-      context,
-    ).push<Object?>(ZenPageRoute<Object?>(builder: detail.builder)).then(detail.complete);
+    Navigator.of(context)
+        .push<Object?>(ZenPageRoute<Object?>(builder: detail.builder))
+        .then(detail.complete);
   }
 
   @override
@@ -124,7 +137,7 @@ class ZenDetailHostState extends State<ZenDetailHost> {
         final Widget? pane = detail == null
             ? null
             : ZenDetailPane(
-                key: ObjectKey(detail),
+                key: detail.pane,
                 builder: detail.builder,
                 onClosed: (Object? result) => _finish(detail, result),
               );
@@ -143,6 +156,8 @@ class ZenDetailHostState extends State<ZenDetailHost> {
 class _OpenDetail {
   _OpenDetail(this.builder, this.complete, this.deactivate);
 
+  final GlobalKey<ZenDetailPaneState> pane = GlobalKey<ZenDetailPaneState>();
+
   final WidgetBuilder builder;
   final void Function(Object? result) complete;
   final VoidCallback? deactivate;
@@ -150,7 +165,12 @@ class _OpenDetail {
 
 /// Apple: the pane is a column of the layout, and the list narrows. Exposed to the package's
 /// tests, which cannot reach the branch the host platform did not compile.
-Widget buildApplePanes(BuildContext context, Widget list, Widget? pane, double width) {
+Widget buildApplePanes(
+  BuildContext context,
+  Widget list,
+  Widget? pane,
+  double width,
+) {
   final ColorScheme scheme = Theme.of(context).colorScheme;
   final Duration duration = MediaQuery.disableAnimationsOf(context)
       ? Duration.zero
@@ -160,12 +180,16 @@ Widget buildApplePanes(BuildContext context, Widget list, Widget? pane, double w
       Expanded(child: list),
       AnimatedSwitcher(
         duration: duration,
-        transitionBuilder: (Widget child, Animation<double> animation) => SizeTransition(
-          sizeFactor: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-          axis: Axis.horizontal,
-          axisAlignment: 1,
-          child: child,
-        ),
+        transitionBuilder: (Widget child, Animation<double> animation) =>
+            SizeTransition(
+              sizeFactor: CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              ),
+              axis: Axis.horizontal,
+              axisAlignment: 1,
+              child: child,
+            ),
         child: pane == null
             ? const SizedBox.shrink()
             : SizedBox(
@@ -180,7 +204,10 @@ Widget buildApplePanes(BuildContext context, Widget list, Widget? pane, double w
                     Expanded(
                       child: ColoredBox(
                         color: scheme.surface,
-                        child: Material(type: MaterialType.transparency, child: pane),
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: pane,
+                        ),
                       ),
                     ),
                   ],
@@ -192,7 +219,12 @@ Widget buildApplePanes(BuildContext context, Widget list, Widget? pane, double w
 }
 
 /// Material: the pane is a side sheet over the list's trailing edge. See [buildApplePanes].
-Widget buildMaterialPanes(BuildContext context, Widget list, Widget? pane, double width) {
+Widget buildMaterialPanes(
+  BuildContext context,
+  Widget list,
+  Widget? pane,
+  double width,
+) {
   final ColorScheme scheme = Theme.of(context).colorScheme;
   final bool still = MediaQuery.disableAnimationsOf(context);
   return Stack(
@@ -205,13 +237,20 @@ Widget buildMaterialPanes(BuildContext context, Widget list, Widget? pane, doubl
         width: width,
         child: AnimatedSwitcher(
           duration: still ? Duration.zero : const Duration(milliseconds: 200),
-          transitionBuilder: (Widget child, Animation<double> animation) => SlideTransition(
-            position: Tween<Offset>(
-              begin: const Offset(1, 0),
-              end: Offset.zero,
-            ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic)),
-            child: child,
-          ),
+          transitionBuilder: (Widget child, Animation<double> animation) =>
+              SlideTransition(
+                position:
+                    Tween<Offset>(
+                      begin: const Offset(1, 0),
+                      end: Offset.zero,
+                    ).animate(
+                      CurvedAnimation(
+                        parent: animation,
+                        curve: Curves.easeOutCubic,
+                      ),
+                    ),
+                child: child,
+              ),
           child: pane == null
               ? const SizedBox.shrink()
               : Material(

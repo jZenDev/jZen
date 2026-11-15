@@ -38,13 +38,16 @@ void main() {
     folderCloudPath: folder,
   );
 
-  test('a build with no ZEN_PLATFORM refuses to start, loudly', () async {
-    // The suite runs without defines, so this is the plan `start` itself holds here.
-    expect(ZenSync.plan.kind, isNull);
-    final result = await ZenSync.start(store);
-    expect(result, isA<ZenFailure<ZenSyncTransport>>());
-    expect(result.errorOrNull, isA<ZenValidationError>());
-    expect(result.errorOrNull!.message, contains('ZEN_PLATFORM'));
+  test('start() follows the defines this suite was built with', () async {
+    // `task test:client` sets ZEN_PLATFORM to the host; a bare `flutter test` sets nothing. Either
+    // way `start` must agree with the table, and an unset platform must be refused loudly.
+    const sync = String.fromEnvironment('ZEN_SYNC');
+    expect(ZenSync.plan, const ZenSyncPlan(zenPlatform, sync));
+    if (zenPlatform.isEmpty) {
+      final result = await ZenSync.start(store);
+      expect(result.errorOrNull, isA<ZenValidationError>());
+      expect(result.errorOrNull!.message, contains('ZEN_PLATFORM'));
+    }
   });
 
   test('the web is refused with a ZenError, not a silent transport', () async {

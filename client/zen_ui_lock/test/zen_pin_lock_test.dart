@@ -7,9 +7,13 @@ import 'package:zen_ui_lock/zen_ui_lock.dart';
 
 final class FakeOwner implements ZenOwnerCheck {
   bool passes;
+  bool available = true;
   final reasons = <String>[];
 
   FakeOwner({this.passes = true});
+
+  @override
+  Future<ZenResult<bool>> isAvailable() async => ZenResult.ok(available);
 
   @override
   Future<ZenResult<void>> confirm(String reason) async {
@@ -140,6 +144,44 @@ void main() {
     expect(owner.reasons, ['why', 'why']);
     expect(lock.isEnabled, isFalse);
     expect(lock.isLocked, isFalse);
+  });
+
+  test('without an owner check the PIN is reset only by erasing this device\'s copy', () async {
+    owner.available = false;
+    var erased = 0;
+    var eraseResult = const ZenResult<void>.ok(null);
+    Future<ZenPinLock> linux({bool withEraser = true}) async => (await ZenPinLock.load(
+      storage: storage,
+      owner: owner,
+      eraseDeviceCopy: withEraser
+          ? () async {
+              erased++;
+              return eraseResult;
+            }
+          : null,
+      now: () => clock,
+      iterations: 10,
+    )).dataOrNull!;
+    await (await linux()).enable('2468');
+
+    expect((await (await linux()).recoveryOption()).dataOrNull, ZenPinRecovery.eraseDeviceCopy);
+    expect(
+      (await (await linux(withEraser: false)).recoveryOption()).dataOrNull,
+      ZenPinRecovery.none,
+    );
+    expect((await (await linux(withEraser: false)).recoverByErasing()).isFailure, isTrue);
+
+    final lock = await linux();
+    eraseResult = const ZenResult.err(ZenUnknownError('disk'));
+    expect((await lock.recoverByErasing()).isFailure, isTrue);
+    expect(lock.isEnabled, isTrue, reason: 'the PIN stays while the data is still there');
+    expect(lock.isLocked, isTrue);
+
+    eraseResult = const ZenResult.ok(null);
+    expect((await lock.recoverByErasing()).isSuccess, isTrue);
+    expect(erased, 2);
+    expect(lock.isEnabled, isFalse);
+    expect(owner.reasons, isEmpty, reason: 'the owner check is never asked');
   });
 
   test('an unreadable stored PIN fails the load instead of opening the app', () async {

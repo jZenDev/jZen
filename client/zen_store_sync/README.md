@@ -26,3 +26,6 @@ nothing. `ZEN_SYNC=folder` also needs `ZEN_SYNC_FOLDER`.
 
 This is the only package that names both `zen_store_cloudkit` and `zen_store_shared_folder`, so
 neither depends on the other. Why, and what is not verified: ADR-079.
+
+The package imports `dart:io`, so a web compile fails at that import rather than at runtime; the
+web is refused either way (ADR-073).

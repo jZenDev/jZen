@@ -79,7 +79,7 @@ coding session does not have.
 | iOS / macOS through real CloudKit | **not verified** | needs a paid Apple Developer Program membership; this is a free personal team |
 | Android folder access (Storage Access Framework, grant surviving a restart) | **not verified** | spike 0.1 is a desk study (ADR-076, ADR-080); the plugins never ran on a device |
 | Camera QR scanning when joining | **not verified** | no scanner plugin is wired; the typed 77-character code works everywhere, `ZenQrScannerBuilder` is the optional hook (`zen_ui_store`) |
-| Windows and Linux runs; the `inactive` lifecycle and Android recents snapshot | **not verified** | not run on hardware; CI builds only (ADR-078, ADR-081) |
+| Windows and Linux runs; the `inactive` lifecycle and Android recents snapshot | **not verified** | not run on hardware; only built in CI (ADR-078, ADR-081) |
 | Transports absent from a built Android/Windows/Linux binary | **not verified** | nothing built one to inspect (ADR-079) |
 
 On Windows "Forgot PIN?" offers to erase this device's copy rather than Windows Hello (ADR-081), as

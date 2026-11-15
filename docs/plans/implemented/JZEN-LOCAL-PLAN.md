@@ -6,14 +6,14 @@
 >   Windows ↔ Linux ↔ Android through Syncthing and Dropbox/OneDrive, and macOS ↔ iOS simulator
 >   through `ZenFolderCloud`, are all **not verified**.
 > - **Real CloudKit** stays open until a paid Apple Developer Program membership exists.
-> - **Spikes 0.1–0.4 are desk studies**; in particular real Android Storage Access Framework access
+> - **Spikes 0.1 and 0.4 are desk studies** (0.2 and 0.3 are decisions, ADR-077 and ADR-078); in particular real Android Storage Access Framework access
 >   (`saf_util` + `saf_stream`, a grant surviving a restart) has never run on a device.
 > - **Camera QR scanning** is untested: no scanner plugin is wired; the typed code works.
 > - Windows and Linux hardware, and the tree-shaking of unreached transports in a built binary, are
 >   unchecked. The status of each row is in ROADMAP item 9 and `apps/zen_demo_local/README.md`.
 > - The **person-chosen folder on real Android** is built (ADR-080) but unverified.
 >
-> Decisions made along the way are ADR-074 – ADR-081 in `DECISIONS.md`.
+> Decisions made along the way are ADR-075 – ADR-081 in `DECISIONS.md`.
 
 **Source:** ADR-073 (2026-11-06) — a serverless jZen application is a *Local* application, and its
 sync transport follows `ZEN_PLATFORM`: CloudKit on iOS and macOS, a folder the person chooses on

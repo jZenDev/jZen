@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class FeatureItem extends StatelessWidget {
   const FeatureItem({super.key, required this.text});

@@ -1,5 +1,5 @@
 import 'package:zen_core/zen_core.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../zen_navigation.dart';
 import '../zen_navigation_item.dart';

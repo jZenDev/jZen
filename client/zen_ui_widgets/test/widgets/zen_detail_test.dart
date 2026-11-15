@@ -1,6 +1,6 @@
 import 'dart:ui' show Tristate;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -113,7 +113,10 @@ Future<void> pumpHost(
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
     MaterialApp(
-      localizationsDelegates: ZenWidgetsLocalizations.localizationsDelegates,
+      localizationsDelegates: [
+        ...ZenWidgetsLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
       supportedLocales: ZenWidgetsLocalizations.supportedLocales,
       home: host ? ZenDetailHost(child: home) : home,
     ),

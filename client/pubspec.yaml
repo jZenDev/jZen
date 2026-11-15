@@ -7,7 +7,7 @@ publish_to: "none"
 version: 0.1.0
 
 environment:
-  sdk: ">=3.10.3 <4.0.0"
+  sdk: ">=3.14.0 <4.0.0"
 
 # Pub workspace root for the client side. Packages live flat under client/ (e.g.
 # client/zen_core), mirroring how the Java modules sit flat under server/. There is no

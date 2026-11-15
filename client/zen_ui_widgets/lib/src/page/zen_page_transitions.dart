@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:zen_core/zen_core.dart';
 
 /// A pushed page that fades in over the one beneath it, with no slide: the transition of a desktop

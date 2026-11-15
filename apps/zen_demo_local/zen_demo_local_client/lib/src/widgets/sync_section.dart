@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:zen_store_sync/zen_store_sync.dart';
 
 import '../core/device_session.dart';

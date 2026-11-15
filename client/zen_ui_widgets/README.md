@@ -541,13 +541,11 @@ and Ukrainian implementations can be subclassed for application overrides. Appli
 labels, subtitles and messages must also be localized by the application.
 
 ```dart
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 
-MaterialApp(localizationsDelegates: const [
+MaterialApp(localizationsDelegates: [
   zenWidgetsLocaleDelegate,
-  GlobalMaterialLocalizations.delegate,
-  GlobalWidgetsLocalizations.delegate,
-  GlobalCupertinoLocalizations.delegate,
+  ...GlobalMaterialLocalizations.delegates, // Material, Cupertino and Widgets
 ], supportedLocales: const [Locale('en'), Locale('uk')], home: const HomePage());
 ```
 

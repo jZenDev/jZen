@@ -1,6 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:zen_ui_widgets/zen_ui_widgets.dart' show zenWidgetsLocaleDelegate;
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_ui_identity/zen_ui_identity.dart';
 
@@ -32,9 +31,7 @@ Widget localizedApp({
     ...extraDelegates,
     identityLocaleDelegate,
     zenWidgetsLocaleDelegate,
-    GlobalMaterialLocalizations.delegate,
-    GlobalCupertinoLocalizations.delegate,
-    GlobalWidgetsLocalizations.delegate,
+    ...GlobalMaterialLocalizations.delegates,
   ],
   supportedLocales: [for (final tag in supported) Locale(tag)],
   theme: theme ?? ThemeData(extensions: [IdentityThemeExtension.fallback()]),

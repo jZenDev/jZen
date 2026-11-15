@@ -184,7 +184,7 @@ task doctor
 has exactly one home and the check cannot drift from what the tools enforce. It reports `DRIFT`
 and exits non-zero on a mismatch, naming the command that fixes it — rather than letting you find
 out later as a confusing build failure, or as output that silently differs from everyone else's.
-`task format` is the concrete case: the committed Dart layout is what Dart 3.12.2 produces.
+`task format` is the concrete case: the committed Dart layout is what Dart 3.14.0 produces.
 
 The switchers are optional. A matching version installed any other way still passes; they are
 only what makes fixing a drift a one-liner. Note SDKMAN ships `sdkman_auto_env=false`, so

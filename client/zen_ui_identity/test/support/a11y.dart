@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:zen_ui_identity/zen_ui_identity.dart';
 
 /// WCAG 2.x contrast ratio between two opaque colours, 1.0 (none) to 21.0 (black on white).

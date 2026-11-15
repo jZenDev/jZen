@@ -3,8 +3,8 @@ import 'package:zen_identity/zen_identity.dart';
 import 'package:zen_ui_identity/src/screens/restore_password_screen.dart';
 import 'package:zen_ui_identity/src/state/identity_repository.dart';
 import 'package:zen_ui_identity/src/theme/identity_theme_extension.dart';
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 

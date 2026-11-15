@@ -476,6 +476,51 @@ void main() {
       },
     );
 
+    testWidgets('a page opened from inside the detail guards Escape and a '
+        'second detail', (tester) async {
+      final List<String> log = <String>[];
+      final List<Future<Object?>> opened = <Future<Object?>>[];
+      await pumpHost(
+        tester,
+        list(
+          opened,
+          detail: (BuildContext _) => Builder(
+            builder: (BuildContext context) => ZenPageScaffold(
+              title: 'Root',
+              body: ZenButton(
+                label: 'Nested',
+                onPressed: () => showZenDetail<void>(
+                  context,
+                  builder: (_) => _Guarded(log),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await open(tester);
+      await tester.tap(find.text('Nested'));
+      await tester.pumpAndSettle();
+      expect(find.text('Guarded'), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(log, <String>['asked']);
+      expect(find.text('Guarded'), findsOneWidget);
+
+      await open(tester);
+      expect(log, <String>['asked', 'asked']);
+      expect(find.text('Guarded'), findsOneWidget);
+
+      // The page leaves by itself; the first page below it is still guard-free, so Escape closes.
+      await tester.tap(find.text('Discard'));
+      await tester.pumpAndSettle();
+      expect(find.text('Root'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.text('Root'), findsNothing);
+    });
+
     testWidgets('in a push, Back asks the same guard', (tester) async {
       final List<String> log = <String>[];
       final List<Future<Object?>> opened = <Future<Object?>>[];

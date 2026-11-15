@@ -43,8 +43,8 @@ code"), ADR-072 (`ZEN_SYNC`). **Issue:** #210.
   give a package that `dart test` loads a Flutter plugin dependency. A new leaf keeps every
   existing edge as it was and is the one thing an application imports for sync.
 - **The choice is a constant.** `ZenSyncPlan` is a `const` constructor over the two defines, so
-  `kind` is a compile-time constant and the compiler drops the transports a platform never
-  reaches. The suite calls the same constructor over every platform × `ZEN_SYNC` combination, so
+  `kind` is a compile-time constant, which lets the compiler drop the transports a platform
+  never reaches (constant folding, not a language guarantee; not yet checked in a built binary). The suite calls the same constructor over every platform × `ZEN_SYNC` combination, so
   there is no second copy of the table to drift. Android, Windows and Linux builds still *link*
   `zen_store_cloudkit`'s Dart (its plugin registers only for `ios` and `macos`); that code is
   unreachable there.

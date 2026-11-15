@@ -53,40 +53,45 @@ class ZenCupertinoTextFormField extends FormField<String> {
                  crossAxisAlignment: CrossAxisAlignment.start,
                  children: <Widget>[
                    FocusRing.wrapping(
-                     child: CupertinoTextField(
-                       controller: state._effectiveController,
-                       enabled: enabled,
-                       obscureText: obscureText,
-                       keyboardType: keyboardType,
-                       inputFormatters: inputFormatters,
-                       autofillHints: autofillHints,
-                       textInputAction: textInputAction,
-                       textCapitalization: textCapitalization,
-                       maxLines: maxLines,
-                       minLines: minLines,
-                       maxLength: maxLength,
-                       placeholder: hint,
-                       // Set rather than inherited: CupertinoTextField's defaults are the iOS
-                       // system greys, a hairline border and a placeholder well under 4.5:1.
-                       style: TextStyle(color: scheme.onSurface),
-                       placeholderStyle: TextStyle(color: scheme.onSurfaceVariant),
-                       cursorColor: scheme.primary,
-                       padding: EdgeInsetsDirectional.fromSTEB(
-                         12,
-                         14,
-                         trailing == null ? 12 : 12 + zenIconButtonSize,
-                         14,
+                     // A single-line box measured 47 px at the default text size: one short of
+                     // the 48 px target (WCAG 2.5.8 asks 24; the framework's own bar is 48).
+                     child: ConstrainedBox(
+                       constraints: const BoxConstraints(minHeight: zenIconButtonSize),
+                       child: CupertinoTextField(
+                         controller: state._effectiveController,
+                         enabled: enabled,
+                         obscureText: obscureText,
+                         keyboardType: keyboardType,
+                         inputFormatters: inputFormatters,
+                         autofillHints: autofillHints,
+                         textInputAction: textInputAction,
+                         textCapitalization: textCapitalization,
+                         maxLines: maxLines,
+                         minLines: minLines,
+                         maxLength: maxLength,
+                         placeholder: hint,
+                         // Set rather than inherited: CupertinoTextField's defaults are the iOS
+                         // system greys, a hairline border and a placeholder well under 4.5:1.
+                         style: TextStyle(color: scheme.onSurface),
+                         placeholderStyle: TextStyle(color: scheme.onSurfaceVariant),
+                         cursorColor: scheme.primary,
+                         padding: EdgeInsetsDirectional.fromSTEB(
+                           12,
+                           14,
+                           trailing == null ? 12 : 12 + zenIconButtonSize,
+                           14,
+                         ),
+                         decoration: BoxDecoration(
+                           color: scheme.surface,
+                           border: Border.all(color: border, width: invalid ? 2 : 1),
+                           borderRadius: BorderRadius.circular(8),
+                         ),
+                         onChanged: (String text) {
+                           field.didChange(text);
+                           onChanged?.call(text);
+                         },
+                         onSubmitted: onSubmitted,
                        ),
-                       decoration: BoxDecoration(
-                         color: scheme.surface,
-                         border: Border.all(color: border, width: invalid ? 2 : 1),
-                         borderRadius: BorderRadius.circular(8),
-                       ),
-                       onChanged: (String text) {
-                         field.didChange(text);
-                         onChanged?.call(text);
-                       },
-                       onSubmitted: onSubmitted,
                      ),
                    ),
                    if (invalid || maxLength != null) ...<Widget>[

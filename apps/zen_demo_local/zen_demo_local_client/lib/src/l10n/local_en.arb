@@ -1,6 +1,5 @@
 {
   "@@locale": "en",
-
   "appTitle": "jZen Chores",
   "choresTitle": "Chores",
   "addChore": "Add a chore",
@@ -11,7 +10,6 @@
   "priorityLow": "Low",
   "priorityNormal": "Normal",
   "priorityHigh": "High",
-
   "newChoreTitle": "New chore",
   "editChoreTitle": "Edit chore",
   "titleField": "Title",
@@ -23,10 +21,13 @@
   "titleRequired": "Give the chore a title.",
   "saveFailed": "Could not save: {error}",
   "@saveFailed": {
-    "placeholders": { "error": { "type": "String" } }
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   },
   "inConflict": "Another device changed this chore differently. Choose a version first.",
-
   "settingsTitle": "Settings",
   "securitySection": "Security",
   "syncSection": "Sync",
@@ -45,7 +46,11 @@
   "syncDevelopmentFolder": "Syncs through a development folder (not for release).",
   "syncRefused": "Sync is not available in this build: {reason}",
   "@syncRefused": {
-    "placeholders": { "reason": { "type": "String" } }
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
   },
   "eraseCopy": "Erase this device's copy",
   "eraseHint": "Deletes the chores stored here. Your other devices keep theirs and send them back.",
@@ -54,14 +59,38 @@
   "erased": "This device's copy was erased.",
   "eraseFailed": "Could not erase: {error}",
   "@eraseFailed": {
-    "placeholders": { "error": { "type": "String" } }
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   },
   "cancel": "Cancel",
   "erase": "Erase",
-
   "startFailedTitle": "jZen Chores could not open your data",
   "startFailedHint": "Nothing was changed. {error}",
   "@startFailedHint": {
-    "placeholders": { "error": { "type": "String" } }
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "choreGone": "This chore was deleted on another device.",
+  "folderFailed": "Could not use that folder: {error}",
+  "@folderFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "syncKeyFailed": "Could not set up syncing: {error}",
+  "@syncKeyFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
   }
 }

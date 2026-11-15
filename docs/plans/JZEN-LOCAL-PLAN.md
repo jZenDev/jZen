@@ -136,8 +136,9 @@ ROADMAP item 9.
 - **Branch:** `feature/zen-demo-local`
 - **What:** `apps/zen_demo_local/zen_demo_local_client` (no `_server`, no `_admin`), a member of
   the `apps/` workspace, with `ios`, `macos`, `android`, `windows`, `linux` runners and no `web`.
-  Its model is a `.proto` under `proto/zen/v1/` (generated Dart committed, `verify:contracts`
-  green). Small on purpose — a list of records with several independently editable fields — so
+  Its model is a `.proto` under the app's own `apps/zen_demo_local/proto/` (ADR-080: `proto/zen/v1/` is
+  generated into `zen_transport` and the server, which a Local app has neither of; generated Dart
+  committed, `verify:contracts` green). Small on purpose — a list of records with several independently editable fields — so
   that every behaviour of the mode is one tap away:
   - edit offline; edits on two devices to different fields merge, the same field conflicts;
   - `ZenConflictBanner` → the conflict screens → choose a side; a delete against an edit;

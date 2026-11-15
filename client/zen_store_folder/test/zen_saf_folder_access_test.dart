@@ -10,6 +10,7 @@ class _FakeSaf implements ZenSafPort {
   final Map<String, Uint8List?> nodes = {'content://t': null}; // null value = directory
   bool grant = true;
   bool failRename = false;
+  bool failDelete = false;
   int _seq = 0;
 
   String _join(String dir, String name) => '$dir/$name';
@@ -66,7 +67,10 @@ class _FakeSaf implements ZenSafPort {
   }
 
   @override
-  Future<void> delete(String uri, {required bool isDirectory}) async => nodes.remove(uri);
+  Future<void> delete(String uri, {required bool isDirectory}) async {
+    if (failDelete) throw StateError('delete failed');
+    nodes.remove(uri);
+  }
 
   @override
   Future<void> rename(String uri, String newName) async {
@@ -104,6 +108,21 @@ void main() {
     saf.failRename = true;
     await expectLater(access.write('dev1/a.zen', Uint8List.fromList([2])), throwsStateError);
     expect((await access.list('dev1')).where((e) => e.name.endsWith('.tmp')), isEmpty);
+  });
+
+  test('a failing cleanup does not hide why the write failed', () async {
+    await access.write('dev1/a.zen', Uint8List.fromList([1]));
+    saf.failRename = true;
+    saf.failDelete = true;
+    await expectLater(
+      access.write('dev1/a.zen', Uint8List.fromList([2])),
+      throwsA(isA<StateError>().having((e) => e.message, 'message', 'delete failed')),
+    );
+  });
+
+  test('a folder that cannot be opened is an error, not a null dereference', () async {
+    saf.nodes.clear();
+    await expectLater(access.write('a.zen', Uint8List.fromList([1])), throwsStateError);
   });
 
   test('a missing file reads as null and a missing directory lists empty', () async {

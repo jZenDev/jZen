@@ -47,5 +47,22 @@
   "cancel": "Скасувати",
   "erase": "Стерти",
   "startFailedTitle": "jZen Справи не змогли відкрити ваші дані",
-  "startFailedHint": "Нічого не змінено. {error}"
+  "startFailedHint": "Нічого не змінено. {error}",
+  "choreGone": "Цю справу видалено на іншому пристрої.",
+  "folderFailed": "Не вдалося використати цю теку: {error}",
+  "@folderFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "syncKeyFailed": "Не вдалося налаштувати синхронізацію: {error}",
+  "@syncKeyFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  }
 }

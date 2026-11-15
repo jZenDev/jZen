@@ -47,13 +47,17 @@ class _ChoreEditScreenState extends State<ChoreEditScreen> {
       _titleError = null;
       _busy = true;
     });
-    final base = widget.chore?.deepCopy() ?? (Chore()..id = widget.session.newId());
-    final chore = base
+    final before = widget.chore;
+    final after = (before?.deepCopy() ?? (Chore()..id = widget.session.newId()))
       ..title = title
       ..note = _note.text
       ..done = _done
       ..priority = _priority;
-    final result = await widget.session.chores.save(chore);
+    // An existing chore is saved as the changes made here on top of what is stored now, so another
+    // device's edit that arrived while this form was open is not sent back over.
+    final result = before == null
+        ? await widget.session.chores.save(after)
+        : await widget.session.chores.edit(before, after);
     if (!mounted) return;
     await _finish(result, messages);
   }
@@ -72,10 +76,11 @@ class _ChoreEditScreenState extends State<ChoreEditScreen> {
         Navigator.of(context).pop();
       case ZenFailure(:final error):
         setState(() => _busy = false);
-        showZenMessage(
-          context,
-          error is ZenConflictError ? messages.inConflict : messages.saveFailed(error.message),
-        );
+        showZenMessage(context, switch (error) {
+          ZenConflictError() => messages.inConflict,
+          ZenNotFoundError() => messages.choreGone,
+          _ => messages.saveFailed(error.message),
+        });
     }
   }
 

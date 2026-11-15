@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:zen_core/zen_core.dart';
 import 'package:zen_ui_lock/zen_ui_lock.dart';
 import 'package:zen_ui_store/zen_ui_store.dart';
 import 'package:zen_ui_widgets/zen_ui_widgets.dart';
@@ -27,10 +28,14 @@ class ChoresScreen extends StatelessWidget {
 
   Future<void> _toggle(BuildContext context, Chore chore) async {
     final messages = LocalDemoLocalizations.of(context);
-    final result = await session.chores.save(chore.deepCopy()..done = !chore.done);
+    final result = await session.chores.edit(chore, chore.deepCopy()..done = !chore.done);
     if (!context.mounted) return;
     if (result.errorOrNull case final error?) {
-      showZenMessage(context, messages.saveFailed(error.message));
+      showZenMessage(context, switch (error) {
+        ZenConflictError() => messages.inConflict,
+        ZenNotFoundError() => messages.choreGone,
+        _ => messages.saveFailed(error.message),
+      });
     }
   }
 

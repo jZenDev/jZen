@@ -110,13 +110,20 @@ final class DeviceSession extends ChangeNotifier {
 
   String newId() => _store.newId();
 
-  /// Lets the person pick the folder, keeps the choice and restarts sync through it.
-  Future<void> chooseFolder() async {
-    final choice = await _pickFolder();
-    if (choice == null) return;
-    await _secrets.write(_folderName, choice.reference);
+  /// Lets the person pick the folder, keeps the choice and restarts sync through it. Succeeds
+  /// with `false` when they cancelled, and fails when the dialog or keeping the choice did.
+  Future<ZenResult<bool>> chooseFolder() async {
+    final ZenFolderChoice? choice;
+    try {
+      choice = await _pickFolder();
+      if (choice == null) return const ZenResult.ok(false);
+      await _secrets.write(_folderName, choice.reference);
+    } on Object catch (e, stack) {
+      return ZenResult.err(ZenUnknownError('The folder cannot be chosen: $e', stackTrace: stack));
+    }
     _folder = choice;
     await _restartSync();
+    return const ZenResult.ok(true);
   }
 
   /// Makes this device the first of the group: a fresh 32-byte sync key, kept in the keystore.
@@ -144,24 +151,23 @@ final class DeviceSession extends ChangeNotifier {
     await _stopSync();
     await _store.close();
     final erased = await ZenStore.erase(directory);
-    if (erased case ZenFailure(:final error)) {
-      // Reopen what is still there so the app keeps working, and say what happened.
-      await _reopen();
-      return ZenResult.err(error);
-    }
-    await _reopen();
-    return const ZenResult.ok(null);
+    // Reopen either way: after a failed erase what is still there must keep working.
+    final reopened = await _reopen();
+    if (erased case ZenFailure(:final error)) return ZenResult.err(error);
+    return reopened;
   }
 
-  Future<void> _reopen() async {
+  Future<ZenResult<void>> _reopen() async {
     switch (await ZenStore.open(directory, deviceName: deviceName, key: _storeKey)) {
       case ZenSuccess(:final data):
         _store = data;
         _chores = ChoreRepository(_store);
       case ZenFailure(:final error):
-        throw StateError('The store cannot be reopened: $error');
+        // The old store is closed and nothing replaced it: say so rather than carry on.
+        return ZenResult.err(error);
     }
     await _restartSync();
+    return const ZenResult.ok(null);
   }
 
   Future<void> _restartSync() async {

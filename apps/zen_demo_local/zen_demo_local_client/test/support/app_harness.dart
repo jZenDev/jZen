@@ -83,3 +83,20 @@ Future<void> twoChores(TwoDevices devices) async {
   );
   await devices.phone.chores.save(Chore(id: devices.phone.newId(), title: 'Laundry', done: true));
 }
+
+/// A chore made and synced, then deleted on the laptop while the phone edited its note: the other
+/// conflict, a delete against an edit.
+Future<void> deleteAgainstEdit(TwoDevices devices) async {
+  final chore = Chore(id: devices.laptop.newId(), title: 'Water plants');
+  await devices.laptop.chores.save(chore);
+  await devices.sync();
+  await devices.laptop.chores.remove(chore.id);
+  await devices.phone.chores.save(chore.deepCopy()..note = 'Also the basil');
+  await devices.sync();
+}
+
+/// One chore on both devices, synced.
+Future<void> sharedChore(TwoDevices devices) async {
+  await devices.laptop.chores.save(Chore(id: devices.laptop.newId(), title: 'Water plants'));
+  await devices.sync();
+}

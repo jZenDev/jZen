@@ -31,7 +31,12 @@ class SharedFolderControls extends StatelessWidget {
           child: ZenButton(
             label: folder == null ? messages.chooseFolder : messages.changeFolder,
             variant: ZenButtonVariant.secondary,
-            onPressed: session.chooseFolder,
+            onPressed: () async {
+              final chosen = await session.chooseFolder();
+              if (context.mounted && chosen is ZenFailure<bool>) {
+                showZenMessage(context, messages.folderFailed(chosen.error.message));
+              }
+            },
           ),
         ),
         if (key == null) ...[
@@ -43,9 +48,11 @@ class SharedFolderControls extends StatelessWidget {
               variant: ZenButtonVariant.secondary,
               onPressed: () async {
                 final made = await session.createSyncKey();
-                if (context.mounted && made is ZenSuccess) {
-                  showZenMessage(context, messages.syncKeyMade);
-                }
+                if (!context.mounted) return;
+                showZenMessage(context, switch (made) {
+                  ZenSuccess() => messages.syncKeyMade,
+                  ZenFailure(:final error) => messages.syncKeyFailed(error.message),
+                });
               },
             ),
           ),

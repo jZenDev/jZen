@@ -59,9 +59,7 @@ final class ZenSafFolderAccess implements ZenFolderAccess {
   Future<void> write(String path, Uint8List bytes) async {
     final segments = _segments(path);
     final name = segments.last;
-    final dir = segments.length == 1
-        ? (await _port.child(treeUri, const []))!
-        : await _port.mkdirp(treeUri, segments.sublist(0, segments.length - 1));
+    final dir = await _directoryOf(segments);
     final temp = '.$name.${_random.nextInt(1 << 32).toRadixString(16)}.tmp';
     final tempUri = await _port.create(dir.uri, temp, bytes);
     try {
@@ -69,9 +67,21 @@ final class ZenSafFolderAccess implements ZenFolderAccess {
       if (existing != null) await _port.delete(existing.uri, isDirectory: false);
       await _port.rename(tempUri, name);
     } on Object {
-      await _port.delete(tempUri, isDirectory: false);
+      try {
+        await _port.delete(tempUri, isDirectory: false);
+      } on Object {
+        // The cleanup failing must not hide why the write did: the caller needs that error. A
+        // leftover `.tmp` document is ignored by the transport.
+      }
       rethrow;
     }
+  }
+
+  Future<ZenSafEntry> _directoryOf(List<String> segments) async {
+    if (segments.length > 1) return _port.mkdirp(treeUri, segments.sublist(0, segments.length - 1));
+    final root = await _port.child(treeUri, const []);
+    if (root == null) throw StateError('The sync folder $treeUri cannot be opened.');
+    return root;
   }
 
   /// No watcher: a tree cannot be watched from Dart, so the transport polls.

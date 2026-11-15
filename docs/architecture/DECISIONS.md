@@ -40,7 +40,14 @@ ADR-073 (plan unit 7), ADR-076 ("the Android adapter is not in this package"). *
   `saf_stream`, exactly the plugins spike 0.1 chose, behind a small `ZenSafPort` so the adapter's
   rules (write by temporary document then delete-and-rename, no rename over an existing document, a
   withdrawn grant reported as `accessRevoked`) are tested with a fake tree. `zen_store_shared_folder`
-  stays pure Dart.
+  stays pure Dart. One consequence of the SAF rule is a crash window: a crash between deleting the
+  old document and renaming the temporary one leaves no file at the target until that device's next
+  write (the other devices' copies and the device's own store are untouched); the transport reads
+  that as "not delivered yet", never as a deletion.
+- **A form saves only what the person changed.** `ChoreRepository.edit` applies the differences
+  between what the form opened with and what it left onto the record as stored *now*, because
+  `ZenCollection.put` counts every field that differs from the stored record as this device's edit,
+  and saving a stale snapshot whole would silently send back another device's newer value.
 - **The sync key and the chosen folder are kept in the application's secret storage**
   (`ZenLockStorage`, the Keychain / Keystore / Credential Manager / libsecret item `zen_ui_lock`
   already uses), under the app's own names. The store key stays `zen_store_key`'s alone.

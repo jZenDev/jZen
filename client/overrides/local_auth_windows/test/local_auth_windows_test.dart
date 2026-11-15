@@ -16,4 +16,8 @@ void main() {
       throwsA(isA<LocalAuthException>()),
     );
   });
+
+  test('local_auth can name the Windows messages type it defaults to', () {
+    expect(const WindowsAuthMessages().args, isEmpty);
+  });
 }

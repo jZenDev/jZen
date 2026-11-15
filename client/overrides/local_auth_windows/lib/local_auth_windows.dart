@@ -3,6 +3,7 @@ import 'package:local_auth_platform_interface/local_auth_platform_interface.dart
 export 'package:local_auth_platform_interface/types/auth_messages.dart';
 export 'package:local_auth_platform_interface/types/auth_options.dart';
 export 'package:local_auth_platform_interface/types/biometric_type.dart';
+export 'types/auth_messages_windows.dart';
 
 /// A Windows `local_auth` that has no native code and says the device cannot check its owner.
 ///

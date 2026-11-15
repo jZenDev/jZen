@@ -1,7 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:protobuf/well_known_types/google/protobuf/api.pb.dart';
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_store/zen_store.dart';
@@ -88,9 +87,7 @@ Widget conflictApp({required Widget home, String locale = ZenLocales.en, ThemeDa
       locale: Locale(locale),
       localizationsDelegates: const [
         storeLocaleDelegate,
-        GlobalMaterialLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
+        ...GlobalMaterialLocalizations.delegates,
       ],
       supportedLocales: [for (final tag in ZenLocales.shipped) Locale(tag)],
       theme: theme,

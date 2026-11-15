@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -32,7 +32,7 @@ void main() {
       expect(find.bySemanticsLabel('Show actions'), findsNothing);
       final node = tester.getSemantics(find.text('Item'));
       final action = node.getSemanticsData().customSemanticsActionIds!.single;
-      tester.binding.pipelineOwner.semanticsOwner!.performAction(
+      tester.binding.rootPipelineOwner.semanticsOwner!.performAction(
         node.id,
         SemanticsAction.customAction,
         action,

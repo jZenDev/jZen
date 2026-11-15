@@ -184,7 +184,7 @@ tasks:
       It used to check presence only, which meant "JDK 25" was documentation rather than
       enforcement: a contributor on another version got a green doctor and a confusing
       failure later, or worse, silently different output. `task format` is the live case —
-      the committed Dart layout is what Dart 3.12.2 produces.
+      the committed Dart layout is what Dart 3.14.0 produces.
 
       EACH PIN LIVES WHERE ITS OWN ECOSYSTEM ALREADY LOOKS FOR IT, and this task reads those
       files rather than restating a version:

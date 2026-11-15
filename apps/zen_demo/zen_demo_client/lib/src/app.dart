@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zen_ui_identity/zen_ui_identity.dart';
 import 'package:zen_ui_navigation/zen_ui_navigation.dart';
@@ -35,6 +35,7 @@ class DemoApp extends ConsumerWidget {
       // this is the reference an application copies.
       localizationsDelegates: const [
         ...DemoLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
         identityLocaleDelegate,
         navigationLocaleDelegate,
         zenWidgetsLocaleDelegate,

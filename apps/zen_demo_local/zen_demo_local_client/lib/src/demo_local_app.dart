@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_ui_lock/zen_ui_lock.dart';
 import 'package:zen_ui_store/zen_ui_store.dart';
@@ -21,6 +21,7 @@ class DemoLocalApp extends StatelessWidget {
     onGenerateTitle: (context) => LocalDemoLocalizations.of(context).appTitle,
     localizationsDelegates: const [
       ...LocalDemoLocalizations.localizationsDelegates,
+      ...GlobalMaterialLocalizations.delegates,
       storeLocaleDelegate,
       lockLocaleDelegate,
       zenWidgetsLocaleDelegate,

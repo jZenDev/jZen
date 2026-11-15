@@ -4,7 +4,7 @@ import 'package:zen_ui_identity/src/screens/login_screen.dart';
 import 'package:zen_ui_identity/src/state/identity_repository.dart';
 import 'package:zen_ui_identity/src/widgets/identity_button.dart';
 import 'package:zen_ui_identity/src/widgets/identity_text_field.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenButton, ZenIconButton;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,7 +15,7 @@ import '../support/localized_app.dart';
 
 class _FakeRepo implements IdentityRepository {
   final Future<ZenResult<IdentityContract>> Function(String, String)? _login;
-  _FakeRepo({Future<ZenResult<IdentityContract>> Function(String, String)? login}) : _login = login;
+  _FakeRepo({this._login});
 
   @override
   Future<ZenResult<IdentityContract?>> getCurrentIdentity() async => const ZenResult.ok(null);

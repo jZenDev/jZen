@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_store/zen_store.dart';
@@ -25,6 +25,7 @@ void main() {
   Widget host(DeviceSession session, Widget Function() child) => MaterialApp(
     localizationsDelegates: const [
       ...LocalDemoLocalizations.localizationsDelegates,
+      ...GlobalMaterialLocalizations.delegates,
       storeLocaleDelegate,
       zenWidgetsLocaleDelegate,
     ],

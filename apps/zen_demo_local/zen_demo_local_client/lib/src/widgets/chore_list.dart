@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../generated/zen_demo_local/v1/chore.pb.dart';
 import '../l10n/generated/local_localizations.dart';

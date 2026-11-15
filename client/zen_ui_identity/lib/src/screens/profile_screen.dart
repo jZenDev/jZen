@@ -1,6 +1,6 @@
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_identity/zen_identity.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zen_ui_widgets/zen_ui_widgets.dart'
     show ZenIconButton, ZenPageScaffold, ZenProgressIndicator;

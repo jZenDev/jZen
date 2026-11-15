@@ -164,6 +164,8 @@ platform for Cupertino-vs-Material. A missing generic control is a framework gap
 `zen_ui_widgets` (with its accessibility suite), then use it. Table and rules: STANDARDS "Client UI:
 the framework's controls first"; the `use-zen-ui` skill carries the working version.
 
+The raw Material and Cupertino widgets, where nothing in `zen_ui_widgets` covers them, come from `package:material_ui` and `package:cupertino_ui`, never `package:flutter/material.dart` or `cupertino.dart` (deprecated since Flutter 3.50, ADR-082).
+
 **One widget per file.** Every Flutter widget class lives in its own file, named for the class in
 snake_case, as with Java's one class per file. A helper widget is a *public* class in its own file,
 never a file-private `_Foo` tucked into another widget's file. The one exception is by construction:

@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -73,7 +73,10 @@ Future<void> pumpNavigation(
   await tester.pumpWidget(
     MaterialApp(
       theme: theme,
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      localizationsDelegates: [
+        ...NavigationLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
       supportedLocales: NavigationLocalizations.supportedLocales,
       home: Builder(builder: build),
     ),

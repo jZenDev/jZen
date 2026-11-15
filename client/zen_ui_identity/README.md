@@ -61,7 +61,10 @@ selects; you supply no strings.
 ```dart
 MaterialApp(
   locale: const Locale('uk'),
-  localizationsDelegates: IdentityLocalizations.localizationsDelegates,
+  localizationsDelegates: [
+        ...IdentityLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
   supportedLocales: IdentityLocalizations.supportedLocales,
 );
 ```

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../l10n/generated/zen_widgets_localizations.dart';
 import '../pair_layout.dart';

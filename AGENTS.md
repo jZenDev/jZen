@@ -163,6 +163,8 @@ platform for Cupertino-vs-Material. A missing generic control is a framework gap
 `zen_ui_widgets` (with its accessibility suite), then use it. Table and rules: STANDARDS "Client UI:
 the framework's controls first".
 
+The raw Material and Cupertino widgets, where nothing in `zen_ui_widgets` covers them, come from `package:material_ui` and `package:cupertino_ui`, never `package:flutter/material.dart` or `cupertino.dart` (deprecated since Flutter 3.50, ADR-082).
+
 **Group related UI files.** In `client/zen_ui_widgets/lib/src`, a family with two or more
 related files belongs in a named folder; a standalone file stays at the root. Group field and
 range variants and progress controls by family. Helpers shared across families stay at the root.

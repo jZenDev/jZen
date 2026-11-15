@@ -38,7 +38,10 @@
 ///
 /// ```dart
 /// MaterialApp(
-///   localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+///   localizationsDelegates: [
+///     ...NavigationLocalizations.localizationsDelegates,
+///     ...GlobalMaterialLocalizations.delegates, // from material_ui
+///   ],
 ///   supportedLocales: NavigationLocalizations.supportedLocales,
 /// )
 /// ```

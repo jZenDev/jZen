@@ -15,6 +15,34 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-082 — Flutter 3.50 / Dart 3.14, and the design libraries come from `material_ui` / `cupertino_ui`
+
+**Date:** 2026-11-15. **Status:** accepted. **Refines:** ADR-009 (client i18n), the "Client UI"
+section of STANDARDS. **Issue:** #212. Analysis and plan: `docs/plans/FLUTTER-3-50-MIGRATION.md`.
+
+### Decision
+
+- **The toolchain floor is Flutter 3.50.0 / Dart 3.14.0.** `.fvmrc`, every CI `flutter-action`,
+  every `environment.sdk` (`>=3.14.0 <4.0.0`) and `zen_ui_widgets`' `flutter: >=3.50.0` say so.
+- **jZen code imports `package:material_ui/material_ui.dart` and `package:cupertino_ui/cupertino_ui.dart`,
+  never `package:flutter/material.dart` or `cupertino.dart`.** Flutter 3.50 formally deprecates the
+  in-SDK libraries; the standalone packages are the same code, released independently of the SDK.
+  Staying on the SDK libraries would leave `deprecated_member_use` on 193 files and a removal
+  deadline the framework does not control.
+- **Localization delegates are composed with `...GlobalMaterialLocalizations.delegates`** (Material,
+  Cupertino and Widgets together) instead of three separate `.delegate` entries. `flutter_localizations`
+  stays a dependency: `flutter gen-l10n` and the `intl` pin still come through it.
+- The Java server is not affected by this decision and is unchanged.
+
+### Consequence
+
+Each package importing either library declares `material_ui` / `cupertino_ui` itself; applications
+inherit the same rule. The packages release weekly, so the lockfiles are what pins the tested
+version. **Verified:** see the PR's acceptance list. **Not verified:** native runners the dev
+machine cannot build (CI is the check).
+
+---
+
 ## ADR-081 — Windows has no owner check until `local_auth_windows` builds: a Dart-only stand-in replaces it
 
 **Date:** 2026-11-15. **Status:** accepted; Windows hardware not verified. **Refines:** ADR-078

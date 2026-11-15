@@ -1,8 +1,8 @@
 // Each presenter is exercised directly. The public entry point picks one on compile-time
 // constants, so a single test run only ever reaches the branch of the host platform it was
 // compiled for; calling the four presenters covers every idiom on every host.
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_ui_widgets/src/presentation/presenters.dart';
 

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:zen_core/zen_core.dart';
 
 import 'detail_button_activation.dart';
@@ -187,7 +187,7 @@ Widget buildApplePanes(
                 curve: Curves.easeOutCubic,
               ),
               axis: Axis.horizontal,
-              axisAlignment: 1,
+              alignment: const AlignmentDirectional(1, -1),
               child: child,
             ),
         child: pane == null

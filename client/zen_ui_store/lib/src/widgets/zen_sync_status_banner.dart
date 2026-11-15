@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:zen_store/zen_store.dart';
 
 import '../l10n/generated/store_localizations.dart';

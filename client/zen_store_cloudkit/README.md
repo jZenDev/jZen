@@ -49,13 +49,13 @@ await ZenDataProtection.protectDirectory(directory);   // before the store write
 final key = (await ZenDeviceStoreKey.load(dataDirectory: directory)).dataOrNull!;
 final store = (await ZenStore.open(directory, deviceName: "Alex's iPhone", key: key)).dataOrNull!;
 
-// Chosen at compile time (STANDARDS "Client config is compile-time"), never at runtime:
-// `task zen:run:client ZEN_SYNC=folder|cloudkit` bakes these in (ADR-072).
-const syncMode = String.fromEnvironment('ZEN_SYNC');
-const syncFolder = String.fromEnvironment('ZEN_SYNC_FOLDER');
-final sync = syncMode == 'folder'
-    ? await ZenFolderCloud.start(store, Directory(syncFolder))
-    : await ZenCloudKitSync.start(store, containerId: 'iCloud.com.example.app');
+// One call, for every platform. The build's ZEN_PLATFORM and ZEN_SYNC choose the transport at
+// compile time (STANDARDS "Client config is compile-time", ADR-079): CloudKit here on iOS and
+// macOS, `ZenFolderCloud` with `ZEN_SYNC=folder` in development. The app reads neither define.
+final sync = (await ZenSync.start(
+  store,
+  cloudKitContainerId: 'iCloud.com.example.app',
+)).dataOrNull!;          // `ZenSync` is zen_store_sync's; this package is only the CloudKit transport
 ```
 
 A missing iCloud account is not a start failure: sync starts and its `status` says why it is

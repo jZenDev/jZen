@@ -15,6 +15,57 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-079 — One call starts sync, from a new `zen_store_sync` package that names both transports
+
+**Date:** 2026-11-15. **Status:** accepted; the CloudKit branch and the Android folder adapter are
+**not verified on a device**. **Refines:** ADR-073 ("transport selection from `ZEN_PLATFORM` in
+code"), ADR-072 (`ZEN_SYNC`). **Issue:** #210.
+
+### Decision
+
+- **`ZenSync.start(store, ...)` is the call.** An application passes what each transport needs
+  (`cloudKitContainerId`, `sharedFolder`, `syncKey`) and gets a `ZenResult<ZenSyncTransport>`. It
+  reads no `ZEN_SYNC` and no `ZEN_PLATFORM` itself. The build decides:
+
+  | `ZEN_PLATFORM` | `ZEN_SYNC` unset | `folder` | `cloudkit` |
+  |---|---|---|---|
+  | `ios`, `macos` | CloudKit | `ZenFolderCloud` | CloudKit |
+  | `android`, `windows`, `linux` | shared folder | `ZenFolderCloud` | **refused** |
+  | `web`, unset, unknown | **refused** | **refused** | **refused** |
+
+  A refusal is a `ZenValidationError` naming the define and, for the web, ADR-073. An unknown
+  `ZEN_SYNC` value is refused too. `ZEN_SYNC=folder` also needs `ZEN_SYNC_FOLDER`, and the shared
+  folder needs a `ZenFolderAccess`; leaving either out is a `ZenError`, not a transport that
+  syncs nothing.
+- **It lives in a new package, `zen_store_sync`**, the only one that depends on both
+  `zen_store_cloudkit` and `zen_store_shared_folder`. Putting it in either would make an Apple
+  plugin depend on the pure-Dart folder transport or the reverse; putting it in `zen_store` would
+  give a package that `dart test` loads a Flutter plugin dependency. A new leaf keeps every
+  existing edge as it was and is the one thing an application imports for sync.
+- **The choice is a constant.** `ZenSyncPlan` is a `const` constructor over the two defines, so
+  `kind` is a compile-time constant and the compiler drops the transports a platform never
+  reaches. The suite calls the same constructor over every platform × `ZEN_SYNC` combination, so
+  there is no second copy of the table to drift. Android, Windows and Linux builds still *link*
+  `zen_store_cloudkit`'s Dart (its plugin registers only for `ios` and `macos`); that code is
+  unreachable there.
+
+### What this supersedes, and why
+
+- **"applications still read `ZEN_SYNC` themselves, as ADR-072 left them"** (ADR-073,
+  Consequence) → **changed: `ZenSync.start` reads it; applications do not.** *Why:* a define each
+  application must interpret is a rule each will get slightly wrong, and a refusal (the web,
+  CloudKit off Apple) belongs in one place.
+
+### Consequence
+
+New package, workspace member, lockstep version 0.1.0. The `zen_store` and `zen_store_cloudkit`
+READMEs' "Use" snippets now call `ZenSync.start`. Verified: the plan table (every platform ×
+`ZEN_SYNC`, refused rows included) and each branch's start on a host. **Not verified:** that the
+unreached transports are absent from a built Android/Windows/Linux binary (nothing here built
+one), CloudKit on a device, and the Android folder adapter.
+
+---
+
 ## ADR-077 — A new device joins by a code that carries the sync key: 77 characters, a QR code beside them
 
 **Date:** 2026-11-14. **Status:** accepted; camera scanning **not yet verified on a device** (see

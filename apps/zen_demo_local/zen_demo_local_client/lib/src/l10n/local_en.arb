@@ -1,0 +1,67 @@
+{
+  "@@locale": "en",
+
+  "appTitle": "jZen Chores",
+  "choresTitle": "Chores",
+  "addChore": "Add a chore",
+  "emptyChores": "No chores yet. They stay on your devices; nothing is sent to a server.",
+  "settings": "Settings",
+  "choreDone": "Done",
+  "choreOpen": "To do",
+  "priorityLow": "Low",
+  "priorityNormal": "Normal",
+  "priorityHigh": "High",
+
+  "newChoreTitle": "New chore",
+  "editChoreTitle": "Edit chore",
+  "titleField": "Title",
+  "noteField": "Note",
+  "doneField": "Done",
+  "priorityField": "Priority",
+  "save": "Save",
+  "delete": "Delete",
+  "titleRequired": "Give the chore a title.",
+  "saveFailed": "Could not save: {error}",
+  "@saveFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "inConflict": "Another device changed this chore differently. Choose a version first.",
+
+  "settingsTitle": "Settings",
+  "securitySection": "Security",
+  "syncSection": "Sync",
+  "deviceSection": "This device",
+  "syncFolder": "Sync folder",
+  "syncFolderNone": "No folder chosen",
+  "chooseFolder": "Choose folder",
+  "changeFolder": "Change folder",
+  "firstDevice": "Start syncing from this device",
+  "firstDeviceHint": "Makes the key your other devices will join with.",
+  "joinDevice": "Join another device",
+  "addDevice": "Add a device",
+  "syncKeyMade": "This device is ready to be joined by others.",
+  "syncKeyJoined": "This device joined your other devices.",
+  "syncApple": "Syncs through your iCloud account.",
+  "syncDevelopmentFolder": "Syncs through a development folder (not for release).",
+  "syncRefused": "Sync is not available in this build: {reason}",
+  "@syncRefused": {
+    "placeholders": { "reason": { "type": "String" } }
+  },
+  "eraseCopy": "Erase this device's copy",
+  "eraseHint": "Deletes the chores stored here. Your other devices keep theirs and send them back.",
+  "eraseConfirmTitle": "Erase this device's copy?",
+  "eraseConfirmBody": "Chores that were not synced yet are lost. The others come back from your other devices.",
+  "erased": "This device's copy was erased.",
+  "eraseFailed": "Could not erase: {error}",
+  "@eraseFailed": {
+    "placeholders": { "error": { "type": "String" } }
+  },
+  "cancel": "Cancel",
+  "erase": "Erase",
+
+  "startFailedTitle": "jZen Chores could not open your data",
+  "startFailedHint": "Nothing was changed. {error}",
+  "@startFailedHint": {
+    "placeholders": { "error": { "type": "String" } }
+  }
+}

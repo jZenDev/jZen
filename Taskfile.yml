@@ -45,7 +45,11 @@ includes:
       APP_NAME: zen_demo_local
       CLIENT_DIR: client
       SERVER_DIR: server
-      PROTO_DIR: proto
+      # The application's own contract root: its model is not jZen's (`proto/zen/v1` is generated
+      # into zen_transport, which a Local application does not use), so it keeps its protos beside
+      # itself and generates into its own package (ADR-080).
+      PROTO_DIR: apps/zen_demo_local/proto
+      PROTO_DART_OUT: apps/zen_demo_local/zen_demo_local_client/lib/generated
       DART_ROOTS: "client apps"
       APP_SERVER_MODULE: apps/zen_demo_local/zen_demo_local_server
       APP_CLIENT_DIR: apps/zen_demo_local/zen_demo_local_client
@@ -375,6 +379,8 @@ tasks:
       # That is the honest limit: running it proves the task parses, resolves and finds the right
       # set, not that the import rewrite works. See its own summary.
       - task: zen:generate:proto:dart
+      # The Local reference application's own model (ADR-080).
+      - task: zenlocal:generate:proto:dart
 
   generate:proto:java:
     desc: Generate Java DTOs from proto/ (protoc resolved from Maven Central)

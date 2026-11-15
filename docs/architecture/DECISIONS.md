@@ -15,6 +15,48 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-080 — The Local reference app keeps its model beside itself; the Android folder adapter and picker are a new `zen_store_folder`
+
+**Date:** 2026-11-15. **Status:** accepted; nothing here is verified on a device. **Refines:**
+ADR-073 (plan unit 7), ADR-076 ("the Android adapter is not in this package"). **Issue:** #210.
+
+### Decision
+
+- **`zen_demo_local`'s model lives in `apps/zen_demo_local/proto/zen_demo_local/v1/chore.proto`,
+  not in `proto/zen/v1/`.** Its generated Dart is committed under the app's own `lib/generated`,
+  made by the existing application task (`zenlocal:generate:proto:dart`, with `PROTO_DIR` and
+  `PROTO_DART_OUT` set on the include) and covered by `verify:contracts`. *Why:* everything under
+  `proto/zen/v1/` is jZen's own contract — it is generated into `zen_transport` and into the
+  server's `zen-proto` — and a Local application has neither. Putting its model there would make
+  the app depend on a server transport it must not have (ADR-065, ADR-073) and add a demo
+  message to the server's DTOs.
+- **A record repeats its own id as a field** (`Chore.id`), written once at creation. `ZenCollection`
+  lists values, not keys, so a list screen cannot otherwise open or delete the chore it shows. The
+  field is never edited, so it can never conflict.
+- **`zen_store_folder`, a new Flutter package, supplies `ZenFolderAccess` where `dart:io` is not
+  enough and the folder picker everywhere.** `ZenFolderPicker.pick` / `restore` give a
+  `ZenFolderChoice` (a reference to keep, a label, an access): the system folder dialog
+  (`file_picker`) on Windows and Linux, and on Android `ZenSafFolderAccess` over `saf_util` +
+  `saf_stream`, exactly the plugins spike 0.1 chose, behind a small `ZenSafPort` so the adapter's
+  rules (write by temporary document then delete-and-rename, no rename over an existing document, a
+  withdrawn grant reported as `accessRevoked`) are tested with a fake tree. `zen_store_shared_folder`
+  stays pure Dart.
+- **The sync key and the chosen folder are kept in the application's secret storage**
+  (`ZenLockStorage`, the Keychain / Keystore / Credential Manager / libsecret item `zen_ui_lock`
+  already uses), under the app's own names. The store key stays `zen_store_key`'s alone.
+
+### Consequence
+
+New package `zen_store_folder`, workspace member, lockstep 0.1.0; new app `zen_demo_local` in the
+`apps/` workspace. **Verified:** two real app sessions through `ZenFolderCloud` and through the
+shared-folder transport on a Mac (merge of different fields, conflict on the same field, delete
+against edit, erase and re-sync), the screens, the accessibility suite, the SAF adapter against a
+fake, and a macOS debug build. **Not verified:** the two SAF plugins on an Android device with a
+real sync app and a grant surviving a restart; Windows and Linux runs; QR scanning (the typed code
+works, no scanner plugin is wired); real CloudKit.
+
+---
+
 ## ADR-079 — One call starts sync, from a new `zen_store_sync` package that names both transports
 
 **Date:** 2026-11-15. **Status:** accepted; the CloudKit branch and the Android folder adapter are

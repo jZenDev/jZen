@@ -1,0 +1,32 @@
+name: zen_store_folder
+description: >-
+  Choosing the folder a jZen Local application syncs through, and reaching it: a desktop path on
+  Windows and Linux, a Storage Access Framework tree on Android. Gives zen_store_shared_folder the
+  ZenFolderAccess it needs on each platform. See ADR-076.
+publish_to: 'none'
+# Lockstep with the product version, see docs/architecture/STANDARDS.md "Versioning".
+version: 0.1.0
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+
+resolution: workspace
+
+dependencies:
+  # The pickers are plugins, which import dart:ui: why this is not part of zen_store_shared_folder,
+  # whose suite runs on the Dart VM.
+  file_picker: ^13.3.3
+  flutter:
+    sdk: flutter
+  meta: ^1.11.0
+  saf_stream: ^4.0.3
+  saf_util: ^3.1.1
+  zen_core:
+    path: ../zen_core
+  zen_store_shared_folder:
+    path: ../zen_store_shared_folder
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter

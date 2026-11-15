@@ -15,7 +15,9 @@ Quarkus resources     ──▶ REST paths/verbs/status ──▶ openapi.json �
 An application is either **full-stack** — client, server and admin panel, as above — or
 **Local**: the Flutter client alone, with no server and no sign-in, its data in `zen_store` on the
 user's own devices — synced through their iCloud on iOS and macOS, and through a folder of their
-choosing on Android, Windows and Linux (planned); never the web (ADR-073). Local sync merges edits field
+choosing on Android, Windows and Linux (`zen_store_shared_folder`); never the web (ADR-073). One call,
+`ZenSync.start` (`zen_store_sync`), picks the transport from the build. Real CloudKit and real devices
+are not yet verified (ROADMAP item 9). Local sync merges edits field
 by field and hands anything that cannot merge to the person as a conflict to decide, in
 `zen_ui_store`'s screens; an optional
 PIN (`zen_ui_lock`) closes the app in place of a login. The `.proto` models are the same in both

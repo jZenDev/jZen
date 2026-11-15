@@ -1,5 +1,20 @@
 # Plan: jZen Local on every native target, shown by `zen_demo_local`
 
+> **Status: implemented, except unit 8.** Every code unit is merged; this PR (units 9 and 10) makes
+> the documents describe what was built. **Left open:**
+> - **Unit 8 (manual verification on real devices) was not done** and cannot be by a coding session:
+>   Windows ↔ Linux ↔ Android through Syncthing and Dropbox/OneDrive, and macOS ↔ iOS simulator
+>   through `ZenFolderCloud`, are all **not verified**.
+> - **Real CloudKit** stays open until a paid Apple Developer Program membership exists.
+> - **Spikes 0.1 and 0.4 are desk studies** (0.2 and 0.3 are decisions, ADR-077 and ADR-078); in particular real Android Storage Access Framework access
+>   (`saf_util` + `saf_stream`, a grant surviving a restart) has never run on a device.
+> - **Camera QR scanning** is untested: no scanner plugin is wired; the typed code works.
+> - Windows and Linux hardware, and the tree-shaking of unreached transports in a built binary, are
+>   unchecked. The status of each row is in ROADMAP item 9 and `apps/zen_demo_local/README.md`.
+> - The **person-chosen folder on real Android** is built (ADR-080) but unverified.
+>
+> Decisions made along the way are ADR-075 – ADR-081 in `DECISIONS.md`.
+
 **Source:** ADR-073 (2026-11-06) — a serverless jZen application is a *Local* application, and its
 sync transport follows `ZEN_PLATFORM`: CloudKit on iOS and macOS, a folder the person chooses on
 Android, Windows and Linux, no web build. ADR-065 built the core (`zen_store`, `zen_store_cloudkit`,
@@ -34,7 +49,7 @@ ROADMAP item 9.
 
 ## Phase 0 — Spikes (answers before code; each ends in a note in the PR that closes it)
 
-### 0.1 Android folder access
+### 0.1 Android folder access ✅ desk study; chosen `saf_util` + `saf_stream`, **not run on a device** (ADR-076, ADR-080)
 - **Question:** a folder chosen through the Storage Access Framework is a `content://` tree URI,
   which `dart:io` cannot open. Which way does `zen_store_shared_folder` read and write it — an
   existing, maintained pub.dev plugin, or a small Kotlin part of its own?
@@ -42,7 +57,7 @@ ROADMAP item 9.
   SAF-chosen folder synced by a real sync app (Syncthing or Dropbox), and the grant survives a
   restart. The choice and its reason go into the unit 2 ADR.
 
-### 0.2 Pairing on devices without a camera
+### 0.2 Pairing on devices without a camera ✅ decided: 77-character code carrying the key, QR beside it (ADR-077; [#219](https://github.com/jZenDev/jZen/pull/219))
 - **Question:** which code carries the sync key from one device to another — a QR code where a
   camera exists (Android, iOS), and a typed code everywhere (Windows and Linux desktops usually
   have no scanner)? Its length, alphabet and check digit; whether it is a one-time code that
@@ -50,12 +65,12 @@ ROADMAP item 9.
 - **Done when:** the format is written down with its threat model (someone photographing the
   screen) and the scanner plugin, if any, is chosen.
 
-### 0.3 "Forgot PIN?" without `local_auth`
+### 0.3 "Forgot PIN?" without `local_auth` ✅ decided: erase this device's copy and re-sync (ADR-078; [#217](https://github.com/jZenDev/jZen/pull/217))
 - **Question:** `local_auth` has no Linux implementation. What does `zen_ui_lock` offer there —
   hide recovery, or recover by erasing this device's copy and re-syncing it from the others?
 - **Done when:** the answer is decided and `zen_ui_lock`'s suite names the Linux path.
 
-### 0.4 Key storage off Apple
+### 0.4 Key storage off Apple ✅ desk study; behaviour and failure written down in ADR-075 ([#221](https://github.com/jZenDev/jZen/pull/221)); not run on devices
 - **Question:** does `flutter_secure_storage` 10.x give the store key the same "this device only"
   guarantee on Android (Keystore), Windows and Linux (libsecret) that the Keychain gives? What
   happens on a Linux desktop with no secret service running?
@@ -66,7 +81,7 @@ ROADMAP item 9.
 
 ## Phase 1 — Framework
 
-### Unit 1 — The store key on every platform
+### Unit 1 — The store key on every platform ✅ [#221](https://github.com/jZenDev/jZen/pull/221), ADR-075
 - **Branch:** `feature/zen-store-key-all-platforms`
 - **What:** `ZenKeychainStoreKey` lives in `zen_store_cloudkit`, which is Apple-only. Move the key
   to a package every Local application depends on (name it in the ADR; e.g. `zen_store_key` or
@@ -76,7 +91,7 @@ ROADMAP item 9.
   load with a `ZenError`, never a fresh key.
 - **ADR:** yes — where the key lives now, and why.
 
-### Unit 2 — `zen_store_shared_folder`
+### Unit 2 — `zen_store_shared_folder` ✅ [#220](https://github.com/jZenDev/jZen/pull/220), ADR-076; Android adapter landed with unit 7 in `zen_store_folder`
 - **Branch:** `feature/zen-store-shared-folder`
 - **What:** a `ZenSyncTransport` over a folder a sync service keeps in step:
   - one subfolder per device; a device writes only its own files and reads everyone's, so no file
@@ -96,7 +111,7 @@ ROADMAP item 9.
   plaintext on disk.
 - **ADR:** yes — layout, encryption, what the folder exposes (device count, sizes, timing).
 
-### Unit 3 — Pairing
+### Unit 3 — Pairing ✅ [#219](https://github.com/jZenDev/jZen/pull/219), ADR-077
 - **Branch:** `feature/zen-local-pairing`
 - **What:** the 0.2 format in a framework package, plus screens in `zen_ui_store`: "Add a device"
   (show the code, as QR where useful and as text always) and "Join" (scan or type), with a
@@ -104,7 +119,7 @@ ROADMAP item 9.
 - **Tests:** round trip, wrong code, expired code, typo caught by the check digit; widget
   accessibility suite as for every `zen_ui_*` screen; en + uk strings.
 
-### Unit 4 — Choosing the transport from the platform
+### Unit 4 — Choosing the transport from the platform ✅ [#223](https://github.com/jZenDev/jZen/pull/223), ADR-079
 - **Branch:** `feature/zen-local-sync-select`
 - **What:** one call an application makes to start sync — CloudKit for `ios`/`macos`, the shared
   folder for `android`/`windows`/`linux`, `ZenFolderCloud` when `ZEN_SYNC=folder` — resolved from
@@ -113,13 +128,13 @@ ROADMAP item 9.
 - **Tests:** a table test over every `ZEN_PLATFORM` × `ZEN_SYNC` combination, including the
   refused ones.
 
-### Unit 5 — `zen_ui_lock` everywhere
+### Unit 5 — `zen_ui_lock` everywhere ✅ [#217](https://github.com/jZenDev/jZen/pull/217), ADR-078
 - **Branch:** `feature/zen-ui-lock-all-platforms`
 - **What:** the 0.3 decision; the privacy cover and lifecycle lock checked on Android, Windows and
   Linux, not only Apple.
 - **Tests:** existing suite on every host; the Linux recovery path.
 
-### Unit 6 — Taskfile and CI
+### Unit 6 — Taskfile and CI ✅ [#218](https://github.com/jZenDev/jZen/pull/218)
 - **Branch:** `orchestration/zen-local-targets`
 - **What:** `Taskfile.app.yml` refuses `ZEN_PLATFORM=web` (and `build:web`) for an application
   with no server, with a message naming ADR-073; `build:runners` builds a Local application for
@@ -132,7 +147,7 @@ ROADMAP item 9.
 
 ## Phase 2 — `zen_demo_local`
 
-### Unit 7 — The application
+### Unit 7 — The application ✅ [#225](https://github.com/jZenDev/jZen/pull/225), ADR-080 and ADR-081 (Windows `local_auth` stand-in)
 - **Branch:** `feature/zen-demo-local`
 - **What:** `apps/zen_demo_local/zen_demo_local_client` (no `_server`, no `_admin`), a member of
   the `apps/` workspace, with `ios`, `macos`, `android`, `windows`, `linux` runners and no `web`.
@@ -151,7 +166,7 @@ ROADMAP item 9.
 - **Docs:** `apps/zen_demo_local/README.md` (what it shows, how to run two devices on one Mac or
   PC), root README "jZen Local" section and `apps/` description point at it.
 
-### Unit 8 — Manual verification matrix
+### Unit 8 — Manual verification matrix ❌ **not done — not verified**: needs real devices, accounts and a person; recorded as such in `apps/zen_demo_local/README.md` and ROADMAP item 9
 - **Branch:** `docs/zen-demo-local-verification`
 - **What:** run the demo on real targets and record the result per row in the demo README and
   ROADMAP item 9:
@@ -167,13 +182,13 @@ ROADMAP item 9.
 
 ## Phase 3 — Close
 
-### Unit 9 — Documents
+### Unit 9 — Documents ✅ done by this PR
 - **Branch:** `docs/jzen-local-done`
 - **What:** BLUEPRINT "Local applications", README, ARCHITECTURE, CLAUDE.md/AGENTS.md and
   ROADMAP item 9 describe what was built (not planned); every "planned" in ADR-073's wake is
   either gone or still true; package CHANGELOGs.
 
-### Unit 10 — Move this plan to `docs/plans/implemented/`
+### Unit 10 — Move this plan to `docs/plans/implemented/` ✅ done by this PR
 - **Branch:** the unit 9 branch or its own `docs/` branch.
 - **What:** `git mv docs/plans/JZEN-LOCAL-PLAN.md docs/plans/implemented/`, with each unit above
   marked ✅ and its PR linked, and anything left open stated at the top.

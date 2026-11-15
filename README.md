@@ -87,7 +87,7 @@ Not every product needs a backend. A **Local** app is the client tier alone — 
 whose data belongs on its owner's devices, where a server, a database and an account would be pure
 cost. It runs on **iOS, macOS, Android, Windows and Linux** — not the web, which has nowhere durable
 to keep an encrypted store offline — and is built from the same packages as any jZen client, plus
-four of its own. How it syncs follows the platform, chosen at compile time (ADR-073): CloudKit on
+the Local packages below. How it syncs follows the platform, chosen at compile time (ADR-073): CloudKit on
 iOS 17 and macOS 14, and elsewhere a folder the person's own sync service keeps in step (Dropbox,
 OneDrive, Syncthing, ...). [`apps/zen_demo_local`](apps/zen_demo_local/README.md) is the reference
 app for the mode — a chore list with no server — and the way to see two devices merge and conflict
@@ -96,7 +96,8 @@ on one Mac or PC.
 | Package | What it gives a Local app |
 |---|---|
 | [`zen_store`](client/zen_store/README.md) | The data: proto messages by collection and id, encrypted on the device (no database), fully offline, answering with `ZenResult` like `ZenClient` does. |
-| [`zen_store_cloudkit`](client/zen_store_cloudkit/README.md) | The sync: CloudKit in the user's private iCloud database, end-to-end encrypted, plus the store's key in the Keychain. |
+| [`zen_store_cloudkit`](client/zen_store_cloudkit/README.md) | The sync: CloudKit in the user's private iCloud database, end-to-end encrypted, plus iOS Data Protection on the store's directory. |
+| [`zen_store_key`](client/zen_store_key/README.md) | The store's key on every platform: Keychain, Android Keystore, Windows Credential Manager or libsecret, this device only. |
 | [`zen_store_shared_folder`](client/zen_store_shared_folder/README.md) | The sync on Android, Windows and Linux: a folder the person chooses and a sync service of their own keeps in step, one directory per device, every file encrypted. |
 | [`zen_store_folder`](client/zen_store_folder/README.md) | Choosing that folder: the system folder dialog on Windows and Linux, the Storage Access Framework on Android. |
 | [`zen_store_sync`](client/zen_store_sync/README.md) | The one call that starts sync, choosing CloudKit, the shared folder or `ZenFolderCloud` from the build. |
@@ -110,9 +111,17 @@ kept, on every device, the record refuses further writes, and `zen_ui_store`'s b
 show the person each device's version and let them choose. Nothing is ever resolved by "the last write wins".
 
 **How it is stored.** No database: a set of files in the app's own data directory, each encrypted
-with AES-256-GCM under a key kept in the Keychain; everything works offline. In iCloud each record
+with AES-256-GCM under a key kept in the platform's secure storage (Keychain, Keystore, Credential
+Manager, libsecret); everything works offline. In iCloud each record
 is one CloudKit field encrypted end to end, so Apple holds ciphertext, not the keys — the details
 are in [`zen_store`'s README](client/zen_store/README.md#-how-it-is-stored-on-the-device).
+
+**What is not verified.** Everything above is built and tested on a host (a Mac), with two real app
+sessions merging through the folder transport. Not run: real CloudKit (needs a paid Apple Developer
+Program membership), the Android folder access on a device, camera QR scanning (the typed code works),
+a real sync service (Syncthing, Dropbox, OneDrive), and Windows and Linux hardware. Windows has no
+Windows Hello for "Forgot PIN?" until `local_auth_windows` builds again (ADR-081). The table is in
+[`zen_demo_local`'s README](apps/zen_demo_local/README.md#verification-matrix) and ROADMAP item 9.
 
 What it gives up: rules a server would enforce (a balance, a budget, anything across records) are
 the app's to enforce on every device. ADR-065 in [`DECISIONS.md`](docs/architecture/DECISIONS.md)

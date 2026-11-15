@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- `ZenPairing`: the 77-character code (QR text behind `zenpair1:`) that carries the sync key to a new device (ADR-077).
+
 ## 0.1.0
 
 - Initial release. `ZenStore` and typed `ZenCollection`s over proto messages, AES-256-GCM files

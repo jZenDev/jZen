@@ -15,6 +15,42 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-081 — Windows has no owner check until `local_auth_windows` builds: a Dart-only stand-in replaces it
+
+**Date:** 2026-11-15. **Status:** accepted; Windows hardware not verified. **Refines:** ADR-078
+("Forgot PIN?" on a device with no owner check), ADR-073. **Issue:** #210.
+
+### Decision
+
+- **`local_auth_windows` is overridden by a first-party, Dart-only package of the same name**
+  (`client/overrides/local_auth_windows`), declared as a `dependency_overrides` entry in both
+  workspace roots. It registers as the Windows `local_auth`, and answers `isDeviceSupported() ==
+  false` and no biometrics; `authenticate` throws `noBiometricHardware`.
+- **Why.** The published `local_auth_windows` 2.0.2, the latest, compiles with `/await`. The
+  MSVC that Visual Studio 18 ships (14.51) refuses it — `error STL1011: The /await compiler option,
+  <experimental/coroutine> ... are deprecated ... and will be REMOVED SOON` — in its plugin target,
+  so **no Windows build that depends on `local_auth` links**, including `zen_demo_local` (CI
+  `windows-runner`). No fixed release exists. The options were: a newer release (none), defining
+  `_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS` for a plugin we do not own (a deprecation
+  that is announced to become removal, hidden), vendoring a fork of its C++ (a native port we would
+  then maintain), or dropping the one feature it serves on Windows. The last is the smallest and
+  honest, because the recovery it served already has a defined fallback.
+- **What Windows loses and what it does instead.** "Forgot PIN?" no longer confirms the owner with
+  Windows Hello; `zen_ui_lock` sees "no owner check" and offers *erase this device's copy and
+  re-sync from the other devices*, the path ADR-078 built for Linux. The PIN, the privacy cover and
+  the lifecycle lock are unchanged. A person with a PIN and no other device loses the data on a
+  forgotten PIN on Windows — the cost, stated.
+- **Revisit when** a `local_auth_windows` release builds with Visual Studio 18; delete the override
+  and the package then. Windows Hello support returns with no change to `zen_ui_lock`.
+
+### Consequence
+
+New non-member package `client/overrides/local_auth_windows` (own suite, picked up by
+`test:client`); two override entries. **Verified:** the package's suite, resolution of both
+workspaces. **Not verified:** a Windows build and run (CI's `windows-runner` is the check).
+
+---
+
 ## ADR-080 — The Local reference app keeps its model beside itself; the Android folder adapter and picker are a new `zen_store_folder`
 
 **Date:** 2026-11-15. **Status:** accepted; nothing here is verified on a device. **Refines:**

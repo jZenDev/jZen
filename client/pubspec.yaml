@@ -46,3 +46,11 @@ workspace:
 
 dev_dependencies:
   flutter_lints: ^6.0.0
+
+# local_auth_windows 2.0.2 (the latest) cannot be compiled by Visual Studio 18 (/await, error STL1011),
+# so any Windows build that depends on local_auth fails. A Dart-only stand-in takes its place until
+# a fixed release exists; Windows then has no owner check and "Forgot PIN?" erases this device's copy
+# (ADR-081). Remove this override when pub.dev's package builds.
+dependency_overrides:
+  local_auth_windows:
+    path: overrides/local_auth_windows

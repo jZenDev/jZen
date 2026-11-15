@@ -1,0 +1,29 @@
+name: local_auth_windows
+description: >-
+  jZen's stand-in for the pub.dev local_auth_windows, which jZen overrides while that plugin's
+  native code cannot be built by Visual Studio 18 (ADR-081). Dart only: on Windows the device
+  reports no owner check, so "Forgot PIN?" takes zen_ui_lock's erase-this-device's-copy path.
+publish_to: none
+# Matches the pub.dev package it stands in for, so local_auth's `^2.0.0` constraint holds.
+version: 2.0.2
+
+environment:
+  sdk: ">=3.10.3 <4.0.0"
+  flutter: ">=3.38.0"
+
+flutter:
+  plugin:
+    implements: local_auth
+    platforms:
+      windows:
+        dartPluginClass: LocalAuthWindows
+
+dependencies:
+  flutter:
+    sdk: flutter
+  local_auth_platform_interface: ^1.1.0
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter

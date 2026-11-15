@@ -13,7 +13,11 @@ const Size wide = Size(1000, 800);
 const Size narrow = Size(500, 800);
 
 /// A list with an "Open" button; [opened] collects the futures `showZenDetail` returns.
-Widget list(List<Future<Object?>> opened, {WidgetBuilder? detail, ScrollController? scroll}) {
+Widget list(
+  List<Future<Object?>> opened, {
+  WidgetBuilder? detail,
+  ScrollController? scroll,
+}) {
   return Builder(
     builder: (BuildContext context) => Scaffold(
       body: ListView(
@@ -23,7 +27,10 @@ Widget list(List<Future<Object?>> opened, {WidgetBuilder? detail, ScrollControll
           ZenButton(
             label: 'Open',
             onPressed: () => opened.add(
-              showZenDetail<Object?>(context, builder: detail ?? (_) => const _Goal('Goal')),
+              showZenDetail<Object?>(
+                context,
+                builder: detail ?? (_) => const _Goal('Goal'),
+              ),
             ),
           ),
           for (int i = 0; i < 40; i++) Text('Row $i'),
@@ -44,12 +51,52 @@ class _Goal extends StatelessWidget {
       title: title,
       body: Column(
         children: <Widget>[
-          ZenButton(label: 'Save', onPressed: () => Navigator.of(context).pop('saved')),
+          ZenButton(
+            label: 'Save',
+            onPressed: () => Navigator.of(context).pop('saved'),
+          ),
           ZenButton(
             label: 'Deeper',
-            onPressed: () => showZenDetail<void>(context, builder: (_) => const _Goal('Deeper')),
+            onPressed: () => showZenDetail<void>(
+              context,
+              builder: (_) => const _Goal('Deeper'),
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A page whose `PopScope` vetoes every pop and records the ask; [ask] is how many times.
+class _Guarded extends StatefulWidget {
+  const _Guarded(this.log);
+
+  final List<String> log;
+
+  @override
+  State<_Guarded> createState() => _GuardedState();
+}
+
+class _GuardedState extends State<_Guarded> {
+  @override
+  void dispose() {
+    widget.log.add('disposed');
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? _) =>
+          widget.log.add('asked'),
+      child: ZenPageScaffold(
+        title: 'Guarded',
+        body: ZenButton(
+          label: 'Discard',
+          onPressed: () => Navigator.of(context).pop('discarded'),
+        ),
       ),
     );
   }
@@ -80,7 +127,9 @@ Future<void> open(WidgetTester tester) async {
 }
 
 void main() {
-  testWidgets('icon buttons track the open pane, replacement and close', (tester) async {
+  testWidgets('icon buttons track the open pane, replacement and close', (
+    tester,
+  ) async {
     final SemanticsHandle handle = tester.ensureSemantics();
     await pumpHost(
       tester,
@@ -92,14 +141,20 @@ void main() {
                 icon: Icons.list,
                 label: 'Accounts',
                 onPressed: () {
-                  showZenDetail<void>(context, builder: (_) => const _Goal('Accounts pane'));
+                  showZenDetail<void>(
+                    context,
+                    builder: (_) => const _Goal('Accounts pane'),
+                  );
                 },
               ),
               ZenIconButton(
                 icon: Icons.notifications,
                 label: 'Reminders',
                 onPressed: () {
-                  showZenDetail<void>(context, builder: (_) => const _Goal('Reminders pane'));
+                  showZenDetail<void>(
+                    context,
+                    builder: (_) => const _Goal('Reminders pane'),
+                  );
                 },
               ),
             ],
@@ -127,7 +182,9 @@ void main() {
     handle.dispose();
   });
 
-  testWidgets('keyboard activation selects and Escape clears the opener', (tester) async {
+  testWidgets('keyboard activation selects and Escape clears the opener', (
+    tester,
+  ) async {
     final SemanticsHandle handle = tester.ensureSemantics();
     await pumpHost(
       tester,
@@ -137,7 +194,10 @@ void main() {
             icon: Icons.list,
             label: 'Accounts',
             onPressed: () {
-              showZenDetail<void>(context, builder: (_) => const _Goal('Accounts pane'));
+              showZenDetail<void>(
+                context,
+                builder: (_) => const _Goal('Accounts pane'),
+              );
             },
           ),
         ),
@@ -179,34 +239,43 @@ void main() {
       expect(find.text('List'), findsOneWidget);
       final double paneWidth = tester.getSize(find.byType(ZenDetailPane)).width;
       expect(paneWidth, inInclusiveRange(320, 420));
-      expect(tester.getTopLeft(find.byType(ZenDetailPane)).dx, wide.width - paneWidth);
+      expect(
+        tester.getTopLeft(find.byType(ZenDetailPane)).dx,
+        wide.width - paneWidth,
+      );
       if (zenIsApplePlatform) {
         // An in-layout pane takes room from the list.
-        expect(tester.getSize(find.byType(ListView)).width, listWidth - paneWidth - 1);
+        expect(
+          tester.getSize(find.byType(ListView)).width,
+          listWidth - paneWidth - 1,
+        );
       } else {
         // A side sheet covers the list's trailing edge and leaves its layout alone.
         expect(tester.getSize(find.byType(ListView)).width, listWidth);
       }
     });
 
-    testWidgets('the list keeps its scroll position while a detail opens and closes', (
+    testWidgets(
+      'the list keeps its scroll position while a detail opens and closes',
+      (tester) async {
+        final ScrollController scroll = ScrollController();
+        addTearDown(scroll.dispose);
+        final List<Future<Object?>> opened = <Future<Object?>>[];
+        await pumpHost(tester, list(opened, scroll: scroll));
+        scroll.jumpTo(10);
+        await tester.pump();
+
+        await open(tester);
+        expect(scroll.offset, 10);
+        await tester.tap(find.bySemanticsLabel('Close'));
+        await tester.pumpAndSettle();
+        expect(scroll.offset, 10);
+      },
+    );
+
+    testWidgets('the first page offers Close, and Close dismisses with null', (
       tester,
     ) async {
-      final ScrollController scroll = ScrollController();
-      addTearDown(scroll.dispose);
-      final List<Future<Object?>> opened = <Future<Object?>>[];
-      await pumpHost(tester, list(opened, scroll: scroll));
-      scroll.jumpTo(10);
-      await tester.pump();
-
-      await open(tester);
-      expect(scroll.offset, 10);
-      await tester.tap(find.bySemanticsLabel('Close'));
-      await tester.pumpAndSettle();
-      expect(scroll.offset, 10);
-    });
-
-    testWidgets('the first page offers Close, and Close dismisses with null', (tester) async {
       final List<Future<Object?>> opened = <Future<Object?>>[];
       await pumpHost(tester, list(opened));
       await open(tester);
@@ -219,21 +288,26 @@ void main() {
       expect(await opened.single, isNull);
     });
 
-    testWidgets('Navigator.pop(result) completes the future and closes the pane', (tester) async {
-      final List<Future<Object?>> opened = <Future<Object?>>[];
-      await pumpHost(tester, list(opened));
-      await open(tester);
+    testWidgets(
+      'Navigator.pop(result) completes the future and closes the pane',
+      (tester) async {
+        final List<Future<Object?>> opened = <Future<Object?>>[];
+        await pumpHost(tester, list(opened));
+        await open(tester);
 
-      await tester.tap(find.text('Save'));
-      await tester.pumpAndSettle();
+        await tester.tap(find.text('Save'));
+        await tester.pumpAndSettle();
 
-      expect(find.text('Goal'), findsNothing);
-      expect(await opened.single, 'saved');
-      // The page beneath was not popped.
-      expect(find.text('List'), findsOneWidget);
-    });
+        expect(find.text('Goal'), findsNothing);
+        expect(await opened.single, 'saved');
+        // The page beneath was not popped.
+        expect(find.text('List'), findsOneWidget);
+      },
+    );
 
-    testWidgets('the pane reflows at 200% text with no overflow', (tester) async {
+    testWidgets('the pane reflows at 200% text with no overflow', (
+      tester,
+    ) async {
       tester.platformDispatcher.textScaleFactorTestValue = 2;
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
       final List<Future<Object?>> opened = <Future<Object?>>[];
@@ -255,7 +329,9 @@ void main() {
       expect(await opened.single, isNull);
     });
 
-    testWidgets('a second detail replaces the first, which ends with null', (tester) async {
+    testWidgets('a second detail replaces the first, which ends with null', (
+      tester,
+    ) async {
       final List<Future<Object?>> opened = <Future<Object?>>[];
       int n = 0;
       await pumpHost(tester, list(opened, detail: (_) => _Goal('Goal ${++n}')));
@@ -267,23 +343,28 @@ void main() {
       expect(await opened.first, isNull);
     });
 
-    testWidgets('a detail opened from a detail stacks in the pane and offers Back', (tester) async {
-      final List<Future<Object?>> opened = <Future<Object?>>[];
-      await pumpHost(tester, list(opened));
-      await open(tester);
+    testWidgets(
+      'a detail opened from a detail stacks in the pane and offers Back',
+      (tester) async {
+        final List<Future<Object?>> opened = <Future<Object?>>[];
+        await pumpHost(tester, list(opened));
+        await open(tester);
 
-      await tester.tap(find.text('Deeper'));
-      await tester.pumpAndSettle();
-      expect(find.text('Deeper', skipOffstage: true), findsWidgets);
-      expect(find.bySemanticsLabel('Back'), findsOneWidget);
-      expect(find.text('List'), findsOneWidget);
+        await tester.tap(find.text('Deeper'));
+        await tester.pumpAndSettle();
+        expect(find.text('Deeper', skipOffstage: true), findsWidgets);
+        expect(find.bySemanticsLabel('Back'), findsOneWidget);
+        expect(find.text('List'), findsOneWidget);
 
-      await tester.tap(find.bySemanticsLabel('Back'));
-      await tester.pumpAndSettle();
-      expect(find.text('Goal'), findsOneWidget);
-    });
+        await tester.tap(find.bySemanticsLabel('Back'));
+        await tester.pumpAndSettle();
+        expect(find.text('Goal'), findsOneWidget);
+      },
+    );
 
-    testWidgets('focus moves into the pane and returns to the opener', (tester) async {
+    testWidgets('focus moves into the pane and returns to the opener', (
+      tester,
+    ) async {
       final List<Future<Object?>> opened = <Future<Object?>>[];
       await pumpHost(tester, list(opened));
       final Finder openButton = find.text('Open');
@@ -309,7 +390,9 @@ void main() {
       expect(FocusManager.instance.primaryFocus, opener);
     });
 
-    testWidgets('narrowing the window carries an open detail over to a push', (tester) async {
+    testWidgets('narrowing the window carries an open detail over to a push', (
+      tester,
+    ) async {
       final List<Future<Object?>> opened = <Future<Object?>>[];
       await pumpHost(tester, list(opened));
       await open(tester);
@@ -319,7 +402,11 @@ void main() {
 
       expect(find.byType(ZenDetailPane), findsNothing);
       expect(find.text('Goal'), findsOneWidget);
-      expect(find.text('List'), findsNothing, reason: 'the push covers the list');
+      expect(
+        find.text('List'),
+        findsNothing,
+        reason: 'the push covers the list',
+      );
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       expect(await opened.single, 'saved');
@@ -327,8 +414,88 @@ void main() {
     });
   });
 
+  group('a page guarding its exits', () {
+    testWidgets('Close and Escape ask the guard and honour its veto', (
+      tester,
+    ) async {
+      final List<String> log = <String>[];
+      final List<Future<Object?>> opened = <Future<Object?>>[];
+      await pumpHost(tester, list(opened, detail: (_) => _Guarded(log)));
+      await open(tester);
+
+      await tester.tap(find.bySemanticsLabel('Close'));
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+
+      expect(log, <String>['asked', 'asked']);
+      expect(find.text('Guarded'), findsOneWidget);
+
+      // The page decides to leave, as it would after the person confirms.
+      await tester.tap(find.text('Discard'));
+      await tester.pumpAndSettle();
+      expect(find.text('Guarded'), findsNothing);
+      expect(await opened.single, 'discarded');
+    });
+
+    testWidgets('a second detail asks the guard and is dropped on a veto', (
+      tester,
+    ) async {
+      final List<String> log = <String>[];
+      final List<Future<Object?>> opened = <Future<Object?>>[];
+      await pumpHost(tester, list(opened, detail: (_) => _Guarded(log)));
+      await open(tester);
+      await open(tester);
+
+      expect(log, <String>['asked']);
+      expect(find.text('Guarded'), findsOneWidget);
+      expect(await opened.last, isNull);
+    });
+
+    testWidgets('a pane with no guard still closes on Close and Escape', (
+      tester,
+    ) async {
+      final List<Future<Object?>> opened = <Future<Object?>>[];
+      await pumpHost(tester, list(opened));
+      await open(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.text('Goal'), findsNothing);
+    });
+
+    testWidgets(
+      'switching tab (removing the host) cannot be vetoed; dispose runs',
+      (tester) async {
+        final List<String> log = <String>[];
+        final List<Future<Object?>> opened = <Future<Object?>>[];
+        await pumpHost(tester, list(opened, detail: (_) => _Guarded(log)));
+        await open(tester);
+        await tester.pumpWidget(const SizedBox());
+        expect(log, <String>['disposed']);
+        expect(await opened.single, isNull);
+      },
+    );
+
+    testWidgets('in a push, Back asks the same guard', (tester) async {
+      final List<String> log = <String>[];
+      final List<Future<Object?>> opened = <Future<Object?>>[];
+      await pumpHost(
+        tester,
+        list(opened, detail: (_) => _Guarded(log)),
+        size: narrow,
+      );
+      await open(tester);
+      await tester.tap(find.bySemanticsLabel('Back'));
+      await tester.pumpAndSettle();
+      expect(log, <String>['asked']);
+      expect(find.text('Guarded'), findsOneWidget);
+    });
+  });
+
   group('on a narrow host', () {
-    testWidgets('pushes a full-screen page; Back returns with null', (tester) async {
+    testWidgets('pushes a full-screen page; Back returns with null', (
+      tester,
+    ) async {
       final List<Future<Object?>> opened = <Future<Object?>>[];
       await pumpHost(tester, list(opened), size: narrow);
       await open(tester);
@@ -343,7 +510,9 @@ void main() {
       expect(await opened.single, isNull);
     });
 
-    testWidgets('the width that counts is the host\'s, not the window\'s', (tester) async {
+    testWidgets('the width that counts is the host\'s, not the window\'s', (
+      tester,
+    ) async {
       final List<Future<Object?>> opened = <Future<Object?>>[];
       await pumpHost(
         tester,
@@ -356,11 +525,17 @@ void main() {
         host: false,
       );
       await open(tester);
-      expect(find.byType(ZenDetailPane), findsNothing, reason: '600 px of host is narrow');
+      expect(
+        find.byType(ZenDetailPane),
+        findsNothing,
+        reason: '600 px of host is narrow',
+      );
     });
   });
 
-  testWidgets('without a host it is a push, even in a wide window', (tester) async {
+  testWidgets('without a host it is a push, even in a wide window', (
+    tester,
+  ) async {
     final List<Future<Object?>> opened = <Future<Object?>>[];
     await pumpHost(tester, list(opened), host: false);
     await open(tester);
@@ -369,16 +544,22 @@ void main() {
     expect(find.text('Goal'), findsOneWidget);
   });
 
-  testWidgets('removing the host while a detail is open ends its future with null', (tester) async {
-    final List<Future<Object?>> opened = <Future<Object?>>[];
-    await pumpHost(tester, list(opened));
-    await open(tester);
-    await tester.pumpWidget(const SizedBox());
-    expect(await opened.single, isNull);
-  });
+  testWidgets(
+    'removing the host while a detail is open ends its future with null',
+    (tester) async {
+      final List<Future<Object?>> opened = <Future<Object?>>[];
+      await pumpHost(tester, list(opened));
+      await open(tester);
+      await tester.pumpWidget(const SizedBox());
+      expect(await opened.single, isNull);
+    },
+  );
 
   group('the two idioms, built directly', () {
-    Future<void> pumpPanes(WidgetTester tester, Widget Function(BuildContext) build) async {
+    Future<void> pumpPanes(
+      WidgetTester tester,
+      Widget Function(BuildContext) build,
+    ) async {
       tester.view.physicalSize = wide;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
@@ -400,14 +581,16 @@ void main() {
             Widget screen(bool open) => MaterialApp(
               home: Builder(
                 builder: (context) => MediaQuery(
-                  data: MediaQuery.of(context).copyWith(disableAnimations: reducedMotion),
+                  data: MediaQuery.of(context)
+                      .copyWith(disableAnimations: reducedMotion),
                   child: Builder(
-                    builder: (context) => (apple ? buildApplePanes : buildMaterialPanes)(
-                      context,
-                      const SizedBox.expand(key: listKey),
-                      open ? const SizedBox.expand(key: paneKey) : null,
-                      400,
-                    ),
+                    builder: (context) =>
+                        (apple ? buildApplePanes : buildMaterialPanes)(
+                          context,
+                          const SizedBox.expand(key: listKey),
+                          open ? const SizedBox.expand(key: paneKey) : null,
+                          400,
+                        ),
                   ),
                 ),
               ),
@@ -427,7 +610,10 @@ void main() {
             await tester.pumpAndSettle();
             await tester.pumpWidget(screen(false));
             await tester.pump(const Duration(milliseconds: 100));
-            expect(find.byKey(paneKey), reducedMotion ? findsNothing : findsOneWidget);
+            expect(
+              find.byKey(paneKey),
+              reducedMotion ? findsNothing : findsOneWidget,
+            );
             await tester.pumpAndSettle();
             expect(find.byKey(paneKey), findsNothing);
           },
@@ -449,7 +635,9 @@ void main() {
       expect(tester.getSize(find.byKey(listKey)).width, wide.width - 400 - 1);
     });
 
-    testWidgets('Material: a sheet over the list, which keeps its width', (tester) async {
+    testWidgets('Material: a sheet over the list, which keeps its width', (
+      tester,
+    ) async {
       await pumpPanes(
         tester,
         (c) => buildMaterialPanes(
@@ -470,7 +658,10 @@ void main() {
             buildApplePanes,
             buildMaterialPanes,
           ]) {
-        await pumpPanes(tester, (c) => build(c, const SizedBox.expand(key: listKey), null, 400));
+        await pumpPanes(
+          tester,
+          (c) => build(c, const SizedBox.expand(key: listKey), null, 400),
+        );
         expect(tester.getSize(find.byKey(listKey)), wide);
       }
     });

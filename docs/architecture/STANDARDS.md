@@ -673,6 +673,8 @@ fixes one screen.
 
 **Use the framework control whenever one exists; reach for the raw widget only when none does.**
 
+The raw widget comes from `package:material_ui` / `package:cupertino_ui`; `package:flutter/material.dart` and `cupertino.dart` are deprecated since Flutter 3.50 and are not imported (ADR-082).
+
 | You need | Use (`zen_ui_widgets`) | Not |
 |---|---|---|
 | A dialog or sheet for a form or detail | `showAdaptivePresentation` | `showDialog`, `showModalBottomSheet` |

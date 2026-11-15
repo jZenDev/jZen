@@ -1,6 +1,5 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:zen_core/zen_core.dart';
@@ -17,9 +16,7 @@ Widget _app(Widget home, {String locale = 'en', ThemeData? theme}) => MaterialAp
   localizationsDelegates: const [
     storeLocaleDelegate,
     zenWidgetsLocaleDelegate,
-    GlobalMaterialLocalizations.delegate,
-    GlobalCupertinoLocalizations.delegate,
-    GlobalWidgetsLocalizations.delegate,
+    ...GlobalMaterialLocalizations.delegates,
   ],
   supportedLocales: const [Locale('en'), Locale('uk')],
   home: home,

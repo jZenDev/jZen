@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_ui_navigation/zen_ui_navigation.dart';
 import 'package:zen_ui_widgets/zen_ui_widgets.dart';
@@ -10,7 +10,10 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
-        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        localizationsDelegates: [
+        ...NavigationLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
         supportedLocales: NavigationLocalizations.supportedLocales,
         home: ZenNavigation(
           selectedIndex: 0,
@@ -62,7 +65,10 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
-        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        localizationsDelegates: [
+        ...NavigationLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
         supportedLocales: NavigationLocalizations.supportedLocales,
         home: ZenNavigation(
           selectedIndex: 0,

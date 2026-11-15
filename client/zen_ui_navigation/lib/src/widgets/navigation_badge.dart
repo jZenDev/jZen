@@ -1,6 +1,6 @@
 import 'package:zen_core/zen_core.dart';
-import 'package:flutter/cupertino.dart' as c;
-import 'package:flutter/material.dart' as m;
+import 'package:cupertino_ui/cupertino_ui.dart' as c;
+import 'package:material_ui/material_ui.dart' as m;
 
 import '../l10n/generated/navigation_localizations.dart';
 import '../zen_navigation_item.dart';

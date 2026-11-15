@@ -7,7 +7,7 @@ publish_to: "none"
 version: 0.1.0
 
 environment:
-  sdk: ">=3.10.3 <4.0.0"
+  sdk: ">=3.14.0 <4.0.0"
 
 # Pub workspace root for the client side. Packages live flat under client/ (e.g.
 # client/zen_core), mirroring how the Java modules sit flat under server/. There is no
@@ -33,6 +33,7 @@ workspace:
   - zen_store
   - zen_store_key
   - zen_store_cloudkit
+  - zen_store_folder
   - zen_store_shared_folder
   - zen_store_sync
   - zen_ui_navigation
@@ -45,3 +46,11 @@ workspace:
 
 dev_dependencies:
   flutter_lints: ^6.0.0
+
+# local_auth_windows 2.0.2 (the latest) cannot be compiled by Visual Studio 18 (/await, error STL1011),
+# so any Windows build that depends on local_auth fails. A Dart-only stand-in takes its place until
+# a fixed release exists; Windows then has no owner check and "Forgot PIN?" erases this device's copy
+# (ADR-081). Remove this override when pub.dev's package builds.
+dependency_overrides:
+  local_auth_windows:
+    path: overrides/local_auth_windows

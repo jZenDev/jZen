@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Pauses a message's countdown while it is being used.
 class ZenMessageTimer extends StatefulWidget {

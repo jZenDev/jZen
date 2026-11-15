@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Windows answers "no owner check" through the Dart-only `local_auth_windows` stand-in, so "Forgot PIN?" erases this device's copy there as on Linux (ADR-081).
 - "Forgot PIN?" on a device with no owner check (Linux): erase this device's copy, via
   `ZenPinLock.load(eraseDeviceCopy:)` (ADR-078). `ZenOwnerCheck` gains `isAvailable()`.
 - Desktop windows relock after being unfocused for `relockAfter`.

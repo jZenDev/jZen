@@ -1,15 +1,16 @@
 name: jzen_apps
 description: >-
-  jZen application workspace: full-stack application examples built on the jZen framework. Each
-  app is a folder holding its client and server (e.g. apps/zen_demo/{zen_demo_client,
-  zen_demo_server}); this pub workspace resolves the Dart/Flutter client packages, while the
-  Java server modules are built by Maven (see server/ and the Taskfile).
+  jZen application workspace: application examples built on the jZen framework. A full-stack app
+  is a folder holding its client and server (apps/zen_demo/{zen_demo_client, zen_demo_server}); a
+  Local app is a client alone (apps/zen_demo_local/zen_demo_local_client, no server, ADR-073).
+  This pub workspace resolves the Dart/Flutter client packages, while the Java server modules are
+  built by Maven (see server/ and the Taskfile).
 # Lockstep with the product version (docs/architecture/STANDARDS.md "Versioning").
 publish_to: "none"
 version: 0.1.0
 
 environment:
-  sdk: ">=3.10.3 <4.0.0"
+  sdk: ">=3.14.0 <4.0.0"
 
 # Pub workspace root for the applications tier. client/ holds the reusable client libraries;
 # apps/ holds the applications that assemble them. Apps depend on the libraries by relative path
@@ -18,6 +19,15 @@ environment:
 # apps/*/…_server (Java apps) relate. Members land here as apps arrive.
 workspace:
   - zen_demo/zen_demo_client
+  - zen_demo_local/zen_demo_local_client
 
 dev_dependencies:
   flutter_lints: ^6.0.0
+
+# local_auth_windows 2.0.2 (the latest) cannot be compiled by Visual Studio 18 (/await, error STL1011),
+# so any Windows build that depends on local_auth fails. A Dart-only stand-in takes its place until
+# a fixed release exists; Windows then has no owner check and "Forgot PIN?" erases this device's copy
+# (ADR-081). Remove this override when pub.dev's package builds.
+dependency_overrides:
+  local_auth_windows:
+    path: ../client/overrides/local_auth_windows

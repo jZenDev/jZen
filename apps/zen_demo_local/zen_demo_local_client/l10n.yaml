@@ -1,0 +1,10 @@
+# Typed, generated i18n for the zen_demo_local reference app (ADR-009). The app owns only its own
+# wording; sync status, conflicts, pairing, the PIN screens and the shared controls come from the
+# zen_ui_* packages' own accessors. The ARB files are tracked; lib/src/l10n/generated is built by
+# `task generate:l10n`.
+arb-dir: lib/src/l10n
+template-arb-file: local_en.arb
+output-dir: lib/src/l10n/generated
+output-localization-file: local_localizations.dart
+output-class: LocalDemoLocalizations
+nullable-getter: false

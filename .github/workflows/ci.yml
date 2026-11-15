@@ -53,10 +53,10 @@ jobs:
           distribution: temurin
           java-version: "25"
 
-      - name: Flutter 3.44.2 (brings Dart)
+      - name: Flutter 3.50.0 (brings Dart)
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          flutter-version: "3.44.2"
+          flutter-version: "3.50.0"
           channel: stable
 
       - name: Node (pinned by .nvmrc) + pnpm via corepack
@@ -144,10 +144,10 @@ jobs:
         with:
           distribution: temurin
           java-version: "25"
-      - name: Flutter 3.44.2
+      - name: Flutter 3.50.0
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          flutter-version: "3.44.2"
+          flutter-version: "3.50.0"
           channel: stable
       - name: go-task
         uses: arduino/setup-task@bfe25a35f5c1f609e1d6153197b3b42a04ae054c # v3.0.0
@@ -192,10 +192,10 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Flutter 3.44.2
+      - name: Flutter 3.50.0
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          flutter-version: "3.44.2"
+          flutter-version: "3.50.0"
           channel: stable
       - name: go-task
         uses: arduino/setup-task@bfe25a35f5c1f609e1d6153197b3b42a04ae054c # v3.0.0
@@ -221,10 +221,10 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Flutter 3.44.2
+      - name: Flutter 3.50.0
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          flutter-version: "3.44.2"
+          flutter-version: "3.50.0"
           channel: stable
       - name: go-task
         uses: arduino/setup-task@bfe25a35f5c1f609e1d6153197b3b42a04ae054c # v3.0.0
@@ -268,10 +268,10 @@ jobs:
         with:
           distribution: temurin
           java-version: "25"
-      - name: Flutter 3.44.2
+      - name: Flutter 3.50.0
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
-          flutter-version: "3.44.2"
+          flutter-version: "3.50.0"
           channel: stable
       - name: Node + pnpm
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

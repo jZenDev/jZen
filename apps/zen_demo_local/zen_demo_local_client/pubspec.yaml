@@ -1,0 +1,52 @@
+name: zen_demo_local_client
+description: >-
+  The jZen Local reference app: a chore list that lives on the person's own devices, with no server,
+  syncing through iCloud on iOS and macOS and a folder of their choosing on Android, Windows and
+  Linux. The end-to-end test stand for the Local mode (ADR-073).
+publish_to: "none"
+# Lockstep with the product version (STANDARDS.md "Versioning").
+version: 0.1.0
+
+environment:
+  sdk: ">=3.14.0 <4.0.0"
+
+resolution: workspace
+
+# No zen_transport, no zen_identity, no http: a Local application has no server to talk to
+# (ADR-065, ADR-073). `task verify:boundaries` keeps it that way.
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+  path_provider: ^2.1.5
+  protobuf: ^6.0.0
+  zen_core:
+    path: ../../../client/zen_core
+  zen_store:
+    path: ../../../client/zen_store
+  zen_store_folder:
+    path: ../../../client/zen_store_folder
+  zen_store_key:
+    path: ../../../client/zen_store_key
+  zen_store_shared_folder:
+    path: ../../../client/zen_store_shared_folder
+  zen_store_sync:
+    path: ../../../client/zen_store_sync
+  zen_ui_lock:
+    path: ../../../client/zen_ui_lock
+  zen_ui_store:
+    path: ../../../client/zen_ui_store
+  zen_ui_widgets:
+    path: ../../../client/zen_ui_widgets
+
+  material_ui: ^1.11.0
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  generate: true

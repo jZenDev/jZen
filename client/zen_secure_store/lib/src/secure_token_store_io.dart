@@ -22,7 +22,7 @@ import 'package:zen_transport/zen_transport.dart';
 /// that actually constructs `FlutterSecureStorage`. See that file for why a web build gets a
 /// different class of this same name instead of this one.
 class SecureTokenStore implements TokenStore {
-  SecureTokenStore({FlutterSecureStorage? storage, String key = _defaultKey})
+  SecureTokenStore({FlutterSecureStorage? storage, this._key = _defaultKey})
     : _storage =
           storage ??
           const FlutterSecureStorage(
@@ -36,8 +36,7 @@ class SecureTokenStore implements TokenStore {
             // deprecated the Jetpack Security library behind it) and is ignored when passed.
             // The plugin now encrypts with its own ciphers by default and migrates existing
             // data on first access, so the secure default is the one you get by saying nothing.
-          ),
-      _key = key;
+          );
 
   static const String _defaultKey = 'zen_refresh_token';
 

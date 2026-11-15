@@ -1,8 +1,8 @@
 // The dispatch is on compile-time constants, so this asserts the one branch the host platform
 // this run was compiled for (`task test:client` passes ZEN_PLATFORM), against the constants
 // themselves. `presenters_test.dart` covers the four presentations.
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_ui_widgets/zen_ui_widgets.dart';

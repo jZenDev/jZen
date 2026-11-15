@@ -26,6 +26,7 @@ Every package shares one product version (`0.1.0` today) — jZen is versioned i
 | [`zen_store_cloudkit`](zen_store_cloudkit/README.md) | **jZen Local.** CloudKit sync (`CKSyncEngine`, end-to-end encrypted fields) and iOS Data Protection, on iOS 17 and macOS 14. A Swift package. |
 | [`zen_store_key`](zen_store_key/README.md) | **jZen Local.** The store's key on every platform (Keychain, Keystore, Credential Manager, libsecret), never made over existing files. |
 | [`zen_store_shared_folder`](zen_store_shared_folder/README.md) | **jZen Local.** Sync over a folder the person chooses and a sync service of their own keeps in step (Android, Windows, Linux): one directory per device, every file encrypted. Pure Dart. |
+| [`zen_store_folder`](zen_store_folder/README.md) | **jZen Local.** Choosing the sync folder and reaching it: the system folder dialog on Windows and Linux, the Storage Access Framework on Android. |
 | [`zen_store_sync`](zen_store_sync/README.md) | **jZen Local.** The one call that starts sync: `ZenSync.start` picks CloudKit, the shared folder or `ZenFolderCloud` from `ZEN_PLATFORM` and `ZEN_SYNC`, refusing the web and other unsupported combinations. |
 | [`zen_ui_store`](zen_ui_store/README.md) | **jZen Local.** The banner and screens where the person chooses between devices' versions of a record in conflict. |
 | [`zen_ui_lock`](zen_ui_lock/README.md) | **jZen Local.** An optional PIN in place of a sign-in: the lock, its screens, and the gate that covers the app. |

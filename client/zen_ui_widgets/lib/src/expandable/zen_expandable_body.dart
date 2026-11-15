@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// How long a section takes to open or close; none at all when the system asks for reduced motion.
 const Duration zenExpandableDuration = Duration(milliseconds: 200);

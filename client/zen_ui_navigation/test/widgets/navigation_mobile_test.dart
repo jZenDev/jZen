@@ -1,8 +1,8 @@
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_mobile.dart';
 import 'package:zen_ui_navigation/zen_ui_navigation.dart';
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -23,7 +23,10 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        localizationsDelegates: [
+        ...NavigationLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
         supportedLocales: NavigationLocalizations.supportedLocales,
         home: Builder(
           builder: (ctx) => buildMobileNavigation(
@@ -60,7 +63,10 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+          localizationsDelegates: [
+        ...NavigationLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
           supportedLocales: NavigationLocalizations.supportedLocales,
           home: Builder(
             builder: (ctx) => buildMobileNavigation(
@@ -109,7 +115,10 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        localizationsDelegates: [
+        ...NavigationLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
         supportedLocales: NavigationLocalizations.supportedLocales,
         home: Builder(
           builder: (ctx) => buildMobileNavigation(
@@ -159,7 +168,10 @@ void main() {
 
     Widget app(Locale locale) => MaterialApp(
       locale: locale,
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      localizationsDelegates: [
+        ...NavigationLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
       supportedLocales: NavigationLocalizations.supportedLocales,
       home: Builder(
         builder: (ctx) => buildMobileNavigation(
@@ -201,7 +213,10 @@ void main() {
 
     Widget app(Locale locale) => CupertinoApp(
       locale: locale,
-      localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+      localizationsDelegates: [
+        ...NavigationLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
       supportedLocales: NavigationLocalizations.supportedLocales,
       home: Builder(
         builder: (ctx) => buildMobileNavigation(
@@ -242,7 +257,10 @@ void main() {
 
     await tester.pumpWidget(
       CupertinoApp(
-        localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+        localizationsDelegates: [
+        ...NavigationLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
         supportedLocales: NavigationLocalizations.supportedLocales,
         home: Builder(
           builder: (ctx) => buildMobileNavigation(

@@ -4,7 +4,7 @@ import 'package:zen_ui_navigation/src/widgets/navigation_badge.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_rail.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_mobile.dart';
 import 'package:zen_ui_navigation/src/widgets/navigation_web.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:zen_ui_navigation/zen_ui_navigation.dart';
@@ -135,7 +135,10 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+          localizationsDelegates: [
+        ...NavigationLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
           supportedLocales: NavigationLocalizations.supportedLocales,
           home: Builder(
             builder: (ctx) => buildMobileNavigation(
@@ -204,7 +207,10 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+          localizationsDelegates: [
+        ...NavigationLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
           supportedLocales: NavigationLocalizations.supportedLocales,
           home: Builder(
             builder: (ctx) => buildRailNavigation(
@@ -240,7 +246,10 @@ void main() {
         MediaQuery(
           data: const MediaQueryData(size: Size(1200, 800)),
           child: MaterialApp(
-            localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+            localizationsDelegates: [
+        ...NavigationLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
             supportedLocales: NavigationLocalizations.supportedLocales,
             home: Builder(
               builder: (ctx) => buildPlatformNavigation(
@@ -276,7 +285,10 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+          localizationsDelegates: [
+        ...NavigationLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
           supportedLocales: NavigationLocalizations.supportedLocales,
           home: Builder(
             builder: (ctx) => buildMobileNavigation(
@@ -310,7 +322,10 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          localizationsDelegates: NavigationLocalizations.localizationsDelegates,
+          localizationsDelegates: [
+        ...NavigationLocalizations.localizationsDelegates,
+        ...GlobalMaterialLocalizations.delegates,
+      ],
           supportedLocales: NavigationLocalizations.supportedLocales,
           home: Builder(
             builder: (ctx) => buildMobileNavigation(

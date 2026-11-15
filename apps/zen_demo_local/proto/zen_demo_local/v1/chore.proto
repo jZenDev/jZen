@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package zen_demo_local.v1;
+
+// A household chore: the one record zen_demo_local keeps. Four editable fields, each independently
+// editable, so every behaviour of a Local application is one tap away: two devices changing
+// different fields merge, two changing the same field is a conflict the person settles, and a
+// delete against an edit is the other conflict (ADR-065).
+//
+// Field numbers are the unit of merging. Never renumber or reuse one.
+message Chore {
+  // The record's key in the store, repeated here because a collection lists values, not ids.
+  // Written once when the chore is made and never edited, so it can never conflict.
+  string id = 1;
+  string title = 2;
+  string note = 3;
+  bool done = 4;
+  Priority priority = 5;
+}
+
+enum Priority {
+  PRIORITY_NORMAL = 0;
+  PRIORITY_LOW = 1;
+  PRIORITY_HIGH = 2;
+}

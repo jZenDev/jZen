@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class ProfileTile extends StatelessWidget {
   const ProfileTile({super.key, required this.icon, required this.title, required this.subtitle});

@@ -120,6 +120,18 @@ final class ZenSharedFolderSync implements ZenSyncTransport {
     return run;
   }
 
+  /// Completes once no sync is running or queued. A sync can queue another (merging a record that
+  /// holds more than the sender's makes it unsent, which asks for a send), so "my `syncNow`
+  /// returned" does not mean the transport is at rest; this does. [status] is `upToDate` or
+  /// `unavailable` then, never `syncing`.
+  Future<void> whenIdle() async {
+    while (true) {
+      final running = _running;
+      await running;
+      if (identical(running, _running)) return;
+    }
+  }
+
   @override
   Future<void> stop() async {
     _stopped = true;

@@ -48,11 +48,11 @@ final class Device {
 
   ZenCollection<Api> get items => store.collection('items', Api.fromBuffer);
 
-  /// Syncs until nothing queued is left: a write also queues a sync of its own, which may run
-  /// after one the test asked for.
+  /// Syncs, then waits until the transport is at rest: a write or a merge also queues a sync of
+  /// its own, which may run after the one the test asked for.
   Future<void> syncUntilQuiet() async {
     await sync.syncNow();
-    await sync.syncNow();
+    await sync.whenIdle();
   }
 
   /// A snapshot of everything the device shows, conflicts included, to compare devices.
@@ -103,6 +103,9 @@ Future<void> syncAll(List<Device> devices, {int rounds = 3}) async {
     for (final device in devices) {
       await device.sync.syncNow();
     }
+  }
+  for (final device in devices) {
+    await device.sync.whenIdle();
   }
 }
 

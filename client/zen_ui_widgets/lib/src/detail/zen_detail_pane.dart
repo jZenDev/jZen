@@ -9,10 +9,20 @@ import 'zen_detail_scope.dart';
 ///
 /// The navigator sits above a blank page, which is what lets the detail's first page pop: popping
 /// the last page of a navigator is not allowed, popping the one above a blank is.
+///
+/// Close and Escape ask the first page's guard (`PopScope`) before they dismiss, as Back does in a
+/// push: a page that vetoes with `canPop: false` is told through `onPopInvokedWithResult` and
+/// decides whether to pop itself. A second detail replacing the pane asks the same way
+/// ([ZenDetailPaneState.requestClose]). Switching tab discards the pane with its navigator and
+/// cannot be vetoed; the page's `State.dispose` is its cleanup hook.
 class ZenDetailPane extends StatefulWidget {
   /// Creates a pane showing [builder]'s page; [onClosed] gets the page's pop result, or null when
   /// the pane was dismissed.
-  const ZenDetailPane({required this.builder, required this.onClosed, super.key});
+  const ZenDetailPane({
+    required this.builder,
+    required this.onClosed,
+    super.key,
+  });
 
   /// The page.
   final WidgetBuilder builder;
@@ -21,10 +31,11 @@ class ZenDetailPane extends StatefulWidget {
   final ValueChanged<Object?> onClosed;
 
   @override
-  State<ZenDetailPane> createState() => _ZenDetailPaneState();
+  State<ZenDetailPane> createState() => ZenDetailPaneState();
 }
 
-class _ZenDetailPaneState extends State<ZenDetailPane> {
+/// The state of a [ZenDetailPane]; the host asks it to close.
+class ZenDetailPaneState extends State<ZenDetailPane> {
   final GlobalKey<NavigatorState> _navigator = GlobalKey<NavigatorState>();
   late final PageRouteBuilder<Object?> _blank = PageRouteBuilder<Object?>(
     opaque: false,
@@ -43,7 +54,18 @@ class _ZenDetailPaneState extends State<ZenDetailPane> {
     _root.popped.then((Object? result) => widget.onClosed(result));
   }
 
-  void _close() => widget.onClosed(null);
+  /// Dismisses the pane unless its first page vetoes: then the page's `PopScope` is told, and the
+  /// pane stays until the page pops itself. Returns whether the pane was dismissed.
+  bool requestClose() {
+    if (_root.popDisposition == RoutePopDisposition.doNotPop) {
+      _root.onPopInvokedWithResult(false, null);
+      return false;
+    }
+    widget.onClosed(null);
+    return true;
+  }
+
+  void _close() => requestClose();
 
   @override
   Widget build(BuildContext context) {
@@ -58,10 +80,8 @@ class _ZenDetailPaneState extends State<ZenDetailPane> {
           onPopWithResult: (_) => _navigator.currentState?.maybePop(),
           child: Navigator(
             key: _navigator,
-            onGenerateInitialRoutes: (NavigatorState _, String _) => <Route<Object?>>[
-              _blank,
-              _root,
-            ],
+            onGenerateInitialRoutes: (NavigatorState _, String _) =>
+                <Route<Object?>>[_blank, _root],
           ),
         ),
       ),

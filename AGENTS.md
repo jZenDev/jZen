@@ -122,7 +122,8 @@ now read as `zen`.
 ## Client structure (Dart) and the compile-time config rule
 
 Two pub workspaces resolve independently: `client/` (framework libs: `zen_core`, `zen_transport`,
-`zen_identity`, `zen_ui_*`, `zen_store`, `zen_store_cloudkit`) and `apps/` (app clients,
+`zen_identity`, `zen_ui_*`, `zen_store`, `zen_store_key`, `zen_store_cloudkit`,
+`zen_store_shared_folder`, `zen_store_folder`, `zen_store_sync`) and `apps/` (app clients,
 path-depending into `client/`). Both share one product version (lockstep).
 
 **A Local application (jZen Local) is the client alone** (ADR-065, ADR-073): no server, no
@@ -130,8 +131,15 @@ path-depending into `client/`). Both share one product version (lockstep).
 Its data lives in `zen_store` (proto messages, AES-256-GCM on the device, versioned per field with
 version vectors). Its sync transport follows `ZEN_PLATFORM` at compile time: CloudKit with
 `zen_store_cloudkit` on iOS 17 / macOS 14 (`CKSyncEngine`, end-to-end encrypted fields, key in the
-Keychain; SwiftPM only), a person-chosen synced folder elsewhere (planned), and `ZenFolderCloud`
-only as the development override `ZEN_SYNC=folder`. Do not call it *light*. Sync merges different fields and equal edits; anything else is a
+Keychain; SwiftPM only), a person-chosen synced folder elsewhere (`zen_store_shared_folder`, ADR-076;
+`zen_store_folder` picks the folder and reaches it on Android through the Storage Access Framework,
+ADR-080), and `ZenFolderCloud` only as the development override `ZEN_SYNC=folder`. An application
+starts sync with the one call `ZenSync.start` (`zen_store_sync`, ADR-079) and reads neither
+`ZEN_PLATFORM` nor `ZEN_SYNC` itself; the web is refused there and in `Taskfile.app.yml`. A new device
+joins by a 77-character pairing code that carries the sync key (ADR-077). The reference app is
+`apps/zen_demo_local`. **Not verified on a device**: real CloudKit (needs the paid Apple Developer
+Program), the Android folder access, camera QR scanning, a real sync service and Windows/Linux
+hardware; Windows has a Dart-only `local_auth_windows` stand-in (ADR-081). Do not call it *light*. Sync merges different fields and equal edits; anything else is a
 `ZenConflict` the person settles in `zen_ui_store`'s screens (`ZenConflictBanner`) — the record
 refuses writes until `resolve`. **Never add a
 last-writer-wins shortcut**: a silently dropped edit is a swallowed failure. An optional PIN comes

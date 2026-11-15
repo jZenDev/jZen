@@ -27,7 +27,9 @@ jZen/
 ├── client/                   # Dart/Flutter FRAMEWORK libraries (pub workspace)
 │   ├── pubspec.yaml          # workspace root
 │   └── zen_core/  zen_transport/  zen_identity/  zen_ui_*/   # zen_ui_navigation, zen_ui_identity, zen_ui_widgets
-│       zen_store/  zen_store_cloudkit/  zen_ui_store/  zen_ui_lock/   # Local apps (ADR-065, ADR-073)
+│       zen_store/  zen_store_key/  zen_store_cloudkit/  zen_store_shared_folder/  zen_store_folder/
+│       zen_store_sync/  zen_ui_store/  zen_ui_lock/   # Local apps (ADR-065, ADR-073)
+│   └── overrides/local_auth_windows/   # Dart-only Windows stand-in, not a member (ADR-081)
 ├── apps/                     # APPLICATIONS built on the framework
 │   ├── pubspec.yaml          # pub workspace root for the app clients
 │   └── zen_demo/             # the reference app (showcase + living e2e test stand)
@@ -347,7 +349,18 @@ server, no admin panel, no `zen_transport` or `zen_identity`, no sign-in. It bui
 Android, Windows and Linux, never the web, and its sync transport follows `ZEN_PLATFORM`: CloudKit
 on iOS 17 and macOS 14; on the other three a folder the person's own sync service keeps in step,
 each device writing only its own files, the sync key moved between devices by pairing
-(`zen_store_shared_folder`, planned). Four packages replace what the server tier gave it:
+(`zen_store_shared_folder`). An application starts sync with one call, `ZenSync.start`
+(`zen_store_sync`, ADR-079), which resolves the transport from constants so the compiler can drop
+the others, and refuses the web:
+
+| `ZEN_PLATFORM` | `ZEN_SYNC` unset | `folder` | `cloudkit` |
+|---|---|---|---|
+| `ios`, `macos` | CloudKit | `ZenFolderCloud` | CloudKit |
+| `android`, `windows`, `linux` | shared folder | `ZenFolderCloud` | refused |
+| `web`, unset, unknown | refused | refused | refused |
+
+The reference app is `apps/zen_demo_local` (ADR-080): a chore list, built from `zen_ui_*` controls
+only, whose model sits in its own `proto/` rather than `proto/zen/v1/`. These packages carry the mode:
 
 - **`zen_store`** — persistence, with no database. Proto messages by collection and id, in a
   directory the app chooses, as encrypted files: `device.id`, `meta.zen` (unsent records, the
@@ -373,13 +386,27 @@ each device writing only its own files, the sync key moved between devices by pa
   person chooses and a sync service of their own keeps in step: `<device id>/<hmac>.zen`, one
   writer per file, each file AES-256-GCM under a key derived from the shared sync key with its path
   as associated data, bad files skipped and reported, folder access behind `ZenFolderAccess`.
-  Pure Dart; the Android Storage Access Framework adapter is not built yet.
+  Pure Dart; pairing (`ZenPairing`, in `zen_store`, ADR-077) moves the sync key between devices as
+  a 77-character code, or a QR code beside it, valid five minutes.
+- **`zen_store_folder`** — choosing and reaching that folder (ADR-080): the system folder dialog on
+  Windows and Linux; on Android `ZenSafFolderAccess` over the Storage Access Framework
+  (`saf_util` + `saf_stream`), kept behind a port so its rules are tested against a fake tree.
+- **`zen_store_sync`** — `ZenSync.start` and `ZenSyncPlan`, the only package that names both
+  transports, so neither depends on the other (ADR-079).
+- **`local_auth_windows` stand-in** (`client/overrides/`, ADR-081) — the published plugin does not
+  link with the current Visual Studio, so Windows answers "no owner check" and "Forgot PIN?" offers
+  to erase this device's copy and re-sync, as on Linux (ADR-078).
+
+**Not verified on a device** (ROADMAP item 9): real CloudKit (needs the paid Apple Developer
+Program), the Android folder access, camera QR scanning, a real sync service, Windows and Linux
+hardware, and that the unreached transports are absent from a built binary.
 - **`zen_ui_store`** — the choice. A banner while conflicts wait, the list of them, and each
   device's version side by side, plus `ZenSyncStatusBanner`, which says why sync stopped; a record is named by the app's `title`, a field by its proto name
   and value unless the app formats it.
 - **`zen_ui_lock`** — the door. An optional PIN: a PBKDF2 hash in the Keychain, shut-out after
   repeated misses, a gate in `MaterialApp.builder` that covers every route while locked or in the
-  app switcher, and recovery through the device owner check.
+  app switcher, and recovery through the device owner check, or, where there is none (Linux, Windows), by erasing
+  this device's copy and re-syncing it (ADR-078).
 
 ## Scheduled work
 

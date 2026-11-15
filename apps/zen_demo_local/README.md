@@ -6,7 +6,7 @@
 **The jZen Local reference app: a chore list with no server, no sign-in and no account — on iOS,
 macOS, Android, Windows and Linux.** It is to Local mode what [`zen_demo`](../zen_demo/README.md) is
 to the full stack: the showcase, and the end-to-end test stand. See ADR-073 (the mode) and
-`docs/plans/JZEN-LOCAL-PLAN.md`.
+[`docs/plans/implemented/JZEN-LOCAL-PLAN.md`](../../docs/plans/implemented/JZEN-LOCAL-PLAN.md).
 
 The model is one record, a `Chore` (`proto/zen_demo_local/v1/chore.proto`), with four independently
 editable fields — title, note, done, priority — so that every behaviour of the mode is one tap away.
@@ -62,10 +62,25 @@ cd apps/zen_demo_local/zen_demo_local_client && flutter test --dart-define=ZEN_P
 - `test/chores_flow_test.dart` drives the screens; `test/accessibility_test.dart` checks contrast,
   target size, names and 200% text in light and dark.
 
-## Not verified
+## Verification matrix
 
-Real CloudKit (needs the paid Apple Developer Program), a real Android device with a real sync app
-(and a Storage Access Framework grant surviving a restart), Windows and Linux hardware, and a real
-sync service (Syncthing, Dropbox, OneDrive) between them. QR scanning when joining is not wired:
-the typed code works everywhere, the camera is an optional `ZenQrScannerBuilder`
-(`zen_ui_store`). Spike 0.1's and unit 8's matrix record what has been run on devices.
+What has been run, and what has not. Nothing below was run on a device or a real service: the
+manual matrix (plan unit 8) was **not run**, because it needs real hardware and accounts that a
+coding session does not have.
+
+| Row | Status | Why |
+|---|---|---|
+| Two sessions through `ZenFolderCloud` and through the shared-folder transport on a Mac: merge, conflict, delete against edit, erase and re-sync | passed (automated, host tests) | `test/two_devices_test.dart` |
+| Screens and accessibility (contrast, target size, names, 200% text) | passed (automated) | widget suites |
+| macOS debug build | passed | ADR-080 |
+| Windows ↔ Linux ↔ Android through Syncthing: pairing, merge, conflict, offline then reconnect, grant revoked | **not verified** | unit 8 not run; needs the three devices |
+| The same through Dropbox or OneDrive | **not verified** | unit 8 not run; needs an account and the devices |
+| macOS ↔ iOS simulator through `ZenFolderCloud` | **not verified** | unit 8 not run (ADR-072's open item) |
+| iOS / macOS through real CloudKit | **not verified** | needs a paid Apple Developer Program membership; this is a free personal team |
+| Android folder access (Storage Access Framework, grant surviving a restart) | **not verified** | spike 0.1 is a desk study (ADR-076, ADR-080); the plugins never ran on a device |
+| Camera QR scanning when joining | **not verified** | no scanner plugin is wired; the typed 77-character code works everywhere, `ZenQrScannerBuilder` is the optional hook (`zen_ui_store`) |
+| Windows and Linux runs; the `inactive` lifecycle and Android recents snapshot | **not verified** | not run on hardware; only built in CI (ADR-078, ADR-081) |
+| Transports absent from a built Android/Windows/Linux binary | **not verified** | nothing built one to inspect (ADR-079) |
+
+On Windows "Forgot PIN?" offers to erase this device's copy rather than Windows Hello (ADR-081), as
+on Linux (ADR-078).

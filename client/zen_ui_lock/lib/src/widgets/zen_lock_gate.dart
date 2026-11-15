@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../screens/zen_unlock_screen.dart';
@@ -47,7 +48,14 @@ class _ZenLockGateState extends State<ZenLockGate> {
   void initState() {
     super.initState();
     _lifecycle = AppLifecycleListener(
-      onInactive: () => setState(() => _covered = true),
+      onInactive: () {
+        // A desktop window that loses focus never becomes hidden unless it is minimised, so the
+        // clock starts here: a window left behind another one for an hour must ask for the PIN.
+        // On a phone `inactive` also fires for a pulled-down shade or a system dialog, which must
+        // not count as leaving the app.
+        if (_isDesktop) _hiddenAt ??= DateTime.now();
+        setState(() => _covered = true);
+      },
       onHide: () => _hiddenAt ??= DateTime.now(),
       onShow: _returned,
       onResume: () {
@@ -56,6 +64,11 @@ class _ZenLockGateState extends State<ZenLockGate> {
       },
     );
   }
+
+  static bool get _isDesktop =>
+      defaultTargetPlatform == TargetPlatform.windows ||
+      defaultTargetPlatform == TargetPlatform.linux ||
+      defaultTargetPlatform == TargetPlatform.macOS;
 
   void _returned() {
     final hiddenAt = _hiddenAt;

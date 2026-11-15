@@ -1,0 +1,68 @@
+{
+  "@@locale": "uk",
+  "appTitle": "jZen Справи",
+  "choresTitle": "Справи",
+  "addChore": "Додати справу",
+  "emptyChores": "Справ ще немає. Вони лишаються на ваших пристроях; на сервер нічого не надсилається.",
+  "settings": "Налаштування",
+  "choreDone": "Зроблено",
+  "choreOpen": "Треба зробити",
+  "priorityLow": "Низький",
+  "priorityNormal": "Звичайний",
+  "priorityHigh": "Високий",
+  "newChoreTitle": "Нова справа",
+  "editChoreTitle": "Змінити справу",
+  "titleField": "Назва",
+  "noteField": "Нотатка",
+  "doneField": "Зроблено",
+  "priorityField": "Пріоритет",
+  "save": "Зберегти",
+  "delete": "Видалити",
+  "titleRequired": "Дайте справі назву.",
+  "saveFailed": "Не вдалося зберегти: {error}",
+  "inConflict": "Інший пристрій змінив цю справу інакше. Спершу оберіть версію.",
+  "settingsTitle": "Налаштування",
+  "securitySection": "Безпека",
+  "syncSection": "Синхронізація",
+  "deviceSection": "Цей пристрій",
+  "syncFolder": "Тека синхронізації",
+  "syncFolderNone": "Теку не обрано",
+  "chooseFolder": "Обрати теку",
+  "changeFolder": "Змінити теку",
+  "firstDevice": "Почати синхронізацію з цього пристрою",
+  "firstDeviceHint": "Створює ключ, з яким приєднаються ваші інші пристрої.",
+  "joinDevice": "Приєднатися до іншого пристрою",
+  "addDevice": "Додати пристрій",
+  "syncKeyMade": "Цей пристрій готовий до приєднання інших.",
+  "syncKeyJoined": "Цей пристрій приєднався до ваших інших пристроїв.",
+  "syncApple": "Синхронізується через ваш обліковий запис iCloud.",
+  "syncDevelopmentFolder": "Синхронізується через теку розробки (не для релізу).",
+  "syncRefused": "Синхронізація недоступна в цій збірці: {reason}",
+  "eraseCopy": "Стерти копію на цьому пристрої",
+  "eraseHint": "Видаляє справи, збережені тут. Інші пристрої зберігають свої та повернуть їх.",
+  "eraseConfirmTitle": "Стерти копію на цьому пристрої?",
+  "eraseConfirmBody": "Справи, які ще не синхронізовано, буде втрачено. Решта повернеться з ваших інших пристроїв.",
+  "erased": "Копію на цьому пристрої стерто.",
+  "eraseFailed": "Не вдалося стерти: {error}",
+  "cancel": "Скасувати",
+  "erase": "Стерти",
+  "startFailedTitle": "jZen Справи не змогли відкрити ваші дані",
+  "startFailedHint": "Нічого не змінено. {error}",
+  "choreGone": "Цю справу видалено на іншому пристрої.",
+  "folderFailed": "Не вдалося використати цю теку: {error}",
+  "@folderFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "syncKeyFailed": "Не вдалося налаштувати синхронізацію: {error}",
+  "@syncKeyFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  }
+}

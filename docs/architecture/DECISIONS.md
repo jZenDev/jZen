@@ -15,6 +15,91 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-081 — Windows has no owner check until `local_auth_windows` builds: a Dart-only stand-in replaces it
+
+**Date:** 2026-11-15. **Status:** accepted; Windows hardware not verified. **Refines:** ADR-078
+("Forgot PIN?" on a device with no owner check), ADR-073. **Issue:** #210.
+
+### Decision
+
+- **`local_auth_windows` is overridden by a first-party, Dart-only package of the same name**
+  (`client/overrides/local_auth_windows`), declared as a `dependency_overrides` entry in both
+  workspace roots. It registers as the Windows `local_auth`, and answers `isDeviceSupported() ==
+  false` and no biometrics; `authenticate` throws `noBiometricHardware`.
+- **Why.** The published `local_auth_windows` 2.0.2, the latest, compiles with `/await`. The
+  MSVC that Visual Studio 18 ships (14.51) refuses it — `error STL1011: The /await compiler option,
+  <experimental/coroutine> ... are deprecated ... and will be REMOVED SOON` — in its plugin target,
+  so **no Windows build that depends on `local_auth` links**, including `zen_demo_local` (CI
+  `windows-runner`). No fixed release exists. The options were: a newer release (none), defining
+  `_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS` for a plugin we do not own (a deprecation
+  that is announced to become removal, hidden), vendoring a fork of its C++ (a native port we would
+  then maintain), or dropping the one feature it serves on Windows. The last is the smallest and
+  honest, because the recovery it served already has a defined fallback.
+- **What Windows loses and what it does instead.** "Forgot PIN?" no longer confirms the owner with
+  Windows Hello; `zen_ui_lock` sees "no owner check" and offers *erase this device's copy and
+  re-sync from the other devices*, the path ADR-078 built for Linux. The PIN, the privacy cover and
+  the lifecycle lock are unchanged. A person with a PIN and no other device loses the data on a
+  forgotten PIN on Windows — the cost, stated.
+- **Revisit when** a `local_auth_windows` release builds with Visual Studio 18; delete the override
+  and the package then. Windows Hello support returns with no change to `zen_ui_lock`.
+
+### Consequence
+
+New non-member package `client/overrides/local_auth_windows` (own suite, picked up by
+`test:client`); two override entries. **Verified:** the package's suite, resolution of both
+workspaces. **Not verified:** a Windows build and run (CI's `windows-runner` is the check).
+
+---
+
+## ADR-080 — The Local reference app keeps its model beside itself; the Android folder adapter and picker are a new `zen_store_folder`
+
+**Date:** 2026-11-15. **Status:** accepted; nothing here is verified on a device. **Refines:**
+ADR-073 (plan unit 7), ADR-076 ("the Android adapter is not in this package"). **Issue:** #210.
+
+### Decision
+
+- **`zen_demo_local`'s model lives in `apps/zen_demo_local/proto/zen_demo_local/v1/chore.proto`,
+  not in `proto/zen/v1/`.** Its generated Dart is committed under the app's own `lib/generated`,
+  made by the existing application task (`zenlocal:generate:proto:dart`, with `PROTO_DIR` and
+  `PROTO_DART_OUT` set on the include) and covered by `verify:contracts`. *Why:* everything under
+  `proto/zen/v1/` is jZen's own contract — it is generated into `zen_transport` and into the
+  server's `zen-proto` — and a Local application has neither. Putting its model there would make
+  the app depend on a server transport it must not have (ADR-065, ADR-073) and add a demo
+  message to the server's DTOs.
+- **A record repeats its own id as a field** (`Chore.id`), written once at creation. `ZenCollection`
+  lists values, not keys, so a list screen cannot otherwise open or delete the chore it shows. The
+  field is never edited, so it can never conflict.
+- **`zen_store_folder`, a new Flutter package, supplies `ZenFolderAccess` where `dart:io` is not
+  enough and the folder picker everywhere.** `ZenFolderPicker.pick` / `restore` give a
+  `ZenFolderChoice` (a reference to keep, a label, an access): the system folder dialog
+  (`file_picker`) on Windows and Linux, and on Android `ZenSafFolderAccess` over `saf_util` +
+  `saf_stream`, exactly the plugins spike 0.1 chose, behind a small `ZenSafPort` so the adapter's
+  rules (write by temporary document then delete-and-rename, no rename over an existing document, a
+  withdrawn grant reported as `accessRevoked`) are tested with a fake tree. `zen_store_shared_folder`
+  stays pure Dart. One consequence of the SAF rule is a crash window: a crash between deleting the
+  old document and renaming the temporary one leaves no file at the target until that device's next
+  write (the other devices' copies and the device's own store are untouched); the transport reads
+  that as "not delivered yet", never as a deletion.
+- **A form saves only what the person changed.** `ChoreRepository.edit` applies the differences
+  between what the form opened with and what it left onto the record as stored *now*, because
+  `ZenCollection.put` counts every field that differs from the stored record as this device's edit,
+  and saving a stale snapshot whole would silently send back another device's newer value.
+- **The sync key and the chosen folder are kept in the application's secret storage**
+  (`ZenLockStorage`, the Keychain / Keystore / Credential Manager / libsecret item `zen_ui_lock`
+  already uses), under the app's own names. The store key stays `zen_store_key`'s alone.
+
+### Consequence
+
+New package `zen_store_folder`, workspace member, lockstep 0.1.0; new app `zen_demo_local` in the
+`apps/` workspace. **Verified:** two real app sessions through `ZenFolderCloud` and through the
+shared-folder transport on a Mac (merge of different fields, conflict on the same field, delete
+against edit, erase and re-sync), the screens, the accessibility suite, the SAF adapter against a
+fake, and a macOS debug build. **Not verified:** the two SAF plugins on an Android device with a
+real sync app and a grant surviving a restart; Windows and Linux runs; QR scanning (the typed code
+works, no scanner plugin is wired); real CloudKit.
+
+---
+
 ## ADR-079 — One call starts sync, from a new `zen_store_sync` package that names both transports
 
 **Date:** 2026-11-15. **Status:** accepted; the CloudKit branch and the Android folder adapter are

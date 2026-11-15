@@ -38,7 +38,7 @@ showZenPinSetup(context, lock)      // change the PIN
   PIN.
 - **Shuts out guessing**: from the fifth wrong PIN, attempts wait 30 s, doubling to at most an
   hour, and the count survives a restart.
-- **"Forgot PIN?"** asks for the device's own passcode, Face ID, Touch ID or Windows Hello, then
+- **"Forgot PIN?"** asks for the device's own passcode, Face ID, Touch ID or Windows Hello (Windows has none until `local_auth_windows` builds with Visual Studio 18, ADR-081, so it erases this device's copy as Linux does), then
   removes the PIN. There is no server to recover through, and whoever can unlock the device already
   holds what the PIN protects. The app must declare `NSFaceIDUsageDescription` in its iOS
   `Info.plist`.

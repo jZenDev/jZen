@@ -33,6 +33,7 @@ workspace:
   - zen_store
   - zen_store_key
   - zen_store_cloudkit
+  - zen_save_file
   - zen_store_folder
   - zen_store_shared_folder
   - zen_store_sync

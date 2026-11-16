@@ -58,6 +58,8 @@ final class ZenStore {
 
   final Map<ZenStoreKey, ZenRecordState> _records;
   final Map<String, Map<int, ZenMergePolicy>> _policies = {};
+  final Map<String, Set<int>> _explicitPresence = {};
+  final Set<String> _deviceOnly = {};
   final Map<ZenStoreKey, Uint8List> _transportData;
   final List<Set<ZenStoreKey>> _shards;
   Map<String, String> _names;
@@ -213,10 +215,25 @@ final class ZenStore {
   /// devices set them to different values ([ZenMergePolicy]). Declare the same policies on every
   /// device and every launch: a collection already declared with different ones throws an
   /// [ArgumentError], because two devices merging by different rules would not converge.
+  ///
+  /// A top-level proto3 field with implicit presence (a scalar or enum that is not `optional`) set
+  /// to its default is stored as unset, since proto3 defines them as one value. The Dart runtime
+  /// cannot tell an `optional` field from one that is not, so [explicitPresence] lists, by field
+  /// number, the `optional` fields, where "set to the default" and "unset" stay different. Message,
+  /// repeated and map fields are always explicit. Declared like [mergePolicies], and the same on
+  /// every device.
+  ///
+  /// With [syncs] false the collection is device-only: its records are never in [unsent], never
+  /// returned by [outgoing], and a record of that name arriving from a transport is refused — so
+  /// they reach no other device and no sync service — yet [writeAll] saves them together with
+  /// synced collections in one atomic step, and they are encrypted like all the others. Declare it
+  /// before starting a transport, the same way on every launch.
   ZenCollection<T> collection<T extends GeneratedMessage>(
     String name,
     T Function(List<int> bytes) decode, {
     Map<int, ZenMergePolicy> mergePolicies = const {},
+    Set<int> explicitPresence = const {},
+    bool syncs = true,
   }) {
     if (!_collectionName.hasMatch(name)) {
       throw ArgumentError.value(name, 'name', 'a collection name is [a-z][a-z0-9_]{0,63}');
@@ -229,6 +246,25 @@ final class ZenStore {
         throw ArgumentError.value(subField, 'mergePolicies', 'a sub-field number is 1 or more');
       }
     }
+    final declaredPresence = _explicitPresence[name];
+    if (declaredPresence != null &&
+        (declaredPresence.length != explicitPresence.length ||
+            !declaredPresence.containsAll(explicitPresence))) {
+      throw ArgumentError.value(
+        explicitPresence,
+        'explicitPresence',
+        'the collection $name was already declared with different explicit-presence fields',
+      );
+    }
+    if (declaredPresence != null && _deviceOnly.contains(name) == syncs) {
+      throw ArgumentError.value(
+        syncs,
+        'syncs',
+        'the collection $name was already declared ${syncs ? 'device-only' : 'synced'}',
+      );
+    }
+    _explicitPresence[name] ??= Set.unmodifiable(explicitPresence);
+    if (!syncs) _deviceOnly.add(name);
     final declared = _policies[name];
     if (declared != null && !_samePolicies(declared, mergePolicies)) {
       throw ArgumentError.value(
@@ -243,7 +279,7 @@ final class ZenStore {
         record.applyPolicies(mergePolicies);
       }
     }
-    return ZenCollection.internal(this, name, decode);
+    return ZenCollection.internal(this, name, decode, _explicitPresence[name]!);
   }
 
   static bool _samePolicies(Map<int, ZenMergePolicy> a, Map<int, ZenMergePolicy> b) =>
@@ -267,7 +303,16 @@ final class ZenStore {
   // ── The transport's side ──────────────────────────────────────────────────────────────────────
 
   /// The records this device changed that no transport has confirmed saving, by name.
-  Set<String> get unsent => Set.unmodifiable(_unsent);
+  Set<String> get unsent => Set.unmodifiable(_unsent.where((name) => !_isDeviceOnly(name)));
+
+  bool _isDeviceOnly(String name) {
+    if (_deviceOnly.isEmpty) return false;
+    try {
+      return _deviceOnly.contains(ZenStoreKey.parse(name).collection);
+    } on FormatException {
+      return false;
+    }
+  }
 
   /// Names that have just become unsent, after a local write or a merge that added to what the
   /// transport holds. A transport listens to send them.
@@ -281,6 +326,7 @@ final class ZenStore {
     } on FormatException {
       return null;
     }
+    if (_deviceOnly.contains(key.collection)) return null;
     final record = _records[key];
     if (record == null) return null;
     return ZenOutgoingRecord(name, encodePayload(record, _names), _transportData[key]);
@@ -313,6 +359,10 @@ final class ZenStore {
           }
         } on FormatException catch (e) {
           problems.add(ZenSyncProblem(item.name, e.message));
+          continue;
+        }
+        if (_deviceOnly.contains(key.collection)) {
+          problems.add(ZenSyncProblem(item.name, 'the collection is device-only'));
           continue;
         }
         final current = records[key];
@@ -394,7 +444,10 @@ final class ZenStore {
   /// again from scratch — after the cloud's copy was reset (a reset iCloud Keychain), or when the
   /// application moves to another transport.
   Future<ZenResult<void>> forgetTransport() => _serialized(() async {
-    final everything = {for (final key in _records.keys) key.name};
+    final everything = {
+      for (final key in _records.keys)
+        if (!_deviceOnly.contains(key.collection)) key.name,
+    };
     try {
       await _persist(_records, const {}, _names, everything, null, {
         for (var shard = 0; shard < _shardCount; shard++) shard,
@@ -502,7 +555,8 @@ final class ZenStore {
     final record = _records[key]?.copy() ?? ZenRecordState(collection, id);
     record.write(deviceId, _now(), plan.$1, settle: settle);
     final records = {..._records, key: record};
-    final unsent = {..._unsent, key.name};
+    final syncs = !_deviceOnly.contains(collection);
+    final unsent = {..._unsent, if (syncs) key.name};
     try {
       await _persist(records, _transportData, _names, unsent, _transportState, {_shardOf(key)});
     } on FileSystemException catch (e, stack) {
@@ -510,7 +564,7 @@ final class ZenStore {
     }
     _commit(records, _transportData, _names, unsent);
     _changes.add({collection});
-    _unsentChanges.add({key.name});
+    if (syncs) _unsentChanges.add({key.name});
     return ZenResult.ok(plan.$2);
   });
 
@@ -563,6 +617,7 @@ final class ZenStore {
         if (operation.isDelete && (current == null || current.isDeleted)) {
           return ZenResult.err(ZenNotFoundError('${key.collection}/${key.id} does not exist.'));
         }
+        if (operation.check?.call(current) case final error?) return ZenResult.err(error);
         plan.add((key, operation.fields));
       }
       if (plan.isEmpty) return const ZenResult.ok(null);
@@ -576,7 +631,7 @@ final class ZenStore {
         final record = _records[key]?.copy() ?? ZenRecordState(key.collection, key.id);
         record.write(deviceId, at, fields);
         records[key] = record;
-        unsent.add(key.name);
+        if (!_deviceOnly.contains(key.collection)) unsent.add(key.name);
         touched.add(_shardOf(key));
         collections.add(key.collection);
       }
@@ -604,7 +659,11 @@ final class ZenStore {
       }
       _commit(records, _transportData, _names, unsent);
       _changes.add(collections);
-      _unsentChanges.add({for (final (key, _) in plan) key.name});
+      final sent = {
+        for (final (key, _) in plan)
+          if (!_deviceOnly.contains(key.collection)) key.name,
+      };
+      if (sent.isNotEmpty) _unsentChanges.add(sent);
       return const ZenResult.ok(null);
     });
   }

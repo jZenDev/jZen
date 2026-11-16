@@ -9,6 +9,7 @@ import 'package:protobuf/protobuf.dart';
 import 'package:zen_core/zen_core.dart';
 
 import 'zen_collection.dart';
+import 'zen_merge_policy.dart';
 import 'zen_record_state.dart';
 import 'zen_storage_error.dart';
 import 'zen_store_cipher.dart';
@@ -45,6 +46,7 @@ final class ZenStore {
   final String deviceName;
 
   final Map<ZenStoreKey, ZenRecordState> _records;
+  final Map<String, Map<int, ZenMergePolicy>> _policies = {};
   final Map<ZenStoreKey, Uint8List> _transportData;
   final List<Set<ZenStoreKey>> _shards;
   Map<String, String> _names;
@@ -181,15 +183,43 @@ final class ZenStore {
 
   /// A typed view of the collection [name] — lower-case letters, digits and `_`, starting with a
   /// letter — whose values are read back with [decode], the message's generated `fromBuffer`.
+  ///
+  /// [mergePolicies] declares, by proto field number, which fields merge on their own when two
+  /// devices set them to different values ([ZenMergePolicy]). Declare the same policies on every
+  /// device and every launch: a collection already declared with different ones throws an
+  /// [ArgumentError], because two devices merging by different rules would not converge.
   ZenCollection<T> collection<T extends GeneratedMessage>(
     String name,
-    T Function(List<int> bytes) decode,
-  ) {
+    T Function(List<int> bytes) decode, {
+    Map<int, ZenMergePolicy> mergePolicies = const {},
+  }) {
     if (!_collectionName.hasMatch(name)) {
       throw ArgumentError.value(name, 'name', 'a collection name is [a-z][a-z0-9_]{0,63}');
     }
+    for (final field in mergePolicies.keys) {
+      if (field < 1) {
+        throw ArgumentError.value(field, 'mergePolicies', 'a field number is 1 or more');
+      }
+    }
+    final declared = _policies[name];
+    if (declared != null && !_samePolicies(declared, mergePolicies)) {
+      throw ArgumentError.value(
+        mergePolicies,
+        'mergePolicies',
+        'the collection $name was already declared with different merge policies',
+      );
+    }
+    if (declared == null && mergePolicies.isNotEmpty) {
+      _policies[name] = Map.unmodifiable(mergePolicies);
+      for (final record in recordsIn(name)) {
+        record.applyPolicies(mergePolicies);
+      }
+    }
     return ZenCollection.internal(this, name, decode);
   }
+
+  static bool _samePolicies(Map<int, ZenMergePolicy> a, Map<int, ZenMergePolicy> b) =>
+      a.length == b.length && a.entries.every((e) => b[e.key] == e.value);
 
   /// The collections whose contents or conflicts changed, once per write or sync that changed any.
   Stream<Set<String>> get changes => _changes.stream;
@@ -258,7 +288,10 @@ final class ZenStore {
         }
         final current = records[key];
         final merged = current?.copy() ?? theirs;
-        if (current == null || merged.merge(theirs)) changed.add(key.collection);
+        final policies = _policies[key.collection] ?? const <int, ZenMergePolicy>{};
+        if (current == null || merged.merge(theirs, policies: policies)) {
+          changed.add(key.collection);
+        }
         records[key] = merged;
         if (item.transportData case final data?) transportData[key] = data;
         names[deviceId] = deviceName;

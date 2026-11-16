@@ -118,6 +118,26 @@ it, `~/Library/Containers/<bundle id>/Data/Library/Application Support/zen-cloud
 builds that absolute path; or add a read-write exception for the folder to the macOS Debug
 entitlements only.
 
+## 🕰️ Same intent, different times
+
+By default two different values of one field are a conflict. A field that records *when* the same
+thing happened (a reset revoked on two devices, a goal completed on two) has no answer a person
+could give to "which time?". Declare it per collection:
+
+```dart
+final resets = store.collection('resets', Reset.fromBuffer, mergePolicies: {
+  4: ZenMergePolicy.earliest,   // revoked_at: a timestamp or integer
+  5: ZenMergePolicy.latest,     // last_seen_at
+  6: ZenMergePolicy.or,         // is_read: true if any device set it
+});
+```
+
+A policy reads only the two **values**, never the write order, the device or the clock label, so
+every device ends with the same answer in any arrival order; it is not a last-writer-wins rule. A
+side that cleared a timestamp (or a value the policy cannot read) is a different intent and stays a
+conflict. Declare the same policies on every device and every launch — declaring a collection twice
+with different ones throws.
+
 ## ⚖️ Conflicts
 
 `zen_ui_store` gives the person the screens to settle them — `ZenConflictBanner` and what it

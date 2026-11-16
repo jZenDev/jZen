@@ -32,8 +32,15 @@ final class RecordingAccess implements ZenFolderAccess {
   }
 
   @override
+  Future<void> delete(String path) => inner.delete(path);
+
+  @override
   Stream<void>? watch() => inner.watch();
 }
+
+/// The directory the transport keeps [syncKeyBytes]'s files in: `<folder>/<key id>`.
+Future<Directory> keyDirectory(Directory folder, [List<int>? syncKeyBytes]) async =>
+    Directory('${folder.path}/${await ZenSharedFolderSync.keyIdOf(syncKeyBytes ?? syncKey)}');
 
 /// One device: its store, the transport, and the folder replica it syncs through.
 final class Device {

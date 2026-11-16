@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
+import 'package:zen_core/zen_core.dart';
 
 /// What carries a store's records to the user's other devices, and back.
 ///
@@ -19,6 +20,13 @@ abstract interface class ZenSyncTransport {
 
   /// Sends what is waiting and fetches what is new, now rather than when the transport would next.
   Future<void> syncNow();
+
+  /// Erases the person's data on every device and in what the transport keeps (ADR-085): marks the
+  /// store erased (`ZenStore.eraseEverywhere`), removes this device's part of the shared place,
+  /// and leaves a marker with no data in it that tells every other device, whenever it next syncs,
+  /// to erase too. A failure to reach the shared place leaves the store erased and the rest to the
+  /// next sync; it is never "not erased".
+  Future<ZenResult<void>> eraseEverywhere();
 
   /// Stops syncing. The store keeps working offline, and its unsent records stay unsent.
   Future<void> stop();
@@ -79,6 +87,15 @@ enum ZenSyncIssue {
   /// Another device wrote in a format a newer version of the app introduced. Its files are left
   /// alone until this device is updated.
   newerAppVersion,
+
+  /// The store was erased everywhere (`ZenStore.eraseEverywhere`), here or on another device. There
+  /// is nothing left to sync; the application erases the store's directory and starts anew.
+  erasedEverywhere,
+
+  /// A device was removed and the sync key replaced (`ZenSharedFolderSync.rekey`), and this device
+  /// still holds the old key. It stops syncing so as not to write under a key a removed device
+  /// holds; pairing it again with a device that has the new key ends this.
+  keyReplaced,
 
   /// Anything else; [ZenSyncStatus.message] says what.
   other,

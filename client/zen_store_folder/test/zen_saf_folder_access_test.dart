@@ -70,6 +70,8 @@ class _FakeSaf implements ZenSafPort {
   Future<void> delete(String uri, {required bool isDirectory}) async {
     if (failDelete) throw StateError('delete failed');
     nodes.remove(uri);
+    // The framework deletes a directory with everything in it.
+    if (isDirectory) nodes.removeWhere((key, _) => key.startsWith('$uri/'));
   }
 
   @override
@@ -123,6 +125,21 @@ void main() {
   test('a folder that cannot be opened is an error, not a null dereference', () async {
     saf.nodes.clear();
     await expectLater(access.write('a.zen', Uint8List.fromList([1])), throwsStateError);
+  });
+
+  test('delete removes a file, or a directory with all it holds, and a missing path is fine', () async {
+    await access.write('key/dev1/a.zen', Uint8List.fromList([1]));
+    await access.write('key/dev1/b.zen', Uint8List.fromList([2]));
+    await access.write('key/dev2/c.zen', Uint8List.fromList([3]));
+
+    await access.delete('key/dev1/a.zen');
+    expect((await access.list('key/dev1')).map((e) => e.name), ['b.zen']);
+
+    await access.delete('key/dev1');
+    expect(await access.list('key/dev1'), isEmpty);
+    expect((await access.list('key/dev2')).map((e) => e.name), ['c.zen']);
+
+    await access.delete('key/never/was.zen');
   });
 
   test('a missing file reads as null and a missing directory lists empty', () async {

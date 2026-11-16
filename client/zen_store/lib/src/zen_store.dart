@@ -65,7 +65,9 @@ final class ZenStore {
   Map<String, String> _names;
   Set<String> _unsent;
   Uint8List? _transportState;
+  bool _erasedEverywhere;
 
+  final StreamController<void> _erasures = StreamController<void>.broadcast();
   final StreamController<Set<String>> _changes = StreamController<Set<String>>.broadcast();
   final StreamController<Set<String>> _unsentChanges = StreamController<Set<String>>.broadcast();
   Future<void> _tail = Future<void>.value();
@@ -83,6 +85,7 @@ final class ZenStore {
     this._names,
     this._unsent,
     this._transportState,
+    this._erasedEverywhere,
   ) : _shards = List.generate(_shardCount, (_) => <ZenStoreKey>{}) {
     for (final key in _records.keys) {
       _shards[_shardOf(key)].add(key);
@@ -125,6 +128,7 @@ final class ZenStore {
       final names = <String, String>{};
       var unsent = <String>{};
       Uint8List? transportState;
+      var erased = false;
       final metaFile = File(_join(directory.path, 'meta.zen'));
       if (await metaFile.exists()) {
         final meta = decodeJson(
@@ -139,6 +143,7 @@ final class ZenStore {
         }
         unsent = {...(meta['unsent'] as List<Object?>? ?? []).whereType<String>()};
         if (meta['transport'] case final String state) transportState = base64Decode(state);
+        erased = meta['erased'] == true;
       }
       final records = <ZenStoreKey, ZenRecordState>{};
       final transportData = <ZenStoreKey, Uint8List>{};
@@ -170,6 +175,7 @@ final class ZenStore {
           names,
           unsent,
           transportState,
+          erased,
         ),
       );
     } on FormatException catch (e, stack) {
@@ -333,6 +339,7 @@ final class ZenStore {
   Future<ZenResult<ZenSyncReport>> receive(List<ZenIncomingRecord> incoming) => _serialized(
     () async {
       if (_closed) return ZenResult.err(const ZenStorageError('The store is closed.'));
+      if (_erasedEverywhere) return ZenResult.err(_erasedError);
       final records = Map.of(_records);
       final transportData = Map.of(_transportData);
       final names = Map.of(_names);
@@ -455,11 +462,56 @@ final class ZenStore {
     return const ZenResult.ok(null);
   });
 
+  /// Whether this store was erased everywhere ([eraseEverywhere], or another device did and a
+  /// transport brought the news). It then holds no record, refuses every write and merge, and
+  /// stays so until its directory is erased and a new store is opened (`ZenStore.erase`).
+  bool get erasedEverywhere => _erasedEverywhere;
+
+  /// Fires once, when the store becomes erased everywhere.
+  Stream<void> get erasures => _erasures.stream;
+
+  /// Erases the person's data on every device, not only this one (ADR-078 keeps [erase] to this
+  /// device's copy).
+  ///
+  /// Here it removes every record and every unsent change, and marks the store erased, durably:
+  /// the mark survives a restart, so a transport that was not done when the app stopped finishes
+  /// at the next launch. What reaches the other devices is the transport's: it tells them, each
+  /// one erases its copy at its next sync and answers the same way, and it removes what it put in
+  /// the shared place (the folder's files, the CloudKit zone). Call the transport's own
+  /// `eraseEverywhere` where there is one, so that happens before this returns.
+  ///
+  /// Idempotent: a store already erased answers success. Nothing here can be undone.
+  Future<ZenResult<void>> eraseEverywhere() => _serialized(() async {
+    if (_closed) return ZenResult.err(const ZenStorageError('The store is closed.'));
+    if (_erasedEverywhere) return const ZenResult.ok(null);
+    _erasedEverywhere = true;
+    try {
+      await _persist(const {}, const {}, _names, const {}, null, {
+        for (var shard = 0; shard < _shardCount; shard++) shard,
+      });
+    } on FileSystemException catch (e, stack) {
+      _erasedEverywhere = false;
+      return ZenResult.err(ZenStorageError('Cannot erase the store: $e', stackTrace: stack));
+    }
+    final collections = {for (final record in _records.values) record.collection};
+    _commit(const {}, const {}, _names, const {});
+    _transportState = null;
+    if (collections.isNotEmpty) _changes.add(collections);
+    _erasures.add(null);
+    return const ZenResult.ok(null);
+  });
+
+  static const ZenStorageError _erasedError = ZenStorageError(
+    'The store was erased everywhere; nothing can be written to it. Erase its directory and '
+    'start a new store.',
+  );
+
   /// Waits for pending writes, then stops accepting new ones.
   Future<void> close() async {
     await _serialized(() async {
       _closed = true;
     });
+    await _erasures.close();
     await _changes.close();
     await _unsentChanges.close();
   }
@@ -491,6 +543,7 @@ final class ZenStore {
     bool settle = false,
   }) => _serialized(() async {
     if (_closed) return ZenResult.err(const ZenStorageError('The store is closed.'));
+    if (_erasedEverywhere) return ZenResult.err(_erasedError);
     final key = ZenStoreKey(collection, id);
     final (Map<int, Uint8List>?, R) plan;
     switch (precondition(_records[key])) {
@@ -536,6 +589,7 @@ final class ZenStore {
     final operations = batch.operations;
     return _serialized(() async {
       if (_closed) return ZenResult.err(const ZenStorageError('The store is closed.'));
+      if (_erasedEverywhere) return ZenResult.err(_erasedError);
       final seen = <ZenStoreKey>{};
       final plan = <(ZenStoreKey, Map<int, Uint8List>?)>[];
       for (final operation in operations) {
@@ -642,6 +696,7 @@ final class ZenStore {
         'names': names,
         'unsent': unsent.toList()..sort(),
         if (transportState != null) 'transport': base64Encode(transportState),
+        if (_erasedEverywhere) 'erased': true,
       }),
     );
     final files = <(String, Uint8List)>[(_metaName, await _cipher.seal(meta, _metaName))];

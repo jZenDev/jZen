@@ -36,6 +36,8 @@ class ZenSyncStatusBanner extends StatelessWidget {
         ZenSyncIssue.accessRevoked => messages.syncAccessRevoked,
         ZenSyncIssue.notPaired => messages.syncNotPaired,
         ZenSyncIssue.newerAppVersion => messages.syncNewerAppVersion,
+        ZenSyncIssue.erasedEverywhere => messages.syncErasedEverywhere,
+        ZenSyncIssue.keyReplaced => messages.syncKeyReplaced,
         ZenSyncIssue.other || null => messages.syncOther,
       };
       return Semantics(

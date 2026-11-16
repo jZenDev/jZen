@@ -99,4 +99,15 @@ void main() {
     final result = await start(const ZenSyncPlan('android', 'cloudkit'));
     expect(result.errorOrNull, isA<ZenValidationError>());
   });
+
+  test('a release build with ZEN_SYNC set starts nothing and names the define', () async {
+    final folder = '${root.path}/cloud-release';
+    final result = await start(
+      const ZenSyncPlan('macos', 'folder', release: true),
+      folder: folder,
+    );
+    expect(result.errorOrNull, isA<ZenValidationError>());
+    expect(result.errorOrNull!.message, contains('ZEN_SYNC'));
+    expect(Directory(folder).existsSync(), isFalse);
+  });
 }

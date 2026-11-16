@@ -77,6 +77,13 @@ final class ZenSafFolderAccess implements ZenFolderAccess {
     }
   }
 
+  @override
+  Future<void> delete(String path) async {
+    final entry = await _port.child(treeUri, _segments(path));
+    if (entry == null) return;
+    await _port.delete(entry.uri, isDirectory: entry.isDirectory);
+  }
+
   Future<ZenSafEntry> _directoryOf(List<String> segments) async {
     if (segments.length > 1) return _port.mkdirp(treeUri, segments.sublist(0, segments.length - 1));
     final root = await _port.child(treeUri, const []);

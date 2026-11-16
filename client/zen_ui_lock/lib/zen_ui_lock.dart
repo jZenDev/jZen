@@ -2,6 +2,7 @@
 ///
 /// - [ZenPinLock]: whether a PIN is set and whether the app is locked; wrong-attempt shut-out
 /// - [ZenLockGate]: covers the app while locked, and in the app switcher
+/// - [ZenScreenSecurity]: Android's `FLAG_SECURE`, set by [ZenLockGate]'s `secureScreen`
 /// - [ZenPinLockSwitch], [showZenPinSetup], [showZenPinOff]: turning it on, changing it, off
 /// - [lockLocaleDelegate]: this package's strings, for `MaterialApp.localizationsDelegates`
 ///
@@ -19,5 +20,6 @@ export 'src/state/zen_owner_check.dart';
 export 'src/state/zen_pin_hash.dart' show zenPinIterations;
 export 'src/state/zen_pin_lock.dart';
 export 'src/state/zen_pin_locked_out_error.dart';
+export 'src/state/zen_screen_security.dart';
 export 'src/widgets/zen_lock_gate.dart';
 export 'src/widgets/zen_pin_lock_switch.dart';

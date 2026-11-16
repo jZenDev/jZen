@@ -48,9 +48,11 @@ final class ZenConflictSource<T extends GeneratedMessage> {
           collection: collection.name,
           id: conflict.id,
           title: _title(conflict),
+          isCurrent: () => _isCurrent(conflict),
           sides: [
             for (final side in conflict.sides)
               ZenConflictSideView(
+                device: side.device,
                 deviceName: side.deviceName,
                 at: side.at,
                 isDelete: side.isDelete,
@@ -65,6 +67,20 @@ final class ZenConflictSource<T extends GeneratedMessage> {
           ],
         ),
     ]);
+  }
+
+  /// Whether [shown] is still exactly what the store holds: the same devices, each with the same
+  /// version. A sync can add a side or change one after a screen was drawn.
+  bool _isCurrent(ZenConflict<T> shown) {
+    final now = collection.conflictFor(shown.id).dataOrNull;
+    if (now == null || now.sides.length != shown.sides.length) return false;
+    if (now.fields.length != shown.fields.length || !now.fields.containsAll(shown.fields)) {
+      return false;
+    }
+    final byDevice = {for (final side in now.sides) side.device: side.value};
+    return shown.sides.every(
+      (side) => byDevice.containsKey(side.device) && byDevice[side.device] == side.value,
+    );
   }
 
   String? _title(ZenConflict<T> conflict) {
@@ -116,11 +132,15 @@ final class ZenConflictView {
   final String? title;
   final List<ZenConflictSideView> sides;
 
+  /// Whether the store still holds exactly these sides, asked again at the moment of writing.
+  final bool Function() isCurrent;
+
   const ZenConflictView({
     required this.collection,
     required this.id,
     required this.title,
     required this.sides,
+    required this.isCurrent,
   });
 }
 
@@ -128,6 +148,8 @@ final class ZenConflictView {
 @internal
 @immutable
 final class ZenConflictSideView {
+  /// The device's id, which tells two devices of the same name apart.
+  final String device;
   final String deviceName;
   final DateTime at;
   final bool isDelete;
@@ -139,6 +161,7 @@ final class ZenConflictSideView {
   final Future<ZenResult<Object?>> Function() keep;
 
   const ZenConflictSideView({
+    required this.device,
     required this.deviceName,
     required this.at,
     required this.isDelete,

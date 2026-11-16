@@ -24,7 +24,29 @@ final sources = [
 
 // Above the main screen's content, where they are seen on every launch:
 ZenSyncStatusBanner(transport: sync)
-ZenConflictBanner(store: store, sources: sources)
+ZenConflictBanner(store: store, sources: sources, issues: issues)
+```
+
+**Your own cross-record problems** (a goal below zero after two withdrawals, a record on an account
+deleted elsewhere) go in the same place. Re-check your rules and return what is wrong now; they
+count in the banner and appear in the list beside the field conflicts, each with your action
+buttons. Never fix one silently.
+
+```dart
+final issues = [
+  ZenIssueSource(
+    issues: () => [
+      for (final goal in goals.list().dataOrNull!)
+        if (goal.balance < 0)
+          ZenIssue(
+            id: 'goal-${goal.id}',
+            title: '${goal.name} is below zero',
+            description: 'Two withdrawals on two devices took it to ${goal.balance}.',
+            actions: [ZenIssueAction(label: 'Set it to zero', run: () => zeroGoal(goal))],
+          ),
+    ],
+  ),
+];
 ```
 
 Register `storeLocaleDelegate` in `MaterialApp.localizationsDelegates`.

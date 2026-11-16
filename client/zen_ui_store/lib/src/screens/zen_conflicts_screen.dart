@@ -7,10 +7,15 @@ import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 
 import '../l10n/generated/store_localizations.dart';
 import '../state/zen_conflict_source.dart';
+import '../state/zen_issue_source.dart';
 import 'zen_conflict_resolve_screen.dart';
+import 'zen_issue_screen.dart';
 
 /// Every record, across [sources], that waits for the person to choose between devices'
 /// versions. Tapping one opens its versions beside the list on a wide window and as a page below.
+///
+/// The application's own [issues] are listed with them, each opening the application's words and
+/// actions, because "what needs my choice" belongs in one place.
 ///
 /// It refreshes whenever the store changes, so a conflict resolved here — or on another device
 /// and synced in — leaves the list on its own.
@@ -21,26 +26,41 @@ class ZenConflictsScreen extends StatefulWidget {
   /// The collections to show, and how to show their records.
   final List<ZenConflictSource> sources;
 
-  const ZenConflictsScreen({super.key, required this.store, required this.sources});
+  /// Problems only the application can see, shown beside the store's conflicts.
+  final List<ZenIssueSource> issues;
+
+  const ZenConflictsScreen({
+    super.key,
+    required this.store,
+    required this.sources,
+    this.issues = const [],
+  });
 
   @override
   State<ZenConflictsScreen> createState() => _ZenConflictsScreenState();
 }
 
 class _ZenConflictsScreenState extends State<ZenConflictsScreen> {
-  StreamSubscription<Set<String>>? _changes;
+  final List<StreamSubscription<void>> _changes = [];
 
   @override
   void initState() {
     super.initState();
-    _changes = widget.store.changes.listen((_) {
+    void refresh(void _) {
       if (mounted) setState(() {});
-    });
+    }
+
+    _changes.add(widget.store.changes.listen(refresh));
+    for (final source in widget.issues) {
+      if (source.changes?.listen(refresh) case final subscription?) _changes.add(subscription);
+    }
   }
 
   @override
   void dispose() {
-    _changes?.cancel();
+    for (final subscription in _changes) {
+      subscription.cancel();
+    }
     super.dispose();
   }
 
@@ -58,6 +78,7 @@ class _ZenConflictsScreenState extends State<ZenConflictsScreen> {
           failure ??= error.message;
       }
     }
+    final issues = [for (final source in widget.issues) ...source.issues()];
     return ZenPageScaffold(
       title: messages.conflictsTitle,
       body: ListView(
@@ -66,7 +87,11 @@ class _ZenConflictsScreenState extends State<ZenConflictsScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              conflicts.isEmpty && failure == null ? messages.noConflicts : messages.conflictsIntro,
+              conflicts.isEmpty && issues.isEmpty && failure == null
+                  ? messages.noConflicts
+                  : issues.isEmpty
+                  ? messages.conflictsIntro
+                  : messages.attentionIntro,
               style: theme.textTheme.bodyLarge,
             ),
           ),
@@ -90,6 +115,21 @@ class _ZenConflictsScreenState extends State<ZenConflictsScreen> {
                   onResolved: () => Navigator.of(page).maybePop(),
                 ),
               ),
+            ),
+          for (final issue in issues)
+            ZenListRow(
+              title: issue.title,
+              subtitle: issue.description,
+              // An action need not write to the store, so nothing else would tell this list that
+              // the issue is gone: look again once the detail closes.
+              onTap: () =>
+                  showZenDetail<void>(
+                    context,
+                    builder: (page) =>
+                        ZenIssueScreen(issue: issue, onDone: () => Navigator.of(page).maybePop()),
+                  ).whenComplete(() {
+                    if (mounted) setState(() {});
+                  }),
             ),
         ],
       ),

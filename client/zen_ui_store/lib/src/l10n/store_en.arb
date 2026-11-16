@@ -228,5 +228,31 @@
         "type": "String"
       }
     }
+  },
+  "bannerAttention": "{count, plural, =1{1 item needs your choice.} other{{count} items need your choice.}}",
+  "@bannerAttention": {
+    "description": "Banner shown while conflicts and application issues wait for the person.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "attentionIntro": "These need your choice. Nothing has been thrown away or changed without you.",
+  "@attentionIntro": {
+    "description": "Explanation at the top of the list when it holds issues the application found."
+  },
+  "issueTitle": "Needs Your Choice",
+  "@issueTitle": {
+    "description": "Title of the screen that shows one issue the application found."
+  },
+  "issueFailed": "Couldn't do that: {reason}",
+  "@issueFailed": {
+    "description": "Error when an action on an issue failed.",
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
   }
 }

@@ -1,0 +1,26 @@
+name: zen_save_file
+description: >-
+  "Save this data to a file the person chooses" on every platform a jZen application runs on: the
+  system save sheet on iOS, Android and desktop, a download on the web. One call, no plugin named by
+  the application.
+publish_to: 'none'
+# Lockstep with the product version, see docs/architecture/STANDARDS.md "Versioning".
+version: 0.1.0
+
+environment:
+  sdk: ">=3.14.0 <4.0.0"
+
+resolution: workspace
+
+dependencies:
+  # The save sheet is a plugin, which imports dart:ui. Its iOS and macOS side is a Swift package
+  # (file_picker_darwin ships a Package.swift), so no runner needs a Podfile.
+  file_picker: ^13.3.3
+  flutter:
+    sdk: flutter
+  meta: ^1.11.0
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter

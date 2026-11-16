@@ -215,9 +215,12 @@ final class ZenStore {
     if (!_collectionName.hasMatch(name)) {
       throw ArgumentError.value(name, 'name', 'a collection name is [a-z][a-z0-9_]{0,63}');
     }
-    for (final field in mergePolicies.keys) {
+    for (final MapEntry(key: field, value: policy) in mergePolicies.entries) {
       if (field < 1) {
         throw ArgumentError.value(field, 'mergePolicies', 'a field number is 1 or more');
+      }
+      if (policy.subField case final subField? when subField < 1) {
+        throw ArgumentError.value(subField, 'mergePolicies', 'a sub-field number is 1 or more');
       }
     }
     final declared = _policies[name];

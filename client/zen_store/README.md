@@ -152,6 +152,13 @@ for (final conflict in accounts.conflicts().dataOrNull!) {
 }
 ```
 
+`ZenConflictsScreen` also settles many at once: when two devices disagree on several records (one
+bank statement imported on both, each row differing in its category), a row offers "keep this
+device's version for all N" or the other device's, after naming the count and both devices. Only a
+plain disagreement between exactly those two devices is swept in; a delete against an edit, or a
+record a third device also changed, is named and left for its own choice. A record that changed
+after it was shown is skipped, and the screen says how many it settled.
+
 Until it is resolved a record in conflict is still **shown** (each disputed field from its latest
 version, so nothing vanishes from a screen), every side stays on disk on every device, and the
 record **refuses `put` and `delete`** with a `ZenConflictError` — so no screen can settle it by

@@ -4,6 +4,7 @@
 /// - [ZenConflictBanner]: says that choices are waiting, and opens them
 /// - [ZenConflictsScreen]: every record in conflict
 /// - [ZenConflictResolveScreen]: each device's version of one record, and the button that keeps it
+/// - [ZenConflictBulkScreen]: one choice that settles every record two devices disagree on
 /// - [ZenIssueSource]: the application's own cross-record problems, listed beside the conflicts
 /// - [ZenIssueScreen]: one such problem, with the application's actions as buttons
 /// - [ZenSyncStatusBanner]: says why sync stopped, in words the person can act on
@@ -18,6 +19,7 @@ library;
 export 'src/l10n/generated/store_localizations.dart';
 export 'src/l10n/store_locale_delegate.dart';
 export 'src/screens/zen_add_device_screen.dart';
+export 'src/screens/zen_conflict_bulk_screen.dart' show ZenConflictBulkScreen;
 export 'src/screens/zen_conflict_resolve_screen.dart';
 export 'src/screens/zen_conflicts_screen.dart';
 export 'src/screens/zen_issue_screen.dart';

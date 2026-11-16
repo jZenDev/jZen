@@ -7,12 +7,17 @@ import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 
 import '../l10n/generated/store_localizations.dart';
 import '../state/zen_conflict_source.dart';
+import '../state/zen_conflict_sweep.dart';
 import '../state/zen_issue_source.dart';
+import 'zen_conflict_bulk_screen.dart';
 import 'zen_conflict_resolve_screen.dart';
 import 'zen_issue_screen.dart';
 
 /// Every record, across [sources], that waits for the person to choose between devices'
 /// versions. Tapping one opens its versions beside the list on a wide window and as a page below.
+///
+/// When the same two devices disagree on several records, a row above the list settles all of
+/// them with one choice ([ZenConflictBulkScreen]).
 ///
 /// The application's own [issues] are listed with them, each opening the application's words and
 /// actions, because "what needs my choice" belongs in one place.
@@ -79,6 +84,7 @@ class _ZenConflictsScreenState extends State<ZenConflictsScreen> {
       }
     }
     final issues = [for (final source in widget.issues) ...source.issues()];
+    final sweeps = ZenConflictSweep.of(conflicts, thisDevice: widget.store.deviceId);
     return ZenPageScaffold(
       title: messages.conflictsTitle,
       body: ListView(
@@ -104,6 +110,19 @@ class _ZenConflictsScreenState extends State<ZenConflictsScreen> {
               ),
             ),
           const SizedBox(height: 8),
+          // Many records two devices disagree on, settled with one choice instead of one tap each.
+          for (final sweep in sweeps)
+            ZenListRow(
+              title: messages.bulkRowTitle(sweep.included.length, sweep.first.$2, sweep.second.$2),
+              subtitle: messages.bulkRowSubtitle,
+              onTap: () => showZenDetail<void>(
+                context,
+                builder: (page) => ZenConflictBulkScreen(
+                  sweep: sweep,
+                  onDone: () => Navigator.of(page).maybePop(),
+                ),
+              ),
+            ),
           for (final conflict in conflicts)
             ZenListRow(
               title: conflict.title ?? messages.deletedTitle,

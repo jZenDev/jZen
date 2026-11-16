@@ -70,6 +70,106 @@
   "@resolveFailed": {
     "description": "Error when a resolution could not be written."
   },
+  "bulkRowTitle": "Settle all {count} changed on {first} and {second}",
+  "@bulkRowTitle": {
+    "description": "List row that opens the choice to settle many records changed on the same two devices at once.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "first": {
+        "type": "String"
+      },
+      "second": {
+        "type": "String"
+      }
+    }
+  },
+  "bulkRowSubtitle": "Keep one device's version for every one of them",
+  "@bulkRowSubtitle": {
+    "description": "Second line of the row that opens the settle-many-at-once screen."
+  },
+  "bulkTitle": "Settle Many at Once",
+  "@bulkTitle": {
+    "description": "Title of the screen that settles many records between two devices with one choice."
+  },
+  "bulkIntro": "{count} items were changed differently on {first} and {second}. Choose the device whose version to keep for all of them. The other version of each is replaced on every device.",
+  "@bulkIntro": {
+    "description": "Explanation above the settle-many choice.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "first": {
+        "type": "String"
+      },
+      "second": {
+        "type": "String"
+      }
+    }
+  },
+  "bulkKeepThisDevice": "Keep this device's version ({device}) for all {count}",
+  "@bulkKeepThisDevice": {
+    "description": "Button that settles every listed record with the version from the device the person is holding.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "bulkKeepDevice": "Keep {device}'s version for all {count}",
+  "@bulkKeepDevice": {
+    "description": "Button that settles every listed record with the version from another device.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "device": {
+        "type": "String"
+      }
+    }
+  },
+  "bulkIncludedHeading": "Settled together ({count})",
+  "@bulkIncludedHeading": {
+    "description": "Heading above the records one choice settles.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "bulkLeftHeading": "Left for you ({count})",
+  "@bulkLeftHeading": {
+    "description": "Heading above the records this choice does not settle.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "bulkLeftIntro": "These also involve a deletion or a third device, so this choice does not cover them. Settle each one by itself.",
+  "@bulkLeftIntro": {
+    "description": "Explanation above the records a settle-many choice leaves alone."
+  },
+  "bulkResult": "Settled {done} of {total}. The rest changed in the meantime or could not be saved, and still wait for your choice.",
+  "@bulkResult": {
+    "description": "Shown when a settle-many choice did not finish every record.",
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "bulkBack": "Back to the list",
+  "@bulkBack": {
+    "description": "Button that leaves the settle-many screen after it did not finish every record."
+  },
   "deletedTitle": "A deleted item",
   "@deletedTitle": {
     "description": "Name used for a record when every version shown of it is a delete."

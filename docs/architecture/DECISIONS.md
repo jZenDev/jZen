@@ -15,6 +15,44 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-083 — CloudKit record names are an HMAC, so Apple sees no collection or id
+
+**Date:** 2026-11-16. **Status:** accepted. **Refines:** ADR-065, ADR-073, ADR-076. **Issue:** #236.
+
+### Decision
+
+- A CloudKit record is named by `HMAC-SHA256(key, "zen_store_cloudkit.record:<collection>:<id>")` in
+  hex, not by `<collection>:<id>`. The plain name is a second field in `encryptedValues`, beside the
+  state, and the device reads it from there when it fetches.
+- The key is 32 random bytes in a **synchronizable** Keychain item (`kSecAttrSynchronizable`), so
+  iCloud Keychain carries it end to end encrypted across the person's devices. Without the key the
+  bridge reports `unavailable` and starts nothing; a plain name is never the fallback.
+- The naming is `ZenRecordNames`, a Swift target with no Flutter dependency, so its test can build
+  a `CKRecord.ID` and assert that no collection or id appears in it.
+- **Migration is a new zone**: `<zone>_v2`. A device whose saved engine state predates this (no
+  version marker) marks every record unsent, uploads under hashed names, and deletes the old zone,
+  so Apple stops holding the plain names. The store on the device was always the source of truth, so
+  nothing is lost. A device still on the old version sees its zone deleted and stops with
+  `cloudDataDeleted` until it updates.
+
+### What this supersedes, and why
+
+- **"each store record is one CloudKit record named `<collection>:<id>`"** (ADR-065, the CloudKit
+  transport) → **changed.** *Why:* the name is not inside `encryptedValues`, so Apple could read
+  collections, record counts and any id an application derives from data (a month, a date), while
+  the shared-folder transport (ADR-076) already hid all of it. One app then had two privacy levels.
+
+### Consequence
+
+Apple still sees how many records exist, their sizes and times; only names are hidden. Two devices
+that start before the Keychain item has synced each create a key; iCloud Keychain keeps one, and
+records written under the other stay in the zone with the same plain name, which the store merges as
+one record. Verified: the three `ZenRecordNames` tests pass under `swift test` in a scratch package.
+**Not verified:** the bridge compiled inside the plugin (it needs the Flutter framework) and real
+CloudKit (needs the paid Apple Developer Program).
+
+---
+
 ## ADR-082 — Flutter 3.50 / Dart 3.14, and the design libraries come from `material_ui` / `cupertino_ui`
 
 **Date:** 2026-11-15. **Status:** accepted. **Refines:** ADR-009 (client i18n), the "Client UI"

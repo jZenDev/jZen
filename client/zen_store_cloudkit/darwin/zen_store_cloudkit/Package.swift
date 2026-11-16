@@ -16,9 +16,13 @@ let package = Package(
         .package(name: "FlutterFramework", path: "../FlutterFramework")
     ],
     targets: [
+        // The record-name HMAC, with no Flutter dependency so it can be tested alone (ADR-083).
+        .target(name: "ZenRecordNames"),
+        .testTarget(name: "ZenRecordNamesTests", dependencies: ["ZenRecordNames"]),
         .target(
             name: "zen_store_cloudkit",
             dependencies: [
+                "ZenRecordNames",
                 .product(name: "FlutterFramework", package: "FlutterFramework")
             ],
             resources: [

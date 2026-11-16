@@ -5,13 +5,15 @@ import Flutter
 import FlutterMacOS
 #endif
 import Foundation
+import ZenRecordNames
 
 /// `CKSyncEngine` against the user's private database, with the store on the Dart side as the
 /// source of truth.
 ///
-/// Each store record is one CloudKit record named `<collection>:<id>` in one custom zone, whose
-/// whole state is a single field in `encryptedValues`: CloudKit encrypts it on the device with keys
-/// in the user's iCloud Keychain, so Apple holds only ciphertext. The engine owns the sync loop —
+/// Each store record is one CloudKit record in one custom zone, named by an HMAC of the store's
+/// `<collection>:<id>` (`ZenRecordNames`, ADR-083), so Apple sees neither collections nor ids. Its
+/// state and its plain name are fields in `encryptedValues`: CloudKit encrypts them on the device
+/// with keys in the user's iCloud Keychain, so Apple holds only ciphertext. The engine owns the sync loop —
 /// what to send, batching, retries, push-triggered fetches, change tokens — and this class only
 /// translates: it asks Dart for payloads to send, hands Dart what was fetched, confirms saves, and
 /// returns the server's copy when a save was refused because it changed, for Dart to merge.
@@ -21,22 +23,45 @@ import Foundation
 final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
   private static let recordType = "ZenRecord"
   private static let stateField = "state"
+  private static let nameField = "name"
+  /// Marks a saved engine state as belonging to the hashed-name zone; one without it is from the
+  /// plain-name zone this version replaces.
+  private static let stateMarker = Data("zen-v2\n".utf8)
 
   private let channel: FlutterMethodChannel
   private let container: CKContainer
   private let zoneID: CKRecordZone.ID
+  private let legacyZoneID: CKRecordZone.ID
+  private let containerId: String?
   private let initialState: CKSyncEngine.State.Serialization?
+  private let hadLegacyState: Bool
+  private var names: ZenRecordNames?
+  /// Hashed record name to the store's name, for the records this run has been told about.
+  private var plainNames: [String: String] = [:]
   private var engine: CKSyncEngine?
   private var stopped = false
 
   init(channel: FlutterMethodChannel, containerId: String?, zone: String, state: Data?) {
     self.channel = channel
     container = containerId.map { CKContainer(identifier: $0) } ?? CKContainer.default()
-    zoneID = CKRecordZone.ID(zoneName: zone, ownerName: CKCurrentUserDefaultName)
-    initialState = state.flatMap { try? JSONDecoder().decode(CKSyncEngine.State.Serialization.self, from: $0) }
+    self.containerId = containerId
+    // A new zone, not a rename in place: records already in the old zone carry plain names.
+    zoneID = CKRecordZone.ID(zoneName: "\(zone)_v2", ownerName: CKCurrentUserDefaultName)
+    legacyZoneID = CKRecordZone.ID(zoneName: zone, ownerName: CKCurrentUserDefaultName)
+    hadLegacyState = state.map { !$0.starts(with: Self.stateMarker) } ?? false
+    initialState = state
+      .flatMap { $0.starts(with: Self.stateMarker) ? $0.dropFirst(Self.stateMarker.count) : nil }
+      .flatMap { try? JSONDecoder().decode(CKSyncEngine.State.Serialization.self, from: Data($0)) }
   }
 
   func start() async {
+    do {
+      names = try ZenRecordNames(key: ZenRecordNames.loadKey(account: containerId ?? "default"))
+    } catch {
+      // Without the key no record can be named, and a plain name must never be the fallback.
+      await status("unavailable", issue: "other", message: error.localizedDescription)
+      return
+    }
     do {
       let account = try await container.accountStatus()
       if account != .available {
@@ -54,12 +79,18 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
     if initialState == nil {
       engine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zoneID))])
     }
+    if hadLegacyState {
+      // This device used the plain-name zone. Send everything again under hashed names, then
+      // remove the old zone so Apple no longer holds the names.
+      _ = await callDart("resetCloud", nil)
+      engine.state.add(pendingDatabaseChanges: [.deleteZone(legacyZoneID)])
+    }
     self.engine = engine
   }
 
   func changed(_ names: [String]) {
     guard let engine, !stopped else { return }
-    engine.state.add(pendingRecordZoneChanges: names.map { .saveRecord(recordID($0)) })
+    engine.state.add(pendingRecordZoneChanges: names.compactMap { name in recordID(name).map { CKSyncEngine.PendingRecordZoneChange.saveRecord($0) } })
   }
 
   /// Sends what is waiting, then fetches; the error's description, or nil.
@@ -85,7 +116,7 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
     switch event {
     case .stateUpdate(let update):
       if let data = try? JSONEncoder().encode(update.stateSerialization) {
-        _ = await callDart("state", ["state": FlutterStandardTypedData(bytes: data)])
+        _ = await callDart("state", ["state": FlutterStandardTypedData(bytes: Self.stateMarker + data)])
       }
 
     case .accountChange(let change):
@@ -175,8 +206,10 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
     syncEngine: CKSyncEngine
   ) async -> CKSyncEngine.RecordZoneChangeBatch? {
     let pending = syncEngine.state.pendingRecordZoneChanges.filter { context.options.scope.contains($0) }
+    // Names the store does not know in this run (pending from an earlier launch, before Dart
+    // listed what is unsent) are skipped; the store names them again at start.
     let names: [String] = pending.compactMap {
-      if case .saveRecord(let id) = $0 { return id.recordName }
+      if case .saveRecord(let id) = $0 { return plainNames[id.recordName] }
       return nil
     }
     guard !names.isEmpty else { return nil }
@@ -185,12 +218,14 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
     for item in reply {
       guard let name = item["name"] as? String,
             let payload = (item["payload"] as? FlutterStandardTypedData)?.data else { continue }
-      let system = forgetSystemFields.contains(name) ? nil : (item["system"] as? FlutterStandardTypedData)?.data
-      forgetSystemFields.remove(name)
+      guard let id = recordID(name) else { continue }
+      let system = forgetSystemFields.contains(id.recordName) ? nil : (item["system"] as? FlutterStandardTypedData)?.data
+      forgetSystemFields.remove(id.recordName)
       let record = system.flatMap(Self.record(fromSystemFields:))
-        ?? CKRecord(recordType: Self.recordType, recordID: recordID(name))
+        ?? CKRecord(recordType: Self.recordType, recordID: id)
       record.encryptedValues[Self.stateField] = payload
-      records[name] = record
+      record.encryptedValues[Self.nameField] = name
+      records[id.recordName] = record
     }
     return await CKSyncEngine.RecordZoneChangeBatch(pendingChanges: pending) { records[$0.recordName] }
   }
@@ -199,19 +234,24 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
 
   private var forgetSystemFields: Set<String> = []
 
-  private func recordID(_ name: String) -> CKRecord.ID {
-    CKRecord.ID(recordName: name, zoneID: zoneID)
+  /// The record ID for the store's [name], remembering which name it stands for.
+  private func recordID(_ name: String) -> CKRecord.ID? {
+    guard let names else { return nil }
+    let hashed = names.hashed(name)
+    plainNames[hashed] = name
+    return CKRecord.ID(recordName: hashed, zoneID: zoneID)
   }
 
   /// A record as Dart takes it: its name, its decrypted state, and its system fields (the change
   /// tag a later save must match), archived.
   private func encode(_ record: CKRecord) -> [String: Any]? {
-    guard let payload = record.encryptedValues[Self.stateField] as? Data else { return nil }
+    guard let payload = record.encryptedValues[Self.stateField] as? Data,
+          let name = record.encryptedValues[Self.nameField] as? String else { return nil }
     let archiver = NSKeyedArchiver(requiringSecureCoding: true)
     record.encodeSystemFields(with: archiver)
     archiver.finishEncoding()
     return [
-      "name": record.recordID.recordName,
+      "name": name,
       "payload": FlutterStandardTypedData(bytes: payload),
       "system": FlutterStandardTypedData(bytes: archiver.encodedData),
     ]

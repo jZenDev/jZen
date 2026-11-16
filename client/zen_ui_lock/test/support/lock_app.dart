@@ -10,15 +10,14 @@ Widget lockedApp({
   String locale = ZenLocales.en,
   ThemeData? theme,
   Duration relockAfter = const Duration(minutes: 1),
+  bool secureScreen = false,
 }) => MaterialApp(
   locale: Locale(locale),
-  localizationsDelegates: const [
-    lockLocaleDelegate,
-    ...GlobalMaterialLocalizations.delegates,
-  ],
+  localizationsDelegates: const [lockLocaleDelegate, ...GlobalMaterialLocalizations.delegates],
   supportedLocales: [for (final tag in ZenLocales.shipped) Locale(tag)],
   theme: theme,
-  builder: (context, child) => ZenLockGate(lock: lock, relockAfter: relockAfter, child: child!),
+  builder: (context, child) =>
+      ZenLockGate(lock: lock, relockAfter: relockAfter, secureScreen: secureScreen, child: child!),
   home: home,
 );
 

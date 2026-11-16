@@ -31,6 +31,8 @@ final class FakeTransport implements ZenSyncTransport {
   Future<void> syncNow() async {}
 
   @override
+  Future<ZenResult<void>> eraseEverywhere() async => const ZenResult.ok(null);
+  @override
   Future<void> stop() async {}
 }
 

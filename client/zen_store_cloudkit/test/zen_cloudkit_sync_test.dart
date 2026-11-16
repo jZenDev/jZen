@@ -91,11 +91,9 @@ void main() {
       await items(local).put('1', Api(name: 'x'));
       final sync = (await ZenCloudKitSync.start(local)).dataOrNull!;
 
-      final batch =
-          await fromSwift('outgoing', {
-                'names': ['items:1', 'items:gone'],
-              })
-              as List<Object?>;
+      final batch = await fromSwift('outgoing', {
+        'names': ['items:1', 'items:gone'],
+      }) as List<Object?>;
       expect(batch, hasLength(1));
       final out = local.outgoing('items:1')!;
       expect((batch.single! as Map)['payload'], out.payload);
@@ -197,18 +195,80 @@ void main() {
     expect((await ZenCloudKitSync.start(await store('a'))).errorOrNull, isA<ZenNotFoundError>());
   });
 
-  test('protectDirectory asks the plugin to protect the directory and reports its answer', () async {
+  test('erasing everywhere erases the store, then asks iCloud to erase its zone', () async {
+    final local = await store('a');
+    await items(local).put('1', Api(name: 'x'));
+    final sync = (await ZenCloudKitSync.start(local)).dataOrNull!;
+    sent.clear();
+
+    final result = await sync.eraseEverywhere();
+
+    expect(result, isA<ZenSuccess<void>>());
+    expect(local.erasedEverywhere, isTrue);
+    expect(items(local).list().dataOrNull, isEmpty);
+    expect(sent.map((c) => c.method), ['eraseEverywhere']);
+    expect(sync.status.issue, ZenSyncIssue.erasedEverywhere);
+    await sync.stop();
+  });
+
+  test('an iCloud that cannot be reached leaves the store erased and says so', () async {
+    final local = await store('a');
+    final sync = (await ZenCloudKitSync.start(local)).dataOrNull!;
     messenger.setMockMethodCallHandler(channel, (call) async {
       sent.add(call);
-      return true;
+      if (call.method == 'eraseEverywhere') {
+        throw PlatformException(code: 'erase_failed', message: 'offline');
+      }
+      return null;
     });
 
-    final result = await ZenDataProtection.protectDirectory(root);
+    final result = await sync.eraseEverywhere();
 
-    expect(result.dataOrNull, isTrue);
-    expect(sent.single.method, 'protectDirectory');
-    expect((sent.single.arguments as Map)['path'], root.path);
+    expect(result.errorOrNull!.message, contains('offline'));
+    expect(local.erasedEverywhere, isTrue);
+    expect(sync.status.issue, ZenSyncIssue.other);
+    await sync.stop();
   });
+
+  test('an erase the app did not finish is finished at the next start', () async {
+    final local = await store('a');
+    await local.eraseEverywhere();
+
+    final sync = (await ZenCloudKitSync.start(local)).dataOrNull!;
+
+    expect(sent.map((c) => c.method), contains('eraseEverywhere'));
+    expect(sync.status.issue, ZenSyncIssue.erasedEverywhere);
+    await sync.stop();
+  });
+
+  test('another device\'s erase, told by the engine, erases this copy', () async {
+    final local = await store('a');
+    await items(local).put('1', Api(name: 'x'));
+    final sync = (await ZenCloudKitSync.start(local)).dataOrNull!;
+
+    await fromSwift('erased');
+
+    expect(local.erasedEverywhere, isTrue);
+    expect(items(local).list().dataOrNull, isEmpty);
+    expect(sync.status.issue, ZenSyncIssue.erasedEverywhere);
+    await sync.stop();
+  });
+
+  test(
+    'protectDirectory asks the plugin to protect the directory and reports its answer',
+    () async {
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        sent.add(call);
+        return true;
+      });
+
+      final result = await ZenDataProtection.protectDirectory(root);
+
+      expect(result.dataOrNull, isTrue);
+      expect(sent.single.method, 'protectDirectory');
+      expect((sent.single.arguments as Map)['path'], root.path);
+    },
+  );
 
   test('protectDirectory succeeds with false where there is no plugin', () async {
     messenger.setMockMethodCallHandler(channel, null);

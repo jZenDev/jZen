@@ -21,13 +21,17 @@ import 'zen_sync_plan.dart';
 /// );
 /// ```
 abstract final class ZenSync {
-  // The define `task zen:run:client ZEN_SYNC=...` bakes in (ADR-072); empty in a release build.
+  // The define `task zen:run:client ZEN_SYNC=...` bakes in (ADR-072); a release build refuses it (`ZenSyncPlan`).
   static const String _define = String.fromEnvironment('ZEN_SYNC');
   // The folder `ZenFolderCloud` syncs through, with `ZEN_SYNC=folder`.
   static const String _folderDefine = String.fromEnvironment('ZEN_SYNC_FOLDER');
 
   /// What this build syncs through, decided at compile time.
-  static const ZenSyncPlan plan = ZenSyncPlan(zenPlatform, _define);
+  static const ZenSyncPlan plan = ZenSyncPlan(
+    zenPlatform,
+    _define,
+    release: bool.fromEnvironment('dart.vm.product'),
+  );
 
   /// Starts syncing [store] through the transport this build's `ZEN_PLATFORM` and `ZEN_SYNC` name:
   /// CloudKit on iOS and macOS, the shared folder on Android, Windows and Linux, and

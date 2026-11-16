@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:zen_core/zen_core.dart';
@@ -12,8 +13,14 @@ import 'zen_shared_folder_cipher.dart';
 /// (Syncthing, Dropbox, OneDrive, Nextcloud, ...) keeps in step between their devices (ADR-076).
 ///
 /// ```
-/// <folder>/<device id>/<64 hex>.zen     one file per record, written by that device only
+/// <folder>/<key id>/<device id>/<64 hex>.zen   one file per record, written by that device only
+/// <folder>/<key id>/<device id>/erased.zen     that device saw the store erased everywhere
+/// <folder>/<key id>/rekeyed.zen                the sync key was replaced; stop writing here
 /// ```
+///
+/// **The key id** is 32 hex characters derived from the sync key, so a device holding another key
+/// (a removed device, once the key is replaced) works in a directory nobody else reads: what it
+/// writes afterwards is not decrypted, not reported, not even looked at (ADR-085).
 ///
 /// **One writer per file.** A device writes only inside its own directory and only reads the
 /// others', so the folder never holds a file two devices changed - which is what a sync service
@@ -37,11 +44,13 @@ import 'zen_shared_folder_cipher.dart';
 final class ZenSharedFolderSync implements ZenSyncTransport {
   static final RegExp _deviceDirectory = RegExp(r'^[0-9a-f]{32}$');
   static final RegExp _recordFile = RegExp(r'^[0-9a-f]{64}\.zen$');
+  static const String _erasedFile = 'erased.zen';
+  static const String _rekeyedFile = 'rekeyed.zen';
   static final Uint8List _publishedMarker = Uint8List.fromList(utf8.encode('published:1'));
 
   final ZenStore _store;
   final ZenFolderAccess _access;
-  final ZenSharedFolderCipher? _cipher;
+  ZenSharedFolderCipher? _cipher;
   final Duration _watchDebounce;
   final StreamController<ZenSyncStatus> _statusChanges =
       StreamController<ZenSyncStatus>.broadcast();
@@ -64,6 +73,8 @@ final class ZenSharedFolderSync implements ZenSyncTransport {
   // directory is seen to exist. Stops a folder that never shows our files from being refilled on
   // every pass.
   bool _republishing = false;
+  // The cipher a replaced key leaves behind until its folder directory has been cleaned.
+  ZenSharedFolderCipher? _retiring;
 
   ZenSharedFolderSync._(this._store, this._access, this._cipher, this._watchDebounce);
 
@@ -120,6 +131,131 @@ final class ZenSharedFolderSync implements ZenSyncTransport {
     return run;
   }
 
+  /// The name of the directory [syncKey]'s files live in, `<folder>/<key id>`. For a test, or a
+  /// person's support request ("which of these directories is mine?"); nothing needs it to sync.
+  static Future<String> keyIdOf(List<int> syncKey) async =>
+      (await ZenSharedFolderCipher.derive(syncKey)).keyId;
+
+  /// Erases the person's data on every device, in the folder and in this store (ADR-085).
+  ///
+  /// The store is marked erased (`ZenStore.eraseEverywhere`), this device's files are removed from
+  /// the folder, and a marker is left in its directory. Every other paired device finds a marker
+  /// at its next sync, erases its own copy and removes its own files the same way, which is how
+  /// "each device removes its own directory" works with a folder only its owner may write: a device
+  /// that syncs a month later erases then.
+  ///
+  /// **What stays:** one empty-of-data marker file per device, which the person may delete with
+  /// the folder once every device has erased. It is what tells a device that was off. It holds no
+  /// record, name or id.
+  ///
+  /// Fails when the folder cannot be reached, after the store was erased: the cleanup resumes at
+  /// every sync, including after a restart, so a failure here is "not yet", never "not erased".
+  /// Afterwards the application erases the store's directory (`ZenStore.erase`) and creates a new
+  /// sync key before pairing again: this key's directory is marked erased for good.
+  Future<ZenResult<void>> eraseEverywhere() async {
+    if (_stopped) return const ZenResult.err(ZenStorageError('The transport is stopped.'));
+    if (await _store.eraseEverywhere() case ZenFailure(:final error)) return ZenResult.err(error);
+    await syncNow();
+    await whenIdle();
+    if (_cipher == null) return const ZenResult.ok(null); // never paired: nothing in the folder
+    if (_status.issue == ZenSyncIssue.erasedEverywhere) return const ZenResult.ok(null);
+    return ZenResult.err(
+      ZenStorageError(
+        'The store was erased here, but the folder was not cleaned (${_status.issue?.name}: '
+        '${_status.message ?? 'unavailable'}). It is finished at the next sync that can reach it.',
+      ),
+    );
+  }
+
+  /// Replaces the sync key, so a device that holds the old one (lost, sold, photographed) can no
+  /// longer read or write what the others share (ADR-085).
+  ///
+  /// Makes a new random key, hands it to [persist] - which must store it as durably as the key
+  /// was stored before, and may fail - then writes everything this device holds under the new
+  /// key's directory and leaves only a `rekeyed.zen` marker in the old one. Each of the person's
+  /// remaining devices shows that marker as [ZenSyncIssue.keyReplaced] and is paired again with
+  /// this one (`ZenPairing.offer` with the returned key). Files written with the old key are
+  /// never read again, and what a removed device writes with it lands where nobody looks.
+  ///
+  /// **Order is the safety.** [persist] runs before anything in the folder changes: if it fails,
+  /// nothing happened; if the app dies after it, the next start has the new key and the transport
+  /// sends everything again (an empty own directory under the new key is exactly "send all").
+  ///
+  /// **What it cannot do:** take back what the removed device already read, or stop it reading the
+  /// folder's encrypted files as long as the folder is shared with it. The person stops sharing
+  /// the folder with that device as well.
+  Future<ZenResult<List<int>>> rekey({
+    required Future<void> Function(List<int> newKey) persist,
+  }) async {
+    if (_stopped) return const ZenResult.err(ZenStorageError('The transport is stopped.'));
+    final before = _cipher;
+    final run = _running.then((_) => _rekey(persist));
+    _running = run.then<void>((_) {}, onError: (Object _) {});
+    final result = await run;
+    // Sends everything under the new key, queued behind this run so it never interleaves with it.
+    if (!identical(before, _cipher)) await syncNow();
+    return result;
+  }
+
+  Future<ZenResult<List<int>>> _rekey(Future<void> Function(List<int> newKey) persist) async {
+    final old = _cipher;
+    if (old == null) {
+      return const ZenResult.err(
+        ZenValidationError('This device is not paired, so there is no sync key to replace.'),
+      );
+    }
+    if (_store.erasedEverywhere) {
+      return const ZenResult.err(ZenStorageError('The store was erased everywhere.'));
+    }
+    try {
+      final state = await _access.check();
+      if (state != ZenFolderState.ready) {
+        return ZenResult.err(
+          ZenStorageError('The folder cannot be reached (${state.name}); try again once it can.'),
+        );
+      }
+      final random = Random.secure();
+      final newKey = List<int>.generate(32, (_) => random.nextInt(256));
+      final fresh = await ZenSharedFolderCipher.derive(newKey);
+      await persist(List.unmodifiable(newKey));
+      _cipher = fresh;
+      _merged.clear();
+      _toMirror.clear();
+      _republishing = false;
+      if (await _store.forgetTransport() case ZenFailure(:final error)) {
+        throw StateError(error.message);
+      }
+      _retiring = old;
+      try {
+        await _retireOldKey();
+      } on Object catch (e, stack) {
+        return ZenResult.err(
+          ZenStorageError(
+            'The sync key was replaced and handed to persist, but the folder still holds files '
+            'under the old key: $e. They are removed at the next sync that can reach the folder.',
+            stackTrace: stack,
+          ),
+        );
+      }
+      return ZenResult.ok(List.unmodifiable(newKey));
+    } on Object catch (e, stack) {
+      return ZenResult.err(
+        ZenStorageError('Could not replace the sync key: $e', stackTrace: stack),
+      );
+    }
+  }
+
+  /// Whatever the folder holds under the old key is now the removed device's to read: remove it,
+  /// and leave the one file that tells a remaining device to stop and pair again.
+  Future<void> _retireOldKey() async {
+    final old = _retiring;
+    if (old == null) return;
+    await _access.delete(old.keyId);
+    final path = '${old.keyId}/$_rekeyedFile';
+    await _access.write(path, await old.sealMarker(ZenSharedFolderCipher.rekeyedMarker, path));
+    _retiring = null;
+  }
+
   /// Completes once no sync is running or queued. A sync can queue another (merging a record that
   /// holds more than the sender's makes it unsent, which asks for a send), so "my `syncNow`
   /// returned" does not mean the transport is at rest; this does. [status] is `upToDate` or
@@ -164,8 +300,32 @@ final class ZenSharedFolderSync implements ZenSyncTransport {
         _setStatus(_unusable(folder));
         return;
       }
-      await _republishIfOurDirectoryIsGone();
+      await _retireOldKey();
+      if (await _keyWasReplaced(cipher)) {
+        _setStatus(
+          const ZenSyncStatus(
+            ZenSyncState.unavailable,
+            issue: ZenSyncIssue.keyReplaced,
+            message: 'a device was removed and the sync key replaced',
+          ),
+        );
+        return;
+      }
+      if (_store.erasedEverywhere) {
+        await _cleanAfterErasure(cipher);
+        _setErased();
+        return;
+      }
+      await _republishIfOurDirectoryIsGone(cipher);
       final fetched = await _fetch(cipher);
+      if (fetched.erased) {
+        if (await _store.eraseEverywhere() case ZenFailure(:final error)) {
+          throw StateError(error.message);
+        }
+        await _cleanAfterErasure(cipher);
+        _setErased();
+        return;
+      }
       await _send(cipher);
       final problems = fetched.problems;
       _setStatus(
@@ -194,13 +354,62 @@ final class ZenSharedFolderSync implements ZenSyncTransport {
     }
   }
 
+  void _setErased() => _setStatus(
+    const ZenSyncStatus(
+      ZenSyncState.unavailable,
+      issue: ZenSyncIssue.erasedEverywhere,
+      message: 'the store was erased everywhere',
+    ),
+  );
+
+  /// Whether a device that replaced the sync key left its marker where this key's files were.
+  Future<bool> _keyWasReplaced(ZenSharedFolderCipher cipher) async {
+    final path = '${cipher.keyId}/$_rekeyedFile';
+    final bytes = await _access.read(path);
+    if (bytes == null) return false;
+    try {
+      return await cipher.isMarker(bytes, ZenSharedFolderCipher.rekeyedMarker, path);
+    } on ZenSharedFileException {
+      return false; // a damaged marker is no reason to stop; the files themselves are checked
+    }
+  }
+
+  /// Removes every record file this device wrote and leaves its erased marker, which is what a
+  /// device that was off finds later. Idempotent, so an interrupted cleanup finishes at the next
+  /// sync, and so does one that could not reach the folder.
+  Future<void> _cleanAfterErasure(ZenSharedFolderCipher cipher) async {
+    _merged.clear();
+    _toMirror.clear();
+    final own = '${cipher.keyId}/${_store.deviceId}';
+    for (final entry in await _access.list(own)) {
+      if (entry.name == _erasedFile) continue;
+      await _access.delete('$own/${entry.name}');
+    }
+    final marker = '$own/$_erasedFile';
+    final existing = await _access.read(marker);
+    var valid = false;
+    if (existing != null) {
+      try {
+        valid = await cipher.isMarker(existing, ZenSharedFolderCipher.erasedMarker, marker);
+      } on ZenSharedFileException {
+        valid = false;
+      }
+    }
+    if (!valid) {
+      await _access.write(
+        marker,
+        await cipher.sealMarker(ZenSharedFolderCipher.erasedMarker, marker),
+      );
+    }
+  }
+
   /// A folder that has lost this device's directory (chosen anew, or someone deleted it) holds
   /// nothing of ours, though the store believes it was all delivered. Send everything again; the
   /// files are whole states, so doing so twice costs bytes and nothing else.
-  Future<void> _republishIfOurDirectoryIsGone() async {
+  Future<void> _republishIfOurDirectoryIsGone(ZenSharedFolderCipher cipher) async {
     final published = _store.transportState;
     if (published == null || !_sameBytes(published, _publishedMarker)) return;
-    if ((await _access.list(_store.deviceId)).isNotEmpty) {
+    if ((await _access.list('${cipher.keyId}/${_store.deviceId}')).isNotEmpty) {
       _republishing = false;
       return;
     }
@@ -217,20 +426,33 @@ final class ZenSharedFolderSync implements ZenSyncTransport {
     }
   }
 
-  Future<({List<ZenSyncProblem> problems, bool newerVersion})> _fetch(
+  Future<({List<ZenSyncProblem> problems, bool newerVersion, bool erased})> _fetch(
     ZenSharedFolderCipher cipher,
   ) async {
     final problems = <ZenSyncProblem>[];
     var newerVersion = false;
+    var erased = false;
     final incoming = <ZenIncomingRecord>[];
     final fingerprints = <String, String>{};
     final pathOfRecord = <ZenIncomingRecord, String>{};
-    for (final device in await _access.list('')) {
+    for (final device in await _access.list(cipher.keyId)) {
       if (!device.isDirectory || !_deviceDirectory.hasMatch(device.name)) continue;
       if (device.name == _store.deviceId) continue;
-      for (final file in await _access.list(device.name)) {
-        if (file.isDirectory || !_recordFile.hasMatch(file.name)) continue;
-        final path = '${device.name}/${file.name}';
+      for (final file in await _access.list('${cipher.keyId}/${device.name}')) {
+        if (file.isDirectory) continue;
+        final path = '${cipher.keyId}/${device.name}/${file.name}';
+        if (file.name == _erasedFile) {
+          final bytes = await _access.read(path);
+          if (bytes == null) continue;
+          try {
+            erased =
+                await cipher.isMarker(bytes, ZenSharedFolderCipher.erasedMarker, path) || erased;
+          } on ZenSharedFileException catch (e) {
+            problems.add(ZenSyncProblem(path, e.message));
+          }
+          continue;
+        }
+        if (!_recordFile.hasMatch(file.name)) continue;
         final fingerprint = '${file.size}:${file.modifiedMillis}';
         if (_merged[path] == fingerprint) continue;
         final bytes = await _access.read(path);
@@ -247,6 +469,8 @@ final class ZenSharedFolderSync implements ZenSyncTransport {
         }
       }
     }
+    // Someone erased everything: nothing they or anyone else wrote is merged any more.
+    if (erased) return (problems: problems, newerVersion: newerVersion, erased: true);
     ZenSyncReport? received;
     if (incoming.isNotEmpty) {
       switch (await _store.receive(incoming)) {
@@ -278,7 +502,7 @@ final class ZenSharedFolderSync implements ZenSyncTransport {
       _lastReport = report;
       if (!_reports.isClosed) _reports.add(report);
     }
-    return (problems: problems, newerVersion: newerVersion);
+    return (problems: problems, newerVersion: newerVersion, erased: false);
   }
 
   Future<void> _send(ZenSharedFolderCipher cipher) async {
@@ -289,7 +513,7 @@ final class ZenSharedFolderSync implements ZenSyncTransport {
       final outgoing = _store.outgoing(name);
       if (outgoing == null) continue;
       try {
-        final path = '${_store.deviceId}/${await cipher.fileName(name)}';
+        final path = '${cipher.keyId}/${_store.deviceId}/${await cipher.fileName(name)}';
         await _access.write(path, await cipher.seal(name, outgoing.payload, path));
         saved.add(ZenAcknowledgedRecord(name, outgoing.payload, null));
       } on Object catch (e, stack) {
@@ -336,7 +560,7 @@ final class ZenSharedFolderSync implements ZenSyncTransport {
         _toMirror.remove(name);
         continue;
       }
-      final path = '${_store.deviceId}/${await cipher.fileName(name)}';
+      final path = '${cipher.keyId}/${_store.deviceId}/${await cipher.fileName(name)}';
       final existing = await _access.read(path);
       if (existing != null) {
         try {

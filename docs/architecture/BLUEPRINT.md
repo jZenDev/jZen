@@ -383,7 +383,7 @@ only, whose model sits in its own `proto/` rather than `proto/zen/v1/`. These pa
   directory (`ZenDataProtection`).
   Swift, SwiftPM only.
 - **`zen_store_shared_folder`** — the sync on Android, Windows and Linux (ADR-076). A folder the
-  person chooses and a sync service of their own keeps in step: `<device id>/<hmac>.zen`, one
+  person chooses and a sync service of their own keeps in step: `<key id>/<device id>/<hmac>.zen` (ADR-085), one
   writer per file, each file AES-256-GCM under a key derived from the shared sync key with its path
   as associated data, bad files skipped and reported, folder access behind `ZenFolderAccess`.
   Pure Dart; pairing (`ZenPairing`, in `zen_store`, ADR-077) moves the sync key between devices as

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:zen_core/zen_core.dart';
 import 'package:zen_store/zen_store.dart';
 import 'package:zen_ui_store/zen_ui_store.dart';
 
@@ -23,6 +24,8 @@ final class _Transport implements ZenSyncTransport {
   Stream<ZenSyncStatus> get statusChanges => controller.stream;
   @override
   Future<void> syncNow() async {}
+  @override
+  Future<ZenResult<void>> eraseEverywhere() async => const ZenResult.ok(null);
   @override
   Future<void> stop() async {}
 }

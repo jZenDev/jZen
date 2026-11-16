@@ -93,6 +93,24 @@ final class ZenDirectoryAccess implements ZenFolderAccess {
   }
 
   @override
+  Future<void> delete(String path) async {
+    final target = _resolve(path);
+    final type = await FileSystemEntity.type(target, followLinks: false);
+    try {
+      switch (type) {
+        case FileSystemEntityType.directory:
+          await Directory(target).delete(recursive: true);
+        case FileSystemEntityType.notFound:
+          break;
+        default:
+          await File(target).delete();
+      }
+    } on PathNotFoundException {
+      // Removed by the sync service between the lookup and the delete: the wanted end state.
+    }
+  }
+
+  @override
   Stream<void>? watch() {
     final folder = this.folder;
     if (folder == null) return null;

@@ -86,13 +86,14 @@ void main() {
           unorderedEquals(['from a', 'from b', 'from c']),
         );
         // Every file it wrote is under its own device id, and nowhere else.
+        final keyId = await ZenSharedFolderSync.keyIdOf(syncKey);
         expect(device.access.writes, isNotEmpty);
         expect(
-          device.access.writes.every((p) => p.startsWith('${device.store.deviceId}/')),
+          device.access.writes.every((p) => p.startsWith('$keyId/${device.store.deviceId}/')),
           isTrue,
         );
       }
-      final top = shared
+      final top = (await keyDirectory(shared))
           .listSync()
           .map((e) => e.uri.pathSegments.where((s) => s.isNotEmpty).last)
           .toSet();
@@ -106,7 +107,10 @@ void main() {
       await syncAll([a, b]);
 
       expect(b.access.writes, hasLength(1));
-      expect(b.access.writes.single, startsWith('${b.store.deviceId}/'));
+      expect(
+        b.access.writes.single,
+        startsWith('${await ZenSharedFolderSync.keyIdOf(syncKey)}/${b.store.deviceId}/'),
+      );
 
       // Once the devices agree, nothing is written again.
       await syncAll([a, b]);
@@ -214,7 +218,9 @@ void main() {
       await a.sync.syncNow();
       final original = filesUnder(shared).single;
       // As if a sync service filed a's file under b's directory, and under another file name.
-      final inB = File('${shared.path}/${b.store.deviceId}/${original.uri.pathSegments.last}');
+      final inB = File(
+        '${(await keyDirectory(shared)).path}/${b.store.deviceId}/${original.uri.pathSegments.last}',
+      );
       inB.parent.createSync(recursive: true);
       original.copySync(inB.path);
       final renamed = File('${original.parent.path}/${'0' * 64}.zen');
@@ -226,7 +232,7 @@ void main() {
       expect(c.sync.lastReport!.problems, hasLength(2));
     });
 
-    test('files written under another sync key are never merged', () async {
+    test('files written under another sync key are never merged, nor reported', () async {
       final stranger = await openDevice(root, 'stranger', withSyncKey: otherSyncKey);
       final b = await openDevice(root, 'b');
       await stranger.items.put('1', item('not for you'));
@@ -234,9 +240,11 @@ void main() {
 
       await b.sync.syncNow();
 
+      // Another key is another directory (ADR-085): b does not even look inside it, which is what
+      // lets a replaced key's old directory sit beside the new one without a standing "problem".
       expect(b.items.list().dataOrNull, isEmpty);
-      expect(b.sync.lastReport!.problems, hasLength(1));
-      expect(b.sync.status.issue, ZenSyncIssue.unreadableRecords);
+      expect(b.sync.lastReport, isNull);
+      expect(b.sync.status.state, ZenSyncState.upToDate);
     });
 
     test('a file from a newer format is left alone and says the app is out of date', () async {
@@ -396,7 +404,8 @@ void main() {
       // c is removed: its directory goes, and the device is erased and joins again as a new one.
       await c.sync.stop();
       await c.store.close();
-      Directory('${shared.path}/${c.store.deviceId}').deleteSync(recursive: true);
+      Directory('${(await keyDirectory(shared)).path}/${c.store.deviceId}')
+          .deleteSync(recursive: true);
       await ZenStore.erase(c.storeDirectory);
       final again = await openDevice(root, 'c');
       await syncAll([a, b, again]);
@@ -417,13 +426,17 @@ void main() {
       await a.items.put('1', item('one'));
       await a.items.put('2', item('two'));
       await syncAll([a, b]);
-      Directory('${shared.path}/${a.store.deviceId}').deleteSync(recursive: true);
+      Directory('${(await keyDirectory(shared)).path}/${a.store.deviceId}')
+          .deleteSync(recursive: true);
       // A new person joins knowing only the folder: a fresh store, nothing else.
       final fresh = await openDevice(root, 'fresh');
 
       await syncAll([a, fresh]);
 
-      expect(filesUnder(Directory('${shared.path}/${a.store.deviceId}')), hasLength(2));
+      expect(
+        filesUnder(Directory('${(await keyDirectory(shared)).path}/${a.store.deviceId}')),
+        hasLength(2),
+      );
       expect(fresh.items.list().dataOrNull, hasLength(2));
     });
 
@@ -559,6 +572,11 @@ final class _ScriptedAccess implements ZenFolderAccess {
   }
 
   @override
+  Future<void> delete(String path) async {
+    files.removeWhere((name, _) => name == path || name.startsWith('$path/'));
+  }
+
+  @override
   Stream<void>? watch() => null;
 }
 
@@ -575,6 +593,8 @@ final class _BlindAccess implements ZenFolderAccess {
   Future<Uint8List?> read(String path) => inner.read(path);
   @override
   Future<void> write(String path, Uint8List bytes) => inner.write(path, bytes);
+  @override
+  Future<void> delete(String path) => inner.delete(path);
   @override
   Stream<void>? watch() => null;
 }

@@ -81,6 +81,20 @@ final class ZenFolderCloud implements ZenSyncTransport {
   }
 
   @override
+  Future<ZenResult<void>> eraseEverywhere() async {
+    if (_stopped) return const ZenResult.err(ZenStorageError('The transport is stopped.'));
+    if (await _store.eraseEverywhere() case ZenFailure(:final error)) return ZenResult.err(error);
+    await syncNow();
+    if (_status.issue == ZenSyncIssue.erasedEverywhere) return const ZenResult.ok(null);
+    return ZenResult.err(
+      ZenStorageError(
+        'The store was erased here, but the folder was not cleaned (${_status.message}). It is '
+        'finished at the next sync.',
+      ),
+    );
+  }
+
+  @override
   Future<void> stop() async {
     _stopped = true;
     _poll?.cancel();
@@ -96,6 +110,23 @@ final class ZenFolderCloud implements ZenSyncTransport {
     final lock = await File(_join(_folder.path, 'lock')).open(mode: FileMode.append);
     try {
       await lock.lock(FileLock.blockingExclusive);
+      // Someone erased everything, or this device did: the folder is emptied and keeps one marker,
+      // which is how a device that was off finds out.
+      final marker = File(_join(_folder.path, 'erased'));
+      if (_store.erasedEverywhere || await marker.exists()) {
+        if (await _store.eraseEverywhere() case ZenFailure(:final error)) {
+          throw StateError(error.message);
+        }
+        await _eraseFolder(marker);
+        _setStatus(
+          const ZenSyncStatus(
+            ZenSyncState.unavailable,
+            issue: ZenSyncIssue.erasedEverywhere,
+            message: 'the store was erased everywhere',
+          ),
+        );
+        return;
+      }
       final problems = <String>[];
       // Fetch first, as CKSyncEngine does: what others saved since this device last looked.
       problems.addAll(await _fetch());
@@ -119,6 +150,14 @@ final class ZenFolderCloud implements ZenSyncTransport {
       await lock.unlock();
       await lock.close();
     }
+  }
+
+  Future<void> _eraseFolder(File marker) async {
+    final records = Directory(_join(_folder.path, 'records'));
+    if (await records.exists()) await records.delete(recursive: true);
+    final sequence = File(_join(_folder.path, 'sequence'));
+    if (await sequence.exists()) await sequence.delete();
+    if (!await marker.exists()) await writeAtomically(marker, utf8.encode('erased'));
   }
 
   Future<List<String>> _fetch() async {

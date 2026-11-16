@@ -9,7 +9,7 @@ Android, Windows and Linux; CloudKit (`zen_store_cloudkit`) is the one for iOS a
 `docs/architecture/DECISIONS.md` ADR-076.
 
 ```
-<folder>/<device id>/<64 hex>.zen        one file per record, written by that device only
+<folder>/<key id>/<device id>/<64 hex>.zen   one file per record, written by that device only (ADR-085)
 ```
 
 - **One writer per file.** A device writes inside its own directory and reads everyone's, so a

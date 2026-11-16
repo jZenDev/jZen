@@ -62,6 +62,17 @@ public class ZenStoreCloudKitPlugin: NSObject, FlutterPlugin {
           result(error.map { FlutterError(code: "sync_failed", message: $0, details: nil) })
         }
       }
+    case "eraseEverywhere":
+      guard let bridge else {
+        result(FlutterError(code: "not_started", message: "sync was not started", details: nil))
+        return
+      }
+      Task {
+        let error = await bridge.eraseEverywhere()
+        DispatchQueue.main.async {
+          result(error.map { FlutterError(code: "erase_failed", message: $0, details: nil) })
+        }
+      }
     case "stop":
       bridge?.stop()
       bridge = nil

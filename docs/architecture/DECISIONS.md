@@ -15,6 +15,76 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-085 — A Local store can replace its sync key, erase itself everywhere, refuse an unencrypted sync in a release, and hide from screen capture
+
+**Date:** 2026-11-16. **Status:** accepted. **Refines:** ADR-073, ADR-076, ADR-077, ADR-078,
+ADR-079. **Issues:** #237, #238, #239, #240.
+
+### Decision
+
+- **The shared folder is laid out by key** (#237): `<folder>/<key id>/<device id>/<64 hex>.zen`.
+  The key id is 32 hex characters derived from the sync key (HKDF, its own label), so it is the
+  same on every device that holds the key and says nothing about it. A device with another key
+  works in another directory, which nobody else reads: its files are not decrypted, not reported
+  as problems, not looked at.
+- **`ZenSharedFolderSync.rekey(persist:)` replaces the key.** It makes 32 random bytes and hands
+  them to `persist` — the application stores them as durably as the old key — *before* anything in
+  the folder changes. Then it marks every record unsent (so each is written whole under the new key
+  id), deletes the old key's directory, and leaves one sealed `rekeyed.zen` there. A remaining
+  device still on the old key finds that file and stops with `ZenSyncIssue.keyReplaced` instead of
+  writing under a key a removed device holds; pairing it again with the new key (ADR-077) ends it.
+  If `persist` fails nothing changed. If the app dies after it, the next start has the new key and
+  an empty own directory under it, which the transport already treats as "send everything"
+  (ADR-076), so no step needs a journal.
+- **`ZenStore.eraseEverywhere()`** (#239) removes every record and unsent change and sets a durable
+  `erased` flag in `meta.zen`; the store then refuses writes, batches and merges. It does not
+  replace `ZenStore.erase(directory)`, which stays "this device's copy" (ADR-078) and is how the
+  application finishes afterwards.
+- **`ZenSyncTransport.eraseEverywhere()`** does the shared place's part. *Folder:* the device
+  deletes its own files and leaves `erased.zen` in its directory; every other device that finds
+  one erases its store and does the same at its next sync, so a device that was off erases
+  whenever it returns. *CloudKit:* a marker record in a zone of its own, then the data zone is
+  deleted; the marker zone exists because a device that was off must tell an erase from a deletion
+  in iCloud Settings (which still only stops sync, ADR-065). *`ZenFolderCloud`:* an `erased` file.
+  Each transport reports `ZenSyncIssue.erasedEverywhere` afterwards and never starts again on its
+  own: an erased key is not reused, the application makes a new store and a new sync key.
+- **`ZenSync.plan` refuses any `ZEN_SYNC` in a release build** (#238) with a `ZenValidationError`
+  naming the define, inside `ZenSyncPlan`, the one place that reads it. `ZenFolderCloud` stores
+  payloads unencrypted.
+- **`ZenLockGate(secureScreen: true)`** (#240) sets Android's `FLAG_SECURE` on the app's window
+  while the gate is mounted (`ZenScreenSecurity`, a small Android plugin in `zen_ui_lock`). Off by
+  default: a screenshot is how a person shares a screen on purpose. iOS and the desktops give an
+  app no equivalent, so there it answers "not applicable" and the cover stays the protection.
+
+### What this supersedes, and why
+
+- **ADR-076's layout `<folder>/<device id>/…`** → the key id level above. *Why:* without it a
+  removed device's files are indistinguishable from damage, so replacing the key would leave every
+  remaining device reporting `unreadableRecords` forever.
+- **ADR-077's "a lost or photographed device is a rekey question, out of scope"** → answered for
+  the folder transport. The code still carries the key (ADR-077): replacing it is how a leak ends.
+- **ADR-078's "erase is this device's copy only"** → still the default; `eraseEverywhere` is the
+  deliberate, separate, irreversible call.
+
+### Consequences — what is not claimed
+
+- **Rekey does not take back what a removed device already read**, and it cannot stop that device
+  reading the folder's ciphertext while the folder is shared with it; the person stops sharing the
+  folder with it as well. Until a remaining device is paired again it writes nothing.
+- **CloudKit has no rekey.** Its records are encrypted with keys in the person's iCloud Keychain,
+  so removing a lost device means removing it from the Apple ID (Settings → Apple ID → Devices),
+  after which it no longer receives the account's keys. That is documented, not provided.
+- **Erasing leaves markers, not data:** one empty-of-data file per folder device and one record
+  in the CloudKit marker zone, which is what tells a device that was off. The person may delete the
+  folder once every device has erased. A device that is off keeps its own files in the folder until
+  it syncs, because only a device writes its own directory (ADR-076). Acceptance asked for "no
+  file of the store"; this is the part of it that cannot hold while a device is away.
+- **Not verified on a device:** the Android plugin (the lock suite stands in a channel; recents
+  is #231), CloudKit's marker zone and zone deletion (the Swift parses; nothing ran against
+  iCloud), the Android folder deletion (a fake port).
+
+---
+
 ## ADR-084 — `ZenStore.writeAll` saves a batch through a journal, so a crash leaves all of it or none
 
 **Date:** 2026-11-16. **Status:** accepted. **Refines:** ADR-065, ADR-073. **Issue:** #232.

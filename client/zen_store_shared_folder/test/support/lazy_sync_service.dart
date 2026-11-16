@@ -59,7 +59,7 @@ final class LazySyncService {
       final replica = replicas[i];
       for (final file in _filesUnder(replica)) {
         final path = _relative(replica, file);
-        if (_isRecordFile(path) && path.startsWith('${owners[i]}/')) {
+        if (_isRecordFile(path) && _ownedBy(path, owners[i])) {
           final content = await file.readAsBytes();
           final seen = _versions.putIfAbsent(path, () => []);
           if (seen.isEmpty || !_same(seen.last, content)) seen.add(content);
@@ -76,7 +76,7 @@ final class LazySyncService {
       for (var t = 0; t < replicas.length; t++) {
         final target = replicas[t];
         // A replica is the truth about its own files.
-        if (path.startsWith('${owners[t]}/')) continue;
+        if (_ownedBy(path, owners[t])) continue;
         if (_random.nextDouble() < delay) continue;
         var content = versions.last;
         if (versions.length > 1 && _random.nextDouble() < stale) {
@@ -106,7 +106,11 @@ final class LazySyncService {
     }
   }
 
-  bool _isRecordFile(String path) => RegExp(r'^[0-9a-f]{32}/[0-9a-f]{64}\.zen$').hasMatch(path);
+  // `<key id>/<device id>/<64 hex>.zen`, or the device's `erased.zen` marker.
+  bool _isRecordFile(String path) =>
+      RegExp(r'^[0-9a-f]{32}/[0-9a-f]{32}/([0-9a-f]{64}|erased)\.zen$').hasMatch(path);
+
+  bool _ownedBy(String path, String device) => path.split('/').skip(1).firstOrNull == device;
 
   Iterable<File> _filesUnder(Directory replica) =>
       replica.existsSync() ? replica.listSync(recursive: true).whereType<File>() : const [];

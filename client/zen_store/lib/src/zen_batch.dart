@@ -5,7 +5,7 @@ import 'package:protobuf/protobuf.dart';
 import 'package:zen_core/zen_core.dart';
 
 import 'zen_collection.dart';
-import 'zen_proto_fields.dart';
+import 'zen_record_state.dart';
 import 'zen_store.dart';
 
 /// Writes and deletes, across collections, that [ZenStore.writeAll] saves as one: every one
@@ -31,23 +31,36 @@ final class ZenBatch {
   bool get isEmpty => _operations.isEmpty;
 
   /// Adds the creation or replacement of the record [id] in [collection] with [value], with the
-  /// meaning of [ZenCollection.put].
-  void put<T extends GeneratedMessage>(ZenCollection<T> collection, String id, T value) {
+  /// meaning of [ZenCollection.put], [expect] included: it runs when the batch does, and a
+  /// [ZenError] it returns fails the whole batch.
+  void put<T extends GeneratedMessage>(
+    ZenCollection<T> collection,
+    String id,
+    T value, {
+    ZenError? Function(T? current)? expect,
+  }) {
     _operations.add(
       ZenBatchOperation._(
         collection.owner,
         collection.name,
         id,
-        splitFields(value.writeToBuffer()),
+        collection.fieldsOf(value),
+        collection.checkFor(expect),
       ),
     );
   }
 
   /// Adds the deletion of the record [id] in [collection], with the meaning of
   /// [ZenCollection.delete]: the whole batch fails with a [ZenNotFoundError] if there is no such
-  /// record when it runs.
-  void delete<T extends GeneratedMessage>(ZenCollection<T> collection, String id) {
-    _operations.add(ZenBatchOperation._(collection.owner, collection.name, id, null));
+  /// record when it runs. [expect] is as for [put], and runs once the record is known to exist.
+  void delete<T extends GeneratedMessage>(
+    ZenCollection<T> collection,
+    String id, {
+    ZenError? Function(T? current)? expect,
+  }) {
+    _operations.add(
+      ZenBatchOperation._(collection.owner, collection.name, id, null, collection.checkFor(expect)),
+    );
   }
 
   /// The operations in the order they were added.
@@ -70,7 +83,10 @@ final class ZenBatchOperation {
   /// The record's fields by proto field number, or null for a delete.
   final Map<int, Uint8List>? fields;
 
-  const ZenBatchOperation._(this.store, this.collection, this.id, this.fields);
+  /// The application's precondition, run against the record as it stands when the batch runs.
+  final ZenError? Function(ZenRecordState? current)? check;
+
+  const ZenBatchOperation._(this.store, this.collection, this.id, this.fields, this.check);
 
   /// Whether this operation deletes the record.
   bool get isDelete => fields == null;

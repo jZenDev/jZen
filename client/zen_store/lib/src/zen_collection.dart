@@ -24,13 +24,34 @@ import 'zen_store.dart';
 final class ZenCollection<T extends GeneratedMessage> {
   final ZenStore _store;
   final T Function(List<int> bytes) _decode;
+  final Set<int> _explicitPresence;
 
   /// The collection's name, the same on every device.
   final String name;
 
   /// Use [ZenStore.collection].
   @internal
-  ZenCollection.internal(this._store, this.name, this._decode);
+  ZenCollection.internal(this._store, this.name, this._decode, this._explicitPresence);
+
+  /// [value]'s top-level fields as the store versions them: proto3 implicit-presence fields at
+  /// their default are left out ([splitMessage]).
+  @internal
+  Map<int, Uint8List> fieldsOf(T value) => splitMessage(value, _explicitPresence);
+
+  /// [expect] as a check the store runs against the record as it stands when a write takes its
+  /// turn: the decoded record, or null when it is absent or deleted. Null when there is no
+  /// [expect].
+  @internal
+  ZenError? Function(ZenRecordState? current)? checkFor(ZenError? Function(T? current)? expect) {
+    if (expect == null) return null;
+    return (current) {
+      if (current == null || current.isDeleted) return expect(null);
+      return switch (_read(current.id, current.visibleBytes())) {
+        ZenSuccess(:final data) => expect(data),
+        ZenFailure(:final error) => error,
+      };
+    };
+  }
 
   /// The store this collection is a view of, which a [ZenBatch] checks against the one it is
   /// written to.
@@ -62,12 +83,21 @@ final class ZenCollection<T extends GeneratedMessage> {
   /// Creates or replaces the record [id] with [value], and returns [value].
   ///
   /// Only the fields that differ from the stored record count as this device's edit, which is
-  /// what lets another device's edit to a different field survive the next sync.
-  Future<ZenResult<T>> put(String id, T value) {
+  /// what lets another device's edit to a different field survive the next sync. A proto3
+  /// field set to its default counts as unset ([ZenStore.collection]'s `explicitPresence`).
+  ///
+  /// [expect], if given, runs inside the write's turn — after everything queued before it, a
+  /// sync's `receive` included — with the record as it stands then (null when absent or
+  /// deleted); a [ZenError] it returns refuses the write and is the result. Check a rule here, not
+  /// with a [get] before the call: a delete arriving from another device between the two would
+  /// otherwise be written over, bringing the record back.
+  Future<ZenResult<T>> put(String id, T value, {ZenError? Function(T? current)? expect}) {
     if (invalidId(id) case final error?) return Future.value(ZenResult.err(error));
-    final fields = splitFields(value.writeToBuffer());
+    final fields = fieldsOf(value);
+    final check = checkFor(expect);
     return _store.write<T>(name, id, (current) {
       if (current != null && current.isInConflict) return ZenResult.err(_inConflict(id));
+      if (check?.call(current) case final error?) return ZenResult.err(error);
       return ZenResult.ok((fields, value));
     });
   }
@@ -76,14 +106,20 @@ final class ZenCollection<T extends GeneratedMessage> {
   ///
   /// A delete syncs like any write. If another device edits the record without having seen the
   /// delete, the record comes back as a conflict for a person to settle, never silently gone.
-  Future<ZenResult<T>> delete(String id) => _store.write<T>(name, id, (current) {
-    if (current == null || current.isDeleted) return ZenResult.err(_notFound(id));
-    if (current.isInConflict) return ZenResult.err(_inConflict(id));
-    return switch (_read(id, current.visibleBytes())) {
-      ZenSuccess(:final data) => ZenResult.ok((null as Map<int, Uint8List>?, data)),
-      ZenFailure(:final error) => ZenResult.err(error),
-    };
-  });
+  ///
+  /// [expect] is as for [put], and runs once the record is known to exist.
+  Future<ZenResult<T>> delete(String id, {ZenError? Function(T? current)? expect}) {
+    final check = checkFor(expect);
+    return _store.write<T>(name, id, (current) {
+      if (current == null || current.isDeleted) return ZenResult.err(_notFound(id));
+      if (current.isInConflict) return ZenResult.err(_inConflict(id));
+      if (check?.call(current) case final error?) return ZenResult.err(error);
+      return switch (_read(id, current.visibleBytes())) {
+        ZenSuccess(:final data) => ZenResult.ok((null as Map<int, Uint8List>?, data)),
+        ZenFailure(:final error) => ZenResult.err(error),
+      };
+    });
+  }
 
   /// Every record in this collection waiting for a person to choose between devices' versions.
   ZenResult<List<ZenConflict<T>>> conflicts() {
@@ -115,7 +151,7 @@ final class ZenCollection<T extends GeneratedMessage> {
   /// at its next sync. Fails with a [ZenValidationError] when [id] is not in conflict, because a
   /// resolution is never the way to make an ordinary write.
   Future<ZenResult<T?>> resolve(String id, T? value) {
-    final fields = value == null ? null : splitFields(value.writeToBuffer());
+    final fields = value == null ? null : fieldsOf(value);
     return _store.write<T?>(name, id, (current) {
       if (current == null || !current.isInConflict) {
         return ZenResult.err(ZenValidationError('$name/$id has no conflict to resolve.'));

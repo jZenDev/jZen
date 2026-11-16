@@ -195,6 +195,34 @@ Every operation is checked first, as it would be alone (a missing delete, a reco
 and one refusal writes nothing. The atomicity is **on this device**: a batch reaches other devices
 as ordinary per-record changes, so there a screen can briefly show part of it.
 
+## 🔒 Checking a rule at write time
+
+A rule checked with `get` and then written with `put` is checked *outside* the store's write turn:
+a sync's `receive` already queued runs between the two, and a delete from another device would be
+written over, bringing the record back. Pass the rule as `expect` and it runs inside the turn,
+against the record as it stands then (null when absent or deleted); a `ZenError` it returns refuses
+the write — and, in a `ZenBatch`, the whole batch:
+
+```dart
+await records.put(id, edited, expect: (current) =>
+    current == null ? const ZenNotFoundError('The record was deleted.') : null);
+```
+
+## 📵 Device-only collections
+
+`store.collection('sessions', Session.fromBuffer, syncs: false)` is never sent to a transport,
+never in `unsent`, and a record of that name arriving from one is refused, yet `writeAll` saves it
+together with synced collections in one atomic step, encrypted like the rest. Declare it the same
+way on every launch, before sync starts.
+
+## 🧩 Proto3 presence
+
+A plain proto3 field (scalar or enum, not `optional`) set to its default is stored as unset, because
+proto3 defines them as one value; otherwise `description = ''` on one device and `clearDescription()`
+on another would conflict about nothing. The Dart runtime cannot tell an `optional` field apart, so
+name those in `collection(..., explicitPresence: {4})`: there "set to the default" and "unset" stay
+different. Message, repeated and map fields are always explicit.
+
 ## ⚠️ What it does not do
 
 - **Rules across records are the application's.** A balance, a budget, a uniqueness constraint:

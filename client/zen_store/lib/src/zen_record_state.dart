@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
 
+import 'zen_merge_policy.dart';
 import 'zen_proto_fields.dart';
 
 /// The pseudo-field that records whether the record exists. Proto field numbers start at 1, so
@@ -164,16 +165,35 @@ final class ZenRecordState {
       false;
 
   /// Merges [other]'s knowledge of the same record into this one. Returns whether anything changed.
-  bool merge(ZenRecordState other) {
+  ///
+  /// A field with a [policies] entry whose sides differ merges to the policy's answer instead of
+  /// becoming a conflict.
+  bool merge(ZenRecordState other, {Map<int, ZenMergePolicy> policies = const {}}) {
     var changed = false;
     for (final entry in other.fields.entries) {
-      final merged = mergeVersions([...?fields[entry.key], ...entry.value]);
+      final merged = mergeVersions([...?fields[entry.key], ...entry.value], policies[entry.key]);
       if (!_sameVersions(fields[entry.key], merged)) {
         fields[entry.key] = merged;
         changed = true;
       }
     }
     if (_dropDeletedFields()) changed = true;
+    return changed;
+  }
+
+  /// Applies [policies] to fields already holding concurrent versions, as when a collection starts
+  /// declaring a policy for data that is already on disk. Returns whether anything changed.
+  bool applyPolicies(Map<int, ZenMergePolicy> policies) {
+    var changed = false;
+    for (final entry in policies.entries) {
+      final versions = fields[entry.key];
+      if (versions == null || versions.length < 2) continue;
+      final merged = mergeVersions(versions, entry.value);
+      if (!_sameVersions(versions, merged)) {
+        fields[entry.key] = merged;
+        changed = true;
+      }
+    }
     return changed;
   }
 
@@ -229,9 +249,10 @@ final class ZenRecordState {
 
 /// The versions of one field that survive a merge: every version not replaced by another, and,
 /// where all survivors hold the same value, that value once — two devices making the same change
-/// is not a conflict.
+/// is not a conflict. With a [policy], survivors holding different values merge to the policy's
+/// answer too, when it can read them.
 @internal
-List<ZenFieldVersion> mergeVersions(List<ZenFieldVersion> versions) {
+List<ZenFieldVersion> mergeVersions(List<ZenFieldVersion> versions, [ZenMergePolicy? policy]) {
   final survivors = <ZenFieldVersion>[];
   for (final candidate in versions) {
     final replaced = versions.any(
@@ -248,6 +269,12 @@ List<ZenFieldVersion> mergeVersions(List<ZenFieldVersion> versions) {
     final latest = ZenRecordState._latest(survivors);
     final joined = survivors.fold(const ZenVersionVector(), (vv, v) => vv.join(v.vector));
     return [ZenFieldVersion(joined, latest.author, latest.atMillis, latest.bytes)];
+  }
+  if (policy != null && survivors.length > 1) {
+    if (applyMergePolicy(policy, survivors) case final winner?) {
+      final joined = survivors.fold(const ZenVersionVector(), (vv, v) => vv.join(v.vector));
+      return [ZenFieldVersion(joined, winner.author, winner.atMillis, winner.bytes)];
+    }
   }
   return survivors;
 }

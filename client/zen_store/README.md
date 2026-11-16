@@ -50,6 +50,7 @@ app passes to `ZenStore.open`:
 | `device.id` | This device's random id, made on first open. |
 | `meta.zen` | The device names, which records wait to be sent, and the transport's change token. |
 | `records/00.zen` … `records/3f.zen` | The records, sharded by a hash of their name into 64 files, each record versioned per proto field. |
+| `journal.zen` | Only while a `writeAll` batch is being written: the files it will replace, whole. Finished at the next `open`. |
 
 - **Encrypted, always.** Every file but `device.id` is AES-256-GCM with the key passed to `open`
   and a fresh nonce per write, the file's own name bound in as associated data so files cannot be
@@ -155,6 +156,24 @@ Until it is resolved a record in conflict is still **shown** (each disputed fiel
 version, so nothing vanishes from a screen), every side stays on disk on every device, and the
 record **refuses `put` and `delete`** with a `ZenConflictError` — so no screen can settle it by
 accident by saving over it.
+
+## 📦 Many records, one write
+
+A `put` writes one record. An operation that is many records by nature — deleting an account with
+all of its entries, committing an import of N rows — goes through `writeAll`, so a crash or a full
+disk leaves all of it or none of it, never a half-deleted account:
+
+```dart
+final batch = ZenBatch()..delete(accounts, 'a1');
+for (final entry in entries.list().dataOrNull!.where((e) => e.accountId == 'a1')) {
+  batch.delete(entries, entry.id);
+}
+final result = await store.writeAll(batch);   // one ZenResult
+```
+
+Every operation is checked first, as it would be alone (a missing delete, a record in conflict),
+and one refusal writes nothing. The atomicity is **on this device**: a batch reaches other devices
+as ordinary per-record changes, so there a screen can briefly show part of it.
 
 ## ⚠️ What it does not do
 

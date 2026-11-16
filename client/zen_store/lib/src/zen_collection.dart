@@ -5,6 +5,7 @@ import 'package:meta/meta.dart';
 import 'package:protobuf/protobuf.dart';
 import 'package:zen_core/zen_core.dart';
 
+import 'zen_batch.dart' show ZenBatch;
 import 'zen_conflict.dart';
 import 'zen_proto_fields.dart';
 import 'zen_record_state.dart';
@@ -30,6 +31,11 @@ final class ZenCollection<T extends GeneratedMessage> {
   /// Use [ZenStore.collection].
   @internal
   ZenCollection.internal(this._store, this.name, this._decode);
+
+  /// The store this collection is a view of, which a [ZenBatch] checks against the one it is
+  /// written to.
+  @internal
+  ZenStore get owner => _store;
 
   /// The record [id], or a [ZenNotFoundError] if it does not exist or was deleted.
   ZenResult<T> get(String id) {
@@ -58,7 +64,7 @@ final class ZenCollection<T extends GeneratedMessage> {
   /// Only the fields that differ from the stored record count as this device's edit, which is
   /// what lets another device's edit to a different field survive the next sync.
   Future<ZenResult<T>> put(String id, T value) {
-    if (_invalidId(id) case final error?) return Future.value(ZenResult.err(error));
+    if (invalidId(id) case final error?) return Future.value(ZenResult.err(error));
     final fields = splitFields(value.writeToBuffer());
     return _store.write<T>(name, id, (current) {
       if (current != null && current.isInConflict) return ZenResult.err(_inConflict(id));
@@ -165,7 +171,8 @@ final class ZenCollection<T extends GeneratedMessage> {
 
   /// A record id travels as part of a CloudKit record name, which is printable ASCII of at most
   /// 255 characters; an id that would not fit is refused here rather than at the first sync.
-  static ZenValidationError? _invalidId(String id) {
+  @internal
+  static ZenValidationError? invalidId(String id) {
     if (id.isEmpty || id.length > 190 || !id.codeUnits.every((c) => c > 0x20 && c < 0x7f)) {
       return ZenValidationError('"$id" is not a record id: 1 to 190 printable ASCII characters.');
     }

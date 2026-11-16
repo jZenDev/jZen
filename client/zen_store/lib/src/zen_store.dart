@@ -8,6 +8,7 @@ import 'package:meta/meta.dart';
 import 'package:protobuf/protobuf.dart';
 import 'package:zen_core/zen_core.dart';
 
+import 'zen_batch.dart';
 import 'zen_collection.dart';
 import 'zen_merge_policy.dart';
 import 'zen_record_state.dart';
@@ -26,6 +27,12 @@ import 'zen_sync_transport.dart';
 /// one small file, not everything. Every file but `device.id` is AES-256-GCM with the key passed to
 /// [open], and rewritten atomically. All records are held in memory; reads are synchronous.
 ///
+/// **A batch** ([writeAll]) spans shards, and a rename can only replace one file, so it first saves
+/// every file it will rewrite, whole, as `journal.zen`, then rewrites them, then deletes the
+/// journal. A journal found at [open] is a batch that was saved but not finished: it is finished
+/// before anything is read. A crash before the journal exists leaves none of the batch, after it
+/// all of the batch.
+///
 /// **Merging** never loses an edit without a person's say: edits to different fields merge,
 /// equal edits merge, anything else becomes a `ZenConflict` (see [ZenCollection.conflicts]).
 /// ADR-065 explains the design.
@@ -33,11 +40,15 @@ final class ZenStore {
   static const int _shardCount = 64;
   static final RegExp _collectionName = RegExp(r'^[a-z][a-z0-9_]{0,63}$');
   static final RegExp _hexId = RegExp(r'^[0-9a-f]{32}$');
+  static final RegExp _journaledName = RegExp(r'^(meta\.zen|records/[0-9a-f]{2}\.zen)$');
   static final Random _random = Random.secure();
+  static const String _metaName = 'meta.zen';
+  static const String _journalName = 'journal.zen';
 
   final Directory _directory;
   final ZenStoreCipher _cipher;
   final int Function() _now;
+  final Future<void> Function(int replaced, int total)? _afterFileReplaced;
 
   /// This device's id: how other devices tell its writes apart.
   final String deviceId;
@@ -62,6 +73,7 @@ final class ZenStore {
     this._directory,
     this._cipher,
     this._now,
+    this._afterFileReplaced,
     this.deviceId,
     this.deviceName,
     this._records,
@@ -86,11 +98,16 @@ final class ZenStore {
   /// the user's data; see [erase] for the deliberate way back.
   ///
   /// [now] supplies wall-clock milliseconds, which only ever label a write for a person.
+  ///
+  /// [afterFileReplaced] is for tests only: it runs after each file of a [writeAll] is replaced,
+  /// with how many are done and how many there are, so a test can stop a batch half way — the way
+  /// a power loss would — and reopen the directory.
   static Future<ZenResult<ZenStore>> open(
     Directory directory, {
     required String deviceName,
     required List<int> key,
     int Function()? now,
+    @visibleForTesting Future<void> Function(int replaced, int total)? afterFileReplaced,
   }) async {
     if (deviceName.trim().isEmpty) {
       return ZenResult.err(const ZenValidationError('A device name is empty.'));
@@ -102,6 +119,7 @@ final class ZenStore {
     try {
       await Directory(_join(directory.path, 'records')).create(recursive: true);
       final deviceId = await _deviceId(directory);
+      await _finishJournaledBatch(directory, cipher);
       final names = <String, String>{};
       var unsent = <String>{};
       Uint8List? transportState;
@@ -142,6 +160,7 @@ final class ZenStore {
           directory,
           cipher,
           now ?? () => DateTime.now().millisecondsSinceEpoch,
+          afterFileReplaced,
           deviceId,
           deviceName,
           records,
@@ -439,20 +458,121 @@ final class ZenStore {
     return ZenResult.ok(plan.$2);
   });
 
+  /// Saves every write and delete of [batch] as one: when this completes, all of them are on disk,
+  /// and if it fails, or the device loses power part way, none of them is — or, once the journal
+  /// is saved, all of them, completed the next time the store is opened.
+  ///
+  /// Nothing is written unless every operation is allowed, with the meaning each has alone: a
+  /// delete of a record that is not there fails with a [ZenNotFoundError], a record in conflict
+  /// with a [ZenConflictError], an id that cannot travel with a [ZenValidationError]; the same
+  /// record twice, or a collection of another store, is a [ZenValidationError] too.
+  ///
+  /// The batch is atomic on this device only. To a [ZenSyncTransport] it is ordinary per-record
+  /// changes, so on another device the records arrive one by one and a screen there can briefly
+  /// show part of it; a record in the batch that was edited elsewhere merges or conflicts exactly
+  /// as it would have written alone.
+  ///
+  /// If the files cannot be replaced after the journal is saved — a full disk — the store closes
+  /// and answers a [ZenStorageError] saying so, because its memory and its files no longer agree
+  /// until the journal is finished by reopening it.
+  Future<ZenResult<void>> writeAll(ZenBatch batch) {
+    final operations = batch.operations;
+    return _serialized(() async {
+      if (_closed) return ZenResult.err(const ZenStorageError('The store is closed.'));
+      final seen = <ZenStoreKey>{};
+      final plan = <(ZenStoreKey, Map<int, Uint8List>?)>[];
+      for (final operation in operations) {
+        if (!identical(operation.store, this)) {
+          return ZenResult.err(
+            ZenValidationError('${operation.collection}/${operation.id} belongs to another store.'),
+          );
+        }
+        if (ZenCollection.invalidId(operation.id) case final error?) return ZenResult.err(error);
+        final key = ZenStoreKey(operation.collection, operation.id);
+        if (!seen.add(key)) {
+          return ZenResult.err(
+            ZenValidationError('${key.collection}/${key.id} is in the batch twice.'),
+          );
+        }
+        final current = _records[key];
+        if (current != null && current.isInConflict) {
+          return ZenResult.err(
+            ZenConflictError(
+              '${key.collection}/${key.id} was changed differently on two devices; resolve the '
+              'conflict before writing it.',
+            ),
+          );
+        }
+        if (operation.isDelete && (current == null || current.isDeleted)) {
+          return ZenResult.err(ZenNotFoundError('${key.collection}/${key.id} does not exist.'));
+        }
+        plan.add((key, operation.fields));
+      }
+      if (plan.isEmpty) return const ZenResult.ok(null);
+
+      final at = _now();
+      final records = {..._records};
+      final unsent = {..._unsent};
+      final touched = <int>{};
+      final collections = <String>{};
+      for (final (key, fields) in plan) {
+        final record = _records[key]?.copy() ?? ZenRecordState(key.collection, key.id);
+        record.write(deviceId, at, fields);
+        records[key] = record;
+        unsent.add(key.name);
+        touched.add(_shardOf(key));
+        collections.add(key.collection);
+      }
+      try {
+        await _persist(
+          records,
+          _transportData,
+          _names,
+          unsent,
+          _transportState,
+          touched,
+          atomic: true,
+        );
+      } on _JournaledBatchUnfinished catch (e, stack) {
+        _closed = true;
+        return ZenResult.err(
+          ZenStorageError(
+            'The batch is saved but could not be written into the store\'s files (${e.cause}). '
+            'The store is closed; opening it again finishes the batch.',
+            stackTrace: stack,
+          ),
+        );
+      } on FileSystemException catch (e, stack) {
+        return ZenResult.err(ZenStorageError('Cannot write the batch: $e', stackTrace: stack));
+      }
+      _commit(records, _transportData, _names, unsent);
+      _changes.add(collections);
+      _unsentChanges.add({for (final (key, _) in plan) key.name});
+      return const ZenResult.ok(null);
+    });
+  }
+
   // ── Files ─────────────────────────────────────────────────────────────────────────────────────
 
   /// Writes the metadata, then each shard in [shards]. In that order: a crash between the two can
   /// leave a record listed as unsent whose change did not reach disk — it is then sent as it
   /// stands, which is harmless — but never a changed record that is not listed, which would never
   /// be sent at all.
+  ///
+  /// That argument covers one shard. With [atomic] the files are instead saved whole as the
+  /// journal first, so that a crash after it, between any two renames, is finished at the next
+  /// [open] and a crash before it leaves every file as it was. Throws [FileSystemException] when
+  /// nothing was changed, and [_JournaledBatchUnfinished] when the journal is saved but the files
+  /// could not all be replaced.
   Future<void> _persist(
     Map<ZenStoreKey, ZenRecordState> records,
     Map<ZenStoreKey, Uint8List> transportData,
     Map<String, String> names,
     Set<String> unsent,
     Uint8List? transportState,
-    Set<int> shards,
-  ) async {
+    Set<int> shards, {
+    bool atomic = false,
+  }) async {
     final meta = utf8.encode(
       jsonEncode({
         'format': zenStoreFormat,
@@ -462,10 +582,7 @@ final class ZenStore {
         if (transportState != null) 'transport': base64Encode(transportState),
       }),
     );
-    await writeAtomically(
-      File(_join(_directory.path, 'meta.zen')),
-      await _cipher.seal(meta, 'meta.zen'),
-    );
+    final files = <(String, Uint8List)>[(_metaName, await _cipher.seal(meta, _metaName))];
     for (final shard in shards) {
       final keys = {
         ..._shards[shard],
@@ -485,7 +602,67 @@ final class ZenStore {
         }),
       );
       final name = _shardName(shard);
-      await writeAtomically(File(_shardPath(_directory, shard)), await _cipher.seal(json, name));
+      files.add((name, await _cipher.seal(json, name)));
+    }
+    if (!atomic) {
+      await _replaceFiles(_directory, files);
+      return;
+    }
+    final journal = utf8.encode(
+      jsonEncode({
+        'format': zenStoreFormat,
+        'files': [
+          for (final (name, sealed) in files) {'name': name, 'data': base64Encode(sealed)},
+        ],
+      }),
+    );
+    final journalFile = File(_join(_directory.path, _journalName));
+    await writeAtomically(journalFile, await _cipher.seal(journal, _journalName));
+    try {
+      await _replaceFiles(_directory, files, afterEach: _afterFileReplaced);
+      await journalFile.delete();
+    } on Object catch (e) {
+      throw _JournaledBatchUnfinished(e);
+    }
+  }
+
+  /// Finishes a batch whose journal was saved but whose files were not all replaced — the journal
+  /// holds every file as it must end up, so replacing them again is the same as the first time —
+  /// then deletes the journal. Throws [FormatException] for a journal that does not decrypt or
+  /// does not name only this store's files.
+  static Future<void> _finishJournaledBatch(Directory directory, ZenStoreCipher cipher) async {
+    final file = File(_join(directory.path, _journalName));
+    if (!await file.exists()) return;
+    final json = decodeJson(
+      await cipher.open(await file.readAsBytes(), _journalName),
+      _journalName,
+    );
+    final files = <(String, Uint8List)>[];
+    for (final raw in json['files'] as List<Object?>? ?? const []) {
+      if (raw is! Map<String, Object?>) throw const FormatException('$_journalName is malformed');
+      final name = raw['name'];
+      final data = raw['data'];
+      if (name is! String || data is! String || !_journaledName.hasMatch(name)) {
+        throw const FormatException('$_journalName names a file that is not the store\'s');
+      }
+      files.add((name, base64Decode(data)));
+    }
+    await _replaceFiles(directory, files);
+    await file.delete();
+  }
+
+  static Future<void> _replaceFiles(
+    Directory directory,
+    List<(String, Uint8List)> files, {
+    Future<void> Function(int replaced, int total)? afterEach,
+  }) async {
+    for (var i = 0; i < files.length; i++) {
+      final (name, bytes) = files[i];
+      await writeAtomically(
+        File(_join(directory.path, name.replaceAll('/', Platform.pathSeparator))),
+        bytes,
+      );
+      await afterEach?.call(i + 1, files.length);
     }
   }
 
@@ -551,4 +728,11 @@ final class ZenStore {
       List.generate(16, (_) => _random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
 
   static String _join(String directory, String name) => '$directory${Platform.pathSeparator}$name';
+}
+
+/// A [ZenStore.writeAll] whose journal is on disk but whose files were not all replaced.
+final class _JournaledBatchUnfinished implements Exception {
+  final Object cause;
+
+  const _JournaledBatchUnfinished(this.cause);
 }

@@ -365,7 +365,7 @@ only, whose model sits in its own `proto/` rather than `proto/zen/v1/`. These pa
 - **`zen_store`** — persistence, with no database. Proto messages by collection and id, in a
   directory the app chooses, as encrypted files: `device.id`, `meta.zen` (unsent records, the
   transport's change token) and the records sharded into `records/00.zen` … `records/3f.zen`, each
-  file AES-256-GCM with its own name bound in, a write rewriting only its shard atomically. A file
+  file AES-256-GCM with its own name bound in, a write rewriting only its shard atomically, and `writeAll` saving many records as one through a journal (ADR-084). A file
   that fails to decrypt stops the open. Fully offline; sync is a `ZenSyncTransport` plugged in
   (`ZenFolderCloud`, in this package, emulates CloudKit in a folder for development). A record is
   versioned per proto field (split at the wire level, so the store needs no knowledge of the

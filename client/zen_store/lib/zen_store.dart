@@ -2,6 +2,7 @@
 ///
 /// - [ZenStore]: proto messages by collection and id, AES-256-GCM on disk, readable offline
 /// - [ZenCollection]: a typed view of one collection, answering with `ZenResult`
+/// - [ZenBatch]: writes and deletes across collections that are saved as one, or not at all
 /// - [ZenConflict]: edits that cannot both be kept, waiting for a person to choose
 /// - [ZenMergePolicy]: a field that merges on its own when two devices record the same intent
 /// - [ZenSyncTransport]: what carries records between devices (`zen_store_cloudkit` in release)
@@ -11,6 +12,7 @@
 /// See docs/architecture/DECISIONS.md ADR-065.
 library;
 
+export 'src/zen_batch.dart' show ZenBatch;
 export 'src/zen_collection.dart' show ZenCollection;
 export 'src/zen_conflict.dart';
 export 'src/zen_folder_cloud.dart';

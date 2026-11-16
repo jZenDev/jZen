@@ -42,3 +42,10 @@ dev_dependencies:
 
 flutter:
   generate: true
+  plugin:
+    # Android only, and only for `FLAG_SECURE` (ZenScreenSecurity). Every other platform answers
+    # "not applicable" from Dart, so no native side exists there.
+    platforms:
+      android:
+        package: zen.zen_ui_lock
+        pluginClass: ZenUiLockPlugin

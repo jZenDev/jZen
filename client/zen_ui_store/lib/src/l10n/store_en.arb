@@ -222,6 +222,14 @@
   "@syncNewerAppVersion": {
     "description": "Sync status: another device uses a newer app version."
   },
+  "syncErasedEverywhere": "All of your data was erased on every device. There is nothing left to sync.",
+  "@syncErasedEverywhere": {
+    "description": "Sync status: the store was erased everywhere, here or on another device."
+  },
+  "syncKeyReplaced": "Not syncing: a device was removed and the sync key replaced. Pair this device again with a device that has the new key.",
+  "@syncKeyReplaced": {
+    "description": "Sync status: another device replaced the sync key; this device still holds the old one."
+  },
   "addDeviceTitle": "Add a Device",
   "@addDeviceTitle": {
     "description": "Title of the screen that shows the code a new device joins with."

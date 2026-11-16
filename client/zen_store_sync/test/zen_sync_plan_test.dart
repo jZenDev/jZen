@@ -54,6 +54,19 @@ void main() {
     }
   }
 
+  test('a release build refuses every ZEN_SYNC, naming the define', () {
+    for (final platform in ['ios', 'macos', 'android', 'windows', 'linux']) {
+      for (final sync in ['folder', 'cloudkit', 'bogus']) {
+        final plan = ZenSyncPlan(platform, sync, release: true);
+        expect(plan.kind, isNull, reason: '$platform $sync');
+        expect(plan.refusal, contains('ZEN_SYNC'), reason: '$platform $sync');
+        expect(plan.refusal, contains("'$sync'"), reason: '$platform $sync');
+      }
+      // Unset stays what the table says: a release build is not refused for having no define.
+      expect(ZenSyncPlan(platform, '', release: true), ZenSyncPlan(platform, ''));
+    }
+  });
+
   test('a refusal says what to do', () {
     expect(const ZenSyncPlan('web', '').refusal, contains('ADR-073'));
     expect(const ZenSyncPlan('', '').refusal, contains('ZEN_PLATFORM'));

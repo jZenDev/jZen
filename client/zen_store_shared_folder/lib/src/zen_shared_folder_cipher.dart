@@ -56,10 +56,24 @@ final class ZenSharedFolderCipher {
   static final AesGcm _aes = AesGcm.with256bits();
   static final Hmac _hmac = Hmac.sha256();
 
+  /// The marker a device leaves in its own directory once the store was erased everywhere. A name
+  /// no record can have: a collection name starts with a letter.
+  static const String erasedMarker = '!erased';
+
+  /// The marker the device that replaced the sync key leaves under the old key, so a device still
+  /// holding the old key stops writing there instead of leaking what it writes next.
+  static const String rekeyedMarker = '!rekeyed';
+
   final SecretKey _encryptionKey;
   final SecretKey _nameKey;
 
-  ZenSharedFolderCipher._(this._encryptionKey, this._nameKey);
+  /// Names this key's directory: 32 hex characters derived from the sync key, the same on every
+  /// device that holds it and unrelated to it. A device with another key (one that was removed,
+  /// and the key replaced) therefore reads and writes another directory, and its files are never
+  /// seen as problems here; they are not looked at.
+  final String keyId;
+
+  ZenSharedFolderCipher._(this._encryptionKey, this._nameKey, this.keyId);
 
   /// Derives the folder's keys from [syncKey], 32 bytes.
   static Future<ZenSharedFolderCipher> derive(List<int> syncKey) async {
@@ -70,9 +84,11 @@ final class ZenSharedFolderCipher {
     final root = SecretKey(List<int>.unmodifiable(syncKey));
     Future<SecretKey> subkey(String label) =>
         hkdf.deriveKey(secretKey: root, nonce: const [], info: utf8.encode(label));
+    final id = await (await subkey('jzen-shared-folder/v1/key-id')).extractBytes();
     return ZenSharedFolderCipher._(
       await subkey('jzen-shared-folder/v1/encryption'),
       await subkey('jzen-shared-folder/v1/file-name'),
+      _hex(id.sublist(0, 16)),
     );
   }
 
@@ -103,6 +119,14 @@ final class ZenSharedFolderCipher {
           ..add(box.mac.bytes))
         .takeBytes();
   }
+
+  /// A marker file for [path]: sealed like a record, holding only [marker].
+  Future<Uint8List> sealMarker(String marker, String path) => seal(marker, const [], path);
+
+  /// Whether the file at [path] is the marker [marker]. A file of another record is not; one that
+  /// does not open throws [ZenSharedFileException], as [open] does.
+  Future<bool> isMarker(Uint8List sealed, String marker, String path) async =>
+      (await open(sealed, path)).name == marker;
 
   /// Opens the file at [path]. Throws [ZenSharedFileException] when it is not one of ours, was
   /// written by a newer version, is truncated or altered, was written under another key, or was

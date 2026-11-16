@@ -56,6 +56,10 @@ final class ZenCloudKitSync implements ZenSyncTransport {
     }
     sync._unsent = store.unsentChanges.listen((names) => sync._changed(names));
     await sync._changed(store.unsent);
+    if (store.erasedEverywhere) {
+      // Erased, and the app stopped before iCloud was cleaned: finish it now.
+      await sync._eraseInCloud();
+    }
     return ZenResult.ok(sync);
   }
 
@@ -75,6 +79,50 @@ final class ZenCloudKitSync implements ZenSyncTransport {
       );
     }
   }
+
+  /// Erases the person's data on every device, here and in iCloud (ADR-085).
+  ///
+  /// The store is erased and marked so (`ZenStore.eraseEverywhere`); iCloud gets a marker record
+  /// in a zone of its own and the data zone is deleted. Each other device finds the marker at its
+  /// next sync, or at start if it was off, erases its own copy and does not make the zone again.
+  /// **What stays in iCloud** is that marker zone, one record holding no data, so a device that was
+  /// off can still tell an erase from a deletion in Settings.
+  ///
+  /// Fails with the cause when iCloud cannot be reached, after the store was erased: the iCloud
+  /// part is repeated at every start, so "not yet", never "not erased". CloudKit is end-to-end
+  /// encrypted, so this removes what Apple holds; a device that has not synced keeps its own copy
+  /// until it does, as with every transport.
+  Future<ZenResult<void>> eraseEverywhere() async {
+    if (await _store.eraseEverywhere() case ZenFailure(:final error)) return ZenResult.err(error);
+    return _eraseInCloud();
+  }
+
+  Future<ZenResult<void>> _eraseInCloud() async {
+    try {
+      await _channel.invokeMethod<void>('eraseEverywhere');
+    } on PlatformException catch (e, stack) {
+      _setStatus(
+        ZenSyncStatus(ZenSyncState.unavailable, issue: ZenSyncIssue.other, message: e.message),
+      );
+      return ZenResult.err(
+        ZenUnknownError(
+          'The store was erased here, but iCloud was not cleaned: ${e.message}. It is retried at '
+          'the next start.',
+          stackTrace: stack,
+        ),
+      );
+    }
+    _erasedStatus();
+    return const ZenResult.ok(null);
+  }
+
+  void _erasedStatus() => _setStatus(
+    const ZenSyncStatus(
+      ZenSyncState.unavailable,
+      issue: ZenSyncIssue.erasedEverywhere,
+      message: 'the store was erased everywhere',
+    ),
+  );
 
   @override
   Future<void> stop() async {
@@ -134,6 +182,20 @@ final class ZenCloudKitSync implements ZenSyncTransport {
         return null;
       case 'state':
         await _store.saveTransportState(arguments['state'] as Uint8List?);
+        return null;
+      case 'erased':
+        // Another device erased everything (its marker is in iCloud): erase this copy too.
+        if (await _store.eraseEverywhere() case ZenFailure(:final error)) {
+          _setStatus(
+            ZenSyncStatus(
+              ZenSyncState.unavailable,
+              issue: ZenSyncIssue.other,
+              message: error.message,
+            ),
+          );
+          return null;
+        }
+        _erasedStatus();
         return null;
       case 'resetCloud':
         await _store.forgetTransport();

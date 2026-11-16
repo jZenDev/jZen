@@ -27,6 +27,8 @@ enum ZenSyncKind {
 /// | `ios`, `macos` | [ZenSyncKind.cloudKit] | [ZenSyncKind.folderCloud] | [ZenSyncKind.cloudKit] |
 /// | `android`, `windows`, `linux` | [ZenSyncKind.sharedFolder] | [ZenSyncKind.folderCloud] | refused |
 /// | `web`, unset, anything else | refused | refused | refused |
+///
+/// In a release build every row with `ZEN_SYNC` set is refused.
 @immutable
 final class ZenSyncPlan {
   /// The transport, or null when the combination is refused and [refusal] says why.
@@ -36,9 +38,16 @@ final class ZenSyncPlan {
   final String? refusal;
 
   /// Decides for [platform] (`ZEN_PLATFORM`) and [sync] (`ZEN_SYNC`; empty when unset).
-  const ZenSyncPlan(String platform, String sync)
+  ///
+  /// With [release] set, any [sync] is refused: `ZEN_SYNC=folder` stores payloads unencrypted, so a
+  /// release build that carries the define by a copied command line or a CI variable would sync a
+  /// person's whole store in the clear. The refusal lives here, in the one place that reads the
+  /// define, so no application has to remember it.
+  const ZenSyncPlan(String platform, String sync, {bool release = false})
     : kind =
-          (platform == 'ios' ||
+          (release && sync != '')
+          ? null
+          : (platform == 'ios' ||
               platform == 'macos' ||
               platform == 'android' ||
               platform == 'windows' ||
@@ -54,7 +63,11 @@ final class ZenSyncPlan {
                 : null)
           : null,
       refusal =
-          (platform == 'ios' ||
+          (release && sync != '')
+          ? "ZEN_SYNC='$sync' is set in a release build. ZEN_SYNC is a development define "
+                '(ZEN_SYNC=folder syncs unencrypted), so a release build refuses it. Build '
+                'without --dart-define=ZEN_SYNC.'
+          : (platform == 'ios' ||
               platform == 'macos' ||
               platform == 'android' ||
               platform == 'windows' ||

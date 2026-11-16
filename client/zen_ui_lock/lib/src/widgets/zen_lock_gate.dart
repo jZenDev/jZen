@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../screens/zen_unlock_screen.dart';
 import '../state/zen_pin_lock.dart';
+import '../state/zen_screen_security.dart';
 
 /// Covers the whole app with the unlock screen while [lock] is locked, and locks it again once
 /// the app has been in the background for [relockAfter].
@@ -18,12 +21,21 @@ import '../state/zen_pin_lock.dart';
 /// snapshot does not show what the PIN protects. The app underneath stays mounted while locked —
 /// a half-typed form survives a lock — but it is not painted, not hit-testable and not read by a
 /// screen reader.
+///
+/// With [secureScreen] the app's window is also kept out of screenshots, screen recording and the
+/// recents thumbnail on Android (`ZenScreenSecurity`), for as long as the gate is mounted: the
+/// app holds data the whole time it is on screen, locked or not.
 class ZenLockGate extends StatefulWidget {
   /// The lock that decides whether the app is covered.
   final ZenPinLock lock;
 
   /// How long the app may be in the background before it locks again. Zero locks it every time.
   final Duration relockAfter;
+
+  /// Whether to set Android's `FLAG_SECURE` while the gate is mounted. Off by default, because a
+  /// screenshot is how a person shares a screen on purpose; an application that shows balances,
+  /// payees or account numbers turns it on. Nothing happens off Android.
+  final bool secureScreen;
 
   /// The app.
   final Widget child;
@@ -33,6 +45,7 @@ class ZenLockGate extends StatefulWidget {
     required this.lock,
     required this.child,
     this.relockAfter = const Duration(minutes: 1),
+    this.secureScreen = false,
   });
 
   @override
@@ -47,6 +60,7 @@ class _ZenLockGateState extends State<ZenLockGate> {
   @override
   void initState() {
     super.initState();
+    if (widget.secureScreen) unawaited(ZenScreenSecurity.setSecure(true));
     _lifecycle = AppLifecycleListener(
       onInactive: () {
         // A desktop window that loses focus never becomes hidden unless it is minimised, so the
@@ -79,7 +93,16 @@ class _ZenLockGateState extends State<ZenLockGate> {
   }
 
   @override
+  void didUpdateWidget(ZenLockGate oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.secureScreen != widget.secureScreen) {
+      unawaited(ZenScreenSecurity.setSecure(widget.secureScreen));
+    }
+  }
+
+  @override
   void dispose() {
+    if (widget.secureScreen) unawaited(ZenScreenSecurity.setSecure(false));
     _lifecycle.dispose();
     super.dispose();
   }

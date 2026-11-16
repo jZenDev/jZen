@@ -71,6 +71,12 @@ abstract interface class ZenFolderAccess {
   /// deletion.
   Future<void> write(String path, Uint8List bytes);
 
+  /// Removes the file at [path], or the directory at [path] with everything in it. Nothing there is
+  /// not an error: deleting is idempotent, because a sync service may have removed it already. Only
+  /// erasing everywhere and replacing the sync key delete, and only under the transport's own key
+  /// directory (own device's files for the first, the old key's for the second).
+  Future<void> delete(String path);
+
   /// Fires when something in the folder may have changed, or null where the platform has no
   /// watcher. A watcher only brings the next sync forward: polling stays the guarantee, because a
   /// watcher misses changes made while the app was not running and, on some network or cloud

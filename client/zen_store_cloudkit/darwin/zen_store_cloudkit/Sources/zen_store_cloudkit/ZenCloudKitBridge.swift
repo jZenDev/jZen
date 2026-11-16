@@ -32,6 +32,13 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
   private let container: CKContainer
   private let zoneID: CKRecordZone.ID
   private let legacyZoneID: CKRecordZone.ID
+  /// Holds the one record that says "erased everywhere". It is a zone of its own because the data
+  /// zone is deleted by an erase, and a device that was off must still find out afterwards: with
+  /// only the data zone gone it could not tell an erase from a deletion in iCloud Settings.
+  private let markerZoneID: CKRecordZone.ID
+  private let markerRecordID: CKRecord.ID
+  private static let markerType = "ZenErased"
+  private var erasing = false
   private let containerId: String?
   private let initialState: CKSyncEngine.State.Serialization?
   private let hadLegacyState: Bool
@@ -48,6 +55,8 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
     // A new zone, not a rename in place: records already in the old zone carry plain names.
     zoneID = CKRecordZone.ID(zoneName: "\(zone)_v2", ownerName: CKCurrentUserDefaultName)
     legacyZoneID = CKRecordZone.ID(zoneName: zone, ownerName: CKCurrentUserDefaultName)
+    markerZoneID = CKRecordZone.ID(zoneName: "\(zone)_erased", ownerName: CKCurrentUserDefaultName)
+    markerRecordID = CKRecord.ID(recordName: "erased", zoneID: markerZoneID)
     hadLegacyState = state.map { !$0.starts(with: Self.stateMarker) } ?? false
     initialState = state
       .flatMap { $0.starts(with: Self.stateMarker) ? $0.dropFirst(Self.stateMarker.count) : nil }
@@ -69,6 +78,12 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
       }
     } catch {
       await status("unavailable", issue: "other", message: error.localizedDescription)
+    }
+    // An erased store must not start a zone again: say so to Dart and stay stopped.
+    if await markerExists() {
+      stop()
+      _ = await callDart("erased", nil)
+      return
     }
     let configuration = CKSyncEngine.Configuration(
       database: container.privateCloudDatabase,
@@ -105,6 +120,43 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
     }
   }
 
+  /// Erases the person's data in iCloud: leaves the marker for devices that were off, then deletes
+  /// the data zone (and the plain-name zone an older version used). Returns the error's
+  /// description, or nil once the engine has sent it all.
+  func eraseEverywhere() async -> String? {
+    guard let engine, !stopped else { return "sync was not started" }
+    erasing = true
+    // Nothing waiting for the data zone is worth sending now.
+    let doomed = engine.state.pendingRecordZoneChanges.filter {
+      if case .saveRecord(let id) = $0 { return id.zoneID == zoneID }
+      return false
+    }
+    engine.state.remove(pendingRecordZoneChanges: doomed)
+    engine.state.add(pendingDatabaseChanges: [
+      .saveZone(CKRecordZone(zoneID: markerZoneID)),
+      .deleteZone(zoneID),
+      .deleteZone(legacyZoneID),
+    ])
+    engine.state.add(pendingRecordZoneChanges: [.saveRecord(markerRecordID)])
+    do {
+      try await engine.sendChanges()
+      return nil
+    } catch {
+      return error.localizedDescription
+    }
+  }
+
+  /// Whether the erased marker is in iCloud. A failure to ask answers false: the engine's own
+  /// fetch finds the marker later, and asking again costs nothing.
+  private func markerExists() async -> Bool {
+    do {
+      _ = try await container.privateCloudDatabase.record(for: markerRecordID)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   func stop() {
     stopped = true
     engine = nil
@@ -134,7 +186,13 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
       }
 
     case .fetchedDatabaseChanges(let changes):
-      for deletion in changes.deletions where deletion.zoneID == zoneID {
+      for deletion in changes.deletions where deletion.zoneID == zoneID && !erasing {
+        // Another device erased everything: its marker says so, and this device erases too.
+        if await markerExists() {
+          stop()
+          _ = await callDart("erased", nil)
+          continue
+        }
         switch deletion.reason {
         case .encryptedDataReset:
           // The user's iCloud Keychain was reset: the old ciphertext is unreadable by anyone.
@@ -151,6 +209,11 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
       }
 
     case .fetchedRecordZoneChanges(let changes):
+      if changes.modifications.contains(where: { $0.record.recordID.zoneID == markerZoneID }) && !erasing {
+        stop()
+        _ = await callDart("erased", nil)
+        break
+      }
       let records = changes.modifications.compactMap { encode($0.record) }
       if !records.isEmpty {
         _ = await callDart("fetched", ["records": records])
@@ -172,6 +235,13 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
             refused.append(encoded)
           }
         case .zoneNotFound:
+          // Not a reason to make the zone again when it is gone because everything was erased.
+          if erasing { break }
+          if await markerExists() {
+            stop()
+            _ = await callDart("erased", nil)
+            break
+          }
           syncEngine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zoneID))])
           syncEngine.state.add(pendingRecordZoneChanges: [.saveRecord(id)])
         case .unknownItem:
@@ -212,9 +282,16 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
       if case .saveRecord(let id) = $0 { return plainNames[id.recordName] }
       return nil
     }
-    guard !names.isEmpty else { return nil }
-    let reply = await callDart("outgoing", ["names": names]) as? [[String: Any]] ?? []
     var records: [String: CKRecord] = [:]
+    let sendsMarker = pending.contains {
+      if case .saveRecord(let id) = $0 { return id == markerRecordID }
+      return false
+    }
+    if sendsMarker {
+      records[markerRecordID.recordName] = CKRecord(recordType: Self.markerType, recordID: markerRecordID)
+    }
+    guard !names.isEmpty || sendsMarker else { return nil }
+    let reply = names.isEmpty ? [] : (await callDart("outgoing", ["names": names]) as? [[String: Any]] ?? [])
     for item in reply {
       guard let name = item["name"] as? String,
             let payload = (item["payload"] as? FlutterStandardTypedData)?.data else { continue }

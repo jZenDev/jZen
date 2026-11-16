@@ -15,6 +15,50 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-084 — `ZenStore.writeAll` saves a batch through a journal, so a crash leaves all of it or none
+
+**Date:** 2026-11-16. **Status:** accepted. **Refines:** ADR-065, ADR-073. **Issue:** #232.
+
+### Decision
+
+- `ZenStore.writeAll(ZenBatch)` takes puts and deletes across collections and answers one
+  `ZenResult`. `ZenBatch` is a plain list built with `put(collection, id, value)` and
+  `delete(collection, id)`; nothing is checked until `writeAll` runs it.
+- Every operation is checked first, with the meaning it has alone (a missing delete, a record in
+  conflict, an id that cannot travel), plus two that only a batch has: the same record twice, and a
+  collection of another store. One refusal writes nothing.
+- **A rename replaces one file, and a batch spans shards**, so the files it will rewrite (`meta.zen`
+  and each shard) are first saved whole, still sealed under their own names, inside
+  `journal.zen` — itself AES-256-GCM, written by the same temporary-file-and-rename. Then the files
+  are replaced one by one, then the journal is deleted. `ZenStore.open` finishes a journal it finds
+  before reading anything. Replaying is idempotent: it writes the same bytes again.
+- So a crash before the journal exists leaves every file as it was, and a crash after it leaves
+  all of the batch once reopened. There is no state in between.
+- If the files cannot be replaced after the journal is saved (a full disk), the store closes and
+  the error says so: its memory and its files disagree until the journal is finished, and a later
+  write would otherwise overwrite half a batch with its own journal.
+- To a `ZenSyncTransport` a batch is ordinary per-record changes (`unsent` names, one per record).
+  On another device the records arrive one at a time, so a screen there can briefly show part of
+  a batch. The atomicity is on the device that wrote it; it is documented, not hidden.
+
+### What this supersedes, and why
+
+- **"a write rewrites one shard atomically"** (ADR-065) → **still true for `put`/`delete`, which
+  touch one shard, and no longer the only kind of write.** *Why:* a ledger deletes an account with
+  all of its records and commits a statement import of N rows, which the server runs as one
+  transaction; locally a crash in the middle left a partly deleted account that then synced to the
+  other devices.
+- Single writes and `receive` do not use the journal: one shard needs none, and a half-applied
+  `receive` is re-delivered by the transport.
+
+### Consequence
+
+A batch writes its files twice (journal, then the files), so it is for operations that are many
+records by nature, not a replacement for `put`. **Not verified:** a real power loss or a full disk;
+the tests stop a batch between renames with a hook and by blocking a rename, and reopen.
+
+---
+
 ## ADR-083 — CloudKit record names are an HMAC, so Apple sees no collection or id
 
 **Date:** 2026-11-16. **Status:** accepted. **Refines:** ADR-065, ADR-073, ADR-076. **Issue:** #236.

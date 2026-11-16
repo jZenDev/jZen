@@ -133,6 +133,19 @@ final resets = store.collection('resets', Reset.fromBuffer, mergePolicies: {
 });
 ```
 
+**A time together with who recorded it** is a nested message, and a time without its author is half
+a record. Name the sub-field to order by; the **whole** winning version is kept, so the author
+always belongs to the time beside it:
+
+```dart
+// message Revocation { string by = 1; int64 at_ms = 2; }  — field 7 of Reset
+mergePolicies: {7: ZenMergePolicy.earliestBy(2)}   // or latestBy(2); a Timestamp sub-field works too
+```
+
+A side that cleared the message, or a version whose ordering sub-field is unset or unreadable, stays
+a conflict. When two versions tie on the sub-field, the later write and then the device id decide —
+read from the versions alone, so every device agrees.
+
 A policy reads only the two **values**, never the write order, the device or the clock label, so
 every device ends with the same answer in any arrival order; it is not a last-writer-wins rule. A
 side that cleared a timestamp (or a value the policy cannot read) is a different intent and stays a

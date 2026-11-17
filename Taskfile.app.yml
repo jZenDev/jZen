@@ -983,7 +983,12 @@ tasks:
           *)                      HOST=unknown ;;
         esac
 
-        SYMDIR="$(mktemp -d)"
+        # Under the app's own `build/` (gitignored by Flutter), not `mktemp -d`: on a Windows runner
+        # go-task's bundled coreutils resolves the default temp directory to /tmp, which does not
+        # exist there, and the task fails before building anything.
+        SYMDIR="$PWD/build/zen-split-debug-info"
+        rm -rf "$SYMDIR"
+        mkdir -p "$SYMDIR"
         trap 'rm -rf "$SYMDIR"' EXIT
 
         # Same shape as build:runners' build_target, plus --obfuscate/--split-debug-info: a

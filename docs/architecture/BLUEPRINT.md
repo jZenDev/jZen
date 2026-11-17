@@ -29,7 +29,6 @@ jZen/
 │   └── zen_core/  zen_transport/  zen_identity/  zen_ui_*/   # zen_ui_navigation, zen_ui_identity, zen_ui_widgets
 │       zen_store/  zen_store_key/  zen_store_cloudkit/  zen_store_shared_folder/  zen_store_folder/
 │       zen_store_sync/  zen_ui_store/  zen_ui_lock/   # Local apps (ADR-065, ADR-073)
-│   └── overrides/local_auth_windows/   # Dart-only Windows stand-in, not a member (ADR-081)
 ├── apps/                     # APPLICATIONS built on the framework
 │   ├── pubspec.yaml          # pub workspace root for the app clients
 │   └── zen_demo/             # the reference app (showcase + living e2e test stand)
@@ -393,9 +392,10 @@ only, whose model sits in its own `proto/` rather than `proto/zen/v1/`. These pa
   (`saf_util` + `saf_stream`), kept behind a port so its rules are tested against a fake tree.
 - **`zen_store_sync`** — `ZenSync.start` and `ZenSyncPlan`, the only package that names both
   transports, so neither depends on the other (ADR-079).
-- **`local_auth_windows` stand-in** (`client/overrides/`, ADR-081) — the published plugin does not
-  link with the current Visual Studio, so Windows answers "no owner check" and "Forgot PIN?" offers
-  to erase this device's copy and re-sync, as on Linux (ADR-078).
+- **No `local_auth_windows`** (ADR-081, ADR-086) — the published plugin does not link with the
+  current Visual Studio, and an override cannot protect a consumer, so `zen_ui_lock` depends on
+  `local_auth`'s Android and Darwin packages instead of the umbrella. Windows answers "no owner
+  check" and "Forgot PIN?" offers to erase this device's copy and re-sync, as on Linux (ADR-078).
 
 **Not verified on a device** (ROADMAP item 9): real CloudKit (needs the paid Apple Developer
 Program), the Android folder access, camera QR scanning, a real sync service, Windows and Linux

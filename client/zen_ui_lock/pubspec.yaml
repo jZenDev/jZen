@@ -26,8 +26,12 @@ dependencies:
   intl: ^0.20.2
   # "Forgot PIN" is answered by the device's own owner check (passcode, Face ID, Touch ID), from
   # the Flutter team. With no server there is no account to recover through, and whoever can
-  # unlock the device already holds everything the PIN protects.
-  local_auth: ^3.0.2
+  # unlock the device already holds everything the PIN protects. The platform packages are named
+  # directly, not the `local_auth` umbrella, because the umbrella endorses `local_auth_windows`,
+  # which Visual Studio 18 cannot compile and which a consumer cannot override away (ADR-086).
+  local_auth_android: ^2.0.0
+  local_auth_darwin: ^2.0.0
+  local_auth_platform_interface: ^1.1.0
   meta: ^1.11.0
   zen_core:
     path: ../zen_core

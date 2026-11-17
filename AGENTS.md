@@ -139,7 +139,7 @@ starts sync with the one call `ZenSync.start` (`zen_store_sync`, ADR-079) and re
 joins by a 77-character pairing code that carries the sync key (ADR-077). The reference app is
 `apps/zen_demo_local`. **Not verified on a device**: real CloudKit (needs the paid Apple Developer
 Program), the Android folder access, camera QR scanning, a real sync service and Windows/Linux
-hardware; Windows has a Dart-only `local_auth_windows` stand-in (ADR-081). Do not call it *light*. Sync merges different fields and equal edits; anything else is a
+hardware; Windows has no owner check, since `zen_ui_lock` avoids the `local_auth_windows` plugin that Visual Studio 18 cannot build (ADR-081, ADR-086). Do not call it *light*. Sync merges different fields and equal edits; anything else is a
 `ZenConflict` the person settles in `zen_ui_store`'s screens (`ZenConflictBanner`) — the record
 refuses writes until `resolve`. **Never add a
 last-writer-wins shortcut**: a silently dropped edit is a swallowed failure. An optional PIN comes

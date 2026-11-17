@@ -1,12 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:local_auth/local_auth.dart';
+import 'package:local_auth_platform_interface/local_auth_platform_interface.dart';
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_ui_lock/zen_ui_lock.dart';
 
 /// Answers `isDeviceSupported` as told; anything else is a test mistake.
-final class _FakeAuth implements LocalAuthentication {
+final class _FakeAuth extends LocalAuthPlatform {
   Object? throws;
   bool supported = true;
   int asked = 0;
@@ -31,30 +31,38 @@ void main() {
     debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     final auth = _FakeAuth();
 
-    final result = await ZenDeviceOwnerCheck(auth: auth).isAvailable();
+    final result = await ZenDeviceOwnerCheck(platform: auth).isAvailable();
 
     expect(result.dataOrNull, isFalse);
     expect(auth.asked, 0);
   });
 
-  test('a device with no passcode or Windows Hello has no owner check', () async {
+  test('Windows has no owner check, and local_auth is not even asked (ADR-086)', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    final auth = _FakeAuth();
+
+    expect((await ZenDeviceOwnerCheck(platform: auth).isAvailable()).dataOrNull, isFalse);
+    expect(auth.asked, 0);
+  });
+
+  test('a device with no passcode has no owner check', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     final auth = _FakeAuth()..supported = false;
 
-    expect((await ZenDeviceOwnerCheck(auth: auth).isAvailable()).dataOrNull, isFalse);
+    expect((await ZenDeviceOwnerCheck(platform: auth).isAvailable()).dataOrNull, isFalse);
   });
 
   test('a device that supports it has an owner check', () async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
 
-    expect((await ZenDeviceOwnerCheck(auth: _FakeAuth()).isAvailable()).dataOrNull, isTrue);
+    expect((await ZenDeviceOwnerCheck(platform: _FakeAuth()).isAvailable()).dataOrNull, isTrue);
   });
 
   test('a platform with no plugin has no owner check', () async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
     final auth = _FakeAuth()..throws = MissingPluginException('local_auth');
 
-    expect((await ZenDeviceOwnerCheck(auth: auth).isAvailable()).dataOrNull, isFalse);
+    expect((await ZenDeviceOwnerCheck(platform: auth).isAvailable()).dataOrNull, isFalse);
   });
 
   test(
@@ -63,7 +71,7 @@ void main() {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       final auth = _FakeAuth()..throws = PlatformException(code: 'busy');
 
-      final result = await ZenDeviceOwnerCheck(auth: auth).isAvailable();
+      final result = await ZenDeviceOwnerCheck(platform: auth).isAvailable();
 
       expect(result.isFailure, isTrue);
       expect(result.errorOrNull, isA<ZenUnknownError>());

@@ -15,6 +15,39 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-086 — `zen_ui_lock` names `local_auth`'s Android and Darwin packages, not the umbrella, so no consumer resolves `local_auth_windows`
+
+**Date:** 2026-11-17. **Status:** accepted; Windows CI run not yet seen. **Refines:** ADR-081.
+**Issue:** #257.
+
+### Decision
+
+- **`zen_ui_lock` depends on `local_auth_platform_interface`, `local_auth_android` and
+  `local_auth_darwin` directly**, not on `local_auth`. The umbrella endorses `local_auth_windows`
+  for Windows, so depending on it pulled the plugin whose native code Visual Studio 18 cannot
+  compile (error STL1011) into every application, and a `dependency_overrides` entry does not
+  propagate from a package to its consumers: ADR-081's stand-in protected jZen's own workspaces
+  and nobody else. An application now builds for Windows with no override and no silencing define.
+- **`ZenDeviceOwnerCheck` talks to `LocalAuthPlatform.instance` itself** (what `LocalAuthentication`
+  forwards to, with `useErrorDialogs: false`), and answers "no owner check" on Windows and Linux
+  without asking. Windows therefore behaves as ADR-081 already decided: "Forgot PIN?" offers
+  erasing this device's copy. The check is a platform test in Dart, not a registered plugin, so
+  there is no Windows package to own, and none of ADR-081's override machinery is left.
+- **The stand-in package `client/overrides/local_auth_windows` and both `dependency_overrides`
+  entries are deleted** (ADR-081's "delete the override" step, taken for a different reason than
+  it named: the override no longer has anything to override).
+- **CI builds the Local reference app in `--release` on Windows too.** `windows-runner` already
+  built it in `--debug`; the new step runs `zenlocal:build:runners:release`.
+
+### Consequence
+
+Windows Hello support, when a buildable `local_auth_windows` exists, now needs a deliberate change
+in `zen_ui_lock` (add the dependency and drop the Windows branch), not just deleting an override.
+Verified: `zen_ui_lock` analyze and suite; `dart pub deps` of a scratch consumer outside both
+workspaces lists no `local_auth_windows`. **Not verified:** the `windows-runner` job on current MSVC.
+
+---
+
 ## ADR-085 — A Local store can replace its sync key, erase itself everywhere, refuse an unencrypted sync in a release, and hide from screen capture
 
 **Date:** 2026-11-16. **Status:** accepted. **Refines:** ADR-073, ADR-076, ADR-077, ADR-078,

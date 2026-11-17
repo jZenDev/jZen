@@ -205,6 +205,11 @@ jobs:
       - run: task build:apps:runners
       # The Local reference app (ADR-073). Announces a skip until apps/zen_demo_local exists, then builds it.
       - run: task build:apps:runners:local
+      # The same Local app in --release too (ADR-086). `windows-latest` ships the newest MSVC, and
+      # a dependency whose native code that toolchain refuses (local_auth_windows, error STL1011,
+      # ADR-081) fails here as itself. The app carries no dependency override and no silencing
+      # define, so this is also what proves a consumer of zen_ui_lock builds unaided.
+      - run: task zenlocal:build:runners:release
 
   # macOS and the iOS simulator (ADR-052). Runs `build:apps:runners` on an actual Apple host, the
   # only thing that proves either runner still compiles from a clean checkout — no test compiles a

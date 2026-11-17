@@ -120,7 +120,7 @@ are in [`zen_store`'s README](client/zen_store/README.md#-how-it-is-stored-on-th
 sessions merging through the folder transport. Not run: real CloudKit (needs a paid Apple Developer
 Program membership), the Android folder access on a device, camera QR scanning (the typed code works),
 a real sync service (Syncthing, Dropbox, OneDrive), and Windows and Linux hardware. Windows has no
-Windows Hello for "Forgot PIN?" until `local_auth_windows` builds again (ADR-081). The table is in
+Windows Hello for "Forgot PIN?" until `local_auth_windows` builds again (ADR-081, ADR-086). The table is in
 [`zen_demo_local`'s README](apps/zen_demo_local/README.md#verification-matrix) and ROADMAP item 9.
 
 What it gives up: rules a server would enforce (a balance, a budget, anything across records) are

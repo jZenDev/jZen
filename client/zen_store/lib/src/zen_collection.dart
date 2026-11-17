@@ -24,7 +24,7 @@ import 'zen_store.dart';
 final class ZenCollection<T extends GeneratedMessage> {
   final ZenStore _store;
   final T Function(List<int> bytes) _decode;
-  final Set<int> _explicitPresence;
+  final ZenPresence _explicitPresence;
 
   /// The collection's name, the same on every device.
   final String name;
@@ -37,6 +37,46 @@ final class ZenCollection<T extends GeneratedMessage> {
   /// their default are left out ([splitMessage]).
   @internal
   Map<int, Uint8List> fieldsOf(T value) => splitMessage(value, _explicitPresence);
+
+  /// [fields] (from [fieldsOf]) with every field that means what the stored record already holds
+  /// replaced by the stored bytes, so that it is not an edit.
+  ///
+  /// A record written before presence was normalised (before a nested message's defaults were
+  /// left out, say) holds bytes that differ from what [fieldsOf] gives now for the same value;
+  /// compared as they are, a read-modify-write of one field would version the others as well, and
+  /// conflict with a device that has not changed. The stored record is read through [fieldsOf]
+  /// and a field equal to its normalised form is left as stored.
+  @internal
+  Map<int, Uint8List> reconcile(Map<int, Uint8List> fields, ZenRecordState? current) {
+    if (current == null || current.isDeleted) return fields;
+    final Map<int, Uint8List> normalised;
+    try {
+      normalised = fieldsOf(_decode(current.visibleBytes()));
+    } on InvalidProtocolBufferException {
+      // Not a swallowed failure: this only decides what counts as unchanged. An unreadable stored
+      // record is about to be overwritten by this very write, the worst case is the old
+      // behaviour (every field versioned), and [get] and [list] still surface the decode error
+      // to anything that reads the record.
+      return fields;
+    }
+    final out = {...fields};
+    for (final MapEntry(key: field, value: versions) in current.fields.entries) {
+      if (field == existenceField || versions.length != 1) continue;
+      final stored = versions.single.bytes;
+      if (stored == null) continue;
+      if (_sameBytes(fields[field], normalised[field])) out[field] = stored;
+    }
+    return out;
+  }
+
+  static bool _sameBytes(Uint8List? a, Uint8List? b) {
+    if (a == null || b == null) return a == b;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 
   /// [expect] as a check the store runs against the record as it stands when a write takes its
   /// turn: the decoded record, or null when it is absent or deleted. Null when there is no
@@ -98,7 +138,7 @@ final class ZenCollection<T extends GeneratedMessage> {
     return _store.write<T>(name, id, (current) {
       if (current != null && current.isInConflict) return ZenResult.err(_inConflict(id));
       if (check?.call(current) case final error?) return ZenResult.err(error);
-      return ZenResult.ok((fields, value));
+      return ZenResult.ok((reconcile(fields, current), value));
     });
   }
 

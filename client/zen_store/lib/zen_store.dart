@@ -18,6 +18,7 @@ export 'src/zen_conflict.dart';
 export 'src/zen_folder_cloud.dart';
 export 'src/zen_merge_policy.dart' show ZenMergePolicy;
 export 'src/zen_pairing.dart';
+export 'src/zen_proto_fields.dart' show ZenPresence;
 export 'src/zen_storage_error.dart';
 export 'src/zen_store.dart';
 export 'src/zen_sync_report.dart';

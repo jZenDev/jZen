@@ -46,6 +46,7 @@ final class ZenBatch {
         id,
         collection.fieldsOf(value),
         collection.checkFor(expect),
+        collection.reconcile,
       ),
     );
   }
@@ -59,7 +60,14 @@ final class ZenBatch {
     ZenError? Function(T? current)? expect,
   }) {
     _operations.add(
-      ZenBatchOperation._(collection.owner, collection.name, id, null, collection.checkFor(expect)),
+      ZenBatchOperation._(
+        collection.owner,
+        collection.name,
+        id,
+        null,
+        collection.checkFor(expect),
+        null,
+      ),
     );
   }
 
@@ -86,7 +94,19 @@ final class ZenBatchOperation {
   /// The application's precondition, run against the record as it stands when the batch runs.
   final ZenError? Function(ZenRecordState? current)? check;
 
-  const ZenBatchOperation._(this.store, this.collection, this.id, this.fields, this.check);
+  /// Replaces what means the same as the stored record by its stored bytes
+  /// ([ZenCollection.reconcile]); null for a delete.
+  final Map<int, Uint8List> Function(Map<int, Uint8List> fields, ZenRecordState? current)?
+  reconcile;
+
+  const ZenBatchOperation._(
+    this.store,
+    this.collection,
+    this.id,
+    this.fields,
+    this.check,
+    this.reconcile,
+  );
 
   /// Whether this operation deletes the record.
   bool get isDelete => fields == null;

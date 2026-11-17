@@ -42,9 +42,85 @@ Map<int, Uint8List> splitFields(Uint8List bytes) {
   return {for (final entry in parts.entries) entry.key: entry.value.takeBytes()};
 }
 
-/// [splitFields] of [message], with proto3 implicit presence applied: a top-level field that is a
-/// plain scalar or an enum, neither repeated nor a map, and not listed in [explicitPresence], is
-/// left out when its value is its type's default.
+/// Which fields of a message are declared `optional` in the `.proto`, so keep explicit presence
+/// ([ZenStore.collection]'s `explicitPresence`): [fields] are field numbers of the message itself,
+/// and [messages] maps a message-typed field to the declaration for the message it holds, which is
+/// how a nested `optional` field is named.
+///
+/// `const ZenPresence({2})` is field 2; `{8: ZenPresence({2})}` names field 2 inside the message
+/// field 8, and nests further the same way.
+final class ZenPresence {
+  /// No field is declared explicit.
+  static const ZenPresence none = ZenPresence({});
+
+  /// Numbers of the fields of this message that are `optional`.
+  final Set<int> fields;
+
+  /// For a message field of this message, the declaration for the message inside it.
+  final Map<int, ZenPresence> messages;
+
+  /// Declares [fields] explicit, and [messages] for what is inside message fields.
+  const ZenPresence(this.fields, [this.messages = const {}]);
+
+  /// Throws an [ArgumentError] unless every declared field exists in [info], and every key of
+  /// [messages] is a singular message field whose own declaration holds for its type. [path] names
+  /// where [info] sits, for the message.
+  @internal
+  void validate(BuilderInfo info, [String path = '']) {
+    for (final tag in fields) {
+      if (info.fieldInfo[tag] == null) {
+        throw ArgumentError.value(
+          tag,
+          'explicitPresence',
+          'the message ${info.qualifiedMessageName}$path has no field $tag',
+        );
+      }
+    }
+    for (final MapEntry(key: tag, value: inner) in messages.entries) {
+      final field = info.fieldInfo[tag];
+      final nested = field?.subBuilder;
+      if (field == null || nested == null || field.isRepeated || field.isMapField) {
+        throw ArgumentError.value(
+          tag,
+          'explicitPresence',
+          'field $tag of ${info.qualifiedMessageName}$path is not a singular message field, so '
+              'nothing can be declared inside it',
+        );
+      }
+      inner.validate(nested().info_, '$path.${field.name}');
+    }
+  }
+
+  /// This declaration with [other]'s added.
+  ZenPresence merge(ZenPresence other) => ZenPresence(
+    {...fields, ...other.fields},
+    {
+      ...messages,
+      for (final MapEntry(:key, :value) in other.messages.entries)
+        key: messages[key]?.merge(value) ?? value,
+    },
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is ZenPresence &&
+      other.fields.length == fields.length &&
+      other.fields.containsAll(fields) &&
+      other.messages.length == messages.length &&
+      messages.entries.every((e) => other.messages[e.key] == e.value);
+
+  @override
+  int get hashCode => Object.hash(
+    Object.hashAllUnordered(fields),
+    Object.hashAllUnordered(messages.entries.map((e) => Object.hash(e.key, e.value))),
+  );
+}
+
+/// [splitFields] of [message], with proto3 implicit presence applied: a field that is a plain
+/// scalar or an enum, neither repeated nor a map, and not declared in [explicitPresence], is left
+/// out when its value is its type's default. The rule applies inside a singular message field too,
+/// to that nested message's own fields (the nested bytes are rewritten without them); a message
+/// held in a repeated or map field is kept as it is.
 ///
 /// The Dart runtime writes such a field when it was assigned its default (`description = ''`)
 /// though proto3 defines that as the same value as never setting it, so two devices clearing one
@@ -54,15 +130,41 @@ Map<int, Uint8List> splitFields(Uint8List bytes) {
 /// always explicit): the runtime cannot tell them apart, and for those "set to the default" and
 /// "unset" are different values that must stay different.
 @internal
-Map<int, Uint8List> splitMessage(GeneratedMessage message, Set<int> explicitPresence) {
+Map<int, Uint8List> splitMessage(GeneratedMessage message, ZenPresence explicitPresence) {
   final fields = splitFields(message.writeToBuffer());
   for (final info in message.info_.fieldInfo.values) {
     final tag = info.tagNumber;
-    if (!fields.containsKey(tag) || explicitPresence.contains(tag)) continue;
-    if (info.isRepeated || info.isMapField || PbFieldType.isGroupOrMessage(info.type)) continue;
+    // A oneof member has presence of its own: `kind_int = 0` is a choice, not an absence.
+    if (!fields.containsKey(tag) || info.isRepeated || info.isMapField) continue;
+    if (PbFieldType.isGroupOrMessage(info.type)) {
+      if (message.getField(tag) case final GeneratedMessage nested) {
+        fields[tag] = _lengthDelimited(
+          tag,
+          joinFields(splitMessage(nested, explicitPresence.messages[tag] ?? ZenPresence.none)),
+        );
+      }
+      continue;
+    }
+    if (explicitPresence.fields.contains(tag) || message.info_.oneofs.containsKey(tag)) continue;
     if (_isDefault(message.getField(tag))) fields.remove(tag);
   }
   return fields;
+}
+
+Uint8List _lengthDelimited(int tag, Uint8List body) {
+  final out = BytesBuilder(copy: false);
+  void varint(int value) {
+    while (value > 0x7f) {
+      out.addByte((value & 0x7f) | 0x80);
+      value >>= 7;
+    }
+    out.addByte(value);
+  }
+
+  varint((tag << 3) | 2);
+  varint(body.length);
+  out.add(body);
+  return out.takeBytes();
 }
 
 bool _isDefault(Object? value) => switch (value) {

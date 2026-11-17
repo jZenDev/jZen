@@ -26,6 +26,11 @@ dependencies:
     sdk: flutter
   intl: ^0.20.2
 
+  # Provides the glyphs behind CupertinoIcons.back / .xmark / .chevron_forward / .checkmark_alt.
+  # Only resolved transitively it is not bundled: an application that does not depend on
+  # zen_ui_navigation (the Local reference app) then draws every one as a "?" box on iOS and macOS.
+  cupertino_icons: ^1.0.9
+
   material_ui: ^1.11.0
   cupertino_ui: ^1.1.6
 dev_dependencies:

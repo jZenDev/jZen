@@ -82,8 +82,14 @@ final class ZenSharedFolderCipher {
     }
     final hkdf = Hkdf(hmac: _hmac, outputLength: 32);
     final root = SecretKey(List<int>.unmodifiable(syncKey));
+    // The salt is HashLen zero bytes, which is what RFC 5869 defines "no salt" to mean, so every
+    // key derived here is the same as with an empty list. It is spelled out because HKDF uses the
+    // salt as the HMAC key, and the native Android HMAC (`SecretKeySpec`) refuses an empty key
+    // ("Empty key"): an empty salt threw on Android while every host test, on pure-Dart HMAC,
+    // passed.
+    final salt = List<int>.filled(32, 0);
     Future<SecretKey> subkey(String label) =>
-        hkdf.deriveKey(secretKey: root, nonce: const [], info: utf8.encode(label));
+        hkdf.deriveKey(secretKey: root, nonce: salt, info: utf8.encode(label));
     final id = await (await subkey('jzen-shared-folder/v1/key-id')).extractBytes();
     return ZenSharedFolderCipher._(
       await subkey('jzen-shared-folder/v1/encryption'),

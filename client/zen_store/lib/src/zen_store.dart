@@ -11,6 +11,7 @@ import 'package:zen_core/zen_core.dart';
 import 'zen_batch.dart';
 import 'zen_collection.dart';
 import 'zen_merge_policy.dart';
+import 'zen_proto_fields.dart' show ZenPresence;
 import 'zen_record_state.dart';
 import 'zen_storage_error.dart';
 import 'zen_store_cipher.dart';
@@ -58,7 +59,7 @@ final class ZenStore {
 
   final Map<ZenStoreKey, ZenRecordState> _records;
   final Map<String, Map<int, ZenMergePolicy>> _policies = {};
-  final Map<String, Set<int>> _explicitPresence = {};
+  final Map<String, ZenPresence> _explicitPresence = {};
   final Set<String> _deviceOnly = {};
   final Map<ZenStoreKey, Uint8List> _transportData;
   final List<Set<ZenStoreKey>> _shards;
@@ -216,12 +217,17 @@ final class ZenStore {
   /// device and every launch: a collection already declared with different ones throws an
   /// [ArgumentError], because two devices merging by different rules would not converge.
   ///
-  /// A top-level proto3 field with implicit presence (a scalar or enum that is not `optional`) set
-  /// to its default is stored as unset, since proto3 defines them as one value. The Dart runtime
-  /// cannot tell an `optional` field from one that is not, so [explicitPresence] lists, by field
-  /// number, the `optional` fields, where "set to the default" and "unset" stay different. Message,
-  /// repeated and map fields are always explicit. Declared like [mergePolicies], and the same on
-  /// every device.
+  /// A proto3 field with implicit presence (a scalar or enum that is not `optional`) set to its
+  /// default is stored as unset, since proto3 defines them as one value; the rule applies inside a
+  /// singular message field as well, to the nested message's own fields. The Dart runtime cannot
+  /// tell an `optional` field from one that is not, so [explicitPresence] lists the `optional`
+  /// fields, where "set to the default" and "unset" stay different: [explicitPresence] holds the
+  /// numbers of top-level ones (`{4}`), and [explicitNested] those inside a message field, as
+  /// that field's number and a [ZenPresence] for the message in it (`{8: ZenPresence({2})}`). Both
+  /// are checked against the message type and throw an [ArgumentError] for a field that is not
+  /// there. A member of a `oneof` always keeps its presence. Message, repeated and map fields are
+  /// always explicit themselves; the elements of a repeated or map field are kept as they are.
+  /// Declared like [mergePolicies], and the same on every device.
   ///
   /// With [syncs] false the collection is device-only: its records are never in [unsent], never
   /// returned by [outgoing], and a record of that name arriving from a transport is refused — so
@@ -233,6 +239,7 @@ final class ZenStore {
     T Function(List<int> bytes) decode, {
     Map<int, ZenMergePolicy> mergePolicies = const {},
     Set<int> explicitPresence = const {},
+    Map<int, ZenPresence> explicitNested = const {},
     bool syncs = true,
   }) {
     if (!_collectionName.hasMatch(name)) {
@@ -246,12 +253,12 @@ final class ZenStore {
         throw ArgumentError.value(subField, 'mergePolicies', 'a sub-field number is 1 or more');
       }
     }
+    final presence = ZenPresence(explicitPresence, explicitNested);
+    presence.validate(decode(const <int>[]).info_);
     final declaredPresence = _explicitPresence[name];
-    if (declaredPresence != null &&
-        (declaredPresence.length != explicitPresence.length ||
-            !declaredPresence.containsAll(explicitPresence))) {
+    if (declaredPresence != null && declaredPresence != presence) {
       throw ArgumentError.value(
-        explicitPresence,
+        presence,
         'explicitPresence',
         'the collection $name was already declared with different explicit-presence fields',
       );
@@ -263,7 +270,7 @@ final class ZenStore {
         'the collection $name was already declared ${syncs ? 'device-only' : 'synced'}',
       );
     }
-    _explicitPresence[name] ??= Set.unmodifiable(explicitPresence);
+    _explicitPresence[name] ??= presence;
     if (!syncs) _deviceOnly.add(name);
     final declared = _policies[name];
     if (declared != null && !_samePolicies(declared, mergePolicies)) {
@@ -618,7 +625,7 @@ final class ZenStore {
           return ZenResult.err(ZenNotFoundError('${key.collection}/${key.id} does not exist.'));
         }
         if (operation.check?.call(current) case final error?) return ZenResult.err(error);
-        plan.add((key, operation.fields));
+        plan.add((key, operation.reconcile?.call(operation.fields!, current) ?? operation.fields));
       }
       if (plan.isEmpty) return const ZenResult.ok(null);
 

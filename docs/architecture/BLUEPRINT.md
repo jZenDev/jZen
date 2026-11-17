@@ -404,9 +404,10 @@ through `flutter_secure_storage`, the PIN, "Forgot PIN?" and an emulated fingerp
 Android release build the CloudKit transport is absent and the folder transport present. **Not
 verified:** real CloudKit (needs the paid Apple Developer Program), a real sync app's folder through
 SAF, camera QR scanning, Windows and Linux hardware, and the unreached transports in a Windows or
-Linux binary. **Known open:** an unsigned (ad-hoc) sandboxed macOS build cannot read its store key —
-the Keychain answers `-34018` without a `keychain-access-groups` entitlement — so jZen Local on macOS
-needs a signed build.
+Linux binary. **Known open:** the macOS data-protection Keychain answers `-34018` in an unsigned (ad-hoc)
+sandboxed build, so a macOS **non-release dev** build (`ZEN_ENV=dev`, not `--release`; the Taskfile defaults `ZEN_ENV` to `dev`) keeps the store key and PIN hash in the
+login keychain (ADR-087), while a release build keeps the data-protection Keychain, which could not
+be provisioned with the free team here.
 - **`zen_ui_store`** — the choice. A banner while conflicts wait, the list of them, and each
   device's version side by side, plus `ZenSyncStatusBanner`, which says why sync stopped; a record is named by the app's `title`, a field by its proto name
   and value unless the app formats it.

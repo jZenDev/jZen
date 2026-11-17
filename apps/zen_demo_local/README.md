@@ -45,11 +45,13 @@ A sandboxed macOS app reaches only its own container: use a folder inside it
 `zen_store`'s README explains. The path must have no space in it (`Application Support` has one):
 the defines are word-split and the task now refuses such a path.
 
-**The macOS build does not open its data unless it is signed.** The store key lives in the Keychain
-(`zen_store_key`), and a sandboxed, ad-hoc-signed macOS app gets `-34018` ("a required entitlement
-is not present") from it: the app opens on "jZen Chores could not open your data". It needs the
-`keychain-access-groups` entitlement and a signing identity (ADR-023's boundary). The macOS ↔ iOS
-run below was done with the data-protection keychain switched off in a local, reverted edit.
+**A macOS non-release dev build opens its data with no signing identity.** The store key (`zen_store_key`) and
+the PIN hash (`zen_ui_lock`) live in the login keychain when `ZEN_ENV=dev` and the build is not `--release` (`ZEN_ENV` defaults to `dev` in the Taskfile, so a release build must not read it alone); the
+data-protection Keychain gave an ad-hoc-signed app `-34018` ("a required entitlement is not
+present"). Every other build, a `--release` build included, keeps the data-protection Keychain, which needs a signing identity and
+could not be provisioned here (free personal team; the row below, ADR-087). The two keychains do not see each other's items, so a Mac that
+switches between a dev and a release build refuses to open the data rather than making a new key:
+"Erase this device's copy" and sync again.
 
 To try the release transport — the shared folder — on a Windows, Linux or Android build, run it
 with no `ZEN_SYNC`: **Settings → Sync**, choose a folder a sync service shares (Syncthing, Dropbox,
@@ -81,8 +83,9 @@ analysis) is kept with the #231 hand-over notes, not in the repository.
 |---|---|---|
 | Two sessions through `ZenFolderCloud` and through the shared-folder transport on a Mac: merge, conflict, delete against edit, erase and re-sync | passed (automated, host tests) | `test/two_devices_test.dart` |
 | Screens and accessibility (contrast, target size, names, 200% text) | passed (automated) | widget suites |
-| macOS debug build | builds; **does not open its data when unsigned** (Keychain `-34018`, above) | ADR-080 |
-| macOS ↔ iOS simulator through `ZenFolderCloud` | **passed on the iOS Simulator (iPhone 17, iOS 26.5) and a macOS debug build; no real device** | create on macOS appears on iOS; note edited on iOS and priority on macOS while the folder was gone merge to both on return; a title edited on both gives the banner and the chooser on both, and keeping one settles both; "Erase this device's copy" on iOS brings the chore back. "Offline" was the folder disappearing, not either app closed. The macOS leg ran with a local edit that is not in the tree (above). |
+| macOS debug build, `ZEN_ENV=dev` (before `zenIsDevBuild`: chosen by `ZEN_ENV` alone) | built with `ZEN_ENV=dev ZEN_SYNC=folder` and ad-hoc signed; the process started and stayed up, with no `-34018` and no crash report, and its store key appeared in the login keychain. **The window was not looked at and no chore was added** (screen access was declined); without `ZEN_SYNC=folder` the app aborts in `CKContainer` (no iCloud entitlement), as before | ADR-080, ADR-087 |
+| macOS build signed with the free personal team (data-protection Keychain, `keychain-access-groups`) | **tried, refused** | Xcode: `No Accounts`, no `Mac Development` certificate, no profile for `dev.jzen.zenDemoLocalClient`; a hand-signed copy: `Launch failed` (POSIX 163). Developer ID is unchecked (ADR-087) |
+| macOS ↔ iOS simulator through `ZenFolderCloud` | **passed on the iOS Simulator (iPhone 17, iOS 26.5) and a macOS debug build; no real device** | create on macOS appears on iOS; note edited on iOS and priority on macOS while the folder was gone merge to both on return; a title edited on both gives the banner and the chooser on both, and keeping one settles both; "Erase this device's copy" on iOS brings the chore back. "Offline" was the folder disappearing, not either app closed. The macOS leg ran with a local edit that is not in the tree (the data-protection keychain switched off); ADR-087 now does that for a dev build. |
 | Windows ↔ Linux ↔ Android through Syncthing: pairing, merge, conflict, offline then reconnect, grant revoked | **not verified** | needs the three devices; the Android half now has an emulator pass (next rows) |
 | The same through Dropbox or OneDrive | **not verified** | needs an account and the devices |
 | iOS / macOS through real CloudKit | **not verified** | needs a paid Apple Developer Program membership; this is a free personal team |
@@ -104,7 +107,7 @@ Found and fixed by this run, none of which any host test could see:
   uses `CupertinoIcons` without depending on `cupertino_icons`, so the font was not bundled.
 - **`ZEN_SYNC_FOLDER` with a space** (the path this README gave for macOS) broke `run:client`.
 
-Open: the unsigned macOS Keychain failure above, and both devices naming themselves after the host
+Open: a signed macOS build (above), and both devices naming themselves after the host
 (`MBP14.local`) on the conflict cards when a simulator and a Mac share one host.
 
 On Windows "Forgot PIN?" offers to erase this device's copy rather than Windows Hello (ADR-081), as

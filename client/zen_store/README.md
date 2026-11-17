@@ -115,8 +115,8 @@ task zen:run:client DEVICE=<simulator-udid> CLIENT_PLATFORM=ios ZEN_SYNC=folder 
 
 **Which folder.** An iOS Simulator app is a process on the Mac and reaches the Mac's files. A
 sandboxed macOS app — Flutter's default — reaches only its own container, so pick a folder inside
-it, `~/Library/Containers/<bundle id>/Data/Library/Application Support/zen-cloud`, and give both
-builds that absolute path; or add a read-write exception for the folder to the macOS Debug
+it, `~/Library/Containers/<bundle id>/Data/Documents/zen-cloud` (no space in the path: the defines are
+word-split, and the task refuses one), and give both builds that absolute path; or add a read-write exception for the folder to the macOS Debug
 entitlements only.
 
 ## 🕰️ Same intent, different times

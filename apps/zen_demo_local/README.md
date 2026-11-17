@@ -41,8 +41,15 @@ task zenlocal:run:client DEVICE=<ios-simulator-udid> CLIENT_PLATFORM=ios ZEN_SYN
 ```
 
 A sandboxed macOS app reaches only its own container: use a folder inside it
-(`~/Library/Containers/dev.jzen.zenDemoLocalClient/Data/Library/Application Support/zen-cloud`) for
-both builds, as `zen_store`'s README explains.
+(`~/Library/Containers/dev.jzen.zenDemoLocalClient/Data/Documents/zen-cloud`) for both builds, as
+`zen_store`'s README explains. The path must have no space in it (`Application Support` has one):
+the defines are word-split and the task now refuses such a path.
+
+**The macOS build does not open its data unless it is signed.** The store key lives in the Keychain
+(`zen_store_key`), and a sandboxed, ad-hoc-signed macOS app gets `-34018` ("a required entitlement
+is not present") from it: the app opens on "jZen Chores could not open your data". It needs the
+`keychain-access-groups` entitlement and a signing identity (ADR-023's boundary). The macOS ↔ iOS
+run below was done with the data-protection keychain switched off in a local, reverted edit.
 
 To try the release transport — the shared folder — on a Windows, Linux or Android build, run it
 with no `ZEN_SYNC`: **Settings → Sync**, choose a folder a sync service shares (Syncthing, Dropbox,
@@ -64,23 +71,41 @@ cd apps/zen_demo_local/zen_demo_local_client && flutter test --dart-define=ZEN_P
 
 ## Verification matrix
 
-What has been run, and what has not. Nothing below was run on a device or a real service: the
-manual matrix (plan unit 8) was **not run**, because it needs real hardware and accounts that a
-coding session does not have.
+What has been run, and what has not. A simulator or an emulator is not a device: a row says exactly
+what ran. Nothing below was run on real hardware or against a real sync service. Run on
+2026-11-17 on a Mac: the iOS Simulator (iPhone 17, iOS 26.5), a macOS debug build, and the Android
+emulator `Pixel_9` (API 36, 16 KB page size, Google Play image). Evidence (screenshots, size
+analysis) is kept with the #231 hand-over notes, not in the repository.
 
 | Row | Status | Why |
 |---|---|---|
 | Two sessions through `ZenFolderCloud` and through the shared-folder transport on a Mac: merge, conflict, delete against edit, erase and re-sync | passed (automated, host tests) | `test/two_devices_test.dart` |
 | Screens and accessibility (contrast, target size, names, 200% text) | passed (automated) | widget suites |
-| macOS debug build | passed | ADR-080 |
-| Windows ↔ Linux ↔ Android through Syncthing: pairing, merge, conflict, offline then reconnect, grant revoked | **not verified** | unit 8 not run; needs the three devices |
-| The same through Dropbox or OneDrive | **not verified** | unit 8 not run; needs an account and the devices |
-| macOS ↔ iOS simulator through `ZenFolderCloud` | **not verified** | unit 8 not run (ADR-072's open item) |
+| macOS debug build | builds; **does not open its data when unsigned** (Keychain `-34018`, above) | ADR-080 |
+| macOS ↔ iOS simulator through `ZenFolderCloud` | **passed on the iOS Simulator (iPhone 17, iOS 26.5) and a macOS debug build; no real device** | create on macOS appears on iOS; note edited on iOS and priority on macOS while the folder was gone merge to both on return; a title edited on both gives the banner and the chooser on both, and keeping one settles both; "Erase this device's copy" on iOS brings the chore back. "Offline" was the folder disappearing, not either app closed. The macOS leg ran with a local edit that is not in the tree (above). |
+| Windows ↔ Linux ↔ Android through Syncthing: pairing, merge, conflict, offline then reconnect, grant revoked | **not verified** | needs the three devices; the Android half now has an emulator pass (next rows) |
+| The same through Dropbox or OneDrive | **not verified** | needs an account and the devices |
 | iOS / macOS through real CloudKit | **not verified** | needs a paid Apple Developer Program membership; this is a free personal team |
-| Android folder access (Storage Access Framework, grant surviving a restart) | **not verified** | spike 0.1 is a desk study (ADR-076, ADR-080); the plugins never ran on a device |
+| Android folder access (Storage Access Framework, grant surviving a restart) | **passed on the Android emulator (Pixel_9, API 36); no real device, no real sync app** | the system picker opened, a `content://` tree was granted, encrypted `.zen` files were written into it through the grant, and after `force-stop` and a restart a new chore was written through the same grant with no re-pick. Not tried against Syncthing-Fork, Dropbox or OneDrive's own provider. |
+| Store key off Apple (spike 0.4) on Android | **passed on the Android emulator (Pixel_9); no real device** | the app made and read its key through `flutter_secure_storage` (Keystore-wrapped prefs present, data survives restarts). Windows, Linux and a Linux desktop with no secret service: **not verified** |
+| PIN, "Forgot PIN?" and biometrics on Android | **passed on the Android emulator (Pixel_9) with an emulated fingerprint; no real device** | wrong PIN refused, right PIN opens, "Forgot PIN?" shows the system prompt and the emulated fingerprint resets the PIN. It failed before this run (below). Windows, Linux: **not verified** |
 | Camera QR scanning when joining | **not verified** | no scanner plugin is wired; the typed 77-character code works everywhere, `ZenQrScannerBuilder` is the optional hook (`zen_ui_store`) |
 | Windows and Linux runs; the `inactive` lifecycle and Android recents snapshot | **not verified** | not run on hardware; only built in CI (ADR-078, ADR-081) |
-| Transports absent from a built Android/Windows/Linux binary | **not verified** | nothing built one to inspect (ADR-079) |
+| Transports absent from a built Android binary (ADR-079) | **passed for an Android release arm64 build** (`--analyze-size` and the strings of `libapp.so`): no CloudKit, no `ZenFolderCloud`; `ZenSharedFolderSync` and the SAF adapter present. Windows, Linux: **not verified** | built here, inspected as files; no device needed |
+
+Found and fixed by this run, none of which any host test could see:
+
+- **Android "Start syncing" threw `Empty key`.** HKDF's salt was empty, and the native Android HMAC
+  refuses an empty key (the host tests use the pure-Dart one). The salt is now 32 zero bytes, which
+  RFC 5869 defines as no salt, so every derived key is unchanged (pinned by a test).
+- **Android "Forgot PIN?" failed at once, with no prompt**: `MainActivity` was a `FlutterActivity`,
+  and `local_auth` needs a `FragmentActivity` (also `USE_BIOMETRIC` and an AppCompat launch theme).
+- **On iOS and macOS the back arrow and every Cupertino glyph drew as a "?" box**: `zen_ui_widgets`
+  uses `CupertinoIcons` without depending on `cupertino_icons`, so the font was not bundled.
+- **`ZEN_SYNC_FOLDER` with a space** (the path this README gave for macOS) broke `run:client`.
+
+Open: the unsigned macOS Keychain failure above, and both devices naming themselves after the host
+(`MBP14.local`) on the conflict cards when a simulator and a Mac share one host.
 
 On Windows "Forgot PIN?" offers to erase this device's copy rather than Windows Hello (ADR-081), as
 on Linux (ADR-078).

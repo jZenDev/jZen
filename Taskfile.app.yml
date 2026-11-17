@@ -857,6 +857,13 @@ tasks:
               echo "ZEN_SYNC=folder needs ZEN_SYNC_FOLDER, an absolute path every syncing build shares."
               exit 1
             fi
+            case '{{.ZEN_SYNC_FOLDER}}' in
+              *[[:space:]]*)
+                echo "ZEN_SYNC_FOLDER='{{.ZEN_SYNC_FOLDER}}' contains whitespace; the defines are word-split, so the build would"
+                echo "read only the part before the space. Use a path without one (a macOS app container has"
+                echo "Data/Documents, which has none) or a symlink to it."
+                exit 1 ;;
+            esac
             defines="$defines --dart-define=ZEN_SYNC=folder --dart-define=ZEN_SYNC_FOLDER={{.ZEN_SYNC_FOLDER}}" ;;
           *) echo "ZEN_SYNC='{{.ZEN_SYNC}}' is neither folder nor cloudkit."; exit 1 ;;
         esac
@@ -972,6 +979,13 @@ tasks:
               echo "ZEN_SYNC=folder needs ZEN_SYNC_FOLDER, an absolute path every syncing build shares."
               exit 1
             fi
+            case '{{.ZEN_SYNC_FOLDER}}' in
+              *[[:space:]]*)
+                echo "ZEN_SYNC_FOLDER='{{.ZEN_SYNC_FOLDER}}' contains whitespace; the defines are word-split, so the build would"
+                echo "read only the part before the space. Use a path without one (a macOS app container has"
+                echo "Data/Documents, which has none) or a symlink to it."
+                exit 1 ;;
+            esac
             defines="$defines --dart-define=ZEN_SYNC=folder --dart-define=ZEN_SYNC_FOLDER={{.ZEN_SYNC_FOLDER}}" ;;
           *) echo "ZEN_SYNC='{{.ZEN_SYNC}}' is neither folder nor cloudkit."; exit 1 ;;
         esac
@@ -1256,6 +1270,13 @@ tasks:
               echo "ZEN_SYNC=folder needs ZEN_SYNC_FOLDER, an absolute path every syncing build shares."
               exit 1
             fi
+            case '{{.ZEN_SYNC_FOLDER}}' in
+              *[[:space:]]*)
+                echo "ZEN_SYNC_FOLDER='{{.ZEN_SYNC_FOLDER}}' contains whitespace; the defines are word-split, so the build would"
+                echo "read only the part before the space. Use a path without one (a macOS app container has"
+                echo "Data/Documents, which has none) or a symlink to it."
+                exit 1 ;;
+            esac
             defines="$defines --dart-define=ZEN_SYNC=folder --dart-define=ZEN_SYNC_FOLDER={{.ZEN_SYNC_FOLDER}}" ;;
           *) echo "ZEN_SYNC='{{.ZEN_SYNC}}' is neither folder nor cloudkit."; exit 1 ;;
         esac

@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:cryptography/cryptography.dart';
 import 'package:test/test.dart';
 import 'package:zen_store_shared_folder/src/zen_shared_folder_cipher.dart';
 
@@ -8,6 +10,26 @@ import 'support/devices.dart';
 void main() {
   late ZenSharedFolderCipher cipher;
   setUp(() async => cipher = await ZenSharedFolderCipher.derive(syncKey));
+
+  test('the derived keys are the RFC 5869 no-salt keys, so folders made before still open', () async {
+    // An explicit all-zero salt must equal the empty one: the native Android HMAC refuses an empty
+    // key, so the cipher spells the salt out, and this pins that it changed nothing.
+    final reference = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
+    final id = await (await reference.deriveKey(
+      secretKey: SecretKey(syncKey),
+      nonce: const [],
+      info: utf8.encode('jzen-shared-folder/v1/key-id'),
+    )).extractBytes();
+    final expected = id.sublist(0, 16).map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
+    expect(cipher.keyId, expected);
+  });
+
+  test('the key id is a fixed value, so an empty-salt regression cannot hide behind the library', () {
+    // HMAC-SHA-256 and HKDF worked out by hand (Python hmac) for syncKey and the key-id label, with
+    // a 32-zero-byte salt: independent of the cryptography package that produces it.
+    expect(cipher.keyId, '43272057332c0542fa9a5df8c94b3ce2');
+  });
 
   test('a record round-trips with its name and payload', () async {
     final sealed = await cipher.seal('items:abc', [1, 2, 3], 'dev/file.zen');

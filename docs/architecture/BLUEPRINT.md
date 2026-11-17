@@ -397,9 +397,16 @@ only, whose model sits in its own `proto/` rather than `proto/zen/v1/`. These pa
   `local_auth`'s Android and Darwin packages instead of the umbrella. Windows answers "no owner
   check" and "Forgot PIN?" offers to erase this device's copy and re-sync, as on Linux (ADR-078).
 
-**Not verified on a device** (ROADMAP item 9): real CloudKit (needs the paid Apple Developer
-Program), the Android folder access, camera QR scanning, a real sync service, Windows and Linux
-hardware, and that the unreached transports are absent from a built binary.
+**Verified on a simulator or emulator only, never on a device** (2026-11-17, ROADMAP item 9): macOS ↔
+iOS Simulator through `ZenFolderCloud` (merge, conflict and its chooser, erase and re-sync); on the
+Android emulator the Storage Access Framework picker and a grant surviving a restart, the store key
+through `flutter_secure_storage`, the PIN, "Forgot PIN?" and an emulated fingerprint; and in an
+Android release build the CloudKit transport is absent and the folder transport present. **Not
+verified:** real CloudKit (needs the paid Apple Developer Program), a real sync app's folder through
+SAF, camera QR scanning, Windows and Linux hardware, and the unreached transports in a Windows or
+Linux binary. **Known open:** an unsigned (ad-hoc) sandboxed macOS build cannot read its store key —
+the Keychain answers `-34018` without a `keychain-access-groups` entitlement — so jZen Local on macOS
+needs a signed build.
 - **`zen_ui_store`** — the choice. A banner while conflicts wait, the list of them, and each
   device's version side by side, plus `ZenSyncStatusBanner`, which says why sync stopped; a record is named by the app's `title`, a field by its proto name
   and value unless the app formats it.

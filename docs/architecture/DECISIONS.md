@@ -15,6 +15,84 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-087 — On macOS a dev build keeps the store key and PIN hash in the login keychain; a release build keeps the data-protection Keychain
+
+**Date:** 2026-11-17. **Status:** proposed, until the user accepts it. **Refines:** ADR-075, ADR-065.
+**Relates to:** ADR-023, ADR-026.
+
+### Decision
+
+- **The macOS keychain is chosen at compile time, from `zenIsDevBuild` in `zen_core`:
+  `ZEN_ENV=dev` and not a release build (`dart.vm.product`, the signal ADR-085's release guard
+  reads).** `ZEN_ENV` alone is not enough: `Taskfile.app.yml` defaults it to `dev` and the `--release`
+  task passes it on, so a release build made without `ZEN_ENV=prd` would otherwise ship the weaker
+  storage. In a non-release dev build `ZenDeviceStoreKey.platformStorage` and `ZenSecureLockStorage`
+  pass `MacOsOptions(usesDataProtectionKeychain: false)`: the user's login (file) keychain. Every
+  other build (prd, or a release build made with `ZEN_ENV=dev`) keeps the data-protection Keychain, `unlocked_this_device` for the store key and
+  `first_unlock_this_device` for the PIN, as before. iOS is unchanged. No runtime switch exists. A release build with no signing identity fails loudly with -34018, which
+  is intended, not a quiet weakening.
+- **Why a dev build.** The data-protection keychain needs the `keychain-access-groups` entitlement,
+  which only a signed build carries. An ad-hoc-signed build (a developer with no signing identity,
+  a plain `task zenlocal:run:client`) fails every read and write with
+  `PlatformException(Unexpected security result code, Code: -34018, A required entitlement is not
+  present)` and Local cannot open its data. Adding the entitlement to the entitlements files is no
+  fix: an unsigned build then refuses to run (ADR-023, ADR-026).
+- **"Local needs no account" is about the end user**, not about the developer's Apple account. A
+  shipped macOS app is signed and keeps the data-protection Keychain, so the weaker storage never
+  reaches a person. A signed build with the data-protection Keychain was **tried and could not be
+  made here** (below); whether `keychain-access-groups` works for a Developer ID (outside the App
+  Store) build is **unverified**: no such identity exists on this machine.
+- **The attempt with the free personal team.** This Mac has one `Apple Development` identity (team
+  `2U57J8B5D5`). `xcodebuild` with `DEVELOPMENT_TEAM=2U57J8B5D5`, `-allowProvisioningUpdates` and
+  `keychain-access-groups` in `DebugProfile.entitlements` failed: `error: No Accounts: Add a new
+  account in Accounts settings`, `No signing certificate "Mac Development" found ... matching team
+  ID "2U57J8B5D5"`, `No profiles for 'dev.jzen.zenDemoLocalClient' were found`. Signing the built
+  app by hand with that identity and the entitlement succeeded, but `open` answered `Launch failed`
+  (`Launchd job spawn failed`, POSIX 163): a restricted entitlement without a provisioning profile.
+  So the identity exists, but without an Xcode account and a Mac Development certificate it cannot
+  carry `keychain-access-groups`. Adding the account in Xcode, which the user must do, would let the
+  signed path be tried; it is the open item.
+- **The failure rules are unchanged.** `load` never makes a key beside existing files, and a
+  keychain error is still an exception and a failed load. Nothing falls back from one keychain to
+  the other at run time.
+- **The two keychains do not see each other's items.** A Mac that runs a dev build and then a
+  release build (or the reverse) finds the key missing beside existing files, so `load` refuses to
+  open the data instead of making a new key. That is the intended behaviour; the way out is "Erase
+  this device's copy" and a sync from the other devices.
+- **What the dev guarantee is.** The file keychain ignores `kSecAttrAccessible`: the key is
+  readable while the login keychain is unlocked, by this app's code identity (another program is
+  asked for), and it **can be in a backup**. It is not synced.
+- **The PIN.** The PIN hash and the failure counter (`_failuresKey`) sit in the same keychain, so a
+  dev build's backup can be guessed against offline (a 4-digit PIN is 10,000 guesses; PBKDF2 slows
+  that, it does not stop it) and restoring one resets the lockout. A dev build accepts this only
+  because whoever holds that backup holds the store key and the encrypted files with it: the PIN
+  there is a lock on the screen, not on the data. A release build, where the PIN is meant to hold
+  up, keeps `first_unlock_this_device`.
+
+### What this supersedes, and why
+
+- **"iOS and macOS keep `unlocked_this_device`"** (ADR-075, decision) → **refined for a macOS dev
+  build.** *Why:* that guarantee exists only in the data-protection keychain, which an unsigned
+  build cannot use; the alternative was a Local app that does not open for a developer with no
+  paid account.
+- **"The key lives in the Keychain, this device only, readable only while the device is unlocked"**
+  (ADR-065) → **refined likewise** (see ADR-075).
+
+### Consequence
+
+- A developer with no paid account can run `apps/zen_demo_local` on macOS in a dev build. The
+  suites of `zen_store_key` and `zen_ui_lock` pin both choices for each storage and that the
+  default storage follows `zenIsDevBuild`; `zen_core`'s test ties `zenIsDevBuild` to its two inputs. A
+  host test cannot set `dart.vm.product`, so the release cases are pinned through the pure
+  `macOsOptions(dev: false)`; the native keychain is not reachable from a host test.
+- **Not verified:** a signed macOS build with the data-protection Keychain (provisioning refused here, above), and Developer ID.
+- **Not changed:** `zen_secure_store` (the server-mode session token, ADR-023) still uses the
+  data-protection keychain.
+- An ad-hoc build's code identity changes with each rebuild, which the file keychain may answer with
+  an access prompt for an item an earlier build made; a denied prompt is a failed `load`.
+
+---
+
 ## ADR-086 — `zen_ui_lock` names `local_auth`'s Android and Darwin packages, not the umbrella, so no consumer resolves `local_auth_windows`
 
 **Date:** 2026-11-17. **Status:** accepted; Windows CI run not yet seen. **Refines:** ADR-081.

@@ -141,7 +141,7 @@ joins by a 77-character pairing code that carries the sync key (ADR-077). The re
 (2026-11-17): macOS ↔ iOS Simulator through `ZenFolderCloud`, and on the Android emulator the SAF
 folder, the store key, the PIN and "Forgot PIN?". **Not verified**: real CloudKit (needs the paid Apple
 Developer Program), camera QR scanning, a real sync service (SAF against a real sync app) and
-Windows/Linux hardware; an unsigned macOS build cannot read its store key (Keychain `-34018`); Windows has no owner check, since `zen_ui_lock` avoids the `local_auth_windows` plugin that Visual Studio 18 cannot build (ADR-081, ADR-086). Do not call it *light*. Sync merges different fields and equal edits; anything else is a
+Windows/Linux hardware; Windows has no owner check, since `zen_ui_lock` avoids the `local_auth_windows` plugin that Visual Studio 18 cannot build (ADR-081, ADR-086). On macOS a non-release dev build (`ZEN_ENV=dev` and not `--release`; the Taskfile defaults `ZEN_ENV` to `dev`, so it alone is not enough) keeps the store key and PIN hash in the login keychain, because the data-protection one fails with `-34018` without a signing identity; every other build keeps the data-protection Keychain, which could not be provisioned with the free personal team here (ADR-087). Do not call it *light*. Sync merges different fields and equal edits; anything else is a
 `ZenConflict` the person settles in `zen_ui_store`'s screens (`ZenConflictBanner`) — the record
 refuses writes until `resolve`. **Never add a
 last-writer-wins shortcut**: a silently dropped edit is a swallowed failure. An optional PIN comes

@@ -3,6 +3,11 @@ import 'package:test/test.dart';
 import 'package:zen_core/src/zen_constants.dart';
 
 void main() {
+  test('a development build is a dev environment that is not a release build', () {
+    expect(zenIsDevBuild, zenIsDev && !zenIsRelease);
+    if (zenIsRelease) expect(zenIsDevBuild, isFalse);
+  });
+
   group('jZen Constants', () {
     test('zenPlatform returns correct value', () {
       // In test environment, should return the constant value

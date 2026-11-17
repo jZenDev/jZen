@@ -24,6 +24,17 @@ const bool zenIsDev = zenEnv == 'dev';
 /// Whether the current environment is production.
 const bool zenIsPrd = zenEnv == 'prd';
 
+/// Whether this is a release build (`flutter build --release`, AOT), whatever `ZEN_ENV` says.
+const bool zenIsRelease = bool.fromEnvironment('dart.vm.product');
+
+/// Whether this is a development build that is **not** a release build.
+///
+/// `ZEN_ENV` alone is not enough to tell: `Taskfile.app.yml` defaults it to `dev`, so a release
+/// build made without an explicit `ZEN_ENV=prd` has [zenIsDev] true. A release build never counts as
+/// a development build, so anything weakened "for development" (the macOS login keychain for the
+/// store key and the PIN hash, ADR-087) stays strong in it.
+const bool zenIsDevBuild = zenIsDev && !zenIsRelease;
+
 /// Platform constants
 ///
 /// These constants are used to determine the current platform.

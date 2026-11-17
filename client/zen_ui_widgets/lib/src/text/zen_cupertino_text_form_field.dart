@@ -29,6 +29,7 @@ class ZenCupertinoTextFormField extends FormField<String> {
     this.maxLines = 1,
     this.minLines,
     this.maxLength,
+    this.autofocus = false,
     this.onSubmitted,
     this.trailing,
     super.validator,
@@ -60,6 +61,7 @@ class ZenCupertinoTextFormField extends FormField<String> {
                        child: CupertinoTextField(
                          controller: state._effectiveController,
                          enabled: enabled,
+                         autofocus: autofocus,
                          obscureText: obscureText,
                          keyboardType: keyboardType,
                          inputFormatters: inputFormatters,
@@ -192,6 +194,9 @@ class ZenCupertinoTextFormField extends FormField<String> {
 
   /// The most characters accepted; when set, a counter is shown under the field.
   final int? maxLength;
+
+  /// Whether the field takes focus when it first appears.
+  final bool autofocus;
 
   /// Called with the text when the keyboard's action key is pressed.
   final ValueChanged<String>? onSubmitted;

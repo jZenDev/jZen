@@ -25,7 +25,14 @@ export 'src/screens/zen_conflicts_screen.dart';
 export 'src/screens/zen_issue_screen.dart';
 export 'src/screens/zen_join_screen.dart' show ZenJoinScreen, ZenQrScannerBuilder;
 export 'src/state/zen_conflict_source.dart' show ZenConflictSource;
-export 'src/state/zen_issue_source.dart' show ZenIssue, ZenIssueAction, ZenIssueSource;
+export 'src/state/zen_issue_source.dart'
+    show
+        ZenChoiceIssueAction,
+        ZenIssue,
+        ZenIssueAction,
+        ZenIssueSource,
+        ZenPlainIssueAction,
+        ZenTextIssueAction;
 export 'src/widgets/zen_conflict_banner.dart';
 export 'src/widgets/zen_conflict_side_card.dart';
 export 'src/widgets/zen_pairing_code_view.dart';

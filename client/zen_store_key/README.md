@@ -29,7 +29,7 @@ final key = (await ZenDeviceStoreKey.load(dataDirectory: directory)).dataOrNull!
 final store = (await ZenStore.open(directory, deviceName: 'Laptop', key: key)).dataOrNull!;
 ```
 
-## macOS: a dev build opens, a signed build is not verified
+## macOS: a dev build opens, a signed debug build opens
 
 A sandboxed, ad-hoc-signed macOS app got `PlatformException(... Code: -34018, A required entitlement
 is not present)` from the data-protection Keychain, because that needs the `keychain-access-groups`
@@ -44,10 +44,11 @@ A release build with no signing identity therefore fails with `-34018` and says 
 The two keychains do not see each other's items. A Mac that runs a dev build and then a release
 build (or the reverse) finds the key missing beside existing files, and `load` refuses to open the
 data instead of making a new key; erase this device's copy and sync again. A **signed** macOS build
-(data-protection Keychain, `keychain-access-groups`) has **not been run**. It was tried with the
-free personal team on this Mac and Xcode refused to provision it (`No Accounts`, no `Mac Development`
-certificate, no profile), and a hand-signed copy would not launch (`Launch failed`, POSIX 163); the
-exact errors are in ADR-087. Adding an account in Xcode is what the next attempt needs.
+(data-protection Keychain, `keychain-access-groups`) was **run on 2026-11-17** once an Apple ID was added in
+Xcode → Settings → Accounts: with the free personal team, `ZEN_ENV=prd` in debug mode, the key was created, the
+window opened, and after a restart the chore was still there (key reused). Xcode needed `-allowProvisioningUpdates`,
+a `DEVELOPMENT_TEAM` and the entitlement `$(AppIdentifierPrefix)<bundle id>`, none of which is in the tree. A `--release`
+build was not run. The earlier refusal (`No Accounts`, no `Mac Development` certificate, no profile) was only the missing account.
 
 ## Why this is its own package
 

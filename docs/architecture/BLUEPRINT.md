@@ -397,7 +397,7 @@ only, whose model sits in its own `proto/` rather than `proto/zen/v1/`. These pa
   `local_auth`'s Android and Darwin packages instead of the umbrella. Windows answers "no owner
   check" and "Forgot PIN?" offers to erase this device's copy and re-sync, as on Linux (ADR-078).
 
-**Verified on a simulator or emulator only, never on a device** (2026-11-17, ROADMAP item 9): macOS ↔
+**Verified on a simulator, an emulator, a real Mac and a real iPhone** (2026-11-17, ROADMAP item 9). On a real Mac (macOS 27.0, free personal team): a dev build opens, keeps a chore across a restart and keeps its key in the login keychain; a signed non-dev debug build uses the data-protection Keychain (`keychain-access-groups`), creates and reuses its key; the dev build's PIN, a wrong PIN and "Forgot PIN?" with the system prompt. On a real iPhone (iOS 27.2.1, free personal team, observed through QuickTime with the person doing the taps): the store key is created and reused, a chore is added, a wrong PIN is refused, "Forgot PIN?" resets it with the device passcode, the app-switcher card is a cover, and "Erase this device's copy" empties the list (user-reported). Not run: a `--release` macOS build, and Face ID. On simulators and emulators: macOS ↔
 iOS Simulator through `ZenFolderCloud` (merge, conflict and its chooser, erase and re-sync); on the
 Android emulator the Storage Access Framework picker and a grant surviving a restart, the store key
 through `flutter_secure_storage`, the PIN, "Forgot PIN?" and an emulated fingerprint; and in an
@@ -406,8 +406,7 @@ verified:** real CloudKit (needs the paid Apple Developer Program), a real sync 
 SAF, camera QR scanning, Windows and Linux hardware, and the unreached transports in a Windows or
 Linux binary. **Known open:** the macOS data-protection Keychain answers `-34018` in an unsigned (ad-hoc)
 sandboxed build, so a macOS **non-release dev** build (`ZEN_ENV=dev`, not `--release`; the Taskfile defaults `ZEN_ENV` to `dev`) keeps the store key and PIN hash in the
-login keychain (ADR-087), while a release build keeps the data-protection Keychain, which could not
-be provisioned with the free team here.
+login keychain (ADR-087), while a release build keeps the data-protection Keychain, which the free team does provision for a debug build (a `--release` build was not run).
 - **`zen_ui_store`** — the choice. A banner while conflicts wait, the list of them, and each
   device's version side by side, plus `ZenSyncStatusBanner`, which says why sync stopped; a record is named by the app's `title`, a field by its proto name
   and value unless the app formats it.

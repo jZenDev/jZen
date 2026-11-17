@@ -65,5 +65,6 @@
   "bannerAttention": "{count, plural, one{{count} запис потребує вашого вибору.} few{{count} записи потребують вашого вибору.} many{{count} записів потребують вашого вибору.} other{{count} запису потребують вашого вибору.}}",
   "attentionIntro": "Ці записи потребують вашого вибору. Нічого не втрачено й не змінено без вас.",
   "issueTitle": "Потрібен ваш вибір",
-  "issueFailed": "Не вдалося: {reason}"
+  "issueFailed": "Не вдалося: {reason}",
+  "issueContinue": "Продовжити"
 }

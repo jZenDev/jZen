@@ -325,7 +325,7 @@ ZenExpandableSection(title: messages.advanced, subtitle: messages.advancedHelp,
 ### ZenTextField
 
 A labelled text input with optional validation, errors, autofill, obscuring and multiline input.
-Use it inside a Flutter `Form` when form validation is needed; `enabled: false` disables input.
+Use it inside a Flutter `Form` when form validation is needed; `enabled: false` disables input. `autofocus: true` focuses it as it appears, for a prompt whose only job is this text.
 
 ```dart
 ZenTextField(label: messages.name, controller: nameController,

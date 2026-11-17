@@ -42,6 +42,7 @@ class ZenTextField extends StatefulWidget {
     this.minLines,
     this.maxLength,
     this.enabled = true,
+    this.autofocus = false,
     super.key,
   }) : assert(maxLines == null || maxLines > 0, 'maxLines must be positive'),
        assert(minLines == null || minLines > 0, 'minLines must be positive'),
@@ -117,6 +118,10 @@ class ZenTextField extends StatefulWidget {
   /// Whether the field takes input.
   final bool enabled;
 
+  /// Whether the field takes focus when it first appears, so a prompt that exists to ask for this
+  /// text can be typed into at once.
+  final bool autofocus;
+
   @override
   State<ZenTextField> createState() => _ZenTextFieldState();
 }
@@ -163,6 +168,7 @@ Widget buildMaterialTextField(
     child: TextFormField(
       controller: field.controller,
       enabled: field.enabled,
+      autofocus: field.autofocus,
       autovalidateMode: field.autovalidateMode,
       forceErrorText: field.errorText,
       obscureText: field.obscureText && !revealed,
@@ -227,6 +233,7 @@ Widget buildCupertinoTextField(
     minLines: field.minLines,
     maxLength: field.maxLength,
     enabled: field.enabled,
+    autofocus: field.autofocus,
     trailing: field.revealable ? _revealButton(context, field, revealed, onToggleReveal) : null,
   );
 }

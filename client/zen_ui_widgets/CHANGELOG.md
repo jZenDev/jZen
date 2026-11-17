@@ -4,6 +4,7 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+- `ZenTextField` gains `autofocus` (default `false`; existing callers are unchanged).
 - `ZenCheckboxRow` (with a mixed state), `ZenRadioGroup` / `ZenRadioOption`, `ZenFilterChip`,
   `ZenSlider`, `ZenRangeSlider` (two named thumbs, `start <= end` enforced), `ZenSearchField` (with
   a localized clear button), `ZenActionMenu` / `ZenMenuAction` and `ZenExpandableSection`, each

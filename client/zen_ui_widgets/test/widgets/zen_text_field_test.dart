@@ -9,13 +9,12 @@ import 'package:zen_ui_widgets/zen_ui_widgets.dart' show ZenIconButton;
 
 import '../support/a11y.dart';
 
-typedef Build =
-    Widget Function(
-      BuildContext context,
-      ZenTextField field, {
-      bool revealed,
-      VoidCallback? onToggleReveal,
-    });
+typedef Build = Widget Function(
+  BuildContext context,
+  ZenTextField field, {
+  bool revealed,
+  VoidCallback? onToggleReveal,
+});
 
 final Map<String, Build> builds = <String, Build>{
   'material': buildMaterialTextField,
@@ -38,6 +37,7 @@ Widget field(
   int? maxLines = 1,
   int? minLines,
   int? maxLength,
+  bool autofocus = false,
 }) => Builder(
   builder: (BuildContext context) => build(
     context,
@@ -56,6 +56,7 @@ Widget field(
       maxLines: maxLines,
       minLines: minLines,
       maxLength: maxLength,
+      autofocus: autofocus,
     ),
   ),
 );
@@ -63,6 +64,17 @@ Widget field(
 void main() {
   for (final MapEntry<String, Build> entry in builds.entries) {
     group(entry.key, () {
+      for (final bool on in <bool>[false, true]) {
+        testWidgets('autofocus: $on ${on ? 'takes' : 'does not take'} focus on appearing', (
+          tester,
+        ) async {
+          await pumpApp(tester, field(entry.value, autofocus: on));
+          await tester.pump();
+          final EditableTextState state = tester.state(find.byType(EditableText));
+          expect(state.widget.focusNode.hasFocus, on);
+        });
+      }
+
       testWidgets('the label is the name of the focusable input, said once', (tester) async {
         final SemanticsHandle handle = tester.ensureSemantics();
         await pumpApp(tester, field(entry.value));

@@ -56,14 +56,77 @@ final class ZenIssue {
 }
 
 /// One button on a [ZenIssue].
+///
+/// A plain action runs at once. A [choose] or [text] action first has `ZenIssueScreen` ask the
+/// person for what it needs; cancelling the question runs nothing and leaves the issue. The three
+/// kinds are separate types, so each one carries only what it can use and a `switch` over an
+/// action is exhaustive.
 @immutable
-final class ZenIssueAction {
+sealed class ZenIssueAction {
   /// The button's text.
+  String get label;
+
+  /// A plain action: [run] takes nothing. A failure is shown to the person, and the issue stays.
+  const factory ZenIssueAction({
+    required String label,
+    required Future<ZenResult<Object?>> Function() run,
+  }) = ZenPlainIssueAction;
+
+  /// An action that needs one of [choices] (id, label) before it can run; [run] gets the chosen id.
+  const factory ZenIssueAction.choose({
+    required String label,
+    required List<(String, String)> choices,
+    required Future<ZenResult<Object?>> Function(String id) run,
+  }) = ZenChoiceIssueAction;
+
+  /// An action that needs a short text, asked for with a field named [fieldLabel]; [run] gets the
+  /// text, trimmed and never empty.
+  const factory ZenIssueAction.text({
+    required String label,
+    required String fieldLabel,
+    required Future<ZenResult<Object?>> Function(String text) run,
+  }) = ZenTextIssueAction;
+}
+
+/// An action that runs as soon as it is pressed.
+final class ZenPlainIssueAction implements ZenIssueAction {
+  @override
   final String label;
 
-  /// What it does. A failure is shown to the person, and the issue stays.
+  /// What it does.
   final Future<ZenResult<Object?>> Function() run;
 
-  /// Creates an action.
-  const ZenIssueAction({required this.label, required this.run});
+  /// Creates a plain action.
+  const ZenPlainIssueAction({required this.label, required this.run});
+}
+
+/// An action that runs with the candidate the person picked.
+final class ZenChoiceIssueAction implements ZenIssueAction {
+  @override
+  final String label;
+
+  /// The candidates as (id, label); at least one.
+  final List<(String, String)> choices;
+
+  /// What it does with the chosen id.
+  final Future<ZenResult<Object?>> Function(String id) run;
+
+  /// Creates a choice action.
+  const ZenChoiceIssueAction({required this.label, required this.choices, required this.run})
+    : assert(choices.length > 0, 'a choice needs at least one candidate');
+}
+
+/// An action that runs with a text the person typed.
+final class ZenTextIssueAction implements ZenIssueAction {
+  @override
+  final String label;
+
+  /// The text field's label.
+  final String fieldLabel;
+
+  /// What it does with the text.
+  final Future<ZenResult<Object?>> Function(String text) run;
+
+  /// Creates a text action.
+  const ZenTextIssueAction({required this.label, required this.fieldLabel, required this.run});
 }

@@ -362,5 +362,9 @@
         "type": "String"
       }
     }
+  },
+  "issueContinue": "Continue",
+  "@issueContinue": {
+    "description": "Button that confirms the choice or text an issue action asked for."
   }
 }

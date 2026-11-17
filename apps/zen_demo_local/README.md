@@ -48,8 +48,7 @@ the defines are word-split and the task now refuses such a path.
 **A macOS non-release dev build opens its data with no signing identity.** The store key (`zen_store_key`) and
 the PIN hash (`zen_ui_lock`) live in the login keychain when `ZEN_ENV=dev` and the build is not `--release` (`ZEN_ENV` defaults to `dev` in the Taskfile, so a release build must not read it alone); the
 data-protection Keychain gave an ad-hoc-signed app `-34018` ("a required entitlement is not
-present"). Every other build, a `--release` build included, keeps the data-protection Keychain, which needs a signing identity and
-could not be provisioned here (free personal team; the row below, ADR-087). The two keychains do not see each other's items, so a Mac that
+present"). Every other build, a `--release` build included, keeps the data-protection Keychain, which needs a signing identity; the free personal team provisions it for a debug build (the rows below, ADR-087). The two keychains do not see each other's items, so a Mac that
 switches between a dev and a release build refuses to open the data rather than making a new key:
 "Erase this device's copy" and sync again.
 
@@ -74,7 +73,7 @@ cd apps/zen_demo_local/zen_demo_local_client && flutter test --dart-define=ZEN_P
 ## Verification matrix
 
 What has been run, and what has not. A simulator or an emulator is not a device: a row says exactly
-what ran. Nothing below was run on real hardware or against a real sync service. Run on
+what ran. Nothing below was run against a real sync service or on a real Android. The real-hardware rows are the Mac ones (macOS 27.0, Apple silicon) and the real iPhone one (iOS 27.2.1), both run later the same day with the free personal team. Run on
 2026-11-17 on a Mac: the iOS Simulator (iPhone 17, iOS 26.5), a macOS debug build, and the Android
 emulator `Pixel_9` (API 36, 16 KB page size, Google Play image). Evidence (screenshots, size
 analysis) is kept with the #231 hand-over notes, not in the repository.
@@ -83,8 +82,10 @@ analysis) is kept with the #231 hand-over notes, not in the repository.
 |---|---|---|
 | Two sessions through `ZenFolderCloud` and through the shared-folder transport on a Mac: merge, conflict, delete against edit, erase and re-sync | passed (automated, host tests) | `test/two_devices_test.dart` |
 | Screens and accessibility (contrast, target size, names, 200% text) | passed (automated) | widget suites |
-| macOS debug build, `ZEN_ENV=dev` (before `zenIsDevBuild`: chosen by `ZEN_ENV` alone) | built with `ZEN_ENV=dev ZEN_SYNC=folder` and ad-hoc signed; the process started and stayed up, with no `-34018` and no crash report, and its store key appeared in the login keychain. **The window was not looked at and no chore was added** (screen access was declined); without `ZEN_SYNC=folder` the app aborts in `CKContainer` (no iCloud entitlement), as before | ADR-080, ADR-087 |
-| macOS build signed with the free personal team (data-protection Keychain, `keychain-access-groups`) | **tried, refused** | Xcode: `No Accounts`, no `Mac Development` certificate, no profile for `dev.jzen.zenDemoLocalClient`; a hand-signed copy: `Launch failed` (POSIX 163). Developer ID is unchecked (ADR-087) |
+| macOS debug build, `ZEN_ENV=dev` (ad-hoc signed) | **passed on a real Mac (macOS 27.0), window looked at**: the window opens on the Chores screen, a chore added, and after quitting and reopening it was still there; the store key `zen_store.key` was in the login keychain. Without `ZEN_SYNC=folder` the app aborts in `CKContainer` (no iCloud entitlement), as before | ADR-080, ADR-087 |
+| macOS build signed with the free personal team and **not** a dev build (`ZEN_ENV=prd`, debug mode, `ZEN_SYNC=folder`; data-protection Keychain, `keychain-access-groups` = `<team>.dev.jzen.zenDemoLocalClient`) | **passed on a real Mac (macOS 27.0), debug mode only**: signed by `Apple Development` (free personal team, not Developer ID), provisioned by Xcode with `-allowProvisioningUpdates` once an Apple ID was added in Xcode → Settings → Accounts. The window opened on an empty store (key created), a chore was added, and after a restart it was still there (key reused). **Not run: a `--release` build** (needs CloudKit, which needs the paid program). To build it the Runner project needed a `DEVELOPMENT_TEAM` and the entitlement; neither is in the tree (a temporary local edit, reverted). The window appeared only after the app was activated | ADR-087 |
+| PIN on macOS (dev build): set, wrong PIN, "Forgot PIN?" | **passed on a real Mac**: PIN set, the lock screen shown after a restart, a wrong PIN refused ("Wrong PIN"), "Forgot PIN?" showed the system prompt and, once approved by the person at the Mac, opened the app with the PIN switched off. The signed build's PIN was not run | ADR-078 |
+| Real iPhone (iPhone 17, iOS 27.2.1, free personal team, USB; a profile build with `ZEN_ENV=dev ZEN_SYNC=folder`): store key, chores, PIN, "Forgot PIN?", app-switcher snapshot, erase | **passed on a real iPhone, except Face ID, which was not exercised.** Observed through QuickTime Player (read-only view of the phone, since iPhone Mirroring would not open); every tap was the person's, and the app was launched and relaunched with `devicectl`. **Store key:** the app opened to the Chores screen on a first run and a chore the person added was still there after the process was terminated and relaunched (the key was created in the real Keychain and reused). **PIN:** set, shown at relaunch, a wrong PIN refused ("Wrong PIN"). **"Forgot PIN?":** showed the system prompt "Enter iPhone Passcode … Confirm it's you to reset the app's PIN"; the person entered the device passcode, no Face ID was tried (the prompt was the passcode screen), and the app then opened with the PIN off and the chore kept. **App switcher (ADR-085):** with a PIN set, the app's card was a plain dark cover with no chores. **Screen-capture hiding:** not applicable on iOS (ADR-085), the capture showed the content. **Erase:** after "Erase this device's copy" and a relaunch the person reported a PIN lock and, after unlocking, an empty chore list (user-reported; the QuickTime feed had dropped at that moment). The sync-folder banner ("Cannot use /tmp/zen-real") was expected: the dev-only folder is not writable in the iPhone sandbox, so no sync ran. The app was deleted from the phone; its Keychain items may remain, since iOS keeps them after an uninstall. Not done: Face ID, a `--release` build | ADR-085 |
 | macOS ↔ iOS simulator through `ZenFolderCloud` | **passed on the iOS Simulator (iPhone 17, iOS 26.5) and a macOS debug build; no real device** | create on macOS appears on iOS; note edited on iOS and priority on macOS while the folder was gone merge to both on return; a title edited on both gives the banner and the chooser on both, and keeping one settles both; "Erase this device's copy" on iOS brings the chore back. "Offline" was the folder disappearing, not either app closed. The macOS leg ran with a local edit that is not in the tree (the data-protection keychain switched off); ADR-087 now does that for a dev build. |
 | Windows ↔ Linux ↔ Android through Syncthing: pairing, merge, conflict, offline then reconnect, grant revoked | **not verified** | needs the three devices; the Android half now has an emulator pass (next rows) |
 | The same through Dropbox or OneDrive | **not verified** | needs an account and the devices |
@@ -107,7 +108,7 @@ Found and fixed by this run, none of which any host test could see:
   uses `CupertinoIcons` without depending on `cupertino_icons`, so the font was not bundled.
 - **`ZEN_SYNC_FOLDER` with a space** (the path this README gave for macOS) broke `run:client`.
 
-Open: a signed macOS build (above), and both devices naming themselves after the host
+Open: a signed `--release` macOS build, and both devices naming themselves after the host
 (`MBP14.local`) on the conflict cards when a simulator and a Mac share one host.
 
 On Windows "Forgot PIN?" offers to erase this device's copy rather than Windows Hello (ADR-081), as

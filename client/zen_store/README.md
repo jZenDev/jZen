@@ -221,7 +221,17 @@ A plain proto3 field (scalar or enum, not `optional`) set to its default is stor
 proto3 defines them as one value; otherwise `description = ''` on one device and `clearDescription()`
 on another would conflict about nothing. The Dart runtime cannot tell an `optional` field apart, so
 name those in `collection(..., explicitPresence: {4})`: there "set to the default" and "unset" stay
-different. Message, repeated and map fields are always explicit.
+different. The rule applies inside a message field too: a plain scalar or enum at its default in a
+nested message is left out of that message's bytes, so two devices writing one group with and
+without an explicit default agree. Name a nested `optional` field with `explicitNested`, the
+message field's number and a `ZenPresence` for what is inside it:
+`collection(..., explicitNested: {8: ZenPresence({2})})` is field 2 inside message field 8, and
+`ZenPresence({}, {6: ZenPresence({1})})` goes one level deeper. Declarations are checked against
+the message type and throw for a field that is not there. A `oneof` member keeps its presence
+(`kind_int = 0` is a choice). A message field itself and repeated and map fields are always
+explicit; **messages inside repeated or map fields are not normalised**, a deliberate non-goal:
+their elements are versioned as written. A record stored before this rule is read through it
+before a write, so editing one field does not version the others.
 
 ## ⚠️ What it does not do
 

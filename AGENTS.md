@@ -137,9 +137,11 @@ ADR-080), and `ZenFolderCloud` only as the development override `ZEN_SYNC=folder
 starts sync with the one call `ZenSync.start` (`zen_store_sync`, ADR-079) and reads neither
 `ZEN_PLATFORM` nor `ZEN_SYNC` itself; the web is refused there and in `Taskfile.app.yml`. A new device
 joins by a 77-character pairing code that carries the sync key (ADR-077). The reference app is
-`apps/zen_demo_local`. **Not verified on a device**: real CloudKit (needs the paid Apple Developer
-Program), the Android folder access, camera QR scanning, a real sync service and Windows/Linux
-hardware; Windows has no owner check, since `zen_ui_lock` avoids the `local_auth_windows` plugin that Visual Studio 18 cannot build (ADR-081, ADR-086). Do not call it *light*. Sync merges different fields and equal edits; anything else is a
+`apps/zen_demo_local`. **Run only on a simulator or emulator, never a device**
+(2026-11-17): macOS ↔ iOS Simulator through `ZenFolderCloud`, and on the Android emulator the SAF
+folder, the store key, the PIN and "Forgot PIN?". **Not verified**: real CloudKit (needs the paid Apple
+Developer Program), camera QR scanning, a real sync service (SAF against a real sync app) and
+Windows/Linux hardware; an unsigned macOS build cannot read its store key (Keychain `-34018`); Windows has no owner check, since `zen_ui_lock` avoids the `local_auth_windows` plugin that Visual Studio 18 cannot build (ADR-081, ADR-086). Do not call it *light*. Sync merges different fields and equal edits; anything else is a
 `ZenConflict` the person settles in `zen_ui_store`'s screens (`ZenConflictBanner`) — the record
 refuses writes until `resolve`. **Never add a
 last-writer-wins shortcut**: a silently dropped edit is a swallowed failure. An optional PIN comes

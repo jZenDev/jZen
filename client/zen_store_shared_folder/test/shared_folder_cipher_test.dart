@@ -25,6 +25,12 @@ void main() {
     expect(cipher.keyId, expected);
   });
 
+  test('the key id is a fixed value, so an empty-salt regression cannot hide behind the library', () {
+    // HMAC-SHA-256 and HKDF worked out by hand (Python hmac) for syncKey and the key-id label, with
+    // a 32-zero-byte salt: independent of the cryptography package that produces it.
+    expect(cipher.keyId, '43272057332c0542fa9a5df8c94b3ce2');
+  });
+
   test('a record round-trips with its name and payload', () async {
     final sealed = await cipher.seal('items:abc', [1, 2, 3], 'dev/file.zen');
 

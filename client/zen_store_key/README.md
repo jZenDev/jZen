@@ -28,6 +28,16 @@ final key = (await ZenDeviceStoreKey.load(dataDirectory: directory)).dataOrNull!
 final store = (await ZenStore.open(directory, deviceName: 'Laptop', key: key)).dataOrNull!;
 ```
 
+## ⚠️ Known: an unsigned macOS build cannot read the key
+
+A sandboxed, ad-hoc-signed macOS app gets `PlatformException(... Code: -34018, A required entitlement
+is not present)` from the Keychain, so `load` fails and the application shows "could not open your
+data" (seen on 2026-11-17 running `zen_demo_local` on macOS). The Keychain needs the
+`keychain-access-groups` entitlement and a signing identity. Not fixed here; a macOS build for
+people needs that signing, and switching off the data-protection keychain is a different
+trade-off (ADR-075), not a quiet fallback. iOS and Android were run on a simulator and an emulator
+without this problem.
+
 ## Why this is its own package
 
 A plugin imports `dart:ui`, which `dart test` cannot load, so it cannot live in `zen_store`; and it

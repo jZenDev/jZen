@@ -50,6 +50,7 @@ ROADMAP item 9.
 ## Phase 0 — Spikes (answers before code; each ends in a note in the PR that closes it)
 
 ### 0.1 Android folder access ✅ desk study; chosen `saf_util` + `saf_stream`, **not run on a device** (ADR-076, ADR-080)
+_Update 2026-11-17: run on the Android emulator (not a device); see `apps/zen_demo_local/README.md` "Verification matrix"._
 - **Question:** a folder chosen through the Storage Access Framework is a `content://` tree URI,
   which `dart:io` cannot open. Which way does `zen_store_shared_folder` read and write it — an
   existing, maintained pub.dev plugin, or a small Kotlin part of its own?
@@ -71,6 +72,7 @@ ROADMAP item 9.
 - **Done when:** the answer is decided and `zen_ui_lock`'s suite names the Linux path.
 
 ### 0.4 Key storage off Apple ✅ desk study; behaviour and failure written down in ADR-075 ([#221](https://github.com/jZenDev/jZen/pull/221)); not run on devices
+_Update 2026-11-17: run on the Android emulator (not a device); see `apps/zen_demo_local/README.md` "Verification matrix"._
 - **Question:** does `flutter_secure_storage` 10.x give the store key the same "this device only"
   guarantee on Android (Keystore), Windows and Linux (libsecret) that the Keychain gives? What
   happens on a Linux desktop with no secret service running?

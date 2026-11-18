@@ -47,6 +47,8 @@ dev_dependencies:
   # The pure-Dart end-to-end suite (integration_test/) runs on the VM via `dart test`, hitting
   # the live stack. It uses package:test (not flutter_test) so it stays headless - see test:e2e.
   test: ^1.25.0
+  flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.8
 
 # `generate: true` drives `flutter gen-l10n` from l10n.yaml. There are no l10n assets any
 # more: the app's strings are compiled in (ADR-009), and the identity/navigation wording comes

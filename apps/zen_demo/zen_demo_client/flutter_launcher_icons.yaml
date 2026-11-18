@@ -1,0 +1,21 @@
+# Platform icons, generated from brand/jzen-icon.svg by `task generate:icons` (the PNG masters
+# under brand/build are rasterised first). Edit the master, never the generated files.
+flutter_launcher_icons:
+  image_path: ../../../brand/build/icon.png
+  android: true
+  adaptive_icon_background: "#275559"
+  adaptive_icon_foreground: ../../../brand/build/icon-padded.png
+  ios: true
+  remove_alpha_ios: true
+  web:
+    generate: true
+    image_path: ../../../brand/build/icon.png
+    background_color: "#275559"
+    theme_color: "#275559"
+  windows:
+    generate: true
+    image_path: ../../../brand/build/icon.png
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: ../../../brand/build/icon.png

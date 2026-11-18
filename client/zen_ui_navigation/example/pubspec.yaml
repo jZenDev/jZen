@@ -35,6 +35,8 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.8
 
 # `generate: true` drives `flutter gen-l10n` from l10n.yaml. The l10n JSON assets are gone:
 # generated strings are Dart code, not a runtime asset load (ADR-009).

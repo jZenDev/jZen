@@ -1,0 +1,10 @@
+{
+  "name": "@jzen/brand",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Rasterises the jZen master icon (jzen-icon.svg) into the PNG masters the platform icon tools consume.",
+  "devDependencies": {
+    "sharp-cli": "^6.1.0"
+  }
+}

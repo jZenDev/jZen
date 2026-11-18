@@ -1,0 +1,10 @@
+# Launch screens (iOS, Android incl. 12+, web preloader), generated from brand/jzen-icon.svg by
+# `task generate:icons`. The padded master carries the same background as `color`, so the mark
+# sits centred on a seamless field.
+flutter_native_splash:
+  color: "#275559"
+  image: ../../../brand/build/icon-padded.png
+  android_12:
+    color: "#275559"
+    image: ../../../brand/build/icon-padded.png
+  web: false

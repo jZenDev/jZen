@@ -1,0 +1,8 @@
+# Web icons for the example, generated from brand/jzen-icon.svg by `task generate:icons`.
+flutter_launcher_icons:
+  image_path: ../../../brand/build/icon.png
+  web:
+    generate: true
+    image_path: ../../../brand/build/icon.png
+    background_color: "#275559"
+    theme_color: "#275559"

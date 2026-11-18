@@ -441,6 +441,52 @@ tasks:
       # docs, CI and eight other tasks call it.
       - task: zen:generate:l10n
 
+  generate:icons:
+    desc: Generate every platform icon and launch screen from brand/jzen-icon.svg
+    summary: |
+      brand/jzen-icon.svg is the single master. sharp (via pnpm) rasterises it into the PNG masters
+      under brand/build; flutter_launcher_icons and flutter_native_splash, the Flutter tools that
+      already know each platform's file layout, produce the icon sets and launch screens in both
+      demo apps; sharp covers what they do not (the maskable web icons, the Linux window icon, the
+      admin favicon, the zen_ui_navigation example).
+
+      The result is tracked, binary and rewritten by this task, so it is NOT part of `generate` or
+      the verify:contracts drift gate: a re-encoded PNG differs byte for byte across sharp builds
+      without the picture changing. Change the master, run this, commit the output.
+    vars:
+      SHARP: pnpm --dir {{.ROOT_DIR}}/brand exec sharp
+      SVG: "{{.ROOT_DIR}}/brand/jzen-icon.svg"
+      OUT: "{{.ROOT_DIR}}/brand/build"
+    cmds:
+      - pnpm --dir brand install --frozen-lockfile
+      - mkdir -p {{.OUT}}
+      - "{{.SHARP}} -i {{.SVG}} -o {{.OUT}}/icon.png resize 1024 1024"
+      # The mark spans nearly the whole canvas; maskable and adaptive icons crop to a ~40% radius
+      # safe zone, so those masters shrink it onto the same background (1024 = 192 + 640 + 192).
+      - "{{.SHARP}} -i {{.SVG}} -o {{.OUT}}/icon-padded.png resize 640 640 -- extend 192 192 192 192 --background '#275559'"
+      - "{{.SHARP}} -i {{.SVG}} -o {{.OUT}}/icon-256.png resize 256 256"
+      - "{{.SHARP}} -i {{.SVG}} -o {{.OUT}}/icon-192.png resize 192 192"
+      - "{{.SHARP}} -i {{.OUT}}/icon-padded.png -o {{.OUT}}/icon-maskable-192.png resize 192 192"
+      - "{{.SHARP}} -i {{.OUT}}/icon-padded.png -o {{.OUT}}/icon-maskable-512.png resize 512 512"
+      - for: [apps/zen_demo/zen_demo_client, apps/zen_demo_local/zen_demo_local_client, client/zen_ui_navigation/example]
+        cmd: cd {{.ITEM}} && dart run flutter_launcher_icons -f flutter_launcher_icons.yaml
+      - for: [apps/zen_demo/zen_demo_client, apps/zen_demo_local/zen_demo_local_client]
+        cmd: cd {{.ITEM}} && dart run flutter_native_splash:create --path=flutter_native_splash.yaml
+      # Both Flutter tools also rewrite two iOS files beyond the icon assets: flutter_launcher_icons
+      # corrupts ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS in project.pbxproj
+      # (a boolean setting, rewritten to "AppIcon"), and flutter_native_splash re-indents
+      # Info.plist and adds a UIStatusBarHidden default. Neither is wanted, so restore them.
+      - for: [apps/zen_demo/zen_demo_client, apps/zen_demo_local/zen_demo_local_client]
+        cmd: git checkout -- {{.ITEM}}/ios/Runner.xcodeproj/project.pbxproj {{.ITEM}}/ios/Runner/Info.plist
+      # flutter_launcher_icons writes the maskable web icons from the full-bleed image; replace
+      # them with the padded ones.
+      - for: [apps/zen_demo/zen_demo_client, client/zen_ui_navigation/example]
+        cmd: cp {{.OUT}}/icon-maskable-192.png {{.OUT}}/icon-maskable-512.png {{.ITEM}}/web/icons/
+      - mkdir -p apps/zen_demo/zen_demo_admin/public
+      - cp {{.OUT}}/icon-192.png apps/zen_demo/zen_demo_admin/public/favicon.png
+      - for: [apps/zen_demo/zen_demo_client, apps/zen_demo_local/zen_demo_local_client]
+        cmd: mkdir -p {{.ITEM}}/linux/runner/resources && cp {{.OUT}}/icon-256.png {{.ITEM}}/linux/runner/resources/app_icon.png
+
   # The application half of the contract loop (schema emit + TS generation) is delegated to
   # Taskfile.app.yml (ADR-049): it is written against the app server pom and the app panel, not
   # against zen_demo. The framework's OWN proto generation (generate:proto:java / :dart above)

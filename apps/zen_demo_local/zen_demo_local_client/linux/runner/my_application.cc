@@ -16,6 +16,23 @@ static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
 
+// Sets the window icon from data/app_icon.png beside the executable (installed by
+// CMakeLists.txt from runner/resources/app_icon.png, which `task generate:icons` writes from
+// brand/jzen-icon.svg). A missing file is reported, not ignored.
+static void set_window_icon(GtkWindow* window) {
+  g_autofree gchar* exe = g_file_read_link("/proc/self/exe", nullptr);
+  if (exe == nullptr) {
+    g_warning("Cannot locate the executable, so the window icon is not set");
+    return;
+  }
+  g_autofree gchar* dir = g_path_get_dirname(exe);
+  g_autofree gchar* path = g_build_filename(dir, "data", "app_icon.png", nullptr);
+  g_autoptr(GError) error = nullptr;
+  if (!gtk_window_set_icon_from_file(window, path, &error)) {
+    g_warning("Failed to load the window icon %s: %s", path, error->message);
+  }
+}
+
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
@@ -34,6 +51,8 @@ static void my_application_activate(GApplication* application) {
   // gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
 
   gtk_window_set_title(window, "zen_demo_local_client");
+
+  set_window_icon(window);
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(

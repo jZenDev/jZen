@@ -295,6 +295,65 @@ class RegisterRequest extends $pb.GeneratedMessage {
   void clearRedirectUri() => $_clearField(3);
 }
 
+/// PUT /api/v1/auth/language request body. Changes the signed-in caller's own stored language -
+/// the column every localized message sent outside a request (email above all) reads.
+class SetLanguageRequest extends $pb.GeneratedMessage {
+  factory SetLanguageRequest({
+    $core.String? language,
+  }) {
+    final result = create();
+    if (language != null) result.language = language;
+    return result;
+  }
+
+  SetLanguageRequest._();
+
+  factory SetLanguageRequest.fromBuffer($core.List<$core.int> data,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromBuffer(data, registry);
+  factory SetLanguageRequest.fromJson($core.String json,
+          [$pb.ExtensionRegistry registry = $pb.ExtensionRegistry.EMPTY]) =>
+      create()..mergeFromJson(json, registry);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(
+      _omitMessageNames ? '' : 'SetLanguageRequest',
+      package: const $pb.PackageName(_omitMessageNames ? '' : 'zen.v1'),
+      createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'language')
+    ..hasRequiredFields = false;
+
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SetLanguageRequest clone() => deepCopy();
+  @$core.Deprecated('See https://github.com/google/protobuf.dart/issues/998.')
+  SetLanguageRequest copyWith(void Function(SetLanguageRequest) updates) =>
+      super.copyWith((message) => updates(message as SetLanguageRequest))
+          as SetLanguageRequest;
+
+  @$core.override
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static SetLanguageRequest create() => SetLanguageRequest._();
+  @$core.override
+  SetLanguageRequest createEmptyInstance() => create();
+  @$core.pragma('dart2js:noInline')
+  static SetLanguageRequest getDefault() => _defaultInstance ??=
+      $pb.GeneratedMessage.$_defaultFor<SetLanguageRequest>(create);
+  static SetLanguageRequest? _defaultInstance;
+
+  /// A language tag the application supports (`zen.i18n.supported`). A region-qualified tag such
+  /// as "pl-PL" is matched on its primary subtag and stored as "pl", the same way registration
+  /// stores it. A tag the application does not support is refused, never replaced by the fallback.
+  @$pb.TagNumber(1)
+  $core.String get language => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set language($core.String value) => $_setString(0, value);
+  @$pb.TagNumber(1)
+  $core.bool hasLanguage() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearLanguage() => $_clearField(1);
+}
+
 /// POST /api/v1/auth/restore-password request body. Triggers the Supabase recovery email.
 class RestorePasswordRequest extends $pb.GeneratedMessage {
   factory RestorePasswordRequest({

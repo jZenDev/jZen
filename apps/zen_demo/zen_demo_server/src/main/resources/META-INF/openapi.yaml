@@ -122,6 +122,16 @@ components:
           description: >-
             Required unless the session came from verifying a Supabase recovery link, which the
             server decides from the session's own authentication method, never from this request.
+    SetLanguageRequest:
+      type: object
+      description: >-
+        Body for PUT /api/v1/auth/language; changes the signed-in caller's own stored language.
+      properties:
+        language:
+          type: string
+          description: >-
+            A language the application supports. A region-qualified tag is matched on its primary
+            subtag; an unsupported tag is refused with 400, never replaced by the fallback.
     Ping:
       type: object
       description: GET /api/v1/demo/ping response; message localized from Accept-Language.

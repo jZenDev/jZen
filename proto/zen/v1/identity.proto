@@ -57,6 +57,15 @@ message RegisterRequest {
   string redirect_uri = 3;
 }
 
+// PUT /api/v1/auth/language request body. Changes the signed-in caller's own stored language -
+// the column every localized message sent outside a request (email above all) reads.
+message SetLanguageRequest {
+  // A language tag the application supports (`zen.i18n.supported`). A region-qualified tag such
+  // as "pl-PL" is matched on its primary subtag and stored as "pl", the same way registration
+  // stores it. A tag the application does not support is refused, never replaced by the fallback.
+  string language = 1;
+}
+
 // POST /api/v1/auth/restore-password request body. Triggers the Supabase recovery email.
 message RestorePasswordRequest {
   string email = 1;

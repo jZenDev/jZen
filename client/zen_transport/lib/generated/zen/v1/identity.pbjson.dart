@@ -66,6 +66,19 @@ final $typed_data.Uint8List registerRequestDescriptor = $convert.base64Decode(
     'Cg9SZWdpc3RlclJlcXVlc3QSFAoFZW1haWwYASABKAlSBWVtYWlsEhoKCHBhc3N3b3JkGAIgAS'
     'gJUghwYXNzd29yZBIhCgxyZWRpcmVjdF91cmkYAyABKAlSC3JlZGlyZWN0VXJp');
 
+@$core.Deprecated('Use setLanguageRequestDescriptor instead')
+const SetLanguageRequest$json = {
+  '1': 'SetLanguageRequest',
+  '2': [
+    {'1': 'language', '3': 1, '4': 1, '5': 9, '10': 'language'},
+  ],
+};
+
+/// Descriptor for `SetLanguageRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List setLanguageRequestDescriptor =
+    $convert.base64Decode(
+        'ChJTZXRMYW5ndWFnZVJlcXVlc3QSGgoIbGFuZ3VhZ2UYASABKAlSCGxhbmd1YWdl');
+
 @$core.Deprecated('Use restorePasswordRequestDescriptor instead')
 const RestorePasswordRequest$json = {
   '1': 'RestorePasswordRequest',

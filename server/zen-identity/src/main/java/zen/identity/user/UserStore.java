@@ -204,6 +204,30 @@ public class UserStore {
     return value == null || value.isBlank() ? null : value;
   }
 
+  /**
+   * The stored form of {@code tag} when this application supports it, otherwise empty. Unlike the
+   * registration path this never falls back: a caller choosing a language must learn that the
+   * choice was refused rather than be given another one.
+   */
+  public Optional<String> supportedLanguage(String tag) {
+    return ZenLocales.match(tag, supported());
+  }
+
+  /**
+   * Sets one user's {@code users.language} and touches no other column or row. {@code language}
+   * must already be a value {@link #supportedLanguage} returned. Returns whether a profile row
+   * existed to update.
+   */
+  @Transactional
+  public boolean setLanguage(UUID id, String language) {
+    return Panache.getEntityManager()
+            .createNativeQuery("UPDATE users SET language = ?1 WHERE id = ?2")
+            .setParameter(1, language)
+            .setParameter(2, id)
+            .executeUpdate()
+        > 0;
+  }
+
   @Transactional
   public User findById(UUID id) {
     return User.findById(id);

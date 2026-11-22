@@ -2,14 +2,17 @@ package zen.identity.auth;
 
 import zen.core.http.ZenStatus;
 import zen.identity.IdentityMapper;
+import zen.identity.AuthException;
 import zen.identity.IdentityService;
 import zen.identity.user.User;
+import zen.identity.user.UserStore;
 import zen.proto.v1.Identity;
 import zen.proto.v1.AuthConfirmRequest;
 import zen.proto.v1.LoginRequest;
 import zen.proto.v1.RegisterRequest;
 import zen.proto.v1.RestorePasswordRequest;
 import zen.proto.v1.SessionExchangeRequest;
+import zen.proto.v1.SetLanguageRequest;
 import zen.proto.v1.SetPasswordRequest;
 import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
@@ -20,6 +23,7 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.HttpHeaders;
@@ -75,6 +79,7 @@ public class AuthResource {
   @Inject IdentityService identityService;
   @Inject SessionService sessionService;
   @Inject IdentityMapper identityMapper;
+  @Inject UserStore userStore;
   @Inject SecurityIdentity securityIdentity;
   @Inject JsonWebToken jwt;
 
@@ -254,6 +259,36 @@ public class AuthResource {
      * signed this device out along with every other one.
      */
     return Response.noContent().cookie(sessionCookies(session)).build();
+  }
+
+  @PUT
+  @Path("/language")
+  @Authenticated
+  @Consumes({MediaType.APPLICATION_JSON, PROTOBUF})
+  @Operation(summary = "Change the signed-in caller's own language")
+  @RequestBody(content = @Content(schema = @Schema(ref = "SetLanguageRequest")))
+  @APIResponse(responseCode = ZenStatus.NO_CONTENT, description = "Language stored")
+  @APIResponse(responseCode = ZenStatus.UNAUTHORIZED, description = "No active session")
+  @APIResponse(
+      responseCode = ZenStatus.BAD_REQUEST,
+      description = "The language is not one this application supports (ZenError)")
+  public Response setLanguage(SetLanguageRequest request) {
+    /*
+     * The caller is the only row this can touch: the id comes from the verified session, never
+     * from the body. A tag is matched on its primary subtag ("pl-PL" is stored as "pl", exactly as
+     * registration stores it) and a tag outside zen.i18n.supported is refused - the fallback is
+     * deliberately not applied, because a client that believes it saved "pl" and was given "en"
+     * is the defect this route exists to remove. The message does not echo the submitted value.
+     */
+    UUID userId = currentUserId();
+    String language = userStore.supportedLanguage(request.getLanguage()).orElse(null);
+    if (language == null) {
+      throw new AuthException(400, "invalid_language", "This language is not supported.");
+    }
+    if (userId == null || !userStore.setLanguage(userId, language)) {
+      throw AuthException.unauthorized("No active session.");
+    }
+    return Response.noContent().build();
   }
 
   /**

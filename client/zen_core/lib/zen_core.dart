@@ -8,6 +8,7 @@
 /// - The supported locale set (ZenLocales), mirroring the server's zen.core.i18n.ZenLocales
 library;
 
+export 'src/i18n/zen_locale_preference.dart';
 export 'src/i18n/zen_locales.dart';
 export 'src/logging/zen_logger.dart';
 export 'src/response/base_response.dart';

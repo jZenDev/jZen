@@ -75,6 +75,7 @@ that the triggering operation never happened.
 | `app_links` 7.2.1 | Receives OS-delivered confirmation/recovery URLs. Reviewed macOS implementation uses Apple events and Flutter channels; no network/discovery API found. |
 | `flutter_secure_storage_darwin` 0.3.2 | Refresh token in the Keychain via `SecItem*`; app options use device-only accessibility. No outbound/discovery implementation found in the reviewed Apple source. |
 | `path_provider_foundation` 2.6.0 | Filesystem paths; appears in plugin metadata as `native_build=false` on the inspected toolchain. Reviewed source has no discovery/network implementation. |
+| `shared_preferences_foundation` 2.5.7 | The chosen UI language, via `NSUserDefaults`. Reviewed Apple source (`SharedPreferencesPlugin.swift`, `messages.g.swift`) imports only Foundation and Flutter; no `URLSession`, `Network.framework`, socket or Bonjour use, and the podspec describes it as a wrapper over `NSUserDefaults`. |
 | Apple custom URL scheme `zendemo` | Auth callback delivery, not LAN discovery. Neither Apple source Info.plist requests camera, microphone, location or local-network access. |
 | Android INTERNET, all modes | Configured backend. The built debug APK contains no nearby Wi-Fi/Bluetooth/location permission. |
 | AndroidX `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | App-scoped signature permission in the merged APK, protecting internal broadcast receivers; it is not a nearby-device capability. |

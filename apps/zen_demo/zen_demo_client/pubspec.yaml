@@ -37,6 +37,8 @@ dependencies:
   zen_ui_widgets:
     path: ../../../client/zen_ui_widgets
   app_links: ^7.2.1
+  # The device-side home of the chosen language (a preference, not a secret, so not the keystore).
+  shared_preferences: ^2.5.3
   meta: ^1.16.0
 
   material_ui: ^1.11.0

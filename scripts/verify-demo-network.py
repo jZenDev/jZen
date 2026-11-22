@@ -13,12 +13,15 @@ import subprocess
 from pathlib import Path
 
 DEMO = Path('apps/zen_demo/zen_demo_client')
-APPLE_PLUGINS = {'app_links', 'flutter_secure_storage_darwin', 'path_provider_foundation'}
+APPLE_PLUGINS = {
+    'app_links', 'flutter_secure_storage_darwin', 'path_provider_foundation',
+    'shared_preferences_foundation',
+}
 # These are the versions whose Apple implementations were reviewed in issue 199,
 # not dependency resolution inputs. A new version needs another source audit.
 REVIEWED_APPLE_VERSIONS = {
     'app_links': '7.2.1', 'flutter_secure_storage_darwin': '0.3.2',
-    'path_provider_foundation': '2.6.0',
+    'path_provider_foundation': '2.6.0', 'shared_preferences_foundation': '2.5.7',
 }
 ENTITLEMENTS = {
     'com.apple.security.app-sandbox', 'com.apple.security.network.client',

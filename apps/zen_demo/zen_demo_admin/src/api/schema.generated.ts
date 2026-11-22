@@ -356,6 +356,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/language": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Change the signed-in caller's own language */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetLanguageRequest"];
+                    "application/x-protobuf": components["schemas"]["SetLanguageRequest"];
+                };
+            };
+            responses: {
+                /** @description Language stored */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description The language is not one this application supports (ZenError) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description No active session */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Not Allowed */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -1066,6 +1126,11 @@ export interface components {
             password?: string;
             /** @description Required unless the session came from verifying a Supabase recovery link, which the server decides from the session's own authentication method, never from this request. */
             currentPassword?: string;
+        };
+        /** @description Body for PUT /api/v1/auth/language; changes the signed-in caller's own stored language. */
+        SetLanguageRequest: {
+            /** @description A language the application supports. A region-qualified tag is matched on its primary subtag; an unsupported tag is refused with 400, never replaced by the fallback. */
+            language?: string;
         };
         /** @description GET /api/v1/demo/ping response; message localized from Accept-Language. */
         Ping: {

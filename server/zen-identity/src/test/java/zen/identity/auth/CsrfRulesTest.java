@@ -20,6 +20,7 @@ class CsrfRulesTest {
   void aMutatingApiCallIsInScope() {
     assertTrue(CsrfRules.applies("POST", "/api/v1/auth/logout"));
     assertTrue(CsrfRules.applies("POST", "/api/v1/auth/password"));
+    assertTrue(CsrfRules.applies("PUT", "/api/v1/auth/language"));
     assertTrue(CsrfRules.applies("POST", "/api/v1/auth/confirm"));
     assertTrue(CsrfRules.applies("PUT", "/api/v1/admin/users/abc"));
     assertTrue(CsrfRules.applies("DELETE", "/api/v1/admin/users/abc"));

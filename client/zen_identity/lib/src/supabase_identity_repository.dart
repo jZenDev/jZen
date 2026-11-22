@@ -31,6 +31,7 @@ class SupabaseIdentityRepository implements IdentityRepository {
   static const String _session = '/api/v1/auth/session';
   static const String _confirm = '/api/v1/auth/confirm';
   static const String _password = '/api/v1/auth/password';
+  static const String _language = '/api/v1/auth/language';
   static const String _refresh = '/api/v1/auth/refresh';
   static const String _logout = '/api/v1/auth/logout';
   static const String _identity = '/api/v1/auth/identity';
@@ -135,6 +136,16 @@ class SupabaseIdentityRepository implements IdentityRepository {
       body.currentPassword = currentPassword;
     }
     final result = await _client.post(pb.Identity.new, _password, body: body);
+    return result.fold((_) => const ZenResult<void>.ok(null), ZenResult<void>.err);
+  }
+
+  @override
+  Future<ZenResult<void>> setLanguage(String language) async {
+    final result = await _client.put(
+      pb.Identity.new,
+      _language,
+      body: pb.SetLanguageRequest(language: language),
+    );
     return result.fold((_) => const ZenResult<void>.ok(null), ZenResult<void>.err);
   }
 

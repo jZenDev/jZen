@@ -55,6 +55,10 @@ class _ConfirmingRepository implements IdentityRepository {
       const ZenResult.ok(null);
 
   @override
+  Future<ZenResult<void>> setLanguage(String language) async =>
+      const ZenResult.err(ZenUnknownError('not implemented'));
+
+  @override
   Future<ZenResult<IdentityContract>> refreshSession() async =>
       const ZenResult.err(ZenUnknownError('refresh not used'));
 

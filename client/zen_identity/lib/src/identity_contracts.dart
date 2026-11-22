@@ -165,6 +165,19 @@ abstract class IdentityRepository {
   /// server refuses the change with `current_password_required`.
   Future<ZenResult<void>> setPassword({required String password, String? currentPassword});
 
+  /// Changes the signed-in caller's own language on the server.
+  ///
+  /// `users.language` is what the server localizes every message it sends outside a request in
+  /// (email above all), and registration is the only other moment it is written, so an
+  /// application with a language picker calls this when the person picks one.
+  ///
+  /// [language] is a tag the application's server supports (`zen.i18n.supported`); a
+  /// region-qualified tag such as `pl-PL` is stored as `pl`. A tag the server does not support is
+  /// refused with an error and the stored language is left as it was - never silently replaced by
+  /// the fallback. This does not touch the interface language on the device, which the application
+  /// owns and which must work before any session exists.
+  Future<ZenResult<void>> setLanguage(String language);
+
   /// Rebuilds a session from the refresh token the client already holds.
   ///
   /// Sends no body: the refresh token travels as a cookie, so the caller's business is only to

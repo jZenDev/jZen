@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_identity/zen_identity.dart';
 import 'package:zen_secure_store/zen_secure_store.dart';
@@ -11,6 +12,7 @@ import 'src/auth_deep_links.dart';
 import 'src/backend_network.dart';
 import 'src/demo_repository.dart';
 import 'src/providers.dart';
+import 'src/shared_preferences_locale_store.dart';
 
 /// Wires the reference app to the real backend. One session [http.Client]
 /// ([createSessionClient], the compile-time platform seam: a native cookie jar or a credentialed
@@ -24,11 +26,15 @@ import 'src/providers.dart';
 /// happen by itself. A browser persists its own cookies; a native process loses everything, so
 /// before this a user signed in again on every launch. [SecureTokenStore] keeps the refresh token
 /// in the platform keystore and [IdentitySessionStore] spends it on the next start.
-void main() {
+Future<void> main() async {
   installBackendNetwork(zenApiUrl);
   // Plugins are reached over platform channels, and the keystore is a plugin, so the binding has
   // to exist before the store is constructed.
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Loaded before the first frame so the language the person chose last time can be read
+  // synchronously and the app never flashes the fallback first.
+  final preferences = await SharedPreferences.getInstance();
 
   // `zenIsWeb` is a const, so this whole branch folds away at compile time: a web build carries
   // no keystore code, and a native build carries no dead check. This is the same compile-time
@@ -76,6 +82,12 @@ void main() {
 
   container = ProviderContainer(
     overrides: [
+      localePreferenceProvider.overrideWithValue(
+        ZenLocalePreference(
+          supported: demoSupportedLocales,
+          store: SharedPreferencesLocaleStore(preferences),
+        ),
+      ),
       identityRepositoryProvider.overrideWithValue(identityRepository),
       demoRepositoryProvider.overrideWithValue(demoRepository),
       // The SAME client the repositories use, not another one: the store restores the refresh

@@ -55,6 +55,21 @@ to reach the host through device loopback instead of allowing a LAN gateway addr
 See the [network audit](../../../docs/security/zen-demo-network.md) for evidence,
 remaining platform limitations and verification commands.
 
+## The language picker remembers its choice
+
+`localeProvider` starts in the language the person chose last time, else the device's language if
+it is in `demoSupportedLocales`, else `ZenLocales.fallback`, and a stored tag that is no longer
+supported falls through to the next source instead of throwing. The sign-in screen is shown before
+any session exists, so this involves no server.
+
+The mechanism is the framework's: `ZenLocalePreference` and the `ZenLocaleStore` port in
+`zen_core`, which hold the order above and the supported-list check. Only the storage is the
+app's (`SharedPreferencesLocaleStore`, loaded before `runApp` so the first frame is already in the
+right language). **Do not copy an in-memory `Notifier` that returns the fallback from `build()`**:
+it forgets the choice on every launch. This is separate from the server's copy of the language,
+`users.language`, which decides the language of e-mail and is changed with
+`IdentityRepository.setLanguage`.
+
 ## Widget Showcase
 
 Sign in to zen_demo and select **Showcase** in the navigation. This interactive page demonstrates

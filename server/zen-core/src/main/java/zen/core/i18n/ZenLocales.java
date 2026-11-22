@@ -2,6 +2,7 @@ package zen.core.i18n;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 
 /**
  * The locales jZen itself ships messages and templates for. {@link #SHIPPED} is the single
@@ -62,11 +63,22 @@ public final class ZenLocales {
    * user-visible language, so a tag jZen ships nothing for survives instead of being clamped.
    */
   public static String resolve(String tag, List<String> supported) {
+    return match(tag, supported).orElse(FALLBACK);
+  }
+
+  /**
+   * The primary subtag of {@code tag} when {@code supported} contains it, otherwise empty - the
+   * same comparison as {@link #resolve(String, List)} but without the fallback.
+   *
+   * <p>For a caller that must tell "this language" from "some other language was substituted": a
+   * person who asks to be addressed in Polish must be refused, not silently given English.
+   */
+  public static Optional<String> match(String tag, List<String> supported) {
     if (tag == null || tag.isBlank()) {
-      return FALLBACK;
+      return Optional.empty();
     }
     String primary = tag.trim().split("[-_]")[0].toLowerCase(Locale.ROOT);
-    return supported.contains(primary) ? primary : FALLBACK;
+    return supported.contains(primary) ? Optional.of(primary) : Optional.empty();
   }
 
   /** Resolves against {@link #SHIPPED} - the locales jZen itself has strings for. */

@@ -54,6 +54,10 @@ class _IdleRepository implements IdentityRepository {
       const ZenResult.err(ZenUnknownError('not implemented'));
 
   @override
+  Future<ZenResult<void>> setLanguage(String language) async =>
+      const ZenResult.err(ZenUnknownError('not implemented'));
+
+  @override
   // No fake here resumes a persisted session: sessionClientProvider defaults to null, so the
   // store returns before it would ever call this. Failing loudly beats a silent empty success.
   Future<ZenResult<IdentityContract>> refreshSession() async =>

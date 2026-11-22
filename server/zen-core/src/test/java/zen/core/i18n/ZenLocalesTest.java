@@ -3,6 +3,7 @@ package zen.core.i18n;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Locale;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,5 +41,14 @@ class ZenLocalesTest {
   @Test
   void fromAcceptLanguageIsCaseInsensitiveEvenUnderTheTurkishLocale() {
     assertEquals("en", ZenLocales.fromAcceptLanguage("EN-US,UK;q=0.5", List.of("en", "uk")));
+  }
+
+  @Test
+  void matchNarrowsToThePrimarySubtagButNeverFallsBack() {
+    List<String> supported = List.of("en", "uk");
+    assertEquals(Optional.of("uk"), ZenLocales.match("uk-UA", supported));
+    assertEquals(Optional.empty(), ZenLocales.match("pl", supported));
+    assertEquals(Optional.empty(), ZenLocales.match(" ", supported));
+    assertEquals(Optional.empty(), ZenLocales.match(null, supported));
   }
 }

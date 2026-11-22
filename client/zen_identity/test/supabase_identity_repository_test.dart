@@ -258,6 +258,39 @@ void main() {
     });
   });
 
+  group('setLanguage', () {
+    test('PUTs the tag to /auth/language and succeeds on a 204', () async {
+      String? method;
+      Map<String, dynamic>? sent;
+      final repo = repoReturning((req) {
+        method = req.method;
+        expect(req.url.path, '/api/v1/auth/language');
+        sent = jsonDecode(req.body) as Map<String, dynamic>;
+        return http.Response('', 204, headers: {'x-zen-transport': 'json'});
+      });
+
+      final result = await repo.setLanguage('pl');
+
+      expect(result.isSuccess, isTrue);
+      expect(method, 'PUT');
+      expect(sent, {'language': 'pl'});
+    });
+
+    test('surfaces a refusal rather than reporting the language as saved', () async {
+      final repo = repoReturning(
+        (req) => http.Response(
+          jsonEncode({'code': 'invalid_language', 'message': 'This language is not supported.'}),
+          400,
+          headers: {'x-zen-transport': 'json', 'content-type': 'application/json'},
+        ),
+      );
+
+      final result = await repo.setLanguage('xx');
+
+      expect(result.isSuccess, isFalse);
+    });
+  });
+
   group('logout', () {
     test('returns ok on a 204', () async {
       final repo = repoReturning((req) {

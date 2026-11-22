@@ -69,6 +69,10 @@ class _FakeRepo implements IdentityRepository {
       setPasswordResult;
 
   @override
+  Future<ZenResult<void>> setLanguage(String language) async =>
+      const ZenResult.err(ZenUnknownError('not implemented'));
+
+  @override
   Future<ZenResult<IdentityContract>> loginWithEmail({
     required String email,
     required String password,

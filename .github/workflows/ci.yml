@@ -105,6 +105,11 @@ jobs:
       - name: One widget per file
         run: task verify:widget-files
 
+      # Cheap and structural: an in-SDK Material import is only an analyzer info, so it passes every
+      # suite. ADR-082.
+      - name: Design libraries from material_ui / cupertino_ui
+        run: task verify:design-imports
+
       # An applied Flyway migration is append-only: a reworded comment changes its checksum and
       # stops every consumer database that applied it (ADR-071).
       - name: Applied migrations unchanged

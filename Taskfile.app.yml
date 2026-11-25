@@ -742,6 +742,49 @@ tasks:
         fi
         python3 "{{.JZEN_DIR}}/scripts/verify-widget-files.py" "$@" {{.DART_ROOTS}}
 
+  verify:design-imports:
+    desc: Fail if a Dart file imports package:flutter/material.dart or cupertino.dart
+    silent: true
+    summary: |
+      Enforces ADR-082: since Flutter 3.50 the in-SDK Material and Cupertino libraries are
+      deprecated, and jZen code imports the standalone `package:material_ui/material_ui.dart` and
+      `package:cupertino_ui/cupertino_ui.dart` instead.
+
+      WHY A GATE. The analyzer reports the old imports as `deprecated_member_use`, at info level,
+      and an info fails no build and no suite: a stray `import 'package:flutter/material.dart'`
+      compiles, renders and passes every test while the SDK's removal deadline, which jZen does not
+      control, gets closer. A rule nothing checks is a preference.
+
+      It scans every `.dart` file under DART_ROOTS (default: CLIENT_DIR) — `lib/`, `test/`,
+      `example/`, `tool/` — and exits non-zero on an `import` or `export` of
+      `package:flutter/material.dart`, `package:flutter/cupertino.dart` or anything under
+      `package:flutter/src/material/` or `.../cupertino/`, in any spelling (`show`, `hide`, `as`,
+      raw string, several lines). A comment, a doc example or a string that only mentions one is
+      not an import. `flutter/widgets.dart`, `flutter/services.dart` and `flutter_localizations`
+      are not Material or Cupertino and are left alone. It also exits non-zero when the scan could
+      not be made — a root that does not exist, one with no package under it, a file that cannot
+      be read, a scan that read no Dart file — because "we did not look" never shares an exit
+      code with "clean".
+
+      NO EXEMPTIONS. There is no suppression file: the only thing an exemption could carry is the
+      import ADR-082 forbids, and a dependency that still needs the SDK library is what
+      `MaterialUiCompatibilityBridge` is for.
+
+      NOT COVERED: the gate reads imports, not behaviour. The runtime trap found in the migration —
+      a generated `XLocalizations.localizationsDelegates` registering the SDK's
+      `GlobalMaterialLocalizations`, which `material_ui`'s `MaterialApp` does not look up — has no
+      import to ban, because generated l10n legitimately imports `flutter_localizations`; the
+      suites that run under the `uk` locale catch it.
+
+      Part of `test:client`, so an application that already runs that gate inherits this one with
+      no change of its own. Implementation: `scripts/verify-design-imports.py`, covered by
+      `task test:scripts` in the jZen checkout.
+    cmds:
+      - |
+        set -eu
+        cd "{{.ROOT_DIR}}"
+        python3 "{{.JZEN_DIR}}/scripts/verify-design-imports.py" {{.DART_ROOTS}}
+
   test:client:
     desc: Run every Dart/Flutter suite in the application's packages
     silent: true
@@ -759,6 +802,9 @@ tasks:
       # First, and cheap: a structural rule no test catches, because a file with two widgets passes
       # every suite. See verify:widget-files.
       - task: verify:widget-files
+      # Also cheap and structural: the analyzer reports an in-SDK Material import as an info, which
+      # fails nothing. See verify:design-imports.
+      - task: verify:design-imports
       - task: generate:l10n
       - |
         set -e

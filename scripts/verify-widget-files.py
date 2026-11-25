@@ -12,7 +12,7 @@ type-parameter bound — which is Rule 3. A `grep '^class .* extends StatelessWi
 common case and misses `abstract class`, a generic bound, a prefixed import and a doc comment that
 quotes a class, and it cannot tell the lines it should not count from the lines it should.
 
-**How a class is found.** `_blank_non_code` replaces every comment and string literal with
+**How a class is found.** `lib.blank_dart_non_code` replaces every comment and string literal with
 whitespace, keeping the newlines, so the declarations are matched against code only and a reported
 line number is the real one. Strings are the part that earns its keep: a `${...}` interpolation can
 hold a nested string (`'${a['b']}'`), so the string scanner recurses into it rather than ending at
@@ -121,88 +121,7 @@ class Result:
 
 
 # --- lexing ----------------------------------------------------------------------------------
-
-
-def _blank_non_code(src: str) -> str:
-    """`src` with every comment and string literal replaced by spaces, newlines kept.
-
-    The length and the line structure are preserved, so an offset into the result is an offset into
-    the original and a line number counted in it is the real one.
-    """
-    out = list(src)
-    n = len(src)
-
-    def blank(a: int, b: int) -> None:
-        for k in range(a, min(b, n)):
-            if out[k] != "\n":
-                out[k] = " "
-
-    def skip_block_comment(i: int) -> int:
-        depth = 0
-        while i < n:
-            if src.startswith("/*", i):
-                depth += 1
-                i += 2
-            elif src.startswith("*/", i):
-                depth -= 1
-                i += 2
-                if depth == 0:
-                    return i
-            else:
-                i += 1
-        return n
-
-    def skip_string(i: int) -> int:
-        quote = src[i]
-        raw = i > 0 and src[i - 1] == "r" and (
-            i < 2 or not (src[i - 2].isalnum() or src[i - 2] in "_$")
-        )
-        delim = quote * 3 if src.startswith(quote * 3, i) else quote
-        j = i + len(delim)
-        while j < n:
-            if not raw and src[j] == "\\":
-                j += 2
-            elif not raw and src.startswith("${", j):
-                j = skip_code(j + 2, True)
-            elif src.startswith(delim, j):
-                j += len(delim)
-                break
-            elif len(delim) == 1 and src[j] == "\n":
-                break  # unterminated single-line string: stop at the line rather than eat the file
-            else:
-                j += 1
-        blank(i, j)
-        return j
-
-    def skip_code(i: int, in_interpolation: bool) -> int:
-        depth = 0
-        while i < n:
-            c = src[i]
-            if src.startswith("//", i):
-                j = src.find("\n", i)
-                j = n if j < 0 else j
-                blank(i, j)
-                i = j
-            elif src.startswith("/*", i):
-                j = skip_block_comment(i)
-                blank(i, j)
-                i = j
-            elif c in "'\"":
-                i = skip_string(i)
-            elif c == "{":
-                depth += 1
-                i += 1
-            elif c == "}":
-                if depth == 0 and in_interpolation:
-                    return i + 1
-                depth -= 1
-                i += 1
-            else:
-                i += 1
-        return n
-
-    skip_code(0, False)
-    return "".join(out)
+# (comments and strings are blanked by `lib.blank_dart_non_code`, shared with verify-design-imports)
 
 
 def _balanced_angle(text: str, start: int) -> int:
@@ -236,7 +155,7 @@ def _header(code: str, pos: int) -> str:
 
 def parse_classes(src: str) -> "list[DartClass]":
     """Every class declared in `src`, with the base it extends and that base's first type argument."""
-    code = _blank_non_code(src)
+    code = lib.blank_dart_non_code(src)
     found: "list[DartClass]" = []
     for m in CLASS_DECL.finditer(code):
         header = _header(code, m.end())

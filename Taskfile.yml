@@ -969,6 +969,7 @@ tasks:
       - task: verify:boundaries
       - task: verify:modules
       - task: verify:widget-files
+      - task: verify:design-imports
       - task: verify:migrations
       - task: verify:ui-docs
       - task: test:scripts
@@ -1123,11 +1124,11 @@ tasks:
       - pnpm exec vitest run
 
   test:scripts:
-    desc: Run the fixture tests for the Python dev scripts (the boundary, modules, docs, widget-files, migrations and CVE gates)
+    desc: Run the fixture tests for the Python dev scripts (the boundary, modules, docs, widget-files, design-imports, migrations and CVE gates)
     silent: true
     summary: |
       Covers the scripts on the Python side of STANDARDS "Scripting" — `verify:boundaries`,
-      `verify:modules`, `verify:docs`, `verify:widget-files`, `seed-admin`, `audit-maven`, and `deploy-cleanup` (against stub `gcloud` and `docker`).
+      `verify:modules`, `verify:docs`, `verify:widget-files`, `verify:design-imports`, `seed-admin`, `audit-maven`, and `deploy-cleanup` (against stub `gcloud` and `docker`).
 
       `audit-maven`'s tests are about one property above all: that the gate cannot report a clean
       result when it checked nothing. That is not a hypothetical — it is what disqualified both
@@ -3034,6 +3035,18 @@ tasks:
       contract. Covered by `task test:scripts`.
     cmds:
       - task: zen:verify:widget-files
+
+  verify:design-imports:
+    desc: Fail if a Dart file imports package:flutter/material.dart or cupertino.dart
+    silent: true
+    summary: |
+      The framework's own run of the gate it ships to applications: `zen:verify:design-imports` in
+      Taskfile.app.yml, pointed at both pub workspaces (`client` and `apps`). The rule is ADR-082
+      (the design libraries come from `material_ui` / `cupertino_ui`, never the in-SDK ones);
+      `task zen:verify:design-imports --summary` has the operator contract. It has no exemption
+      list. Covered by `task test:scripts`.
+    cmds:
+      - task: zen:verify:design-imports
 
   verify:ui-docs:
     desc: Check public UI widgets have guide entries and examples

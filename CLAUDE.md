@@ -33,6 +33,7 @@ Common commands (`task --list` for all):
 | `task generate` | Regenerate every cross-language artifact — no gate, always green if the generators succeed |
 | `task verify:contracts` | Regenerate, then **fail if any committed generated file drifted** — the contract-drift gate; wire into CI |
 | `task verify:widget-files` | Fail if a Dart file defines more than one widget (`State` pairs with its widget) — also the first step of `zen:test:client`, so apps inherit it |
+| `task verify:design-imports` | Fail if a Dart file imports `package:flutter/material.dart` or `cupertino.dart` (ADR-082) — also a step of `zen:test:client`; no exemption list |
 | `task run:server` | Quarkus dev mode (live reload) on `:8080` |
 | `task run:demo` | Boot Supabase + backend + zen_demo for a manual walkthrough |
 | `task run:admin` | Admin panel dev server on `:5173` (proxies `/api`) |

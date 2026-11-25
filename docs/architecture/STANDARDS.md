@@ -673,7 +673,7 @@ fixes one screen.
 
 **Use the framework control whenever one exists; reach for the raw widget only when none does.**
 
-The raw widget comes from `package:material_ui` / `package:cupertino_ui`; `package:flutter/material.dart` and `cupertino.dart` are deprecated since Flutter 3.50 and are not imported (ADR-082).
+The raw widget comes from `package:material_ui` / `package:cupertino_ui`; `package:flutter/material.dart` and `cupertino.dart` are deprecated since Flutter 3.50 and are not imported (ADR-082). This is checked, not remembered: `task verify:design-imports` (`scripts/verify-design-imports.py`) fails on an `import` or `export` of either library, in any spelling, across `lib/`, `test/` and `example/` of every package; it runs in `task test`, in CI and as a step of `zen:test:client`, and has no exemption list. The analyzer reports the same import only as an info, which fails nothing.
 
 | You need | Use (`zen_ui_widgets`) | Not |
 |---|---|---|

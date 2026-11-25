@@ -181,6 +181,33 @@ error. `scripts/widget-files-suppressions.txt` is jZen's own and is empty. An ap
 `WIDGET_FILES_SUPPRESSIONS` on its `includes:` entry to name its own. An exemption must say what the
 file carries that splitting would lose; an entry whose file stops holding two widgets fails the gate.
 
+## 🎨 verify-design-imports.py — the in-SDK Material/Cupertino import gate
+
+Run by `task verify:design-imports` (also part of `task test`, CI, and a step of the
+application-facing `zen:test:client`, so an application including `Taskfile.app.yml` inherits it).
+It scans every `.dart` file under the paths it is given — `lib/`, `test/`, `example/`, `tool/`,
+generated code included — and exits non-zero on an `import` or `export` of `package:flutter/material.dart`,
+`package:flutter/cupertino.dart` or anything under `package:flutter/src/material/` or `.../cupertino/`.
+The rule is ADR-082: the design libraries come from `material_ui` and `cupertino_ui`. The analyzer
+reports the old imports only as an info, which fails no build and no suite, so this gate is what makes
+the rule bind.
+
+```
+scripts/verify-design-imports.py PATH...
+```
+
+Each `PATH` is a Dart package or a directory holding packages. A hit prints the file, the line and the
+import to use instead. Comments, doc examples and strings that merely mention an import are not
+imports: the directive is read from source with comments and strings blanked (`lib.blank_dart_non_code`,
+shared with `verify-widget-files.py`).
+
+**It fails when it cannot look.** A path that does not exist, a path with no package under it, a file
+that cannot be read, a `.dart` file that is a symlink out of its root, and a scan that found no Dart
+file at all each exit 1 with the reason.
+
+**There is no suppression file.** The only thing an exemption could carry is the import ADR-082
+forbids; a dependency that still needs the SDK library is what `MaterialUiCompatibilityBridge` is for.
+
 ## 🗄️ verify-migrations.py — the applied-migrations-are-append-only gate
 
 Run by `task verify:migrations` (also part of `task test` and CI). It lists every versioned

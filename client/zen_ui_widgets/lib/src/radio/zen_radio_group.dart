@@ -42,6 +42,10 @@ class ZenRadioOption<T extends Object> {
 /// "Monthly, radio button, selected, 2 of 3". Tab enters the group on the selected option (the
 /// first when nothing is selected) and leaves it; the arrow keys move the choice, skipping
 /// disabled options and wrapping at the ends; a [FocusRing] marks the focused option.
+///
+/// A list that comes from data may hold a single option. It is shown and announced like any
+/// other, and a null [value] leaves it unchosen until a tap or Space chooses it; the arrow keys
+/// have nowhere to move. A fixed yes/no is a `ZenCheckboxRow`, not a one-option group.
 class ZenRadioGroup<T extends Object> extends StatelessWidget {
   /// Creates a group named [label] offering [options].
   const ZenRadioGroup({
@@ -55,7 +59,7 @@ class ZenRadioGroup<T extends Object> extends StatelessWidget {
   /// What the group chooses; also its accessible name.
   final String label;
 
-  /// The choices, in display order. At least two, with distinct values.
+  /// The choices, in display order. At least one, with distinct values.
   final List<ZenRadioOption<T>> options;
 
   /// The value of the chosen option, or null when none is chosen.
@@ -66,7 +70,7 @@ class ZenRadioGroup<T extends Object> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    assert(options.length >= 2, 'a radio group offers at least two options');
+    assert(options.isNotEmpty, 'a radio group offers at least one option');
     assert(
       options.map((ZenRadioOption<T> option) => option.value).toSet().length == options.length,
       'radio option values must be unique',

@@ -28,6 +28,10 @@ typedef Build =
       ValueChanged<Plan>? onChanged,
     );
 
+const List<ZenRadioOption<Plan>> single = <ZenRadioOption<Plan>>[
+  ZenRadioOption<Plan>(value: Plan.monthly, label: 'Monthly'),
+];
+
 final Map<String, Build> builds = <String, Build>{
   'material': buildMaterialRadioGroup<Plan>,
   'cupertino': buildCupertinoRadioGroup<Plan>,
@@ -59,20 +63,43 @@ void main() {
     expect(find.text('Billing'), findsOneWidget);
   });
 
-  testWidgets('rejects a group with duplicate values or a single option', (tester) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ZenRadioGroup<Plan>(
-          label: 'Billing',
-          options: const <ZenRadioOption<Plan>>[
-            ZenRadioOption<Plan>(value: Plan.monthly, label: 'A'),
-          ],
-          value: null,
-          onChanged: (_) {},
+  for (final MapEntry<String, List<ZenRadioOption<Plan>>> rejected
+      in <String, List<ZenRadioOption<Plan>>>{
+        'no options': const <ZenRadioOption<Plan>>[],
+        'duplicate values': const <ZenRadioOption<Plan>>[
+          ZenRadioOption<Plan>(value: Plan.monthly, label: 'A'),
+          ZenRadioOption<Plan>(value: Plan.monthly, label: 'B'),
+        ],
+      }.entries) {
+    testWidgets('rejects a group with ${rejected.key}', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ZenRadioGroup<Plan>(
+            label: 'Billing',
+            options: rejected.value,
+            value: null,
+            onChanged: (_) {},
+          ),
         ),
+      );
+      expect(tester.takeException(), isAssertionError);
+    });
+  }
+
+  testWidgets('accepts a single option, as a list that comes from data may hold', (tester) async {
+    await pumpApp(
+      tester,
+      ZenRadioGroup<Plan>(
+        label: 'Billing',
+        options: const <ZenRadioOption<Plan>>[
+          ZenRadioOption<Plan>(value: Plan.monthly, label: 'Monthly'),
+        ],
+        value: null,
+        onChanged: (_) {},
       ),
     );
-    expect(tester.takeException(), isAssertionError);
+    expect(tester.takeException(), isNull);
+    expect(find.text('Monthly'), findsOneWidget);
   });
 
   for (final MapEntry<String, Build> entry in builds.entries) {
@@ -217,6 +244,89 @@ void main() {
           matching: find.byType(FocusRing),
         );
         expect(isRinged(tester, first.first), isTrue);
+      }, semanticsEnabled: false);
+
+      testWidgets('a single option is one named radio that starts unchosen', (tester) async {
+        final SemanticsHandle handle = tester.ensureSemantics();
+        Plan? chosen;
+        final List<Plan> seen = <Plan>[];
+        await pumpApp(
+          tester,
+          StatefulBuilder(
+            builder: (BuildContext context, StateSetter set) => radioGroup(
+              entry.value,
+              value: chosen,
+              onChanged: (Plan p) {
+                seen.add(p);
+                set(() => chosen = p);
+              },
+              choices: single,
+            ),
+          ),
+        );
+
+        SemanticsData only() => radios(tester).single;
+        expect(only().label, contains('Monthly'));
+        expect(only().flagsCollection.isChecked, CheckedState.isFalse);
+        expect(isEnabled(only()), isTrue);
+        expect(seen, isEmpty);
+
+        await tester.tap(find.text('Monthly'));
+        await tester.pumpAndSettle();
+        expect(seen, <Plan>[Plan.monthly]);
+        expect(only().flagsCollection.isChecked, CheckedState.isTrue);
+        handle.dispose();
+      });
+
+      testWidgets('a single option: Tab lands on it, arrows stay, Space chooses', (tester) async {
+        Plan? chosen;
+        final List<Plan> seen = <Plan>[];
+        await pumpApp(
+          tester,
+          StatefulBuilder(
+            builder: (BuildContext context, StateSetter set) => Column(
+              children: <Widget>[
+                radioGroup(
+                  entry.value,
+                  value: chosen,
+                  onChanged: (Plan p) {
+                    seen.add(p);
+                    set(() => chosen = p);
+                  },
+                  choices: single,
+                ),
+                const TextField(key: Key('after')),
+              ],
+            ),
+          ),
+        );
+        final Finder ring = find.ancestor(
+          of: find.text('Monthly'),
+          matching: find.byType(FocusRing),
+        );
+
+        await press(tester, LogicalKeyboardKey.tab);
+        expect(isRinged(tester, ring.first), isTrue);
+        for (final LogicalKeyboardKey arrow in <LogicalKeyboardKey>[
+          LogicalKeyboardKey.arrowDown,
+          LogicalKeyboardKey.arrowUp,
+          LogicalKeyboardKey.arrowLeft,
+          LogicalKeyboardKey.arrowRight,
+        ]) {
+          await press(tester, arrow);
+        }
+        expect(seen, isEmpty, reason: 'there is nothing to move to');
+        expect(isRinged(tester, ring.first), isTrue);
+
+        await press(tester, LogicalKeyboardKey.space);
+        expect(seen, <Plan>[Plan.monthly]);
+
+        await press(tester, LogicalKeyboardKey.tab);
+        expect(
+          FocusManager.instance.primaryFocus?.context?.findAncestorWidgetOfExactType<TextField>(),
+          isNotNull,
+        );
+        expect(tester.takeException(), isNull);
       }, semanticsEnabled: false);
 
       testWidgets('long labels fit at 200% on a narrow screen', (tester) async {

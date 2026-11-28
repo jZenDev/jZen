@@ -105,7 +105,7 @@ final class ZenChoiceIssueAction implements ZenIssueAction {
   @override
   final String label;
 
-  /// The candidates as (id, label); at least one.
+  /// The candidates as (id, label); at least one. With nothing to choose, leave the action out.
   final List<(String, String)> choices;
 
   /// What it does with the chosen id.

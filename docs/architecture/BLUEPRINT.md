@@ -372,6 +372,7 @@ only, whose model sits in its own `proto/` rather than `proto/zen/v1/`. These pa
   version not replaced by another: different fields and equal values combine, and two surviving
   versions of one field — or a delete against an edit that never saw it — are a conflict. A
   conflicted record is still readable, refuses `put`/`delete`, and is settled only by `resolve`.
+  Its sides hold every version in dispute, so one device can have several (ADR-089).
 - **`zen_store_key`** — the store's key on every platform (`ZenDeviceStoreKey`): Keychain, Android
   Keystore, Windows Credential Manager or libsecret, this device only; it refuses to make a key
   beside existing files (ADR-075).
@@ -407,8 +408,8 @@ SAF, camera QR scanning, Windows and Linux hardware, and the unreached transport
 Linux binary. **Known open:** the macOS data-protection Keychain answers `-34018` in an unsigned (ad-hoc)
 sandboxed build, so a macOS **non-release dev** build (`ZEN_ENV=dev`, not `--release`; the Taskfile defaults `ZEN_ENV` to `dev`) keeps the store key and PIN hash in the
 login keychain (ADR-087), while a release build keeps the data-protection Keychain, which the free team does provision for a debug build (a `--release` build was not run).
-- **`zen_ui_store`** — the choice. A banner while conflicts wait, the list of them, and each
-  device's version side by side, plus `ZenSyncStatusBanner`, which says why sync stopped; a record is named by the app's `title`, a field by its proto name
+- **`zen_ui_store`** — the choice. A banner while conflicts wait, the list of them, and every
+  version side by side, plus `ZenSyncStatusBanner`, which says why sync stopped; a record is named by the app's `title`, a field by its proto name
   and value unless the app formats it.
 - **`zen_ui_lock`** — the door. An optional PIN: a PBKDF2 hash in the Keychain, shut-out after
   repeated misses, a gate in `MaterialApp.builder` that covers every route while locked or in the

@@ -9,8 +9,8 @@ import '../state/zen_conflict_sweep.dart';
 /// with one device's version, after saying how many and whose.
 ///
 /// It lists the records the choice settles, and names the ones it leaves — a delete against an
-/// edit, or a record a third device also changed — so nothing is settled that the person was not
-/// shown. Opened from `ZenConflictsScreen`.
+/// edit, a record a third device also changed, or one with several versions from one device — so
+/// nothing is settled that the person was not shown. Opened from `ZenConflictsScreen`.
 class ZenConflictBulkScreen extends StatefulWidget {
   /// The records and the pair of devices the choice is between.
   final ZenConflictSweep sweep;

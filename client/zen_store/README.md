@@ -159,17 +159,33 @@ opens — so an app normally only places the banner. Underneath, it is this:
 
 ```dart
 for (final conflict in accounts.conflicts().dataOrNull!) {
-  // conflict.sides: each device's version, latest first — deviceName, at, value (null = deleted)
+  // conflict.sides: every version in dispute, latest first — deviceName, at, value (null = deleted)
   final choice = await askThePerson(conflict);
   await accounts.resolve(conflict.id, choice);    // null deletes; syncs to every device
 }
 ```
 
+**`sides` is complete, and is not one per device** (ADR-089). Between them the sides hold every
+surviving value of every field in `conflict.fields`, every delete, and every edit a delete had not
+seen; devices holding the same state answer the same sides. Usually each device has one. It has
+several when two versions in dispute carry its name: two devices wrote the same value, one merged
+them into a single version under the other's name, and that other device changed the field again
+before receiving the merge. So do not look a side up by device or count sides as devices, and to
+ask whether the sides agree about something — an amount, a reference to a record you are about to
+delete — compare **all** of them:
+
+```dart
+final amounts = {for (final side in conflict.sides) side.value?.amount};  // null: deleted
+```
+
+With several disputed fields, each value appears in some side, though not every combination does.
+
 `ZenConflictsScreen` also settles many at once: when two devices disagree on several records (one
 bank statement imported on both, each row differing in its category), a row offers "keep this
 device's version for all N" or the other device's, after naming the count and both devices. Only a
-plain disagreement between exactly those two devices is swept in; a delete against an edit, or a
-record a third device also changed, is named and left for its own choice. A record that changed
+plain disagreement between exactly those two devices, one version each, is swept in; a delete
+against an edit, a record a third device also changed, or one with several versions from one device
+is named and left for its own choice. A record that changed
 after it was shown is skipped, and the screen says how many it settled.
 
 Until it is resolved a record in conflict is still **shown** (each disputed field from its latest

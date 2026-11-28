@@ -50,10 +50,11 @@ final class ZenConflictSource<T extends GeneratedMessage> {
           title: _title(conflict),
           isCurrent: () => _isCurrent(conflict),
           sides: [
-            for (final side in conflict.sides)
+            for (final (index, side) in conflict.sides.indexed)
               ZenConflictSideView(
                 device: side.device,
                 deviceName: side.deviceName,
+                number: _number(conflict, index),
                 at: side.at,
                 isDelete: side.isDelete,
                 fields: side.value == null
@@ -69,18 +70,36 @@ final class ZenConflictSource<T extends GeneratedMessage> {
     ]);
   }
 
-  /// Whether [shown] is still exactly what the store holds: the same devices, each with the same
-  /// version. A sync can add a side or change one after a screen was drawn.
+  /// Which of the sides under one name the side at [index] is, and how many there are — one
+  /// device with two versions, or two devices a person gave the same name. Null for a name only
+  /// one side has.
+  (int, int)? _number(ZenConflict<T> conflict, int index) {
+    final name = conflict.sides[index].deviceName;
+    final named = [
+      for (final (i, side) in conflict.sides.indexed)
+        if (side.deviceName == name) i,
+    ];
+    return named.length < 2 ? null : (named.indexOf(index) + 1, named.length);
+  }
+
+  /// Whether [shown] is still exactly what the store holds: the same sides, each a device with a
+  /// version. A device can have several, so they are matched one for one and never looked up by
+  /// device. A sync can add a side or change one after a screen was drawn.
   bool _isCurrent(ZenConflict<T> shown) {
     final now = collection.conflictFor(shown.id).dataOrNull;
     if (now == null || now.sides.length != shown.sides.length) return false;
     if (now.fields.length != shown.fields.length || !now.fields.containsAll(shown.fields)) {
       return false;
     }
-    final byDevice = {for (final side in now.sides) side.device: side.value};
-    return shown.sides.every(
-      (side) => byDevice.containsKey(side.device) && byDevice[side.device] == side.value,
-    );
+    final unmatched = now.sides.toList();
+    return shown.sides.every((side) {
+      final match = unmatched.indexWhere(
+        (other) => other.device == side.device && other.value == side.value,
+      );
+      if (match < 0) return false;
+      unmatched.removeAt(match);
+      return true;
+    });
   }
 
   String? _title(ZenConflict<T> conflict) {
@@ -144,13 +163,17 @@ final class ZenConflictView {
   });
 }
 
-/// One device's side of a conflict, as the screens show it.
+/// One side of a conflict, as the screens show it. A device can have several.
 @internal
 @immutable
 final class ZenConflictSideView {
   /// The device's id, which tells two devices of the same name apart.
   final String device;
   final String deviceName;
+
+  /// This side's number among the sides under [deviceName], from 1, and how many there are; null
+  /// when it is the only one, and the name alone tells it apart.
+  final (int, int)? number;
   final DateTime at;
   final bool isDelete;
 
@@ -163,6 +186,7 @@ final class ZenConflictSideView {
   const ZenConflictSideView({
     required this.device,
     required this.deviceName,
+    required this.number,
     required this.at,
     required this.isDelete,
     required this.fields,

@@ -130,39 +130,103 @@ final class ZenRecordState {
         entry.key: ?(chosen[entry.key] ?? _latest(entry.value)).bytes,
   });
 
-  /// The authors of the versions in conflict, latest first: who changed a field differently, or
-  /// who deleted the record and who edited it without having seen the delete.
-  List<String> get conflictAuthors {
-    final deletions = [...?fields[existenceField]?.where((version) => version.bytes == null)];
-    final versions = <ZenFieldVersion>[
-      for (final field in conflictingFields) ...fields[field]!,
-      if (isDeleteConflict) ...deletions,
+  /// The sides of the conflict, latest first; empty when there is none.
+  ///
+  /// Between them they hold **every** version in dispute: each surviving value of each conflicting
+  /// field, each delete, and each edit a delete had not seen. A device has one side, unless two
+  /// versions in dispute carry its name — it wrote a field again without having received the merge
+  /// that attributed an equal edit to it — in which case it has one side per value, so none is
+  /// hidden behind another. A delete is always a side of its own.
+  ///
+  /// The answer depends only on the versions held, never on the order a merge listed them in, so
+  /// devices holding the same state answer the same sides.
+  List<ZenRecordSide> get conflictSides {
+    if (!isInConflict) return const [];
+    final deletions = [
+      if (isDeleteConflict) ...?fields[existenceField]?.where((version) => version.bytes == null),
+    ]..sort(_newestFirst);
+    final disputed = {
+      for (final field in conflictingFields.toList()..sort())
+        field: fields[field]!.toList()..sort(_newestFirst),
+    };
+    // What puts a device on a value side: its versions of the disputed fields, and its edits a
+    // delete had not seen — clearing a field is such an edit, so its null bytes count here, while
+    // in the existence field null bytes are the delete itself.
+    final edits = <ZenFieldVersion>[
+      for (final versions in disputed.values) ...versions,
       if (isDeleteConflict)
-        for (final entry in fields.entries)
-          for (final version in entry.value)
-            if (version.bytes != null &&
+        for (final MapEntry(key: field, value: versions) in fields.entries)
+          for (final version in versions)
+            if ((field != existenceField || version.bytes != null) &&
                 deletions.every((deletion) => !version.vector.isCoveredBy(deletion.vector)))
               version,
     ]..sort(_newestFirst);
-    return {for (final version in versions) version.author}.toList();
+
+    final authors = {for (final version in deletions.followedBy(edits)) version.author}.toList()
+      ..sort();
+    final ranked = <(ZenFieldVersion, ZenRecordSide)>[];
+    for (final author in authors) {
+      final own = <(ZenFieldVersion, Map<int, ZenFieldVersion>?)>[];
+      final authored = edits.where((version) => version.author == author).toList();
+      if (authored.isNotEmpty) {
+        // This device's distinct values of each disputed field, latest first.
+        final values = {
+          for (final MapEntry(key: field, value: versions) in disputed.entries)
+            field: _distinctValues(versions.where((version) => version.author == author)),
+        }..removeWhere((_, versions) => versions.isEmpty);
+        final count = values.values.fold(1, (most, v) => v.length > most ? v.length : most);
+        for (var i = 0; i < count; i++) {
+          // What ranks and dates a side: for the first, the device's latest edit in dispute; for
+          // a further one, the latest value no side before it shows. A field with fewer values
+          // than there are sides repeats its oldest, so each side is still a whole record.
+          final introduced = i == 0
+              ? authored
+              : ([
+                  for (final versions in values.values)
+                    if (i < versions.length) versions[i],
+                ]..sort(_newestFirst));
+          own.add((
+            introduced.first,
+            {
+              for (final MapEntry(key: field, value: versions) in values.entries)
+                field: versions[i < versions.length ? i : versions.length - 1],
+            },
+          ));
+        }
+      }
+      final deletion = deletions.where((version) => version.author == author).firstOrNull;
+      if (deletion != null) own.add((deletion, null));
+      for (final (rank, chosen) in own) {
+        // A device with one side is dated by its last write to the record; with several, each is
+        // dated by what sets it apart.
+        final at = own.length == 1 ? _lastWriteBy(author) : rank.atMillis;
+        ranked.add((rank, ZenRecordSide(author, at, chosen)));
+      }
+    }
+    // Ties keep the order built above (by device, then values before the delete), which `sort`
+    // alone would not promise.
+    final order = List.generate(ranked.length, (i) => i)
+      ..sort((a, b) {
+        final byRank = _newestFirst(ranked[a].$1, ranked[b].$1);
+        return byRank != 0 ? byRank : a.compareTo(b);
+      });
+    return [for (final i in order) ranked[i].$2];
   }
 
   /// The latest time [author] wrote to this record.
-  int lastWriteBy(String author) => fields.values
+  int _lastWriteBy(String author) => fields.values
       .expand((versions) => versions)
       .where((version) => version.author == author)
       .fold(0, (latest, version) => version.atMillis > latest ? version.atMillis : latest);
 
-  /// What [author] wrote to each conflicting field, for showing their side of the conflict.
-  Map<int, ZenFieldVersion> versionsBy(String author) => {
-    for (final field in conflictingFields)
-      field: ?fields[field]!.where((version) => version.author == author).firstOrNull,
-  };
-
-  /// Whether [author] is the one who deleted the record.
-  bool deletedBy(String author) =>
-      fields[existenceField]?.any((version) => version.author == author && version.bytes == null) ??
-      false;
+  /// The first of [versions] to hold each value.
+  static List<ZenFieldVersion> _distinctValues(Iterable<ZenFieldVersion> versions) {
+    final distinct = <ZenFieldVersion>[];
+    for (final version in versions) {
+      if (!distinct.any((kept) => _sameBytes(kept.bytes, version.bytes))) distinct.add(version);
+    }
+    return distinct;
+  }
 
   /// Merges [other]'s knowledge of the same record into this one. Returns whether anything changed.
   ///
@@ -241,10 +305,31 @@ final class ZenRecordState {
   static ZenFieldVersion _latest(List<ZenFieldVersion> versions) =>
       (versions.toList()..sort(_newestFirst)).first;
 
+  /// A total order over values: the later write, then the device id, then the bytes — so that two
+  /// versions one device wrote in the same millisecond are not ordered by how a merge happened to
+  /// list them.
   static int _newestFirst(ZenFieldVersion a, ZenFieldVersion b) {
     final byTime = b.atMillis.compareTo(a.atMillis);
-    return byTime != 0 ? byTime : b.author.compareTo(a.author);
+    if (byTime != 0) return byTime;
+    final byAuthor = b.author.compareTo(a.author);
+    return byAuthor != 0 ? byAuthor : compareBytes(b.bytes, a.bytes);
   }
+}
+
+/// One side of a record in conflict.
+@internal
+@immutable
+final class ZenRecordSide {
+  /// The device whose side this is.
+  final String author;
+
+  /// When that device wrote it, by its own clock.
+  final int atMillis;
+
+  /// The versions of the disputed fields this side holds, or null when it is a delete.
+  final Map<int, ZenFieldVersion>? versions;
+
+  const ZenRecordSide(this.author, this.atMillis, this.versions);
 }
 
 /// The versions of one field that survive a merge: every version not replaced by another, and,

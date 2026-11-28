@@ -205,10 +205,10 @@ final class ZenCollection<T extends GeneratedMessage> {
 
   ZenResult<ZenConflict<T>> _conflict(ZenRecordState record) {
     final sides = <ZenConflictSide<T>>[];
-    for (final author in record.conflictAuthors) {
+    for (final side in record.conflictSides) {
       T? value;
-      if (!record.deletedBy(author)) {
-        switch (_read(record.id, record.visibleBytes(chosen: record.versionsBy(author)))) {
+      if (side.versions case final versions?) {
+        switch (_read(record.id, record.visibleBytes(chosen: versions))) {
           case ZenSuccess(:final data):
             value = data;
           case ZenFailure(:final error):
@@ -217,9 +217,9 @@ final class ZenCollection<T extends GeneratedMessage> {
       }
       sides.add(
         ZenConflictSide(
-          device: author,
-          deviceName: _store.nameOf(author),
-          at: DateTime.fromMillisecondsSinceEpoch(record.lastWriteBy(author)),
+          device: side.author,
+          deviceName: _store.nameOf(side.author),
+          at: DateTime.fromMillisecondsSinceEpoch(side.atMillis),
           value: value,
         ),
       );

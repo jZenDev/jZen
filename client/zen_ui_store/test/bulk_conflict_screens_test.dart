@@ -77,6 +77,10 @@ void main() {
   });
 
   testWidgets('a delete against an edit is named and left, not swept in', (tester) async {
+    // Tall enough that every name in the list is built.
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await setUp(tester);
     await openBulk(tester);
 

@@ -5,8 +5,9 @@ import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 import '../l10n/generated/store_localizations.dart';
 import '../state/zen_conflict_source.dart';
 
-/// One device's version of a record in conflict: where and when it was written, what it holds in
-/// the disputed fields (or that it is a delete), and the button that keeps it.
+/// One version of a record in conflict: where and when it was written, what it holds in the
+/// disputed fields (or that it is a delete), and the button that keeps it. Where several versions
+/// carry one device name, the heading numbers them.
 class ZenConflictSideCard extends StatelessWidget {
   /// The version shown.
   final ZenConflictSideView side;
@@ -40,10 +41,15 @@ class ZenConflictSideCard extends StatelessWidget {
             children: [
               Semantics(
                 header: true,
-                child: Text(
-                  messages.sideHeading(side.deviceName, time),
-                  style: theme.textTheme.titleMedium,
-                ),
+                child: Text(switch (side.number) {
+                  (final number, final count) => messages.sideHeadingNumbered(
+                    side.deviceName,
+                    number,
+                    count,
+                    time,
+                  ),
+                  null => messages.sideHeading(side.deviceName, time),
+                }, style: theme.textTheme.titleMedium),
               ),
               const SizedBox(height: 12),
               if (side.isDelete)

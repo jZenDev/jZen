@@ -15,7 +15,16 @@ final class ZenConflict<T> {
   /// The record's id.
   final String id;
 
-  /// What each device that took part has, latest first.
+  /// Every version in dispute, latest first: between them, each surviving value of each field in
+  /// [fields], each delete, and each edit a delete had not seen. Devices holding the same state
+  /// answer the same sides.
+  ///
+  /// Usually one side per device that took part. **A device can have several**
+  /// ([ZenConflictSide.device] repeats): two devices set a field to the same value, one merged the
+  /// two into one version under the other's name, and that other device changed the field again
+  /// before receiving the merge. Both values are then under its name, each with its own side. So
+  /// never index sides by device, and never take the number of sides for the number of devices.
+  /// To ask whether the sides agree about something, compare the values of all of them.
   final List<ZenConflictSide<T>> sides;
 
   /// The proto field numbers set to different values on different devices; empty when the
@@ -38,7 +47,7 @@ final class ZenConflict<T> {
   String toString() => 'ZenConflict($collection/$id, fields: $fields, sides: $sides)';
 }
 
-/// One device's side of a [ZenConflict].
+/// One version a [ZenConflict] is between, and the device it is attributed to.
 @immutable
 final class ZenConflictSide<T> {
   /// The device's id.
@@ -47,10 +56,13 @@ final class ZenConflictSide<T> {
   /// The name a person knows the device by, as that device gave it.
   final String deviceName;
 
-  /// When that device last wrote to the record, by its own clock — for showing, never deciding.
+  /// When that device wrote it, by its own clock — for showing, never deciding. For a device with
+  /// one side, its last write to the record; for one with several, the write that sets this side
+  /// apart (two sides can still share a time).
   final DateTime at;
 
-  /// The record as that device has it, or null when that device deleted it.
+  /// The record with this side's values of the disputed fields, or null when this side is a
+  /// delete. A disputed field this device did not write is shown from its latest version.
   final T? value;
 
   /// Creates a side; the store builds these.

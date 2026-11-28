@@ -5,8 +5,8 @@ import '../l10n/generated/store_localizations.dart';
 import '../state/zen_conflict_source.dart';
 import '../widgets/zen_conflict_side_card.dart';
 
-/// Every device's version of one record in conflict, side by side, each with a button that keeps
-/// it. Opened from `ZenConflictsScreen`.
+/// Every version of one record in conflict, side by side, each with a button that keeps it.
+/// Opened from `ZenConflictsScreen`.
 class ZenConflictResolveScreen extends StatefulWidget {
   /// The conflict shown.
   final ZenConflictView conflict;

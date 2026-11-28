@@ -378,8 +378,11 @@ only, whose model sits in its own `proto/` rather than `proto/zen/v1/`. These pa
 - **`zen_store_cloudkit`** — the sync. `CKSyncEngine` against the user's private
   database, one record per store record in a custom zone, its state in an `encryptedValues` field
   (end to end, keys in iCloud Keychain); a save refused because another device saved first is
-  merged by the store and sent again. Also iOS Data Protection `complete` on the store's
-  directory (`ZenDataProtection`).
+  merged by the store and sent again. The engine's state, with CloudKit's change token, is saved
+  only after everything delivered before it: a change the store cannot write waits, and one it
+  cannot write or read before the app stops is left for CloudKit to deliver again from the old
+  state, which has not been run against real CloudKit (ADR-088). Also iOS Data Protection `complete` on the
+  store's directory (`ZenDataProtection`).
   Swift, SwiftPM only.
 - **`zen_store_shared_folder`** — the sync on Android, Windows and Linux (ADR-076). A folder the
   person chooses and a sync service of their own keeps in step: `<key id>/<device id>/<hmac>.zen` (ADR-085), one

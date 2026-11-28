@@ -1,3 +1,4 @@
+import CloudKit
 import CryptoKit
 import Foundation
 import Security
@@ -16,6 +17,13 @@ public struct ZenRecordNames: Sendable {
 
   public init(key: SymmetricKey) {
     self.key = key
+  }
+
+  /// Whether system fields archived for [archived] may carry a save of [id]: the same record name
+  /// in the same zone. The zone's owner is not compared. In the private database it is always this
+  /// account, and nothing here relies on how CloudKit spells that in a record it returns.
+  public static func isSameRecord(_ archived: CKRecord.ID, as id: CKRecord.ID) -> Bool {
+    archived.recordName == id.recordName && archived.zoneID.zoneName == id.zoneID.zoneName
   }
 
   /// The CloudKit record name for [name]: 64 lower-case hex digits, the same on every device that

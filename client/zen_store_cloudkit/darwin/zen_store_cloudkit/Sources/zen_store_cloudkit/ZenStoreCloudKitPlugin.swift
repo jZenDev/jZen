@@ -43,6 +43,7 @@ public class ZenStoreCloudKitPlugin: NSObject, FlutterPlugin {
         zone: zone,
         state: state
       )
+      self.bridge?.detach()
       self.bridge = bridge
       Task {
         await bridge.start()
@@ -74,7 +75,7 @@ public class ZenStoreCloudKitPlugin: NSObject, FlutterPlugin {
         }
       }
     case "stop":
-      bridge?.stop()
+      bridge?.detach()
       bridge = nil
       result(nil)
     default:

@@ -1287,7 +1287,7 @@ tasks:
   stop:supabase:
     desc: Stop the local Supabase stack
     cmds:
-      - supabase stop
+      - task: zen:stop:supabase
 
   # ---------------------------------------------------------------------------
   # Deploy

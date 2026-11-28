@@ -27,11 +27,12 @@
 #   RUN_DEV_CLIENT_DIR    app client package dir (absolute)
 #   RUN_DEV_FLUTTER_ARGS  extra `flutter run` args, space-separated (device flags)
 #   RUN_DEV_DEFINES       --dart-define flags, space-separated
+#   RUN_DEV_STOP_TASK     the task that stops Supabase, named as the caller can run it
 # SUPABASE_URL / SUPABASE_KEY / CORS_ORIGINS are inherited from the task's environment.
 set -euo pipefail
 
 : "${RUN_DEV_PORT:?}" "${RUN_DEV_API:?}" "${RUN_DEV_POM:?}"
-: "${RUN_DEV_JZEN_DIR:?}" "${RUN_DEV_CLIENT_DIR:?}"
+: "${RUN_DEV_JZEN_DIR:?}" "${RUN_DEV_CLIENT_DIR:?}" "${RUN_DEV_STOP_TASK:?}"
 
 client_pidfile="$(mktemp "${TMPDIR:-/tmp}/zen-run-dev-client.XXXXXX")"
 server_pid=""
@@ -50,7 +51,7 @@ stop_all() {
   trap - INT TERM EXIT
   echo
   echo "==> run:dev: stopping client and server"
-  echo "    Supabase is left running — stop it with 'task stop:supabase'"
+  echo "    Supabase is left running — stop it with 'task ${RUN_DEV_STOP_TASK}'"
 
   cp=$(cat "${client_pidfile}" 2>/dev/null || true)
   # `set -m` made each child a process-group leader (pgid == pid), so a negative pid

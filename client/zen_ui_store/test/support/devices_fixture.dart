@@ -13,7 +13,11 @@ final class DevicesFixture {
   final Map<String, ZenStore> stores;
   final List<ZenFolderCloud> clouds;
 
-  DevicesFixture._(this.root, this.stores, this.clouds);
+  /// Whether a device is online only inside [syncAll] and [sync], so that what it writes
+  /// between two of them is made without having seen the others.
+  final bool offline;
+
+  DevicesFixture._(this.root, this.stores, this.clouds, this.offline);
 
   ZenStore operator [](String device) => stores[device]!;
 
@@ -21,7 +25,7 @@ final class DevicesFixture {
 
   /// File I/O never completes under a widget test's fake clock, so callers run this inside
   /// `tester.runAsync`.
-  static Future<DevicesFixture> create(List<String> deviceNames) async {
+  static Future<DevicesFixture> create(List<String> deviceNames, {bool offline = false}) async {
     final root = await Directory.systemTemp.createTemp('zen_ui_store_devices');
     final stores = <String, ZenStore>{};
     final clouds = <ZenFolderCloud>[];
@@ -33,21 +37,36 @@ final class DevicesFixture {
         now: () => DateTime.utc(2026, 10, 1, 9 + deviceNames.indexOf(name)).millisecondsSinceEpoch,
       )).dataOrNull!;
       stores[name] = store;
-      clouds.add(
-        (await ZenFolderCloud.start(
-          store,
-          Directory('${root.path}/cloud'),
-          pollEvery: null,
-        )).dataOrNull!,
-      );
+      if (!offline) clouds.add(await _start(root, store));
     }
-    return DevicesFixture._(root, stores, clouds);
+    return DevicesFixture._(root, stores, clouds, offline);
+  }
+
+  static Future<ZenFolderCloud> _start(Directory root, ZenStore store) async =>
+      (await ZenFolderCloud.start(
+        store,
+        Directory('${root.path}/cloud'),
+        pollEvery: null,
+      )).dataOrNull!;
+
+  /// One sync of [device] in an [offline] fixture.
+  Future<void> sync(String device) async {
+    assert(offline);
+    final cloud = await _start(root, this[device]);
+    await cloud.syncNow();
+    await cloud.stop();
   }
 
   Future<void> syncAll() async {
     for (var round = 0; round < 3; round++) {
-      for (final cloud in clouds) {
-        await cloud.syncNow();
+      if (offline) {
+        for (final device in stores.keys) {
+          await sync(device);
+        }
+      } else {
+        for (final cloud in clouds) {
+          await cloud.syncNow();
+        }
       }
     }
   }

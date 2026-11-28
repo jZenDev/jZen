@@ -75,12 +75,16 @@ Register `storeLocaleDelegate` in `MaterialApp.localizationsDelegates`.
 - **The banner**: "2 items were changed on two devices and need your choice", with **Review**. It
   takes no space when there is nothing to decide.
 - **The list** (`ZenConflictsScreen`): each record by the app's own title, with the devices
-  involved. It refreshes when the store changes, so a conflict settled on another device leaves on
-  its own.
-- **The versions** (`ZenConflictResolveScreen`): one card per device — its name, when it wrote,
-  and the disputed fields' values — each with **Keep this version**. For a delete against an edit,
+  involved, each named once ("Phone (2 versions)" where one device has two). It refreshes when the
+  store changes, so a conflict settled on another device leaves on its own.
+- **The versions** (`ZenConflictResolveScreen`): one card per version — the device's name, when it
+  wrote, and the disputed fields' values — each with **Keep this version**. Cards under one name
+  are numbered ("Phone, version 1 of 2"): a device can have several versions in dispute
+  (ADR-089), and two devices can be named alike. For a delete against an edit,
   one card says "Deleted on this device" (**Keep it deleted**), and the other shows every field of
-  the edited record, so the person sees what deleting would throw away.
+  the edited record, so the person sees what deleting would throw away. A choice is saved only
+  against the versions shown: when a sync has changed the record since, nothing is written, and
+  the screen says so and shows what is there now, or that it was already settled.
 - **The sync status** (`ZenSyncStatusBanner`): while sync is stopped, why, in words the person can
   act on — not signed in to iCloud, iCloud Keychain off, a different account, the cloud data
   deleted, storage full, an app update needed. It takes no space while sync works: a sync that

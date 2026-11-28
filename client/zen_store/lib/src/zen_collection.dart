@@ -190,11 +190,30 @@ final class ZenCollection<T extends GeneratedMessage> {
   /// they combined — or null to delete the record. The choice replaces every side on every device
   /// at its next sync. Fails with a [ZenValidationError] when [id] is not in conflict, because a
   /// resolution is never the way to make an ordinary write.
-  Future<ZenResult<T?>> resolve(String id, T? value) {
+  ///
+  /// [expect], if given, runs inside the write's turn — after everything queued before it, a
+  /// sync's `receive` included — with the conflict as it stands then; a [ZenError] it returns
+  /// refuses the resolution and is the result. A resolution replaces every version, so when a
+  /// person chose between sides they were shown, check here that those are still the sides. A
+  /// [conflictFor] before the call cannot: a version arriving in between would be replaced without
+  /// anyone having seen it.
+  Future<ZenResult<T?>> resolve(
+    String id,
+    T? value, {
+    ZenError? Function(ZenConflict<T> current)? expect,
+  }) {
     final fields = value == null ? null : fieldsOf(value);
     return _store.write<T?>(name, id, (current) {
       if (current == null || !current.isInConflict) {
         return ZenResult.err(ZenValidationError('$name/$id has no conflict to resolve.'));
+      }
+      if (expect != null) {
+        switch (_conflict(current)) {
+          case ZenSuccess(:final data):
+            if (expect(data) case final error?) return ZenResult.err(error);
+          case ZenFailure(:final error):
+            return ZenResult.err(error);
+        }
       }
       return ZenResult.ok((fields, value));
     }, settle: true);
@@ -205,10 +224,10 @@ final class ZenCollection<T extends GeneratedMessage> {
 
   ZenResult<ZenConflict<T>> _conflict(ZenRecordState record) {
     final sides = <ZenConflictSide<T>>[];
-    for (final author in record.conflictAuthors) {
+    for (final side in record.conflictSides) {
       T? value;
-      if (!record.deletedBy(author)) {
-        switch (_read(record.id, record.visibleBytes(chosen: record.versionsBy(author)))) {
+      if (side.versions case final versions?) {
+        switch (_read(record.id, record.visibleBytes(chosen: versions))) {
           case ZenSuccess(:final data):
             value = data;
           case ZenFailure(:final error):
@@ -217,9 +236,9 @@ final class ZenCollection<T extends GeneratedMessage> {
       }
       sides.add(
         ZenConflictSide(
-          device: author,
-          deviceName: _store.nameOf(author),
-          at: DateTime.fromMillisecondsSinceEpoch(record.lastWriteBy(author)),
+          device: side.author,
+          deviceName: _store.nameOf(side.author),
+          at: DateTime.fromMillisecondsSinceEpoch(side.atMillis),
           value: value,
         ),
       );

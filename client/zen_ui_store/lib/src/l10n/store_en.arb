@@ -27,7 +27,7 @@
   },
   "resolveTitle": "Choose a Version",
   "@resolveTitle": {
-    "description": "Title of the screen that shows each device's version of one record."
+    "description": "Title of the screen that shows every version of one record in conflict."
   },
   "resolveIntro": "{title} was changed on more than one device. Keep one version; the others are replaced on every device.",
   "@resolveIntro": {
@@ -50,6 +50,36 @@
       }
     }
   },
+  "sideHeadingNumbered": "{device}, version {number} of {count}, {time}",
+  "@sideHeadingNumbered": {
+    "description": "Heading of one version when several versions come from the same device name.",
+    "placeholders": {
+      "device": {
+        "type": "String"
+      },
+      "number": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "deviceWithVersions": "{device} ({count, plural, =1{1 version} other{{count} versions}})",
+  "@deviceWithVersions": {
+    "description": "A device in the list of records in conflict, when it has more than one version of the record.",
+    "placeholders": {
+      "device": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "deletedHere": "Deleted on this device",
   "@deletedHere": {
     "description": "What a version shows when that device deleted the record."
@@ -65,6 +95,14 @@
   "keepDeleted": "Keep it deleted",
   "@keepDeleted": {
     "description": "Button that resolves the conflict by deleting the record."
+  },
+  "resolveChanged": "This changed since it was shown, so nothing was saved. Look at the versions below and choose again.",
+  "@resolveChanged": {
+    "description": "Shown when another version arrived before the choice was saved; the versions below are redrawn."
+  },
+  "resolveSettled": "This was already settled, so your choice was not saved.",
+  "@resolveSettled": {
+    "description": "Shown when the record was settled elsewhere before the choice was saved."
   },
   "resolveFailed": "Couldn't save your choice. Try again.",
   "@resolveFailed": {
@@ -150,7 +188,7 @@
       }
     }
   },
-  "bulkLeftIntro": "These also involve a deletion or a third device, so this choice does not cover them. Settle each one by itself.",
+  "bulkLeftIntro": "These also involve a deletion, a third device, or more than one version from one device, so this choice does not cover them. Settle each one by itself.",
   "@bulkLeftIntro": {
     "description": "Explanation above the records a settle-many choice leaves alone."
   },
@@ -168,7 +206,7 @@
   },
   "bulkBack": "Back to the list",
   "@bulkBack": {
-    "description": "Button that leaves the settle-many screen after it did not finish every record."
+    "description": "Button that returns to the list from a screen whose choice could not be saved as shown."
   },
   "deletedTitle": "A deleted item",
   "@deletedTitle": {

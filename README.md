@@ -108,7 +108,7 @@ on one Mac or PC.
 their own, and so do equal edits. Anything else — the same field changed differently on two
 devices, or a delete on one against an edit on the other — becomes a **conflict**: every version is
 kept, on every device, the record refuses further writes, and `zen_ui_store`'s banner and screens
-show the person each device's version and let them choose. Nothing is ever resolved by "the last write wins".
+show the person every version in dispute and let them choose. Nothing is ever resolved by "the last write wins".
 
 **How it is stored.** No database: a set of files in the app's own data directory, each encrypted
 with AES-256-GCM under a key kept in the platform's secure storage (Keychain, Keystore, Credential

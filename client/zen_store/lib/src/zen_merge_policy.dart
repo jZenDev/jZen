@@ -106,11 +106,13 @@ ZenFieldVersion? applyMergePolicy(ZenMergePolicy policy, List<ZenFieldVersion> v
         ? (a.atMillis > b.atMillis ? a : b)
         : a.author != b.author
         ? (a.author.compareTo(b.author) > 0 ? a : b)
-        : (_compareBytes(a.bytes, b.bytes) >= 0 ? a : b),
+        : (compareBytes(a.bytes, b.bytes) >= 0 ? a : b),
   );
 }
 
-int _compareBytes(Uint8List? a, Uint8List? b) {
+/// Orders two values byte by byte, an unset one (null) first.
+@internal
+int compareBytes(Uint8List? a, Uint8List? b) {
   if (a == null || b == null) return a == b ? 0 : (a == null ? -1 : 1);
   for (var i = 0; i < a.length && i < b.length; i++) {
     if (a[i] != b[i]) return a[i].compareTo(b[i]);

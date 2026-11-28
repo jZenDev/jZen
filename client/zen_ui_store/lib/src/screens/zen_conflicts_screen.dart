@@ -69,6 +69,21 @@ class _ZenConflictsScreenState extends State<ZenConflictsScreen> {
     super.dispose();
   }
 
+  /// The devices a conflict is between, each once, saying how many versions it has when that is
+  /// more than one.
+  String _devices(ZenConflictView conflict, StoreLocalizations messages) {
+    final byDevice = <String, List<ZenConflictSideView>>{};
+    for (final side in conflict.sides) {
+      (byDevice[side.device] ??= []).add(side);
+    }
+    return [
+      for (final sides in byDevice.values)
+        sides.length == 1
+            ? sides.first.deviceName
+            : messages.deviceWithVersions(sides.first.deviceName, sides.length),
+    ].join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final messages = StoreLocalizations.of(context);
@@ -126,7 +141,7 @@ class _ZenConflictsScreenState extends State<ZenConflictsScreen> {
           for (final conflict in conflicts)
             ZenListRow(
               title: conflict.title ?? messages.deletedTitle,
-              subtitle: conflict.sides.map((side) => side.deviceName).join(' · '),
+              subtitle: _devices(conflict, messages),
               onTap: () => showZenDetail<void>(
                 context,
                 builder: (page) => ZenConflictResolveScreen(

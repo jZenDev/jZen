@@ -15,6 +15,84 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-089 — A conflict's sides hold every version in dispute, so one device can have several
+
+**Date:** 2026-11-28. **Status:** accepted. **Refines:** ADR-065.
+
+### Decision
+
+- **`ZenConflict.sides` is complete.** Between them the sides hold every surviving value of every
+  conflicting field, every delete, and every edit a delete had not seen (clearing a field is such
+  an edit). Nothing the store still holds in dispute is reachable only from inside it.
+- **A side is a version attributed to a device, not a device.** A device has one side, unless two
+  versions in dispute carry its name; then it has one side per distinct value, and a delete is
+  always a side of its own. The number of sides is therefore not the number of devices, and
+  `ZenConflictSide.device` can repeat. So a device that edited a field, then deleted the record
+  without having seen another device's edit of that field, can have both its delete and its edit
+  as sides, where its version of the field is still held.
+- **How a device comes to own two values.** Two devices set a field to the same value; a merge
+  stores that once, attributed to the later writer, with the joined version vector; that writer
+  changes the field again before receiving the merge. The same happens with two deletes followed
+  by writing the record again.
+- **Several fields.** Each side is a whole record, so `resolve(id, side.value)` still takes it as
+  it is. A device's n-th side holds its n-th latest value of each disputed field; a field with
+  fewer values repeats its oldest, and a disputed field the device did not write comes from the
+  latest version, as before. Every value appears in some side; not every combination of values
+  does, and a combination may be one no device ever displayed.
+- **Determinism.** The sides depend only on the versions held, never on the order a merge listed
+  them in. Versions are totally ordered by time, then device id, then bytes; the last step also
+  makes the value `get` shows for two writes of one millisecond the same on every device.
+- **Dates and order.** A device with one side is dated by its last write to the record, as
+  before. With several, each side is dated by the write that sets it apart. Sides are ordered
+  newest first by the disputed write each stands for, which is not always the order of the dates.
+- **The screens (`zen_ui_store`).** Sides under one device name are numbered ("version 1 of 2"),
+  which also separates two devices a person named alike; the list names a device once, with its
+  number of versions; "has this conflict changed" matches sides one for one; and settling many
+  records at once takes only a conflict with exactly one side from each of two devices, naming
+  any other as left.
+- **A choice replaces only what was shown.** A resolution rewrites every version, and with more
+  sides to choose between, a screen drawn before a sync is more likely to be out of date.
+  `ZenCollection.resolve` takes an `expect` precondition, run inside the write's turn, and the
+  screens refuse a choice there when the sides are no longer the ones they showed: the screen
+  says so and redraws, and settling many counts the record as changed. A check made before the
+  call would miss a sync already queued. Sides are compared by their encoded bytes, since a
+  message holding a NaN does not equal itself, and the reason a choice was not saved is read from
+  its error: a write that fails is reported as a failure, never as settled or changed.
+- **No format change.** Nothing on disk or in a synced payload differs. The fix reads what is
+  already stored, so conflicts created before it show their hidden values too.
+
+### What this supersedes, and why
+
+- **"each device's version side by side with Keep this version"** (ADR-065, `client/zen_ui_store`)
+  and the public wording that a side is "one device's side" of a conflict (`ZenConflictSide`) →
+  **changed: a side per version.** *Why:* with one side per device, a second value under the same
+  name could not be listed, counted or chosen, and which of the two was shown depended on the
+  order that device had merged them in, so devices holding the same state answered differently.
+  ADR-065 promises that "Every side is kept on every device"; keeping a value nobody can be shown
+  does not honour it. An application asking whether a disputed amount agrees across the sides got
+  "yes" while it was disputed.
+- **Rejected: several values per field inside one side.** `value` would stop being a record a
+  person can keep as it is, and every consumer would have to change to compile against it.
+- **Rejected: a separate accessor for the hidden values.** Code already reading `sides` — the
+  screens, and an application's own rules — would go on missing them without any sign.
+- **Rejected: keeping both authors' versions instead of collapsing equal edits.** It changes what
+  is stored and synced, and cannot recover the attribution in records already collapsed.
+- **Not an option: showing the later write only.** That is last-writer-wins, which ADR-065 forbids.
+
+### Consequence
+
+- An application must not index `sides` by device or read its length as a number of devices. To
+  ask whether the sides agree about something, it compares the values of all of them.
+- A collapsed version still carries one device's name, so the other device that wrote the same
+  value does not appear for it.
+- A device running a build from before this change still shows one side per device, and its
+  resolution replaces every version, shown or not. Updating every device closes that.
+- Verified: `zen_store` tests reproduce the two- and three-device cases through `ZenFolderCloud`
+  and failed before the change; `zen_ui_store` tests choose each of one device's two values, and
+  show that a version arriving before a choice is saved is not replaced.
+
+---
+
 ## ADR-087 — On macOS a dev build keeps the store key and PIN hash in the login keychain; a release build keeps the data-protection Keychain
 
 **Date:** 2026-11-17. **Status:** proposed, until the user accepts it. **Refines:** ADR-075, ADR-065.

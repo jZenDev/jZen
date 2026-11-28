@@ -1,14 +1,16 @@
 import 'package:meta/meta.dart';
+import 'package:zen_core/zen_core.dart';
 
 import 'zen_conflict_source.dart';
 
 /// Every conflict between the same two devices that one choice can settle: "keep [first]'s version
 /// of all of them" or "keep [second]'s".
 ///
-/// A sweep takes in only a conflict that is a plain disagreement between exactly these two devices
-/// — no side a delete, no third device. Anything else that involves either device is [left]: a
-/// delete against an edit, or a record a third device also changed, is a different question that
-/// one choice for the others does not answer, so it is named to the person and never settled here.
+/// A sweep takes in only a conflict that is a plain disagreement between exactly these two
+/// devices — one version from each, neither a delete, no third device. Anything else that involves
+/// either device is [left]: a delete against an edit, a record a third device also changed, or one
+/// with several versions from one device is a different question that one choice for the others
+/// does not answer, so it is named to the person and never settled here.
 @internal
 final class ZenConflictSweep {
   /// One device of the pair, as `(id, name)`; [first] is this device when it is one of the two.
@@ -64,7 +66,8 @@ final class ZenConflictSweep {
     return sweeps..sort((a, b) => b.included.length.compareTo(a.included.length));
   }
 
-  /// The two device ids, sorted, when [conflict] is a plain disagreement between exactly two.
+  /// The two device ids, sorted, when [conflict] is a plain disagreement between exactly two:
+  /// two sides, from two different devices, so that "this device's version" names one thing.
   static List<String>? _pair(ZenConflictView conflict) {
     if (conflict.sides.length != 2 || conflict.sides.any((side) => side.isDelete)) return null;
     final devices = [for (final side in conflict.sides) side.device]..sort();
@@ -76,25 +79,25 @@ final class ZenConflictSweep {
 
   /// Settles every included conflict with [device]'s version, one record after another, stopping
   /// at the first write that fails. A record the store no longer holds as it was shown — a sync
-  /// changed it since — is skipped, because the person chose between versions that are not all
-  /// there is any more.
+  /// changed it since — is refused by its own write and skipped, because the person chose between
+  /// versions that are not all there is any more.
   Future<ZenSweepOutcome> keep(String device) async {
     assert(device == first.$1 || device == second.$1);
     var settled = 0;
     var changed = 0;
     var failed = false;
     for (final conflict in included) {
-      if (!conflict.isCurrent()) {
+      final side = conflict.sides.singleWhere((side) => side.device == device);
+      final error = (await side.keep()).errorOrNull;
+      if (error == null) {
+        settled++;
+      } else if (error is ZenStaleChoiceError || error is ZenValidationError) {
+        // Changed since it was shown, or already settled: this record's choice no longer stands.
         changed++;
-        continue;
-      }
-      final side = conflict.sides.firstWhere((side) => side.device == device);
-      final result = await side.keep();
-      if (!result.isSuccess) {
+      } else {
         failed = true;
         break;
       }
-      settled++;
     }
     return ZenSweepOutcome(
       settled: settled,

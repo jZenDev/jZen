@@ -1,17 +1,23 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:zen_core/zen_core.dart';
 import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 
 import '../l10n/generated/store_localizations.dart';
 import '../state/zen_conflict_source.dart';
 import '../widgets/zen_conflict_side_card.dart';
 
-/// Every device's version of one record in conflict, side by side, each with a button that keeps
-/// it. Opened from `ZenConflictsScreen`.
+/// Every version of one record in conflict, side by side, each with a button that keeps it.
+/// Opened from `ZenConflictsScreen`.
+///
+/// A choice is saved only against the versions shown. When the record has changed since — a sync
+/// brought another version, or settled it — nothing is written; the screen says so and shows what
+/// is there now.
 class ZenConflictResolveScreen extends StatefulWidget {
   /// The conflict shown.
   final ZenConflictView conflict;
 
-  /// Called once a version has been kept.
+  /// Called once a version has been kept, or when the person leaves a record that was settled in
+  /// the meantime.
   final VoidCallback onResolved;
 
   const ZenConflictResolveScreen({super.key, required this.conflict, required this.onResolved});
@@ -21,51 +27,96 @@ class ZenConflictResolveScreen extends StatefulWidget {
 }
 
 class _ZenConflictResolveScreenState extends State<ZenConflictResolveScreen> {
+  /// What is on screen: the conflict the screen was opened with, until a refused choice replaces
+  /// it with what the store holds now.
+  late ZenConflictView _conflict = widget.conflict;
   bool _busy = false;
   bool _failed = false;
+  bool _changed = false;
+  bool _settled = false;
+
+  /// Counts the redraws, so that each starts at the top, where it says what happened.
+  int _redraws = 0;
 
   Future<void> _keep(ZenConflictSideView side) async {
+    final shown = _conflict;
     setState(() {
       _busy = true;
       _failed = false;
+      _changed = false;
     });
     final result = await side.keep();
     if (!mounted) return;
-    if (result.isSuccess) {
-      widget.onResolved();
-    } else {
-      setState(() {
-        _busy = false;
-        _failed = true;
-      });
+    // Why nothing was saved is read from the error, never guessed from what the store holds now:
+    // a record that is gone because the write could not be made was not settled by anyone.
+    switch (result) {
+      case ZenSuccess():
+        widget.onResolved();
+      case ZenFailure(error: ZenStaleChoiceError()):
+        _redraw(shown.latest());
+      case ZenFailure(error: ZenValidationError()):
+        _redraw(const ZenResult.ok(null));
+      case ZenFailure():
+        setState(() {
+          _busy = false;
+          _failed = true;
+        });
     }
   }
+
+  /// Shows [latest] in place of a conflict that is no longer current; null once it is settled.
+  void _redraw(ZenResult<ZenConflictView?> latest) => setState(() {
+    _busy = false;
+    switch (latest) {
+      case ZenSuccess(data: final now?):
+        _conflict = now;
+        _changed = true;
+        _redraws++;
+      case ZenSuccess():
+        _settled = true;
+        _redraws++;
+      case ZenFailure():
+        _failed = true;
+    }
+  });
 
   @override
   Widget build(BuildContext context) {
     final messages = StoreLocalizations.of(context);
     final theme = Theme.of(context);
-    final title = widget.conflict.title ?? messages.deletedTitle;
+    final title = _conflict.title ?? messages.deletedTitle;
+    final problem = _settled
+        ? messages.resolveSettled
+        : _changed
+        ? messages.resolveChanged
+        : _failed
+        ? messages.resolveFailed
+        : null;
     return ZenPageScaffold(
       title: messages.resolveTitle,
       body: ListView(
+        key: ValueKey(_redraws),
         padding: const EdgeInsets.all(16),
         children: [
-          Text(messages.resolveIntro(title), style: theme.textTheme.bodyLarge),
-          if (_failed) ...[
+          if (!_settled) Text(messages.resolveIntro(title), style: theme.textTheme.bodyLarge),
+          if (problem != null) ...[
             const SizedBox(height: 12),
             Semantics(
               liveRegion: true,
               child: Text(
-                messages.resolveFailed,
+                problem,
                 style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.error),
               ),
             ),
           ],
-          for (final side in widget.conflict.sides) ...[
+          if (_settled) ...[
             const SizedBox(height: 16),
-            ZenConflictSideCard(side: side, onKeep: _busy ? null : () => _keep(side)),
-          ],
+            ZenButton(label: messages.bulkBack, onPressed: widget.onResolved),
+          ] else
+            for (final side in _conflict.sides) ...[
+              const SizedBox(height: 16),
+              ZenConflictSideCard(side: side, onKeep: _busy ? null : () => _keep(side)),
+            ],
         ],
       ),
     );

@@ -52,7 +52,9 @@ final issues = [
 An action can need something from the person first. `ZenIssueAction.choose` takes
 `choices: [(id, label), ...]` and a `run: (id) => ...`; `ZenIssueAction.text` takes a `fieldLabel` and
 a `run: (text) => ...`. The issue screen asks (a list of choices, or a text field, in the platform's
-sheet or dialog) and calls `run` only once the person confirms. A text is trimmed, and one that is
+sheet or dialog) and calls `run` only once the person confirms. `choices` may hold a single candidate,
+which the person still picks and confirms, so there is no need to branch on the count; it may not be
+empty, so leave the action out when there is nothing to choose. A text is trimmed, and one that is
 empty or only whitespace cannot be confirmed. `ZenIssueAction` is sealed (plain, choice, text), so a
 `switch` over it is exhaustive. Cancelling runs nothing and the issue
 stays; a failed `run` is shown on the screen like any other action's.

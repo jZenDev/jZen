@@ -1146,7 +1146,10 @@ tasks:
       nothing. `test_stale_scope_is_a_failure` is the regression test for exactly that.
 
       `unittest`, not pytest: the Python side is stdlib-only by rule (ADR-032), so the runner is
-      too. Runs in well under a second and needs no toolchain beyond the 3.9 floor `doctor` checks.
+      too. It takes minutes on a developer's machine, not seconds. Beyond the 3.9 floor `doctor`
+      checks it needs git and bash, and the tests that drive the real Taskfiles need go-task:
+      without `task` on PATH they are skipped and the run still ends `OK`, so read the `skipped=`
+      count.
 
       Discovery is rooted at `scripts/tests`; a failing test exits non-zero and fails the suite,
       as STANDARDS "Failures surface" requires.
@@ -1287,7 +1290,7 @@ tasks:
   stop:supabase:
     desc: Stop the local Supabase stack
     cmds:
-      - supabase stop
+      - task: zen:stop:supabase
 
   # ---------------------------------------------------------------------------
   # Deploy

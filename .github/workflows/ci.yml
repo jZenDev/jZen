@@ -115,6 +115,11 @@ jobs:
       - name: Applied migrations unchanged
         run: task verify:migrations
 
+      # The fixtures behind the gates above, and the checks on the Taskfiles and dev scripts that
+      # no other suite runs (e.g. that `run:dev` names a task an application can actually run).
+      - name: Script and Taskfile tests
+        run: task test:scripts
+
       - run: task deps
       - name: Contract drift gate
         run: task verify:contracts

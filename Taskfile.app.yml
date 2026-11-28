@@ -39,10 +39,11 @@
 #
 # WHAT HAS MOVED. The dependency install (`deps` and `deps:server/client/admin`), the whole
 # contract loop (`generate` and its `generate:proto*` / `generate:api*` / `generate:l10n` parts,
-# plus the `verify:contracts` drift gate), the local stack (`run:dev` and `run:supabase` /
-# `run:server` / `run:client` / `run:admin`), `test:client` and `build:runners` — all live here
-# now, written against vars, and Taskfile.yml delegates to every one of them (ADR-046, ADR-049). So
-# the framework runs the same code an application does rather than a copy that resembles it.
+# plus the `verify:contracts` drift gate), the local stack (`run:dev`, `stop:supabase` and
+# `run:supabase` / `run:server` / `run:client` / `run:admin`), `test:client` and `build:runners` —
+# all live here now, written against vars, and Taskfile.yml delegates to every one of them
+# (ADR-046, ADR-049). So the framework runs the same code an application does rather than a copy
+# that resembles it.
 #
 # Two things this file's own runs cannot fully exercise, and both are manual proofs recorded in an
 # ADR rather than gates: `generate:proto:dart`'s import rewrite (zen_demo declares no protos of its
@@ -1141,6 +1142,13 @@ tasks:
         [ -n "$mailbox" ] && echo "  Mailbox:   $mailbox   <- email confirmation + recovery links arrive here" || true
         [ -n "$db" ]      && echo "  Postgres:  $db" || true
 
+  # Beside run:supabase so that every application that can start the stack can also stop it: run:dev
+  # leaves it running and names this task on its way out.
+  stop:supabase:
+    desc: Stop the local Supabase stack
+    cmds:
+      - supabase stop
+
   run:server:
     desc: Start the application backend in Quarkus dev mode (live reload) on APP_PORT
     silent: true
@@ -1361,8 +1369,15 @@ tasks:
       the Supabase stack, the backend in dev mode on APP_PORT, waits for /health, then runs the
       client on DEVICE (default web on WEB_PORT). The server is torn down on exit — by its port
       system-property first (dependable across shells), then a port-scoped lsof fallback that
-      escalates to SIGKILL. Supabase is left running — the teardown message says so — and
-      `task stop:supabase` (or the framework's) stops it.
+      escalates to SIGKILL. Supabase is left running; the teardown message says so and names the
+      task that stops it: `stop:supabase` from this file, under the namespace it is included as
+      (`task zen:stop:supabase` for the usual `zen:` include). Two other include shapes differ:
+        - `internal: true`: the printed `zen:` task cannot be run from the command line. Give the
+          application its own `stop:supabase` task that calls it, and run that instead.
+        - `flatten: true`: the printed name is `stop:supabase`. go-task refuses to load a Taskfile
+          that also defines one, so delete the application's own, or keep it (it must stop the
+          stack) and add `excludes: [stop:supabase]` to the include. Without `flatten`, do not
+          exclude it: the printed task would not exist.
 
       This is a manual-walkthrough rollup, so one Ctrl-C ends it cleanly and at once. The
       orchestration runs in `scripts/run-dev.sh` (a real bash script — go-task's own shell can
@@ -1441,6 +1456,9 @@ tasks:
         export RUN_DEV_JZEN_DIR="{{.JZEN_DIR}}"
         export RUN_DEV_CLIENT_DIR="{{.ROOT_DIR}}/{{.APP_CLIENT_DIR}}"
         export RUN_DEV_FLUTTER_ARGS="${flutter_args}" RUN_DEV_DEFINES="${defines}"
+        # The teardown message must name a task the caller can run, and only task knows the
+        # namespace this file was included as: TASK is this task's full name.
+        export RUN_DEV_STOP_TASK='{{.TASK | trimSuffix "run:dev"}}stop:supabase'
         exec bash "{{.JZEN_DIR}}/scripts/run-dev.sh"
 
   deploy:pin:

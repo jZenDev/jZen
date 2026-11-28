@@ -79,7 +79,9 @@ not delivered straight to them) while job control stays off for the rest of the 
 the forked `sleep`/`curl` in the poll loops would each grab the terminal for their turn and eat
 the Ctrl-C. The script keeps the terminal, so `trap … INT TERM EXIT` drives an ordered teardown
 (client from its `--pid-file`, then the server by port) on the **first** signal.
-Supabase is deliberately left up; the teardown message says so. Both backgrounded children run
+Supabase is deliberately left up; the teardown message says so and names the task that stops it,
+as the caller can run it (the task computes it, because only `task` knows the namespace
+`Taskfile.app.yml` was included under). Both backgrounded children run
 with stdin closed (`< /dev/null`) — under `set -m` a background-group read of the controlling
 terminal raises `SIGTTIN` and stops the group, so Quarkus dev mode's aesh console (and Flutter's
 key handler) must not touch the TTY here.

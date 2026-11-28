@@ -64,6 +64,9 @@ class LocaleNotifier extends Notifier<Locale> {
   /// Switches the language now and remembers it. The screens change first, so the switch is
   /// immediate; a failed write is then thrown to the caller rather than swallowed, because the
   /// choice would not survive a restart and that is worth knowing about.
+  ///
+  /// This is the device half only. A picker calls `LanguageChoice.choose`, which also tells the
+  /// server.
   Future<void> setLocale(Locale locale) async {
     final preference = ref.read(localePreferenceProvider);
     final language = preference.match(locale.languageCode);

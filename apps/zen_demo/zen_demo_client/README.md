@@ -66,9 +66,42 @@ The mechanism is the framework's: `ZenLocalePreference` and the `ZenLocaleStore`
 `zen_core`, which hold the order above and the supported-list check. Only the storage is the
 app's (`SharedPreferencesLocaleStore`, loaded before `runApp` so the first frame is already in the
 right language). **Do not copy an in-memory `Notifier` that returns the fallback from `build()`**:
-it forgets the choice on every launch. This is separate from the server's copy of the language,
-`users.language`, which decides the language of e-mail and is changed with
-`IdentityRepository.setLanguage`.
+it forgets the choice on every launch.
+
+### The device first, then the account
+
+The server keeps its own copy of the language, `users.language`, which decides the language of
+e-mail. The picker keeps both, through `LanguageChoice`
+([`language_choice.dart`](lib/src/language_choice.dart)), and **the order is the point**:
+
+1. **The device applies the choice and stores it.** The screens change at once, with no network
+   and no session, and the next request already carries the new `Accept-Language`.
+2. **Then, if a session exists, `IdentityRepository.setLanguage` tells the server.** With no
+   session there is no call. Registration sets a new account's language from `Accept-Language`,
+   but **signing in to an existing account does not change it**: this app has its picker only
+   behind sign-in, and one with a picker on its sign-in screen has to send the choice after
+   sign-in itself.
+
+**Do not make the device wait on the server**, by awaiting `setLanguage` before `setLocale` or by
+restoring the old language when the call fails. The picker would freeze on a slow network and stop
+working offline, and a person who cannot read the current language could not leave it while the
+backend is down.
+
+No failure is swallowed. Each one is logged, and said in the chosen language unless a newer choice
+is on its way to report for itself:
+
+- **Refused or unreachable server:** the device keeps the choice, and the message says e-mail may
+  still arrive in the previous language. No answer within 30 seconds counts as unreachable.
+  Choosing the language again retries; nothing retries by itself.
+- **Failed device write:** the language applies until the app restarts, and the server is not
+  told, so the account never moves to a language the next launch will not be in.
+
+Quick successive choices are sent one at a time, in the order made, so one cannot overtake
+another (a request given up on after 30 seconds may still reach the server late). A choice still
+waiting when its session ends is dropped and logged, never sent for whoever signs in next.
+[`DemoLanguageFailureListener`](lib/src/screens/demo_language_failure_listener.dart) wraps the
+app's `home`, so an answer that arrives after the person has left the picker's screen is still
+shown.
 
 ## Widget Showcase
 

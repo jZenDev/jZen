@@ -10,6 +10,8 @@
   "navTerms": "Terms",
   "navProfile": "Profile",
   "languageLabel": "Language",
+  "languageNotSavedOnDevice": "Your language was changed, but it could not be saved on this device. The choice will be lost when the app restarts.",
+  "languageNotSavedToAccount": "Your language was changed, but it could not be saved to your account. Emails may still arrive in the previous language. Choose the language again to retry.",
 
   "pingSection": "Ping the server (both transport modes)",
   "pingJson": "Ping (JSON)",

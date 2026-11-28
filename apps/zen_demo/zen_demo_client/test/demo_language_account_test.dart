@@ -22,9 +22,14 @@ const _accountEn =
 const _accountUk =
     'Мову змінено, але не вдалося зберегти її в обліковому записі. Листи можуть і далі '
     'надходити попередньою мовою. Щоб спробувати ще раз, виберіть мову знову.';
+const _deviceEn =
+    'Your language was changed, but it could not be saved on this device. It will be lost when '
+    'the app restarts, and the language of your emails was not changed. Choose the language '
+    'again to retry.';
 const _deviceUk =
     'Мову змінено, але не вдалося зберегти її на цьому пристрої. Після перезапуску застосунку '
-    'цей вибір буде втрачено.';
+    'цей вибір буде втрачено, а мову листів не змінено. Щоб спробувати ще раз, виберіть мову '
+    'знову.';
 
 const _signedIn = IdentityContract(
   id: 'person-1',
@@ -66,8 +71,11 @@ final class _FakeIdentityRepository implements IdentityRepository {
     return answer(language);
   }
 
+  /// Ends a session; by default at once.
+  Future<ZenResult<void>> Function() signOut = () async => const ZenResult.ok(null);
+
   @override
-  Future<ZenResult<void>> logout() async => const ZenResult.ok(null);
+  Future<ZenResult<void>> logout() => signOut();
 
   @override
   Future<ZenResult<IdentityContract>> loginWithEmail({
@@ -93,6 +101,22 @@ final class _FailingLocaleStore implements ZenLocaleStore {
   Future<void> write(String tag) async {
     if (failing.contains(tag)) throw StateError('disk full');
     _tag = tag;
+  }
+}
+
+/// A device whose writes finish, or fail, when the test says so.
+final class _HeldLocaleStore implements ZenLocaleStore {
+  final List<Completer<void>> writes = [];
+  String? _tag;
+
+  @override
+  String? read() => _tag;
+
+  @override
+  Future<void> write(String tag) {
+    final write = Completer<void>();
+    writes.add(write);
+    return write.future.then((_) => _tag = tag);
   }
 }
 
@@ -393,6 +417,165 @@ void main() {
 
     expect(repository.calls.map((c) => c.tag), ['uk']);
     expect(logger.warnings, hasLength(1), reason: 'dropped, and said so in the log');
+  });
+
+  for (final (leaving, signsInAfter) in [('signed out', false), ('someone else is in', true)]) {
+    for (final (outcome, refusedInTime) in [('refusal', true), ('timeout', false)]) {
+      testWidgets('a $outcome arriving after $leaving is logged, not shown', (tester) async {
+        final (repository, answers) = heldRepository();
+        final container = await launch(tester, repository);
+        await choose(tester, 'Українська');
+
+        final session = container.read(identitySessionStoreProvider.notifier);
+        await session.logout();
+        if (signsInAfter) await session.login('other@example.com', 'unused-by-the-fake');
+        await tester.pumpAndSettle();
+        if (refusedInTime) {
+          answers.single.complete(_refused);
+        } else {
+          await tester.pump(const Duration(seconds: 31));
+        }
+        await tester.pumpAndSettle();
+
+        expect(find.text(_accountUk), findsNothing);
+        expect(logger.errors, hasLength(1));
+      });
+    }
+  }
+
+  testWidgets('while a sign-out is under way, nothing more is sent or shown', (tester) async {
+    final (repository, answers) = heldRepository();
+    final signedOut = Completer<ZenResult<void>>();
+    repository.signOut = () => signedOut.future;
+    final container = await launch(tester, repository);
+    await choose(tester, 'Українська');
+    await choose(tester, 'English');
+
+    final leaving = container.read(identitySessionStoreProvider.notifier).logout();
+    await tester.pump();
+    answers.single.complete(_refused);
+    // Not pumpAndSettle: the splash shown during a sign-out spins until it ends.
+    await tester.pump();
+    await tester.pump();
+
+    expect(repository.calls.map((c) => c.tag), ['uk']);
+    expect(logger.warnings, hasLength(1));
+    expect(find.text(_accountEn), findsNothing);
+
+    signedOut.complete(const ZenResult.ok(null));
+    await leaving;
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a refusal during a sign-out is not shown', (tester) async {
+    final (repository, answers) = heldRepository();
+    final signedOut = Completer<ZenResult<void>>();
+    repository.signOut = () => signedOut.future;
+    final container = await launch(tester, repository);
+    await choose(tester, 'Українська');
+
+    final leaving = container.read(identitySessionStoreProvider.notifier).logout();
+    await tester.pump();
+    answers.single.complete(_refused);
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text(_accountUk), findsNothing);
+    expect(logger.errors, hasLength(1));
+
+    signedOut.complete(const ZenResult.ok(null));
+    await leaving;
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a second refusal is heard even when no choice was made between the two', (
+    tester,
+  ) async {
+    final (repository, answers) = heldRepository();
+    final store = _HeldLocaleStore();
+    await launch(tester, repository, store: store);
+    await choose(tester, 'Українська');
+    store.writes[0].complete();
+    await tester.pumpAndSettle();
+    await choose(tester, 'English');
+
+    // The device is still storing English, so this refusal is the one to show.
+    answers[0].complete(_refused);
+    await tester.pumpAndSettle();
+    expect(find.text(_accountEn), findsOneWidget);
+    await expireMessage(tester);
+
+    store.writes[1].complete();
+    await tester.pumpAndSettle();
+    answers[1].complete(_refused);
+    await tester.pumpAndSettle();
+
+    expect(find.text(_accountEn), findsOneWidget);
+    await expireMessage(tester);
+  });
+
+  testWidgets('of the choices made while a request is out, only the newest is sent', (
+    tester,
+  ) async {
+    final (repository, answers) = heldRepository();
+    await launch(tester, repository);
+    for (final endonym in ['Українська', 'English', 'Українська', 'English']) {
+      await choose(tester, endonym);
+    }
+
+    answers[0].complete(const ZenResult.ok(null));
+    await tester.pumpAndSettle();
+    expect(repository.calls.map((c) => c.tag), ['uk', 'en']);
+    answers[1].complete(const ZenResult.ok(null));
+    await tester.pumpAndSettle();
+    expect(repository.calls, hasLength(2));
+  });
+
+  testWidgets('device writes finishing out of order still send the newest choice', (tester) async {
+    final repository = _FakeIdentityRepository();
+    final store = _HeldLocaleStore();
+    await launch(tester, repository, store: store);
+    await choose(tester, 'Українська');
+    await choose(tester, 'English');
+
+    store.writes[1].complete();
+    await tester.pumpAndSettle();
+    store.writes[0].complete();
+    await tester.pumpAndSettle();
+
+    expect(repository.calls.map((c) => c.tag), ['en']);
+  });
+
+  testWidgets('an older failed device write is logged, not shown', (tester) async {
+    final repository = _FakeIdentityRepository();
+    final store = _HeldLocaleStore();
+    await launch(tester, repository, store: store);
+    await choose(tester, 'Українська');
+    await choose(tester, 'English');
+
+    store.writes[0].completeError(StateError('disk full'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(_deviceEn), findsNothing);
+    expect(logger.errors, hasLength(1));
+    store.writes[1].complete();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a waiting choice is dropped, and logged, once the app is gone', (tester) async {
+    final (repository, answers) = heldRepository();
+    final container = await launch(tester, repository);
+    await choose(tester, 'Українська');
+    await choose(tester, 'English');
+
+    await tester.pumpWidget(const SizedBox());
+    container.dispose();
+    answers.single.complete(const ZenResult.ok(null));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(repository.calls.map((c) => c.tag), ['uk']);
+    expect(logger.warnings, hasLength(1));
   });
 
   testWidgets('an answer arriving after the app is gone is logged and nothing throws', (

@@ -87,8 +87,9 @@ restoring the old language when the call fails. The picker would freeze on a slo
 working offline, and a person who cannot read the current language could not leave it while the
 backend is down.
 
-No failure is swallowed. Each one is logged, and said in the chosen language unless a newer choice
-is on its way to report for itself:
+No failure is swallowed. Each one is logged, and said in the chosen language, with two exceptions
+that are only logged: a newer choice is on its way to report for itself, or the answer is about an
+account whose owner has signed out (or is signing out) since choosing.
 
 - **Refused or unreachable server:** the device keeps the choice, and the message says e-mail may
   still arrive in the previous language. No answer within 30 seconds counts as unreachable.
@@ -96,9 +97,11 @@ is on its way to report for itself:
 - **Failed device write:** the language applies until the app restarts, and the server is not
   told, so the account never moves to a language the next launch will not be in.
 
-Quick successive choices are sent one at a time, in the order made, so one cannot overtake
-another (a request given up on after 30 seconds may still reach the server late). A choice still
-waiting when its session ends is dropped and logged, never sent for whoever signs in next.
+One request is out at a time, so a later choice cannot be overtaken by an earlier one (a request
+given up on after 30 seconds may still reach the server late). Of the choices made while one is
+out, only the newest the device stored is sent next. It is sent only if the person who made it is
+signed in at that moment: otherwise, a sign-out under way included, or if the app is closing, it is
+dropped and logged. It never reaches another person's account.
 [`DemoLanguageFailureListener`](lib/src/screens/demo_language_failure_listener.dart) wraps the
 app's `home`, so an answer that arrives after the person has left the picker's screen is still
 shown.

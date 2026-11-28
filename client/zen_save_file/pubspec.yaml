@@ -16,6 +16,11 @@ dependencies:
   # The save sheet is a plugin, which imports dart:ui. Its iOS and macOS side is a Swift package
   # (file_picker_darwin ships a Package.swift), so no runner needs a Podfile.
   file_picker: ^13.3.3
+  # Never imported: the constraint is here to keep older releases out. Before 2.5.2, saveFile on iOS
+  # left the saved bytes in the app's temporary directory after a save or a cancel, and every
+  # file_picker we accept still admits those releases (^2.4.2), so raising its minimum would not do
+  # this. test/file_picker_darwin_floor_test.dart fails if the floor is lowered.
+  file_picker_darwin: ^2.5.2
   flutter:
     sdk: flutter
   meta: ^1.11.0

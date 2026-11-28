@@ -181,6 +181,10 @@ answer can be changed but not cleared, so offer a "None" option when that is a r
 `ZenRadioOption` with `enabled: false` is shown and announced as disabled and the keyboard skips
 it; a null `onChanged` disables the whole group. Option values must be unique.
 
+A group needs at least one option. A list that comes from data may hold exactly one: it still
+starts unchosen under a null `value`, and a tap or Space chooses it (the arrow keys have nowhere
+to move). A fixed yes/no question is a `ZenCheckboxRow`, not a one-option group.
+
 Tab enters the group on the selected option (the first when none is selected) and leaves it with
 one more Tab; the arrow keys move the choice, skipping disabled options and wrapping at the ends.
 Each option is announced as one radio button ("Yearly, radio button, selected"), and the group by

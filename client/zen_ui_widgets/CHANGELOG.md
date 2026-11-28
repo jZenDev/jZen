@@ -4,6 +4,8 @@ All notable changes to this package will be documented in this file.
 
 ## Unreleased
 
+- `ZenRadioGroup` accepts a single option (it asserted at least two), because a list that comes from
+  data may hold one. An empty list is still refused.
 - `ZenTextField` gains `autofocus` (default `false`; existing callers are unchanged).
 - `ZenCheckboxRow` (with a mixed state), `ZenRadioGroup` / `ZenRadioOption`, `ZenFilterChip`,
   `ZenSlider`, `ZenRangeSlider` (two named thumbs, `start <= end` enforced), `ZenSearchField` (with

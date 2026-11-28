@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:collection';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_store/zen_store.dart';
@@ -12,13 +13,15 @@ import 'package:zen_store/zen_store.dart';
 /// A local write is handed to the engine at once; other devices' changes arrive by push. A save the
 /// server refuses because another device saved first is merged by the store and sent again.
 ///
-/// **A change the store cannot write is not lost** (ADR-088). CloudKit delivers it once and the
-/// engine's change token then moves past it, so everything the engine hands over is written in the
-/// order it arrived, and the engine's state only after all before it. While a write fails (a full
-/// disk, a locked phone under Data Protection) it waits here with what followed, [status] says so,
-/// and it is tried again every few seconds, at [syncNow] and at a local write. An app that stops
-/// before then starts from the old state, and CloudKit delivers it again. A record this version of
-/// the app cannot read holds the state back the same way, until it has been read.
+/// **A change the store cannot write is kept** (ADR-088). The engine's change token moves past
+/// whatever it has delivered, so everything it hands over is written in the order it arrived, and
+/// its state only after all before it. While a write fails (a full disk, a locked phone under Data
+/// Protection) the change waits here with what followed, [status] says so, and it is tried again
+/// every few seconds, at [syncNow] and at a local write. An app that stops before then, or has
+/// more waiting than is kept (16 MiB of records), starts from the old state, from which CloudKit
+/// should deliver the change again; that, like the rest of the engine's behaviour, has not been
+/// run against real CloudKit. A record this version of the app cannot read holds the state back
+/// the same way, until it has been read.
 ///
 /// It needs the CloudKit capability and a container in the app's entitlements, which need a paid
 /// Apple Developer Program membership. Until then, develop against [ZenFolderCloud], chosen at
@@ -31,6 +34,7 @@ final class ZenCloudKitSync implements ZenSyncTransport {
   final StreamController<ZenSyncStatus> _statusChanges =
       StreamController<ZenSyncStatus>.broadcast();
   StreamSubscription<Set<String>>? _unsent;
+  StreamSubscription<void>? _erasures;
   ZenSyncStatus _status = ZenSyncStatus.off;
 
   /// What the engine, or this class, last said about syncing with iCloud.
@@ -47,7 +51,20 @@ final class ZenCloudKitSync implements ZenSyncTransport {
   Timer? _retry;
   bool _stopped = false;
 
-  ZenCloudKitSync._(this._store, this._retryEvery);
+  /// Whether the store is erased on disk. Its own `erasedEverywhere` is already true while an
+  /// erase is being written, and is taken back if that write fails.
+  bool _erased;
+
+  ZenCloudKitSync._(this._store, this._retryEvery) : _erased = _store.erasedEverywhere;
+
+  /// The most payload bytes that wait for a store that cannot write. A change that would pass it
+  /// is not taken, and CloudKit is left to deliver it again.
+  @visibleForTesting
+  static const int waitingBytesLimit = 16 * 1024 * 1024;
+
+  /// How many changes wait to be written.
+  @visibleForTesting
+  int get waitingChanges => _waiting.length;
 
   /// Starts syncing [store] through the CloudKit container [containerId] (the app's default
   /// container when null), in the record zone [zone]. A change the store could not write is tried
@@ -63,6 +80,10 @@ final class ZenCloudKitSync implements ZenSyncTransport {
   }) async {
     final sync = ZenCloudKitSync._(store, retryEvery);
     _channel.setMethodCallHandler(sync._handle);
+    sync._erasures = store.erasures.listen((_) {
+      sync._noteErased();
+      sync._write();
+    });
     try {
       await _channel.invokeMethod<void>('start', {
         'containerId': containerId,
@@ -71,11 +92,13 @@ final class ZenCloudKitSync implements ZenSyncTransport {
       });
     } on MissingPluginException {
       _channel.setMethodCallHandler(null);
+      await sync._erasures?.cancel();
       return const ZenResult.err(
         ZenNotFoundError('CloudKit sync is available only on iOS and macOS.'),
       );
     } on PlatformException catch (e, stack) {
       _channel.setMethodCallHandler(null);
+      await sync._erasures?.cancel();
       return ZenResult.err(
         ZenUnknownError('CloudKit sync could not start: ${e.message}', stackTrace: stack),
       );
@@ -125,9 +148,7 @@ final class ZenCloudKitSync implements ZenSyncTransport {
   /// until it does, as with every transport.
   Future<ZenResult<void>> eraseEverywhere() async {
     if (await _store.eraseEverywhere() case ZenFailure(:final error)) return ZenResult.err(error);
-    // Nothing that was waiting to be written has a place in an erased store.
-    _waiting.clear();
-    _unreadable.clear();
+    _noteErased();
     await _write();
     return _eraseInCloud();
   }
@@ -163,6 +184,7 @@ final class ZenCloudKitSync implements ZenSyncTransport {
     _stopped = true;
     _retry?.cancel();
     await _unsent?.cancel();
+    await _erasures?.cancel();
     await _writing;
     await _channel.invokeMethod<void>('stop');
     _channel.setMethodCallHandler(null);
@@ -181,8 +203,9 @@ final class ZenCloudKitSync implements ZenSyncTransport {
   /// What the Swift side asks of the store.
   ///
   /// A change to the store is answered `true` once this class has taken it: it is on disk, or it
-  /// is waiting here and no later engine state will be saved before it. The Swift side stops
-  /// saving engine state on any other answer, an error among them.
+  /// is waiting here and no later engine state will be saved before it. It is answered `false`
+  /// when too much is waiting already. The Swift side stops saving engine state on any answer but
+  /// `true`, an error among them.
   Future<Object?> _handle(MethodCall call) async {
     final arguments = (call.arguments as Map<Object?, Object?>?) ?? const {};
     switch (call.method) {
@@ -197,12 +220,29 @@ final class ZenCloudKitSync implements ZenSyncTransport {
         final incoming = [
           for (final raw in _records(arguments)) ZenIncomingRecord(raw.$1, raw.$2, raw.$3),
         ];
-        return _take(_Delivery(() => _receive(incoming)));
+        final refused = call.method == 'refused';
+        return _take(
+          _Delivery(
+            () => _receive(incoming, refused: refused),
+            bytes: incoming.fold(
+              0,
+              (sum, record) => sum + record.payload.length + (record.transportData?.length ?? 0),
+            ),
+          ),
+        );
       case 'saved':
         final saved = [
           for (final raw in _records(arguments)) ZenAcknowledgedRecord(raw.$1, raw.$2, raw.$3),
         ];
-        return _take(_Delivery(() => _store.acknowledge(saved)));
+        return _take(
+          _Delivery(
+            () => _store.acknowledge(saved),
+            bytes: saved.fold(
+              0,
+              (sum, record) => sum + record.payload.length + (record.transportData?.length ?? 0),
+            ),
+          ),
+        );
       case 'state':
         final state = arguments['state'] as Uint8List?;
         return _take(_Delivery(() => _saveState(state), isEngineState: true));
@@ -222,10 +262,15 @@ final class ZenCloudKitSync implements ZenSyncTransport {
   }
 
   Future<bool> _take(_Delivery delivery) async {
-    // Of two engine states with no change between them, only the newer is worth writing.
-    if (delivery.isEngineState && (_waiting.lastOrNull?.isEngineState ?? false)) {
-      _waiting.removeLast();
+    // Only while writes fail does anything pile up. A change that carries no payload, an erase
+    // among them, always has room.
+    if (_writeFailure != null &&
+        delivery.bytes > 0 &&
+        _waiting.fold(delivery.bytes, (sum, other) => sum + other.bytes) > waitingBytesLimit) {
+      return false;
     }
+    // A newer engine state covers everything an older one does, and is written after more.
+    if (delivery.isEngineState) _waiting.removeWhere((other) => other.isEngineState);
     _waiting.add(delivery);
     await _write();
     return true;
@@ -265,9 +310,12 @@ final class ZenCloudKitSync implements ZenSyncTransport {
     _publish();
   }
 
-  Future<ZenResult<void>> _receive(List<ZenIncomingRecord> incoming) async {
+  Future<ZenResult<void>> _receive(
+    List<ZenIncomingRecord> incoming, {
+    required bool refused,
+  }) async {
     // A store erased everywhere takes no record ever again: there is nothing to wait for.
-    if (_store.erasedEverywhere) return const ZenResult.ok(null);
+    if (_erased) return const ZenResult.ok(null);
     switch (await _store.receive(incoming)) {
       case ZenFailure(:final error):
         return ZenResult.err(error);
@@ -279,6 +327,17 @@ final class ZenCloudKitSync implements ZenSyncTransport {
           } else {
             _unreadable.remove(record.name);
           }
+        }
+        if (refused) {
+          // The engine does not send a refused save again by itself, and a record that was
+          // already unsent is announced by nothing else. One that cannot be read here is left:
+          // its next save would be refused with the same copy.
+          _changed(
+            {
+              for (final record in incoming)
+                if (!problems.containsKey(record.name)) record.name,
+            }.intersection(_store.unsent),
+          );
         }
         return const ZenResult.ok(null);
     }
@@ -293,9 +352,16 @@ final class ZenCloudKitSync implements ZenSyncTransport {
 
   Future<ZenResult<void>> _eraseHere() async {
     if (await _store.eraseEverywhere() case ZenFailure(:final error)) return ZenResult.err(error);
-    _unreadable.clear();
+    _noteErased();
     _reported = _erasedStatus;
     return const ZenResult.ok(null);
+  }
+
+  /// An erased store takes nothing more, and nothing that was waiting has a place in it.
+  void _noteErased() {
+    _erased = true;
+    _waiting.clear();
+    _unreadable.clear();
   }
 
   Future<ZenResult<void>> _forgetCloud() async {
@@ -353,5 +419,8 @@ final class _Delivery {
   /// Whether it is the engine's own state, which a newer one replaces.
   final bool isEngineState;
 
-  _Delivery(this.write, {this.isEngineState = false});
+  /// The record bytes it holds while it waits.
+  final int bytes;
+
+  _Delivery(this.write, {this.isEngineState = false, this.bytes = 0});
 }

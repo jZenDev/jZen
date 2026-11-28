@@ -2,8 +2,9 @@
 /// engine's state may still be saved (ADR-088).
 ///
 /// The state holds the change token. Saved after a change that went nowhere, it says that change
-/// arrived, and CloudKit never sends it again. So once one is lost, this engine's state is not
-/// saved again: the next launch starts from the last saved one and fetches the change anew.
+/// arrived, and CloudKit has no reason to send it again. So once one is lost, this engine's state
+/// is not saved again: the next launch starts from the last saved one, from which CloudKit should
+/// deliver the change anew.
 ///
 /// A change the store could not write yet is not lost. The Dart side takes it, answers `true`, and
 /// holds the state behind it until it is written.
@@ -14,7 +15,7 @@ public struct ZenDeliveryLedger {
   public init() {}
 
   /// Notes Dart's reply to a change for the store, and returns whether Dart took it. Only `true`
-  /// does: a `FlutterError`, `FlutterMethodNotImplemented` or no value means it did not.
+  /// does: `false`, a `FlutterError`, `FlutterMethodNotImplemented` or no value means it did not.
   public mutating func took(_ reply: Any?) -> Bool {
     if reply as? Bool == true { return true }
     lose()

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -31,10 +32,14 @@ void main() {
     await root.delete(recursive: true);
   });
 
-  Future<ZenStore> store(String name) async => (await ZenStore.open(
+  Future<ZenStore> store(
+    String name, {
+    Future<void> Function(int replaced, int total)? afterFileReplaced,
+  }) async => (await ZenStore.open(
     Directory('${root.path}/$name'),
     deviceName: name,
     key: List.filled(32, 1),
+    afterFileReplaced: afterFileReplaced,
   )).dataOrNull!;
 
   /// A call from the Swift side, as the engine makes it, and Dart's reply.
@@ -55,6 +60,44 @@ void main() {
   };
 
   ZenCollection<Api> items(ZenStore store) => store.collection('items', Api.fromBuffer);
+
+  /// Lets whatever is ready to run do so.
+  Future<void> turns() async {
+    for (var i = 0; i < 5; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+  }
+
+  /// The names the engine was asked to send, in every `changed` call so far.
+  List<Object?> namesHandedToTheEngine() => [
+    for (final call in sent.where((c) => c.method == 'changed'))
+      ...(call.arguments as Map)['names'] as List<Object?>,
+  ];
+
+  /// Device `a` with its store's write queue held by a batch that has written its last file, so
+  /// that what a test delivers next certainly waits behind a write in progress. The returned
+  /// function lets the batch finish.
+  Future<(ZenStore, Future<void> Function())> heldStore() async {
+    final reached = Completer<void>();
+    final gate = Completer<void>();
+    final local = await store(
+      'a',
+      afterFileReplaced: (replaced, total) async {
+        if (replaced < total) return;
+        reached.complete();
+        await gate.future;
+      },
+    );
+    await local.saveTransportState(utf8.encode('before'));
+    final batch = local.writeAll(ZenBatch()..put(items(local), 'held', Api(name: 'held')));
+    await reached.future;
+    Future<void> release() async {
+      gate.complete();
+      expect(await batch, isA<ZenSuccess<void>>());
+    }
+
+    return (local, release);
+  }
 
   /// Waits for work that writes to disk and that nothing hands the test a future for.
   Future<void> pumpUntil(bool Function() done) async {
@@ -140,13 +183,39 @@ void main() {
     });
     await items(other).put('1', Api(name: 'renamed', version: '1'));
     await items(local).put('1', Api(name: 'shared', version: '2'));
+    await turns();
+    sent.clear();
 
     await fromSwift('refused', {
       'records': [record(other.outgoing('items:1')!, 'tag-2')],
     });
+    await turns();
 
     expect(items(local).get('1').dataOrNull, Api(name: 'renamed', version: '2'));
     expect(local.unsent, {'items:1'});
+    // The engine dropped the save it was refused, and nothing else tells it to try again.
+    expect(namesHandedToTheEngine(), ['items:1']);
+    await sync.stop();
+  });
+
+  test('a refused record whose server copy cannot be read is not sent again', () async {
+    final local = await store('a');
+    await items(local).put('1', Api(name: 'x'));
+    final sync = (await ZenCloudKitSync.start(local)).dataOrNull!;
+    sent.clear();
+
+    await fromSwift('refused', {
+      'records': [
+        {
+          'name': 'items:1',
+          'payload': Uint8List.fromList(utf8.encode(jsonEncode({'format': 99}))),
+        },
+      ],
+    });
+    await turns();
+
+    // The save would be refused with the same copy, for ever.
+    expect(namesHandedToTheEngine(), isEmpty);
     await sync.stop();
   });
 
@@ -552,7 +621,7 @@ void main() {
     test('stop with a change still unwritten leaves the old token', () async {
       final incoming = await fromAnotherDevice('1');
       final (local, sync) = await started();
-      unwritable(true);
+      unwritable(true, 'records');
       await fromSwift('fetched', {
         'records': [incoming],
       });
@@ -561,9 +630,238 @@ void main() {
       await sync.stop();
 
       expect(sync.status, ZenSyncStatus.off);
-      unwritable(false);
+      unwritable(false, 'records');
       await local.close();
       expect(savedState(await store('a')), 'before');
+    });
+
+    test('a delivery during an erase that then fails is written, not dropped', () async {
+      final incoming = await fromAnotherDevice('1');
+      final (local, sync) = await started();
+      unwritable(true);
+
+      final erase = sync.eraseEverywhere();
+      final delivery = fromSwift('fetched', {
+        'records': [incoming],
+      });
+
+      expect(await erase, isA<ZenFailure<void>>());
+      await delivery;
+      unwritable(false);
+      await deliverState('after');
+
+      final reopened = await relaunched(local, sync);
+      expect(items(reopened).get('1').dataOrNull?.name, 'from b');
+      expect(savedState(reopened), 'after');
+    });
+
+    test('a delivery being written when an erase starts and fails is not dropped', () async {
+      final incoming = await fromAnotherDevice('1');
+      final (local, release) = await heldStore();
+      final sync = (await ZenCloudKitSync.start(local, retryEvery: null)).dataOrNull!;
+
+      final delivery = fromSwift('fetched', {
+        'records': [incoming],
+      });
+      await turns();
+      final erase = sync.eraseEverywhere();
+      unwritable(true, 'records');
+      await release();
+
+      expect(await erase, isA<ZenFailure<void>>());
+      await delivery;
+      await deliverState('after');
+      unwritable(false, 'records');
+      await sync.syncNow();
+
+      final reopened = await relaunched(local, sync);
+      expect(items(reopened).get('1').dataOrNull?.name, 'from b');
+      expect(savedState(reopened), 'after');
+    });
+
+    test('a store erased directly drops what was waiting, and syncing goes on', () async {
+      final incoming = await fromAnotherDevice('1');
+      final (local, sync) = await started();
+      unwritable(true);
+      await fromSwift('fetched', {
+        'records': [incoming],
+      });
+      unwritable(false);
+
+      expect(await local.eraseEverywhere(), isA<ZenSuccess<void>>());
+      await turns();
+      await fromSwift('fetched', {
+        'records': [incoming],
+      });
+      await deliverState('after');
+
+      expect(items(local).list().dataOrNull, isEmpty);
+      expect(savedState(local), 'after');
+      await sync.stop();
+    });
+
+    test('an erase from another device does not write what was waiting first', () async {
+      final incoming = await fromAnotherDevice('1');
+      final (local, sync) = await started();
+      unwritable(true);
+      await fromSwift('fetched', {
+        'records': [incoming],
+      });
+      await fromSwift('erased');
+      final changes = <Set<String>>[];
+      final subscription = local.changes.listen(changes.add);
+      unwritable(false);
+
+      await sync.syncNow();
+      await turns();
+
+      expect(local.erasedEverywhere, isTrue);
+      expect(changes, isEmpty);
+      await subscription.cancel();
+      await sync.stop();
+    });
+
+    test('a refused record that waited is sent again once it is written', () async {
+      final other = await store('b');
+      await items(other).put('1', Api(name: 'theirs'));
+      final (local, sync) = await started();
+      await items(local).put('1', Api(name: 'mine'));
+      await turns();
+      unwritable(true);
+      await fromSwift('refused', {
+        'records': [record(other.outgoing('items:1')!)],
+      });
+      sent.clear();
+      unwritable(false);
+
+      await sync.syncNow();
+      await turns();
+
+      expect(namesHandedToTheEngine(), ['items:1']);
+      await sync.stop();
+    });
+
+    test('only the newest engine state waits', () async {
+      final first = await fromAnotherDevice('1');
+      final second = await fromAnotherDevice('2');
+      final (local, sync) = await started();
+      unwritable(true);
+      await fromSwift('fetched', {
+        'records': [first],
+      });
+      await deliverState('one');
+      await fromSwift('fetched', {
+        'records': [second],
+      });
+      await deliverState('two');
+      await deliverState('three');
+
+      expect(sync.waitingChanges, 3);
+
+      unwritable(false);
+      await sync.syncNow();
+      expect(savedState(local), 'three');
+      await sync.stop();
+    });
+
+    test('past the limit a change is not taken, so the engine saves no more state', () async {
+      final incoming = await fromAnotherDevice('1');
+      final large = {
+        'name': 'items:large',
+        'payload': Uint8List(ZenCloudKitSync.waitingBytesLimit),
+      };
+      final (local, sync) = await started();
+      unwritable(true);
+      expect(
+        await fromSwift('fetched', {
+          'records': [incoming],
+        }),
+        isTrue,
+      );
+
+      expect(
+        await fromSwift('fetched', {
+          'records': [large],
+        }),
+        isFalse,
+      );
+      expect(sync.waitingChanges, 1);
+      // An erase needs no room: it drops what waits.
+      expect(await fromSwift('erased'), isTrue);
+
+      unwritable(false);
+      await sync.syncNow();
+      expect(local.erasedEverywhere, isTrue);
+      await sync.stop();
+    });
+
+    test('a change with no payload is taken however much is waiting', () async {
+      final incoming = await fromAnotherDevice('1');
+      final (_, sync) = await started();
+      unwritable(true);
+      await fromSwift('fetched', {
+        'records': [
+          {'name': 'items:large', 'payload': Uint8List(ZenCloudKitSync.waitingBytesLimit + 1)},
+        ],
+      });
+
+      expect(await fromSwift('state', {'state': utf8.encode('after')}), isTrue);
+      expect(await fromSwift('resetCloud'), isTrue);
+      expect(
+        await fromSwift('fetched', {
+          'records': [incoming],
+        }),
+        isFalse,
+      );
+      await sync.stop();
+    });
+
+    test('with nothing waiting, a change of any size is taken', () async {
+      final (_, sync) = await started();
+
+      expect(
+        await fromSwift('fetched', {
+          'records': [
+            {'name': 'items:large', 'payload': Uint8List(ZenCloudKitSync.waitingBytesLimit + 1)},
+          ],
+        }),
+        isTrue,
+      );
+      await sync.stop();
+    });
+
+    test('a newer state arriving while the older is being written is not lost', () async {
+      final (local, release) = await heldStore();
+      final sync = (await ZenCloudKitSync.start(local, retryEvery: null)).dataOrNull!;
+
+      final older = deliverState('older');
+      await turns();
+      final newer = deliverState('newer');
+      await turns();
+      await release();
+      await Future.wait([older, newer]);
+
+      expect(savedState(local), 'newer');
+      await sync.stop();
+    });
+
+    test('stop lets the write in progress finish and starts no other', () async {
+      final incoming = await fromAnotherDevice('1');
+      final (local, release) = await heldStore();
+      final sync = (await ZenCloudKitSync.start(local, retryEvery: null)).dataOrNull!;
+      final delivery = fromSwift('fetched', {
+        'records': [incoming],
+      });
+      await turns();
+      final state = deliverState('after');
+      await turns();
+
+      final stopped = sync.stop();
+      await release();
+      await Future.wait([stopped, delivery, state]);
+
+      expect(items(local).get('1').dataOrNull?.name, 'from b');
+      expect(savedState(local), 'before');
     });
   }, skip: Platform.isWindows ? 'needs chmod to make a directory unwritable' : null);
 
@@ -586,6 +884,22 @@ void main() {
 
       expect(utf8.decode(local.transportState!), 'before');
       expect(sync.status.issue, ZenSyncIssue.unreadableRecords);
+      await sync.stop();
+    });
+
+    test('a reset of the cloud copy lets the token be saved again', () async {
+      final local = await store('a');
+      final sync = (await ZenCloudKitSync.start(local)).dataOrNull!;
+      await fromSwift('fetched', {
+        'records': [unreadable],
+      });
+
+      // The copy it came from is gone.
+      await fromSwift('resetCloud');
+      await fromSwift('state', {'state': utf8.encode('after')});
+
+      expect(utf8.decode(local.transportState!), 'after');
+      expect(sync.status.issue, isNull);
       await sync.stop();
     });
 

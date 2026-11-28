@@ -22,7 +22,8 @@ import ZenRecordNames
 /// Every call into Dart is awaited before the engine moves on, so the engine's state, which holds
 /// the change token, reaches Dart after the changes before it. Dart writes the state only once all
 /// of those are on disk. A change Dart did not take at all ends the saving of state here
-/// (`ZenDeliveryLedger`, ADR-088), so CloudKit delivers it again.
+/// (`ZenDeliveryLedger`, ADR-088), so the next launch starts from a state that does not cover it
+/// and CloudKit should deliver it again.
 final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
   private static let recordType = "ZenRecord"
   private static let stateField = "state"
@@ -91,6 +92,12 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
       await deliver("erased", nil)
       return
     }
+    if hadLegacyState {
+      // This device used the plain-name zone: send everything again under hashed names. Dart takes
+      // this before there is an engine, so no state of the new engine, which no longer shows the
+      // old zone, can reach Dart ahead of it.
+      await deliver("resetCloud", nil)
+    }
     let configuration = CKSyncEngine.Configuration(
       database: container.privateCloudDatabase,
       stateSerialization: initialState,
@@ -101,9 +108,7 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
       engine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zoneID))])
     }
     if hadLegacyState {
-      // This device used the plain-name zone. Send everything again under hashed names, then
-      // remove the old zone so Apple no longer holds the names.
-      await deliver("resetCloud", nil)
+      // Remove the old zone so Apple no longer holds the plain names.
       engine.state.add(pendingDatabaseChanges: [.deleteZone(legacyZoneID)])
     }
     self.engine = engine
@@ -327,7 +332,10 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
       guard let id = recordID(name) else { continue }
       let system = forgetSystemFields.contains(id.recordName) ? nil : (item["system"] as? FlutterStandardTypedData)?.data
       forgetSystemFields.remove(id.recordName)
+      // Fields kept for another record are not used: while a reset waits for the store, it still
+      // holds those of the plain-name zone, and a record built from them would be saved there.
       let record = system.flatMap(Self.record(fromSystemFields:))
+        .flatMap { ZenRecordNames.isSameRecord($0.recordID, as: id) ? $0 : nil }
         ?? CKRecord(recordType: Self.recordType, recordID: id)
       record.encryptedValues[Self.stateField] = payload
       record.encryptedValues[Self.nameField] = name
@@ -383,7 +391,8 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
   private func deliver(_ method: String, _ arguments: Any?) async {
     let reply = await callDart(method, arguments)
     if !ledger.took(reply) {
-      let cause = (reply as? FlutterError)?.message ?? "no answer"
+      let cause = (reply as? FlutterError)?.message
+        ?? (reply as? Bool == false ? "too much is waiting to be written" : "no answer")
       await status(
         "unavailable", issue: "other",
         message: "\(method) did not reach the store (\(cause)); it is fetched again at the next launch")

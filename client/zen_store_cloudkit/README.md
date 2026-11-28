@@ -36,12 +36,15 @@ records a conflict for the person — and sends it again.
 
 ## 🛟 A write that fails
 
-CloudKit delivers a change once, so the engine's state — which holds the change token — is saved
-only after everything delivered before it (ADR-088). If the store cannot write (a full disk, a
-locked phone under Data Protection `complete`), the change waits, `status` stays `unavailable` with
-the cause, and it is written at the next retry, `syncNow` or local write. An app that quits first
-gets it from CloudKit again at the next launch. A record from a newer version of the app holds the
-state back the same way until the app is updated.
+The engine's state — which holds the change token — is saved only after everything delivered
+before it (ADR-088). If the store cannot write (a full disk, a locked phone under Data Protection
+`complete`), the change waits, `status` stays `unavailable` with the cause, and it is written at the
+next retry, `syncNow` or local write. An app that quits first, or has more waiting than the 16 MiB
+it keeps, starts again from the old state, from which CloudKit should deliver the change again. A
+record from a newer version of the app holds the state back the same way until the app is updated.
+
+None of this has been run against real CloudKit: that it delivers again what the saved state does
+not cover is what `CKSyncEngine` is for, not something a test here shows.
 
 ## 📦 Swift Package Manager only
 

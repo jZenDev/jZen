@@ -55,7 +55,9 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
   `ZenCollection.resolve` takes an `expect` precondition, run inside the write's turn, and the
   screens refuse a choice there when the sides are no longer the ones they showed: the screen
   says so and redraws, and settling many counts the record as changed. A check made before the
-  call would miss a sync already queued.
+  call would miss a sync already queued. Sides are compared by their encoded bytes, since a
+  message holding a NaN does not equal itself, and the reason a choice was not saved is read from
+  its error: a write that fails is reported as a failure, never as settled or changed.
 - **No format change.** Nothing on disk or in a synced payload differs. The fix reads what is
   already stored, so conflicts created before it show their hidden values too.
 

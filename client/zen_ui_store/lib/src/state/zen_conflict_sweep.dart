@@ -1,4 +1,5 @@
 import 'package:meta/meta.dart';
+import 'package:zen_core/zen_core.dart';
 
 import 'zen_conflict_source.dart';
 
@@ -87,10 +88,11 @@ final class ZenConflictSweep {
     var failed = false;
     for (final conflict in included) {
       final side = conflict.sides.singleWhere((side) => side.device == device);
-      final result = await side.keep();
-      if (result.isSuccess) {
+      final error = (await side.keep()).errorOrNull;
+      if (error == null) {
         settled++;
-      } else if (!conflict.isCurrent()) {
+      } else if (error is ZenStaleChoiceError || error is ZenValidationError) {
+        // Changed since it was shown, or already settled: this record's choice no longer stands.
         changed++;
       } else {
         failed = true;

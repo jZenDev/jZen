@@ -138,7 +138,8 @@ final class ZenRecordState {
   /// two versions of a disputed field carry its name — it wrote the field again without having
   /// received the merge that attributed an equal edit to it — in which case it has one side per
   /// value, so none is hidden behind another. A delete is always a side of its own, so a device
-  /// that deleted the record while a disputed edit of its own is still held has both.
+  /// has both where it deleted the record while a disputed edit of its own is still held, or
+  /// where a merged delete carries its name and it has since written the record again.
   ///
   /// The answer depends only on the versions held, never on the order a merge listed them in, so
   /// devices holding the same state answer the same sides.

@@ -47,26 +47,38 @@ class _ZenConflictResolveScreenState extends State<ZenConflictResolveScreen> {
     });
     final result = await side.keep();
     if (!mounted) return;
-    if (result.isSuccess) {
-      widget.onResolved();
-      return;
-    }
-    final latest = shown.isCurrent() ? null : shown.latest();
-    setState(() {
-      _busy = false;
-      switch (latest) {
-        case ZenSuccess(data: final now?):
-          _conflict = now;
-          _changed = true;
-          _redraws++;
-        case ZenSuccess():
-          _settled = true;
-          _redraws++;
-        case ZenFailure() || null:
+    // Why nothing was saved is read from the error, never guessed from what the store holds now:
+    // a record that is gone because the write could not be made was not settled by anyone.
+    switch (result) {
+      case ZenSuccess():
+        widget.onResolved();
+      case ZenFailure(error: ZenStaleChoiceError()):
+        _redraw(shown.latest());
+      case ZenFailure(error: ZenValidationError()):
+        _redraw(const ZenResult.ok(null));
+      case ZenFailure():
+        setState(() {
+          _busy = false;
           _failed = true;
-      }
-    });
+        });
+    }
   }
+
+  /// Shows [latest] in place of a conflict that is no longer current; null once it is settled.
+  void _redraw(ZenResult<ZenConflictView?> latest) => setState(() {
+    _busy = false;
+    switch (latest) {
+      case ZenSuccess(data: final now?):
+        _conflict = now;
+        _changed = true;
+        _redraws++;
+      case ZenSuccess():
+        _settled = true;
+        _redraws++;
+      case ZenFailure():
+        _failed = true;
+    }
+  });
 
   @override
   Widget build(BuildContext context) {

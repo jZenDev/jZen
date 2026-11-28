@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:meta/meta.dart';
 import 'package:protobuf/protobuf.dart';
 import 'package:zen_core/zen_core.dart';
@@ -49,7 +50,6 @@ final class ZenConflictSource<T extends GeneratedMessage> {
     collection: collection.name,
     id: conflict.id,
     title: _title(conflict),
-    isCurrent: () => _isCurrent(conflict),
     latest: () => switch (collection.conflictFor(conflict.id)) {
       ZenSuccess(:final data) => ZenResult.ok(data == null ? null : _view(data, notSet)),
       ZenFailure(:final error) => ZenResult.err(error),
@@ -74,7 +74,7 @@ final class ZenConflictSource<T extends GeneratedMessage> {
             // Asked inside the write's turn: what a sync queued before it brings is seen too.
             expect: (now) => _isSame(conflict, now)
                 ? null
-                : ZenConflictError(
+                : ZenStaleChoiceError(
                     '${collection.name}/${conflict.id} changed since its versions were shown.',
                   ),
           ),
@@ -94,12 +94,6 @@ final class ZenConflictSource<T extends GeneratedMessage> {
     return named.length < 2 ? null : (named.indexOf(index) + 1, named.length);
   }
 
-  /// Whether the store still holds exactly the conflict [shown].
-  bool _isCurrent(ZenConflict<T> shown) {
-    final now = collection.conflictFor(shown.id).dataOrNull;
-    return now != null && _isSame(shown, now);
-  }
-
   /// Whether [now] is exactly the conflict [shown]: the same sides, each a device with a version.
   /// A device can have several, so they are matched one for one and never looked up by device. A
   /// sync can add a side or change one after a screen was drawn.
@@ -111,13 +105,18 @@ final class ZenConflictSource<T extends GeneratedMessage> {
     final unmatched = now.sides.toList();
     return shown.sides.every((side) {
       final match = unmatched.indexWhere(
-        (other) => other.device == side.device && other.value == side.value,
+        (other) => other.device == side.device && _isSameValue(other.value, side.value),
       );
       if (match < 0) return false;
       unmatched.removeAt(match);
       return true;
     });
   }
+
+  /// Compared as encoded, not with `==`: a message holding a NaN is not equal to itself, which
+  /// would make an unchanged record look changed every time and leave it impossible to settle.
+  bool _isSameValue(T? a, T? b) =>
+      a == null || b == null ? a == b : listEquals(a.writeToBuffer(), b.writeToBuffer());
 
   String? _title(ZenConflict<T> conflict) {
     for (final side in conflict.sides) {
@@ -157,6 +156,13 @@ final class ZenConflictSource<T extends GeneratedMessage> {
   }
 }
 
+/// A choice refused because the record's conflict is no longer the one the person was shown. A
+/// type of its own, so that the screens never mistake another failure for it.
+@internal
+final class ZenStaleChoiceError extends ZenError {
+  const ZenStaleChoiceError(super.message);
+}
+
 /// A conflict as the screens show it, with no message type left in it.
 @internal
 @immutable
@@ -168,10 +174,6 @@ final class ZenConflictView {
   final String? title;
   final List<ZenConflictSideView> sides;
 
-  /// Whether the store still holds exactly these sides. Every [ZenConflictSideView.keep] checks
-  /// this itself as it writes; asking afterwards tells why a choice was refused.
-  final bool Function() isCurrent;
-
   /// The record's conflict as the store holds it now, or null once it is settled.
   final ZenResult<ZenConflictView?> Function() latest;
 
@@ -180,7 +182,6 @@ final class ZenConflictView {
     required this.id,
     required this.title,
     required this.sides,
-    required this.isCurrent,
     required this.latest,
   });
 }
@@ -202,8 +203,9 @@ final class ZenConflictSideView {
   /// Each shown field's label and value.
   final List<(String, String)> fields;
 
-  /// Resolves the conflict with this side, refused when the store no longer holds the conflict
-  /// as shown.
+  /// Resolves the conflict with this side. Nothing is written when it fails, and the error says
+  /// why: a [ZenStaleChoiceError] when the conflict is no longer as shown, a [ZenValidationError]
+  /// when the record is no longer in conflict, anything else when the write itself failed.
   final Future<ZenResult<Object?>> Function() keep;
 
   const ZenConflictSideView({

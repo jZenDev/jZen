@@ -167,14 +167,16 @@ for (final conflict in accounts.conflicts().dataOrNull!) {
 
 **`sides` is complete, and is not one per device** (ADR-089). Between them the sides hold every
 surviving value of every field in `conflict.fields`, every delete, and every edit a delete had not
-seen; devices holding the same state answer the same sides. Usually each device has one. It can
-have several, in two ways:
+seen; devices holding the same state answer the same sides. Usually each device has one. It has
+several when:
 
 - two devices wrote the same value, one merged them into a single version under the other's name,
   and that other device changed the field again before receiving the merge;
 - a device edited a field, another edited it without having seen that, and the first then deleted
   the record: it has a delete side, and a value side with the edit it deleted, where that is still
-  held.
+  held;
+- two devices deleted the record, one merged the two deletes under the other's name, and that other
+  device wrote the record again before receiving the merge: it has a value side and a delete side.
 
 So do not look a side up by device or count sides as devices, and to
 ask whether the sides agree about something — an amount, a reference to a record you are about to
@@ -190,13 +192,23 @@ of `at`.
 
 **Save only against what was shown.** A sync can change the conflict while a person decides, and
 `resolve` replaces every version. Pass `expect`, which runs inside the write's turn, after anything
-queued before it, and refuse when the sides are no longer the ones you showed:
+queued before it, and refuse when the sides are no longer the ones you showed. `zen_ui_store`'s
+screens do this for you; an application with its own screen writes the comparison. Compare each
+side's device and **encoded bytes** (a message holding a NaN is not `==` itself), counting
+repeats:
 
 ```dart
+// dart:convert for base64Encode.
+String shownSides(ZenConflict<Account> conflict) => ([
+  for (final side in conflict.sides)
+    '${side.device} ${side.isDelete ? 'deleted' : base64Encode(side.value!.writeToBuffer())}',
+]..sort()).join('\n');
+
 await accounts.resolve(
   conflict.id,
   choice,
-  expect: (now) => sameSides(conflict, now) ? null : const ZenConflictError('changed'),
+  expect: (now) =>
+      shownSides(now) == shownSides(conflict) ? null : const ZenConflictError('changed'),
 );
 ```
 

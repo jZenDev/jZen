@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:zen_core/zen_core.dart';
 import 'package:zen_ui_store/src/state/zen_conflict_sweep.dart';
 import 'package:zen_ui_store/zen_ui_store.dart';
 
@@ -124,14 +125,17 @@ void main() {
     });
   }
 
-  testWidgets('a view of two versions from one device is still current', (tester) async {
+  testWidgets('a view of two versions from one device is saved, once', (tester) async {
     await setUp(tester);
-
     final view = fixture.source('Work Mac').views(notSet: '-').dataOrNull!.single;
 
-    expect(view.isCurrent(), isTrue);
-    await tester.runAsync(() => fixture.items('Work Mac').resolve('r1', null));
-    expect(view.isCurrent(), isFalse);
+    final results = await tester.runAsync(
+      () async => [await view.sides.first.keep(), await view.sides.last.keep()],
+    );
+
+    // Unchanged since it was shown, so the first is written; then there is nothing to settle.
+    expect(results!.first.errorOrNull, isNull);
+    expect(results.last.errorOrNull, isA<ZenValidationError>());
   });
 
   testWidgets('records with both versions from one device offer no choice for many', (

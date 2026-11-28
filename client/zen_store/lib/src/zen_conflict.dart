@@ -24,12 +24,19 @@ final class ZenConflict<T> {
   /// record, disputed or not.
   ///
   /// Usually one side per device that took part. **A device can have several**
-  /// ([ZenConflictSide.device] repeats), in two ways. Two devices set a field to the same value,
-  /// one merged the two into one version under the other's name, and that other device changed the
-  /// field again before receiving the merge: both values are under its name. Or a device edited a
-  /// field, another edited it without having seen that, and the first then deleted the record: it
-  /// has a delete side, and a value side with the edit it deleted, where that is still held. So
-  /// never index sides by device, and never take the number of sides for the number of devices.
+  /// ([ZenConflictSide.device] repeats), when:
+  ///
+  /// - two devices set a field to the same value, one merged the two into one version under the
+  ///   other's name, and that other device changed the field again before receiving the merge:
+  ///   both values are under its name;
+  /// - a device edited a field, another edited it without having seen that, and the first then
+  ///   deleted the record: it has a delete side, and a value side with the edit it deleted, where
+  ///   that is still held;
+  /// - two devices deleted the record, one merged the two deletes into one under the other's name,
+  ///   and that other device wrote the record again before receiving the merge: it has a value
+  ///   side and a delete side.
+  ///
+  /// So never index sides by device, and never take the number of sides for the number of devices.
   /// To ask whether the sides agree about something, compare the values of all of them.
   final List<ZenConflictSide<T>> sides;
 

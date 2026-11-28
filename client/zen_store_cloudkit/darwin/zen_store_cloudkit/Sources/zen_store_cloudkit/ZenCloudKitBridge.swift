@@ -5,6 +5,7 @@ import Flutter
 import FlutterMacOS
 #endif
 import Foundation
+import ZenDeliveryLedger
 import ZenRecordNames
 
 /// `CKSyncEngine` against the user's private database, with the store on the Dart side as the
@@ -18,8 +19,10 @@ import ZenRecordNames
 /// translates: it asks Dart for payloads to send, hands Dart what was fetched, confirms saves, and
 /// returns the server's copy when a save was refused because it changed, for Dart to merge.
 ///
-/// Every call into Dart is awaited before the engine moves on, so a change token is never saved
-/// for records the store has not yet written to disk.
+/// Every call into Dart is awaited before the engine moves on, so the engine's state, which holds
+/// the change token, reaches Dart after the changes before it. Dart writes the state only once all
+/// of those are on disk. A change Dart did not take at all ends the saving of state here
+/// (`ZenDeliveryLedger`, ADR-088), so CloudKit delivers it again.
 final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
   private static let recordType = "ZenRecord"
   private static let stateField = "state"
@@ -47,6 +50,9 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
   private var plainNames: [String: String] = [:]
   private var engine: CKSyncEngine?
   private var stopped = false
+  private var ledger = ZenDeliveryLedger()
+  /// Set once the app has stopped this sync. Read and written on the platform thread only.
+  private var detached = false
 
   init(channel: FlutterMethodChannel, containerId: String?, zone: String, state: Data?) {
     self.channel = channel
@@ -82,7 +88,7 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
     // An erased store must not start a zone again: say so to Dart and stay stopped.
     if await markerExists() {
       stop()
-      _ = await callDart("erased", nil)
+      await deliver("erased", nil)
       return
     }
     let configuration = CKSyncEngine.Configuration(
@@ -97,7 +103,7 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
     if hadLegacyState {
       // This device used the plain-name zone. Send everything again under hashed names, then
       // remove the old zone so Apple no longer holds the names.
-      _ = await callDart("resetCloud", nil)
+      await deliver("resetCloud", nil)
       engine.state.add(pendingDatabaseChanges: [.deleteZone(legacyZoneID)])
     }
     self.engine = engine
@@ -162,11 +168,20 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
     engine = nil
   }
 
+  /// Stops for the app, on the platform thread: this bridge calls Dart no more. A late event of
+  /// its engine would reach whatever sync started next, with a state that may be past changes the
+  /// store was never given.
+  func detach() {
+    detached = true
+    stop()
+  }
+
   // MARK: CKSyncEngineDelegate
 
   func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
     switch event {
     case .stateUpdate(let update):
+      guard ledger.maySaveState else { break }
       if let data = try? JSONEncoder().encode(update.stateSerialization) {
         _ = await callDart("state", ["state": FlutterStandardTypedData(bytes: Self.stateMarker + data)])
       }
@@ -190,14 +205,14 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
         // Another device erased everything: its marker says so, and this device erases too.
         if await markerExists() {
           stop()
-          _ = await callDart("erased", nil)
+          await deliver("erased", nil)
           continue
         }
         switch deletion.reason {
         case .encryptedDataReset:
           // The user's iCloud Keychain was reset: the old ciphertext is unreadable by anyone.
           // Start the zone again and send everything this device holds.
-          _ = await callDart("resetCloud", nil)
+          await deliver("resetCloud", nil)
           syncEngine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zoneID))])
           await status("syncing", message: "iCloud Keychain was reset; uploading again")
         default:
@@ -211,18 +226,32 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
     case .fetchedRecordZoneChanges(let changes):
       if changes.modifications.contains(where: { $0.record.recordID.zoneID == markerZoneID }) && !erasing {
         stop()
-        _ = await callDart("erased", nil)
+        await deliver("erased", nil)
         break
       }
-      let records = changes.modifications.compactMap { encode($0.record) }
+      var records: [[String: Any]] = []
+      var unreadable = false
+      for modification in changes.modifications {
+        if let encoded = encode(modification.record) {
+          records.append(encoded)
+        } else if modification.record.recordID.zoneID == zoneID {
+          unreadable = true
+        }
+      }
       if !records.isEmpty {
-        _ = await callDart("fetched", ["records": records])
+        await deliver("fetched", ["records": records])
+      }
+      if unreadable {
+        ledger.lose()
+        await status(
+          "unavailable", issue: "unreadableRecords",
+          message: "a record in iCloud could not be read; it is fetched again at the next launch")
       }
 
     case .sentRecordZoneChanges(let sent):
       let saved = sent.savedRecords.compactMap { encode($0) }
       if !saved.isEmpty {
-        _ = await callDart("saved", ["records": saved])
+        await deliver("saved", ["records": saved])
       }
       var refused: [[String: Any]] = []
       for failure in sent.failedRecordSaves {
@@ -239,7 +268,7 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
           if erasing { break }
           if await markerExists() {
             stop()
-            _ = await callDart("erased", nil)
+            await deliver("erased", nil)
             break
           }
           syncEngine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zoneID))])
@@ -255,7 +284,7 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
         }
       }
       if !refused.isEmpty {
-        _ = await callDart("refused", ["records": refused])
+        await deliver("refused", ["records": refused])
       }
 
     case .willFetchChanges, .willSendChanges:
@@ -342,16 +371,33 @@ final class ZenCloudKitBridge: CKSyncEngineDelegate, @unchecked Sendable {
   }
 
   private func status(_ state: String, issue: String? = nil, message: String? = nil) async {
+    guard ledger.mayReport(state) else { return }
     var arguments: [String: Any] = ["state": state]
     if let issue { arguments["issue"] = issue }
     if let message { arguments["message"] = message }
     _ = await callDart("status", arguments)
   }
 
+  /// Hands Dart a change for the store. Unless Dart takes it, no later state of this engine is
+  /// saved, and the status says why.
+  private func deliver(_ method: String, _ arguments: Any?) async {
+    let reply = await callDart(method, arguments)
+    if !ledger.took(reply) {
+      let cause = (reply as? FlutterError)?.message ?? "no answer"
+      await status(
+        "unavailable", issue: "other",
+        message: "\(method) did not reach the store (\(cause)); it is fetched again at the next launch")
+    }
+  }
+
   /// Calls Dart on the platform thread and waits for its answer.
   private func callDart(_ method: String, _ arguments: Any?) async -> Any? {
     await withCheckedContinuation { continuation in
       DispatchQueue.main.async {
+        guard !self.detached else {
+          continuation.resume(returning: nil)
+          return
+        }
         self.channel.invokeMethod(method, arguments: arguments) { continuation.resume(returning: $0) }
       }
     }

@@ -15,6 +15,59 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 
 ---
 
+## ADR-088 — The CloudKit engine's state is saved only after everything it delivered
+
+**Date:** 2026-11-28. **Status:** proposed, until the user accepts it. **Refines:** ADR-065.
+**Relates to:** ADR-083, ADR-085.
+
+### Decision
+
+- **`ZenCloudKitSync` writes the engine's changes in the order they arrive, the engine's state among
+  them.** A change the store cannot write (`fetched`, `refused`, `saved`, `resetCloud`, `erased`)
+  waits in memory with everything delivered after it, so the state, which holds CloudKit's change
+  token, is written only after it. It is tried again every `retryEvery` (5 seconds by default), at
+  `syncNow`, at a local write and with the next delivery. An app that stops first starts from the
+  old state, and CloudKit delivers the change again. An erase does not wait: it discards what is
+  waiting, which it would erase anyway.
+- **A record that cannot be read holds the state back too**, until that record has been read: a
+  record from a newer version of the app is read after the app is updated.
+- **The reply is the contract between the two halves.** Dart answers `true` for a change it has
+  taken, written or waiting. On any other answer, a `FlutterError` or `FlutterMethodNotImplemented`
+  among them, and for a record in its zone that it cannot translate, the Swift side saves no further
+  state until the next launch (`ZenDeliveryLedger`, a Swift target with no Flutter dependency).
+  A bridge the app has stopped calls Dart no more, so a late state of its engine cannot reach a
+  sync started after it.
+- **The failure outlasts progress reports.** While a change is unwritten, unread or lost, neither
+  `syncing` nor `upToDate` replaces the status that says so.
+
+### What this supersedes, and why
+
+- **"keeps the transport's own state (a change token) in its encrypted metadata"** (ADR-065) →
+  **refined: kept there only once everything it covers is.** *Why:* `CKSyncEngine` takes no refusal.
+  When the delegate returns, the engine counts the change as handled, and its next state says so.
+  Saving that state after a failed write — a full disk, or a store under Data Protection `complete`
+  while the phone is locked — meant the device never fetched the record again unless it changed on
+  the server, and the status that said so was replaced by `upToDate` at the end of the same fetch.
+- **A record from a newer app version was skipped and the state saved past it** (ADR-065, "Failures
+  are loud", which asked only for the status) → **changed.** *Why:* it is the same loss. The update
+  that can read the record never received it.
+
+### Consequence
+
+The saved state is never past a change the store has not written. The cost is repeated downloading:
+until a stuck change is written, or an unreadable record read, each launch fetches again everything
+since the last saved state, and merging it again changes nothing. A record that no version of the
+app can read, such as one for a collection the app has made device-only, holds the state for as long
+as CloudKit delivers it, with `unreadableRecords` shown. `ZenCloudKitSync.start` gains the optional
+`retryEvery`; the store's format and `ZenSyncTransport` are unchanged. Verified: the package's
+Flutter suite, with a real `ZenStore` on an unwritable directory and the method channel standing in
+for Swift; the `ZenDeliveryLedger` and `ZenRecordNames` tests under `swift test` in a scratch
+package; the reference Local app builds for the iOS Simulator and macOS. **Not verified:** a real
+`CKSyncEngine`, including the order in which it delivers changes and state, which needs the paid
+Apple Developer Program.
+
+---
+
 ## ADR-087 — On macOS a dev build keeps the store key and PIN hash in the login keychain; a release build keeps the data-protection Keychain
 
 **Date:** 2026-11-17. **Status:** proposed, until the user accepts it. **Refines:** ADR-075, ADR-065.

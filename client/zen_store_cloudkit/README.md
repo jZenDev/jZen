@@ -34,6 +34,15 @@ hands back what it fetched, saved or refused. The merge stays `zen_store`'s: a s
 because another device saved first comes back with the server's copy, the store merges it — or
 records a conflict for the person — and sends it again.
 
+## 🛟 A write that fails
+
+CloudKit delivers a change once, so the engine's state — which holds the change token — is saved
+only after everything delivered before it (ADR-088). If the store cannot write (a full disk, a
+locked phone under Data Protection `complete`), the change waits, `status` stays `unavailable` with
+the cause, and it is written at the next retry, `syncNow` or local write. An app that quits first
+gets it from CloudKit again at the next launch. A record from a newer version of the app holds the
+state back the same way until the app is updated.
+
 ## 📦 Swift Package Manager only
 
 The plugin ships `darwin/zen_store_cloudkit/Package.swift` and no podspec. SwiftPM is Flutter's
@@ -90,5 +99,9 @@ cd client/zen_store_cloudkit && flutter test
 
 The suite drives the Dart half against every message the Swift half sends — fetched, saved,
 refused, status, a reset of the cloud copy, a record from a newer version — with a real `ZenStore`
-underneath, and pins `protectDirectory`. Syncing through real CloudKit needs a signed build on two
-devices and is not covered by any suite here.
+underneath — one whose directory it makes unwritable, for the failures — and pins
+`protectDirectory`. The Swift targets with no Flutter dependency, `ZenRecordNames` and
+`ZenDeliveryLedger`, have XCTest suites; `swift test` runs them from a scratch package holding only
+those targets, since the package's manifest refers to a `FlutterFramework` that a Flutter build
+generates. Syncing through real CloudKit needs a signed build on two devices and is not covered by
+any suite here.

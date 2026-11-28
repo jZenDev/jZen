@@ -78,6 +78,9 @@ final class ZenCloudKitSync implements ZenSyncTransport {
     String zone = 'zen_store',
     Duration? retryEvery = const Duration(seconds: 5),
   }) async {
+    // An erase still being written already reports the store erased, and is taken back if it
+    // fails. A merge of nothing takes its turn after it, so what is read next is on disk.
+    if (store.erasedEverywhere) await store.receive(const []);
     final sync = ZenCloudKitSync._(store, retryEvery);
     _channel.setMethodCallHandler(sync._handle);
     sync._erasures = store.erasures.listen((_) {
@@ -109,7 +112,7 @@ final class ZenCloudKitSync implements ZenSyncTransport {
       sync._write();
     });
     await sync._changed(store.unsent);
-    if (store.erasedEverywhere) {
+    if (sync._erased) {
       // Erased, and the app stopped before iCloud was cleaned: finish it now.
       await sync._eraseInCloud();
     }
@@ -264,10 +267,14 @@ final class ZenCloudKitSync implements ZenSyncTransport {
   Future<bool> _take(_Delivery delivery) async {
     // Only while writes fail does anything pile up. A change that carries no payload, an erase
     // among them, always has room.
-    if (_writeFailure != null &&
+    bool noRoom() =>
+        _writeFailure != null &&
         delivery.bytes > 0 &&
-        _waiting.fold(delivery.bytes, (sum, other) => sum + other.bytes) > waitingBytesLimit) {
-      return false;
+        _waiting.fold(delivery.bytes, (sum, other) => sum + other.bytes) > waitingBytesLimit;
+    if (noRoom()) {
+      // The store may have recovered since the last attempt.
+      await _write();
+      if (noRoom()) return false;
     }
     // A newer engine state covers everything an older one does, and is written after more.
     if (delivery.isEngineState) _waiting.removeWhere((other) => other.isEngineState);

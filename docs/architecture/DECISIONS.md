@@ -27,10 +27,11 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
   waits in memory with everything delivered after it, so the state, which holds CloudKit's change
   token, is written only after it. It is tried again every `retryEvery` (5 seconds by default), at
   `syncNow`, at a local write and with the next delivery. An app that stops first starts from the
-  old state. An erase does not wait: it discards what is waiting, which it would erase anyway, and
-  only an erase that is on disk discards anything.
+  old state. An erase does not wait behind them. One the engine reports discards what is waiting
+  before it is written, which it would erase anyway, and stays ahead of every later state;
+  otherwise only an erase that is on disk discards anything.
 - **What waits is bounded.** Only the newest engine state is kept, and a change whose records would
-  take what waits past 16 MiB is not taken.
+  take what waits past 16 MiB, after one more attempt to write it, is not taken.
 - **A record that cannot be read holds the state back too**, until that record has been read: a
   record from a newer version of the app is read after the app is updated.
 - **The reply is the contract between the two halves.** Dart answers `true` for a change it has

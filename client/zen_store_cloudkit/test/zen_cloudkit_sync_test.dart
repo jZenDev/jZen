@@ -679,6 +679,113 @@ void main() {
       expect(savedState(reopened), 'after');
     });
 
+    test('an erase failing while sync starts drops nothing delivered afterwards', () async {
+      final incoming = await fromAnotherDevice('1');
+      final local = await store('a');
+      await local.saveTransportState(utf8.encode('before'));
+      unwritable(true);
+      // Being written, the erase already reports the store erased.
+      final erase = local.eraseEverywhere();
+      while (!local.erasedEverywhere) {
+        await Future<void>.value();
+      }
+
+      final sync = (await ZenCloudKitSync.start(local, retryEvery: null)).dataOrNull!;
+      expect(await erase, isA<ZenFailure<void>>());
+      await fromSwift('fetched', {
+        'records': [incoming],
+      });
+      await deliverState('after');
+      unwritable(false);
+      await sync.syncNow();
+
+      final reopened = await relaunched(local, sync);
+      expect(items(reopened).get('1').dataOrNull?.name, 'from b');
+      expect(savedState(reopened), 'after');
+      // Nothing was erased here, so iCloud is not to be erased either.
+      expect(sent.map((c) => c.method), isNot(contains('eraseEverywhere')));
+    });
+
+    test('an erase begun while the engine starts is not sent to iCloud until written', () async {
+      final local = await store('a');
+      late final Future<ZenResult<void>> erase;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        sent.add(call);
+        if (call.method == 'start') {
+          unwritable(true);
+          erase = local.eraseEverywhere();
+          while (!local.erasedEverywhere) {
+            await Future<void>.value();
+          }
+        }
+        return null;
+      });
+
+      final sync = (await ZenCloudKitSync.start(local, retryEvery: null)).dataOrNull!;
+
+      expect(await erase, isA<ZenFailure<void>>());
+      expect(sent.map((c) => c.method), isNot(contains('eraseEverywhere')));
+      await sync.stop();
+    });
+
+    test('on a store already erased, a delivery has nothing to wait for', () async {
+      final incoming = await fromAnotherDevice('1');
+      final local = await store('a');
+      await local.eraseEverywhere();
+      final sync = (await ZenCloudKitSync.start(local, retryEvery: null)).dataOrNull!;
+
+      await fromSwift('fetched', {
+        'records': [incoming],
+      });
+      await deliverState('after');
+
+      expect(sync.waitingChanges, 0);
+      expect(savedState(local), 'after');
+      expect(sync.status.issue, ZenSyncIssue.erasedEverywhere);
+      await sync.stop();
+    });
+
+    test('an erase drops the engine state that was waiting', () async {
+      final incoming = await fromAnotherDevice('1');
+      final (local, sync) = await started();
+      unwritable(true);
+      await fromSwift('fetched', {
+        'records': [incoming],
+      });
+      await deliverState('stale');
+      unwritable(false);
+
+      expect(await sync.eraseEverywhere(), isA<ZenSuccess<void>>());
+
+      expect(sync.waitingChanges, 0);
+      expect(local.transportState, isNull);
+      await sync.stop();
+    });
+
+    test('a large change arriving after the store recovered is taken', () async {
+      final incoming = await fromAnotherDevice('1');
+      final (local, sync) = await started();
+      unwritable(true);
+      await fromSwift('fetched', {
+        'records': [incoming],
+      });
+      // Writing works again, and nothing has tried since.
+      unwritable(false);
+
+      expect(
+        await fromSwift('fetched', {
+          'records': [
+            {'name': 'items:large', 'payload': Uint8List(ZenCloudKitSync.waitingBytesLimit)},
+          ],
+        }),
+        isTrue,
+      );
+
+      expect(sync.waitingChanges, 0);
+      expect(items(local).get('1').dataOrNull?.name, 'from b');
+      await sync.stop();
+    });
+
     test('a store erased directly drops what was waiting, and syncing goes on', () async {
       final incoming = await fromAnotherDevice('1');
       final (local, sync) = await started();

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:zen_core/zen_core.dart';
 import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 
+import '../language_choice.dart';
 import '../providers.dart';
 
 /// The language switcher: a menu of the supported locales, each under its own name, the one in
@@ -31,10 +32,11 @@ class DemoLanguageMenu extends ConsumerWidget {
           ZenMenuAction(
             label: _endonyms[tag]!,
             selected: Locale(tag) == locale,
-            // Setting the locale does two things at once (ADR-007 + ADR-009): Localizations
-            // re-renders this frame in the new language, and the very next request carries it as
-            // Accept-Language, because ZenClient reads this same notifier per request.
-            onPressed: () => ref.read(localeProvider.notifier).setLocale(Locale(tag)),
+            // The device first, then the account (see LanguageChoice). Setting the locale does
+            // two things at once (ADR-007 + ADR-009): Localizations re-renders this frame in the
+            // new language, and the very next request carries it as Accept-Language, because
+            // ZenClient reads that same notifier per request.
+            onPressed: () => ref.read(languageChoiceProvider.notifier).choose(Locale(tag)),
           ),
       ],
     );

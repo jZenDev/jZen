@@ -7,6 +7,7 @@ import 'package:zen_ui_widgets/zen_ui_widgets.dart';
 import 'l10n/generated/demo_localizations.dart';
 import 'providers.dart';
 import 'demo_root.dart';
+import 'screens/demo_language_failure_listener.dart';
 
 /// The root of zen_demo. Routes on the identity session: anonymous -> the auth flow,
 /// authenticated -> the home shell. Routing is state-based on Riverpod, so the reused
@@ -46,8 +47,8 @@ class DemoApp extends ConsumerWidget {
       // INSIDE MaterialApp, unlike AuthDeepLinks which wraps it. The two halves of a warm link sit
       // at different heights on purpose: the receiver must outlive every screen, while the thing
       // that reports the outcome needs the ScaffoldMessenger and Localizations that only exist
-      // below here.
-      home: const ZenAuthLinkListener(child: DemoRoot()),
+      // below here. The language listener reports a failed save from the same height.
+      home: const ZenAuthLinkListener(child: DemoLanguageFailureListener(child: DemoRoot())),
     );
   }
 

@@ -3,7 +3,7 @@
 ///
 /// - [ZenConflictBanner]: says that choices are waiting, and opens them
 /// - [ZenConflictsScreen]: every record in conflict
-/// - [ZenConflictResolveScreen]: each device's version of one record, and the button that keeps it
+/// - [ZenConflictResolveScreen]: every version of one record, each with the button that keeps it
 /// - [ZenConflictBulkScreen]: one choice that settles every record two devices disagree on
 /// - [ZenIssueSource]: the application's own cross-record problems, listed beside the conflicts
 /// - [ZenIssueScreen]: one such problem, with the application's actions as buttons

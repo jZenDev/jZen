@@ -80,7 +80,9 @@ Register `storeLocaleDelegate` in `MaterialApp.localizationsDelegates`.
   are numbered ("Phone, version 1 of 2"): a device can have several versions in dispute
   (ADR-089), and two devices can be named alike. For a delete against an edit,
   one card says "Deleted on this device" (**Keep it deleted**), and the other shows every field of
-  the edited record, so the person sees what deleting would throw away.
+  the edited record, so the person sees what deleting would throw away. A choice is saved only
+  against the versions shown: when a sync has changed the record since, nothing is written, and
+  the screen says so and shows what is there now, or that it was already settled.
 - **The sync status** (`ZenSyncStatusBanner`): while sync is stopped, why, in words the person can
   act on — not signed in to iCloud, iCloud Keychain off, a different account, the cloud data
   deleted, storage full, an app update needed. It takes no space while sync works: a sync that

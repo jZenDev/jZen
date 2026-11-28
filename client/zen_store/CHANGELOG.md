@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- **Behaviour change:** `ZenConflict.sides` holds every version in dispute, so one device can have several sides (`ZenConflictSide.device` repeats). A second value attributed to the same device, a record written again after a delete, and an edit that only cleared a field against a delete were hidden; all devices holding the same state now answer the same sides. Do not index sides by device (ADR-089, #286).
+- **Behaviour change:** `ZenConflict.sides` holds every version in dispute, so one device can have several sides (`ZenConflictSide.device` repeats). A second value attributed to the same device, a record written again after a delete, and an edit that only cleared a field against a delete were hidden; all devices holding the same state now answer the same sides. A device that deleted a record while a disputed edit of its own is still held now has that edit as a side too, so it can be chosen. Do not index sides by device (ADR-089, #286).
+- `ZenCollection.resolve(expect:)`: a precondition run inside the write's turn against the conflict as it stands then, so a version nobody was shown is not replaced (#286).
 - A top-level proto3 field with implicit presence set to its default is stored as unset, so `description = ''` and `clearDescription()` are one value and no longer conflict; `ZenStore.collection(explicitPresence: {…})` names the `optional` fields, which keep the distinction (#245).
 - `expect` on `ZenCollection.put`/`delete` and `ZenBatch.put`/`delete`: a precondition run inside the write's turn against the record as it stands then, so a sync's delete cannot be written over (#251).
 - `ZenStore.collection(syncs: false)`: a device-only collection, never sent or accepted by a transport, yet written atomically with synced collections by `writeAll` (#252).

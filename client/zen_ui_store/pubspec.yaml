@@ -1,8 +1,8 @@
 name: zen_ui_store
 description: >-
   The screens a jZen Local application shows when two devices changed the same data differently:
-  a banner that says so, the list of conflicts, and the choice between each device's version.
-  See docs/architecture/DECISIONS.md ADR-065.
+  a banner that says so, the list of conflicts, and the choice between the versions in dispute.
+  See docs/architecture/DECISIONS.md ADR-065 and ADR-089.
 publish_to: 'none'
 # Lockstep with the product version, see docs/architecture/STANDARDS.md "Versioning".
 version: 0.1.0

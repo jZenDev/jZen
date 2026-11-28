@@ -42,13 +42,20 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 - **Determinism.** The sides depend only on the versions held, never on the order a merge listed
   them in. Versions are totally ordered by time, then device id, then bytes; the last step also
   makes the value `get` shows for two writes of one millisecond the same on every device.
-- **Dates.** A device with one side is dated by its last write to the record, as before. With
-  several, each side is dated by the write that sets it apart.
+- **Dates and order.** A device with one side is dated by its last write to the record, as
+  before. With several, each side is dated by the write that sets it apart. Sides are ordered
+  newest first by the disputed write each stands for, which is not always the order of the dates.
 - **The screens (`zen_ui_store`).** Sides under one device name are numbered ("version 1 of 2"),
   which also separates two devices a person named alike; the list names a device once, with its
   number of versions; "has this conflict changed" matches sides one for one; and settling many
   records at once takes only a conflict with exactly one side from each of two devices, naming
   any other as left.
+- **A choice replaces only what was shown.** A resolution rewrites every version, and with more
+  sides to choose between, a screen drawn before a sync is more likely to be out of date.
+  `ZenCollection.resolve` takes an `expect` precondition, run inside the write's turn, and the
+  screens refuse a choice there when the sides are no longer the ones they showed: the screen
+  says so and redraws, and settling many counts the record as changed. A check made before the
+  call would miss a sync already queued.
 - **No format change.** Nothing on disk or in a synced payload differs. The fix reads what is
   already stored, so conflicts created before it show their hidden values too.
 
@@ -79,7 +86,8 @@ Each entry: **what changed**, the **docs it supersedes**, and the **justificatio
 - A device running a build from before this change still shows one side per device, and its
   resolution replaces every version, shown or not. Updating every device closes that.
 - Verified: `zen_store` tests reproduce the two- and three-device cases through `ZenFolderCloud`
-  and failed before the change; `zen_ui_store` tests choose each of one device's two values.
+  and failed before the change; `zen_ui_store` tests choose each of one device's two values, and
+  show that a version arriving before a choice is saved is not replaced.
 
 ---
 

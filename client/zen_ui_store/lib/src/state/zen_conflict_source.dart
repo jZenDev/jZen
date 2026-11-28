@@ -42,33 +42,45 @@ final class ZenConflictSource<T extends GeneratedMessage> {
       case ZenFailure(:final error):
         return ZenResult.err(error);
     }
-    return ZenResult.ok([
-      for (final conflict in conflicts)
-        ZenConflictView(
-          collection: collection.name,
-          id: conflict.id,
-          title: _title(conflict),
-          isCurrent: () => _isCurrent(conflict),
-          sides: [
-            for (final (index, side) in conflict.sides.indexed)
-              ZenConflictSideView(
-                device: side.device,
-                deviceName: side.deviceName,
-                number: _number(conflict, index),
-                at: side.at,
-                isDelete: side.isDelete,
-                fields: side.value == null
-                    ? const []
-                    : [
-                        for (final field in _shownFields(conflict))
-                          (_label(side.value!, field), _value(side.value!, field) ?? notSet),
-                      ],
-                keep: () => collection.resolve(conflict.id, side.value),
-              ),
-          ],
-        ),
-    ]);
+    return ZenResult.ok([for (final conflict in conflicts) _view(conflict, notSet)]);
   }
+
+  ZenConflictView _view(ZenConflict<T> conflict, String notSet) => ZenConflictView(
+    collection: collection.name,
+    id: conflict.id,
+    title: _title(conflict),
+    isCurrent: () => _isCurrent(conflict),
+    latest: () => switch (collection.conflictFor(conflict.id)) {
+      ZenSuccess(:final data) => ZenResult.ok(data == null ? null : _view(data, notSet)),
+      ZenFailure(:final error) => ZenResult.err(error),
+    },
+    sides: [
+      for (final (index, side) in conflict.sides.indexed)
+        ZenConflictSideView(
+          device: side.device,
+          deviceName: side.deviceName,
+          number: _number(conflict, index),
+          at: side.at,
+          isDelete: side.isDelete,
+          fields: side.value == null
+              ? const []
+              : [
+                  for (final field in _shownFields(conflict))
+                    (_label(side.value!, field), _value(side.value!, field) ?? notSet),
+                ],
+          keep: () => collection.resolve(
+            conflict.id,
+            side.value,
+            // Asked inside the write's turn: what a sync queued before it brings is seen too.
+            expect: (now) => _isSame(conflict, now)
+                ? null
+                : ZenConflictError(
+                    '${collection.name}/${conflict.id} changed since its versions were shown.',
+                  ),
+          ),
+        ),
+    ],
+  );
 
   /// Which of the sides under one name the side at [index] is, and how many there are — one
   /// device with two versions, or two devices a person gave the same name. Null for a name only
@@ -82,12 +94,17 @@ final class ZenConflictSource<T extends GeneratedMessage> {
     return named.length < 2 ? null : (named.indexOf(index) + 1, named.length);
   }
 
-  /// Whether [shown] is still exactly what the store holds: the same sides, each a device with a
-  /// version. A device can have several, so they are matched one for one and never looked up by
-  /// device. A sync can add a side or change one after a screen was drawn.
+  /// Whether the store still holds exactly the conflict [shown].
   bool _isCurrent(ZenConflict<T> shown) {
     final now = collection.conflictFor(shown.id).dataOrNull;
-    if (now == null || now.sides.length != shown.sides.length) return false;
+    return now != null && _isSame(shown, now);
+  }
+
+  /// Whether [now] is exactly the conflict [shown]: the same sides, each a device with a version.
+  /// A device can have several, so they are matched one for one and never looked up by device. A
+  /// sync can add a side or change one after a screen was drawn.
+  bool _isSame(ZenConflict<T> shown, ZenConflict<T> now) {
+    if (now.sides.length != shown.sides.length) return false;
     if (now.fields.length != shown.fields.length || !now.fields.containsAll(shown.fields)) {
       return false;
     }
@@ -151,8 +168,12 @@ final class ZenConflictView {
   final String? title;
   final List<ZenConflictSideView> sides;
 
-  /// Whether the store still holds exactly these sides, asked again at the moment of writing.
+  /// Whether the store still holds exactly these sides. Every [ZenConflictSideView.keep] checks
+  /// this itself as it writes; asking afterwards tells why a choice was refused.
   final bool Function() isCurrent;
+
+  /// The record's conflict as the store holds it now, or null once it is settled.
+  final ZenResult<ZenConflictView?> Function() latest;
 
   const ZenConflictView({
     required this.collection,
@@ -160,6 +181,7 @@ final class ZenConflictView {
     required this.title,
     required this.sides,
     required this.isCurrent,
+    required this.latest,
   });
 }
 
@@ -180,7 +202,8 @@ final class ZenConflictSideView {
   /// Each shown field's label and value.
   final List<(String, String)> fields;
 
-  /// Resolves the conflict with this side.
+  /// Resolves the conflict with this side, refused when the store no longer holds the conflict
+  /// as shown.
   final Future<ZenResult<Object?>> Function() keep;
 
   const ZenConflictSideView({

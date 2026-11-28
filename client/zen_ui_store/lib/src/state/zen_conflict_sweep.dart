@@ -78,25 +78,24 @@ final class ZenConflictSweep {
 
   /// Settles every included conflict with [device]'s version, one record after another, stopping
   /// at the first write that fails. A record the store no longer holds as it was shown — a sync
-  /// changed it since — is skipped, because the person chose between versions that are not all
-  /// there is any more.
+  /// changed it since — is refused by its own write and skipped, because the person chose between
+  /// versions that are not all there is any more.
   Future<ZenSweepOutcome> keep(String device) async {
     assert(device == first.$1 || device == second.$1);
     var settled = 0;
     var changed = 0;
     var failed = false;
     for (final conflict in included) {
-      if (!conflict.isCurrent()) {
-        changed++;
-        continue;
-      }
       final side = conflict.sides.singleWhere((side) => side.device == device);
       final result = await side.keep();
-      if (!result.isSuccess) {
+      if (result.isSuccess) {
+        settled++;
+      } else if (!conflict.isCurrent()) {
+        changed++;
+      } else {
         failed = true;
         break;
       }
-      settled++;
     }
     return ZenSweepOutcome(
       settled: settled,

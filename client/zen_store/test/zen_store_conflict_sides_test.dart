@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:protobuf/well_known_types/google/protobuf/api.pb.dart';
 import 'package:protobuf/well_known_types/google/protobuf/source_context.pb.dart';
 import 'package:test/test.dart';
+import 'package:zen_core/zen_core.dart';
 import 'package:zen_store/zen_store.dart';
 
 /// Whatever a person might be asked to choose between must be in `ZenConflict.sides`: a value the
@@ -175,6 +176,62 @@ void main() {
       await laptop.close();
 
       expect(sidesOn(await open('Laptop')), before);
+    });
+  });
+
+  group('resolving only what was seen', () {
+    /// A plain conflict between the laptop and the phone, and a third value on the tablet that
+    /// neither has received.
+    Future<(ZenStore, ZenStore)> unseenThird() async {
+      final laptop = await open('Laptop');
+      final phone = await open('Phone');
+      final tablet = await open('Tablet');
+      await put(laptop, posting('wallet'), at: 1000);
+      await syncAll([laptop, phone, tablet]);
+      await put(tablet, posting('safe'), at: 1500);
+      await put(laptop, posting('bank'), at: 2000);
+      await put(phone, posting('card'), at: 3000);
+      await syncAll([laptop, phone]);
+      return (laptop, tablet);
+    }
+
+    ZenError? Function(ZenConflict<Api>) twoSides() =>
+        (now) => now.sides.length == 2 ? null : const ZenConflictError('changed');
+
+    test('expect sees what a sync queued ahead of the resolution brought', () async {
+      final (laptop, tablet) = await unseenThird();
+      final shown = conflictOn(laptop).sides.first.value;
+
+      final arriving = laptop.receive([
+        ZenIncomingRecord('items:1', tablet.outgoing('items:1')!.payload, null),
+      ]);
+      // Not yet applied: a look before the call would pass.
+      expect(conflictOn(laptop).sides, hasLength(2));
+      final result = await items(laptop).resolve('1', shown, expect: twoSides());
+      await arriving;
+
+      expect(result.errorOrNull, isA<ZenConflictError>());
+      expect(conflictOn(laptop).sides, hasLength(3));
+    });
+
+    test('expect that allows the resolution lets it through', () async {
+      final (laptop, _) = await unseenThird();
+      final shown = conflictOn(laptop).sides.first.value;
+
+      final result = await items(laptop).resolve('1', shown, expect: twoSides());
+
+      expect(result.errorOrNull, isNull);
+      expect(laptop.conflictCount, 0);
+    });
+
+    test('expect is not asked about a record that has no conflict', () async {
+      final store = await open('Laptop');
+      await put(store, posting('wallet'), at: 1000);
+
+      final result = await items(store)
+          .resolve('1', null, expect: (_) => fail('there is no conflict to show it'));
+
+      expect(result.errorOrNull, isA<ZenValidationError>());
     });
   });
 

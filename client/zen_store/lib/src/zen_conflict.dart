@@ -15,14 +15,20 @@ final class ZenConflict<T> {
   /// The record's id.
   final String id;
 
-  /// Every version in dispute, latest first: between them, each surviving value of each field in
-  /// [fields], each delete, and each edit a delete had not seen. Devices holding the same state
-  /// answer the same sides.
+  /// Every version in dispute: between them, each surviving value of each field in [fields], each
+  /// delete, and each edit a delete had not seen. Devices holding the same state answer the same
+  /// sides.
+  ///
+  /// Ordered newest first by the latest disputed write each side stands for. That is not always
+  /// the order of [ZenConflictSide.at], which for a device with one side is its last write to the
+  /// record, disputed or not.
   ///
   /// Usually one side per device that took part. **A device can have several**
-  /// ([ZenConflictSide.device] repeats): two devices set a field to the same value, one merged the
-  /// two into one version under the other's name, and that other device changed the field again
-  /// before receiving the merge. Both values are then under its name, each with its own side. So
+  /// ([ZenConflictSide.device] repeats), in two ways. Two devices set a field to the same value,
+  /// one merged the two into one version under the other's name, and that other device changed the
+  /// field again before receiving the merge: both values are under its name. Or a device edited a
+  /// field, another edited it without having seen that, and the first then deleted the record: it
+  /// has a delete side, and a value side with the edit it deleted, where that is still held. So
   /// never index sides by device, and never take the number of sides for the number of devices.
   /// To ask whether the sides agree about something, compare the values of all of them.
   final List<ZenConflictSide<T>> sides;

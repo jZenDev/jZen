@@ -17,7 +17,7 @@ editable fields — title, note, done, priority — so that every behaviour of t
 |---|---|
 | Edit with no network | Everything works; the store is encrypted files on the device (`zen_store`). |
 | Change the **note** on one device and the **priority** on another, offline, then sync | Both changes on both devices; nothing is asked. |
-| Change the **title** on both | A banner, "needs your choice", then each device's version side by side; choosing one settles it everywhere. Until then the chore refuses edits. |
+| Change the **title** on both | A banner, "needs your choice", then every version side by side; choosing one settles it everywhere. Until then the chore refuses edits. |
 | Delete a chore on one device and edit it on another | The same banner; one card says "Deleted on this device", the other shows what deleting would throw away. |
 | Stop sync (no folder chosen, a sync key missing, a folder gone, iCloud signed out) | `ZenSyncStatusBanner` says why, in words you can act on. |
 | Settings → Security | A PIN (`zen_ui_lock`); "Forgot PIN?" per platform. |

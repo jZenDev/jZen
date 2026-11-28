@@ -27,7 +27,7 @@
   },
   "resolveTitle": "Choose a Version",
   "@resolveTitle": {
-    "description": "Title of the screen that shows each device's version of one record."
+    "description": "Title of the screen that shows every version of one record in conflict."
   },
   "resolveIntro": "{title} was changed on more than one device. Keep one version; the others are replaced on every device.",
   "@resolveIntro": {
@@ -95,6 +95,14 @@
   "keepDeleted": "Keep it deleted",
   "@keepDeleted": {
     "description": "Button that resolves the conflict by deleting the record."
+  },
+  "resolveChanged": "This changed since it was shown, so nothing was saved. Look at the versions below and choose again.",
+  "@resolveChanged": {
+    "description": "Shown when another version arrived before the choice was saved; the versions below are redrawn."
+  },
+  "resolveSettled": "This was already settled, so your choice was not saved.",
+  "@resolveSettled": {
+    "description": "Shown when the record was settled elsewhere before the choice was saved."
   },
   "resolveFailed": "Couldn't save your choice. Try again.",
   "@resolveFailed": {
@@ -198,7 +206,7 @@
   },
   "bulkBack": "Back to the list",
   "@bulkBack": {
-    "description": "Button that leaves the settle-many screen after it did not finish every record."
+    "description": "Button that returns to the list from a screen whose choice could not be saved as shown."
   },
   "deletedTitle": "A deleted item",
   "@deletedTitle": {

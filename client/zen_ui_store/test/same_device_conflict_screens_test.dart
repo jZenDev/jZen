@@ -13,10 +13,14 @@ void main() {
 
   tearDown(() async => fixture.dispose());
 
-  /// On r1 the Mac and the phone write "agreed", the Mac merges the two into one version under
-  /// the phone's name, and the phone writes "changed" before receiving that merge. With
-  /// [others], they also disagree plainly on r2 and r3.
-  Future<void> setUp(WidgetTester tester, {bool others = false}) async {
+  /// On each of [twice] the Mac and the phone write "agreed", the Mac merges the two into one
+  /// version under the phone's name, and the phone writes "changed" before receiving that merge.
+  /// With [others], they also disagree plainly on r2 and r3.
+  Future<void> setUp(
+    WidgetTester tester, {
+    List<String> twice = const ['r1'],
+    bool others = false,
+  }) async {
     // Tall enough that every card and name is built.
     tester.view.physicalSize = const Size(800, 3000);
     tester.view.devicePixelRatio = 1;
@@ -24,11 +28,15 @@ void main() {
     fixture = (await tester.runAsync(() async {
       final f = await DevicesFixture.create(['Work Mac', 'My iPhone'], offline: true);
       await f.seed(['r1', 'r2', 'r3']);
-      await f.edit('Work Mac', 'r1', 'agreed');
-      await f.edit('My iPhone', 'r1', 'agreed');
+      for (final id in twice) {
+        await f.edit('Work Mac', id, 'agreed');
+        await f.edit('My iPhone', id, 'agreed');
+      }
       await f.sync('My iPhone');
       await f.sync('Work Mac');
-      await f.edit('My iPhone', 'r1', 'changed');
+      for (final id in twice) {
+        await f.edit('My iPhone', id, 'changed');
+      }
       await f.syncAll();
       if (others) {
         for (final id in ['r2', 'r3']) {
@@ -124,6 +132,25 @@ void main() {
     expect(view.isCurrent(), isTrue);
     await tester.runAsync(() => fixture.items('Work Mac').resolve('r1', null));
     expect(view.isCurrent(), isFalse);
+  });
+
+  testWidgets('records with both versions from one device offer no choice for many', (
+    tester,
+  ) async {
+    await setUp(tester, twice: ['r1', 'r2']);
+    final views = fixture.source('Work Mac').views(notSet: '-').dataOrNull!;
+    for (final view in views) {
+      expect(view.sides.map((side) => side.device), [
+        fixture['My iPhone'].deviceId,
+        fixture['My iPhone'].deviceId,
+      ]);
+    }
+
+    expect(ZenConflictSweep.of(views, thisDevice: fixture['Work Mac'].deviceId), isEmpty);
+
+    await tester.pumpWidget(list());
+    expect(find.textContaining('Settle all'), findsNothing);
+    expect(find.text('My iPhone (2 versions)'), findsNWidgets(2));
   });
 
   testWidgets('a choice for many records names such a record and leaves it', (tester) async {

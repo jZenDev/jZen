@@ -130,13 +130,15 @@ final class ZenRecordState {
         entry.key: ?(chosen[entry.key] ?? _latest(entry.value)).bytes,
   });
 
-  /// The sides of the conflict, latest first; empty when there is none.
+  /// The sides of the conflict, empty when there is none, newest first by the latest disputed
+  /// write each stands for — which is not always the order of [ZenRecordSide.atMillis].
   ///
   /// Between them they hold **every** version in dispute: each surviving value of each conflicting
-  /// field, each delete, and each edit a delete had not seen. A device has one side, unless two
-  /// versions in dispute carry its name — it wrote a field again without having received the merge
-  /// that attributed an equal edit to it — in which case it has one side per value, so none is
-  /// hidden behind another. A delete is always a side of its own.
+  /// field, each delete, and each edit a delete had not seen. A device has one value side, unless
+  /// two versions of a disputed field carry its name — it wrote the field again without having
+  /// received the merge that attributed an equal edit to it — in which case it has one side per
+  /// value, so none is hidden behind another. A delete is always a side of its own, so a device
+  /// that deleted the record while a disputed edit of its own is still held has both.
   ///
   /// The answer depends only on the versions held, never on the order a merge listed them in, so
   /// devices holding the same state answer the same sides.
